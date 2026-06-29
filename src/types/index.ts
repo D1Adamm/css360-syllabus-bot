@@ -1,0 +1,60 @@
+export type SeedDifficulty = 'Easy' | 'Medium' | 'Hard';
+
+export type SeedOrigin = 'prototype' | 'user';
+
+export type ModelKey =
+  | 'base'
+  | 'rag'
+  | 'fineTuned'
+  | 'fineTunedRag';
+
+export interface SeedExample {
+  id: string;
+  instruction: string;
+  response: string;
+  category: string;
+  sourceSection: string;
+  difficulty: SeedDifficulty;
+  directlyAnswered: boolean;
+  origin: SeedOrigin;
+}
+
+export interface ComparisonResponse {
+  text: string;
+  grounding: 'Low' | 'Medium' | 'High';
+  simulated: boolean;
+}
+
+export interface ComparisonRecord {
+  id: string;
+  question: string;
+  category: string;
+  relevantSyllabusSection: string;
+  baseResponse: ComparisonResponse;
+  ragResponse: ComparisonResponse;
+  fineTunedResponse: ComparisonResponse;
+  fineTunedRagResponse: ComparisonResponse;
+  notes: string;
+}
+
+export interface EvaluationRecord {
+  id: string;
+  comparisonId: string;
+  mostAccurate: ModelKey;
+  mostHelpful: ModelKey;
+  mostConcise: ModelKey;
+  bestGrounded: ModelKey;
+  preferredModel: ModelKey;
+  hallucinationFlags: ModelKey[];
+  comment?: string;
+  createdAt: string;
+}
+
+export interface SyllabusTopic {
+  id: string;
+  title: string;
+  category: string;
+  summary: string;
+  sourceSection: string;
+  details: string[];
+}
