@@ -31,3 +31,7 @@ export function exportFilteredJsonl(seeds: SeedExample[]): void {
 export function exportCompleteJsonl(seeds: SeedExample[]): void {
   exportAsJsonl(seeds, 'syllabus-seed-data.jsonl');
 }
+
+export function exportUserSeedsJsonl(seeds: SeedExample[]): void {
+  exportAsJsonl(seeds, 'syllabus-user-seed-data.jsonl');
+}
