@@ -1,0 +1,968 @@
+CSS360: Software Engineering (Winter 2026)
+
+Instructor: Kaylea Champion
+Going to be absent? --> Here is the course absence form <--
+Contact: Your messages are important to me! I prefer, in this order:
+public messages via Discord (others might have the same question or have the answer)
+private messages via Discord
+private messages via Canvas Note: all grade-related discussion must happen via Canvas
+email only if absolutely necessary to kaylea@uw.edu
+If you need to have a discussion with me, I would be happy to meet with you via an office hours appointment. This guarantees you my full attention (but, please book at least 24 hours in advance, I might miss your booking otherwise).
+Turnaround time commitment
+If I do not respond to your message in 48 hours, please understand that this is unintentional and nudge me via a Discord DM. My inbox and message queues sometimes get flooded due to a very wide range of commitments. This is not your fault, but an unfortunate fact of life. That said, a polite and focused request will receive a faster reply; an unprofessional request might get eaten by my spam filter; a message containing information unrelated to your question might be misunderstood or misfiled.
+You can call me "Doctor Champion" or "Professor Champion"! Please note that there is another Champion in the department (Mia) and I am not her :-). I'm the one with the purple hair!
+I use she/her pronouns, and I'll do my best to use your name and pronouns correctly, but please (please!) help me get it right if I'm wrong. Your comfort -- and your name and pronouns -- matter to me!
+Textbook:
+We do not have a required textbook. You will instead engage with material from a wide range of sources. All of these sources should be free of charge providing you use the version on Canvas or the UW Library Proxy. If you have difficulty accessing any material, let me know right away via a public message on Discord.
+Course Meetings:
+Tuesday / Thursday
+11:00 AM to 1:00 PM
+UW1 building room 302
+Course Websites
+We will use Canvas for announcements and turning in assignments.
+We will use Discord for chat, including to ask questions and share information around the course material. (Invitation link is in the Class Setup Checklist on Canvas.)
+Course absence form: It is important to tell me if you are not coming to class at least one hour before class begins.
+Everything else will be linked on this page.
+Got a question? Maybe it's on the UWB CSS 360 FAQs page?
+Optional! Pitch in to the Spotify playlist for this quarter's class. Share what's fun, what's cool, what's speaking to you this quarter, what more people should know about: the Software Engineering Winter 2026 Spotify Playlist. Otherwise we're just going to listen to things Prof. Champion picked ;).
+Course Catalog Description of Topics:
+Surveys the software engineering processes, tools, and techniques used in software development and quality assurance. Topics include life-cycle models, process modeling, requirements analysis and specification techniques, quality assurance techniques, verification and validation, testing, project planning, and management.
+In addition, the course prerequisites amount to requiring completion of a two-course sequence in computer programming and serves as a prerequisite for CSS 370.
+Weather Notes
+As a winter quarter course, there is always the potential that extreme weather will make in-person meetings impossible. In this case, my plan is always to hold class, but to do so via Zoom rather than in-person. I will make announcements and pass along information as I receive it, but you should anticipate we will have class in some form unless you hear otherwise.
+
+Contents
+1 Overview and Learning Objectives
+2 Class format and structure
+2.1 Websites and Technology Expectations
+3 Note about this Syllabus
+4 Assignments
+4.1 In Class: Discuss, Listen, Co-Work
+4.2 Out of Class: Read, Watch, Write, and Code
+5 Schedule
+5.1 Sprint 1 -- Planning Phase
+5.2 Sprint 1 -- Execution Phase
+5.3 Sprint 2 -- Planning Phase
+5.4 Sprint 2 -- Execution Phase
+5.5 Sprint 3 -- Planning Phase
+5.6 Sprint 3 -- Execution Phase
+5.7 Administrative Notes
+5.8 Credit and Notes
+
+Overview and Learning Objectives
+Software engineering is a collection of practices, philosophies, skills, and strategies for building and maintaining software.
+
+As students of software engineering in the twenty-first century, I expect that many of you taking this course will, after graduation, work in jobs that involve the building and maintaining of technology, although your day to day activities may look as varied as stress-testing hardware to imagining new front-end interactions to reviewing piles of data to understand a system compromise to jumping out of bed in the middle of the night to fix an angry database. This class seeks to inform these experiences by helping you learn the engineering processes and practices in common use in a range of industries and settings, and how to think more broadly and more deeply about software work.
+
+I will consider the course a complete success if every student is able to do all of these things at the end of the quarter:
+
+Write and speak fluently about key concepts in software engineering
+Recall, compare, and give examples of software engineering approaches that evidence suggests will be more or less successful
+Demonstrate an ability to critically apply ideas from the course to a demonstrator project.
+Engage with the course material and compellingly present your own ideas and reflections in writing and orally.
+Learn and use engineering tools, in part because the tools themselves are important, and in part to build your ability to adopt new tools.
+Identify areas of ethical concern in software engineering.
+Identify opportunities to improve software security in software engineering.
+I also have a "stretch goal": I want your work in this class to help you, in some direct way. Maybe it's having a great answer in a job interview when it's time to convince the interviewer that you have a lot to offer. Maybe it's having a piece of work you can feel good about sharing with others. Maybe it's applying your CSS360 thinking to a new assignment at work. Maybe it's seeing your world in a new way that helps you solve a problem. Or maybe it's just having an answer when someone asks skeptical questions about what you got out of studying Software Engineering! This goal is hard to measure but it's my hope for you and what I'm working for every day during the quarter.
+
+Class format and structure
+In general, the organization of the course adopts a "flipped" approach where you engage with instructional materials on your own or in groups and we use synchronous meetings to answer questions, address challenges or concerns, work through solutions, and hold semi-structured discussions in the form of cases—discussed in detail below. This is a 5-credit class; you should plan to spend 10 hours per week working on class work as well as 4 hours per week in class and as much as 1 hour per week in lab or office hours. If you are spending substantially more than this, you should consider setting up an office hours appointment with me to think through learning strategies to boost your efficiency. If you are spending substantially less than this, you may find you are losing out on opportunities to learn, grow, and demonstrate your skills.
+
+The asynchronous elements of this course include two parts:
+
+All readings, recorded lectures/slides, tutorials, and assignments from a variety of speakers; some of these will be created directly by me, but some of them will be excellent work produced by others.
+Conversation and discussion that happens in the group Discord server over the course of the week.
+I expect you to finish all readings and watch all lectures outside of our class meeting times before the class sessions on which they are assigned. Please note that this means I will not generally deliver lectures during our class meetings. Please also note that this means you are fully responsible for reading all readings and watching all recorded lecture material before you come to the associated synchronous part of class.
+
+I expect you to check in and participate in the Discord discussion. I plan to check and respond to conversation there at least daily throughout the quarter.
+
+The synchronous elements of the course will be two weekly class meetings and optional open lab periods. Class meetings will happen at the normal time and in the normal place, unless I communicate otherwise. I will also offer open lab periods where you can drop in and ask questions. Open lab is an experiment I'm trying for this quarter to see if it's useful: I'll try to announce when they're coming up in a weekly announcement e-mail and I'll definitely mention them on Discord. For my more focused attention, please book an office hours appointment with me. Please note that if you book your appointment less than 24 hours in advance, I may not see your booking, so do ping me on Discord to confirm. Why should students book office hours appointments?
+
+Each session is scheduled to run for a maximum of 120 minutes; we'll take a break half way through -- it's always my goal to end a bit early.
+
+I will use the class meetings to do several things:
+
+Conduct standup meetings for project teams.
+Conduct each day's case study discussion involving an instructor-mediated conversation using input from each of you.
+Discuss and work through any questions or challenges you encounter in the materials assigned for that day.
+Discuss and/or answer questions about assignments that have come up.
+Open lab periods will include:
+
+Time for you to ask your questions
+Time to work on your assignments with immediate help at hand
+Attending open lab periods and office hours is optional.
+
+Websites and Technology Expectations
+There are a number of expectations that you will be able to connect to certain websites. In order to complete this class, I expect you to be able to access and use the following web resources:
+
+wiki.communitydata.science — This website will host the syllabus for the course. I expect you to be able to visit it regularly. If you're reading this, you have access.
+UW's Canvas — We'll be using Canvas for posting announcements, uploading course-restricted files, turning in assignments, and distributing grades, comments, and similar. It is the student's responsibility to verify that the correct file is submitted. If you have difficulties using Canvas, please contact UW-IT or see this knowledge base article.
+UW Library Proxy — I'm going to expect that you can use the UW Libraries proxy to access material that UW subscribes to from off campus.
+Discord — Discord is a chat system that we'll be using in the course to stay in touch between class and to discuss things asynchronously. It has screensharing and voice chat as well. There is a mobile app as well as a downloadable desktop app that you may find useful but you should be able to do everything you need to while using the web interface version. If you've got a question about an assignment, this is almost certainly going to be the the fastest and best way to get my attention. One benefit of asking a question on Discord is that others in the class will be able to see our answer to you! Instructions on joining the Discord server are in the Class Setup Checklist. You'll see that there are a series of channels we've created. If you don't see an obvious place to ask your question, go ahead and ask it in the #general-discussion channel.
+Panopto — UW uses the video hosting service Panopto which I will be using to share all the lectures and recorded parts for this course.
+GitHub — Assignments for this course will involve using GitHub. This means that you will need to have access to GitHub.
+Google Docs — I'll be using Google Docs to host a series of web forms. This includes the form you'll need to fill out to tell me that you're going to miss class. You will need to be able to access Google to use this.
+AI tools: Chat GPT, Microsoft CoPilot, and Gemini
+These websites, in turn, use a range of hosting providers including Amazon Web Services, Google, and Microsoft. As a result, participation in this course requires students to access Internet resources that may not be accessible directly in some places outside of the UWB campus. Anybody taking the class must ensure that they can access all Internet resources required for this course reliably and safely. For students who are off-campus temporarily and are in a situation where direct access to these required resources is not possible, UW-IT recommends that students use the official UW VPN, called Husky OnNet VPN. UW-IT advises students to use the VPN with the "All Internet Traffic" option enabled (see the UW Libraries instructions and UW-IT's FAQs). Doing so will route all incoming and outgoing Internet through UW servers while it is enabled.
+
+Students who are outside the US should be aware that they may be subject to laws, policies and/or technological systems which restrict the use of any VPNs. UW does not guarantee students' access to UW resources when students are off-campus, and students are responsible for their own compliance with all laws regarding the use of Husky OnNet and all other UW resources. You cannot successfully complete the course if you do not have sufficient access to a network and network-based services.
+
+Having problems with the checklist? Running into terms you don't understand? I've collected some Frequently Asked Questions and Answers
+
+Note about this Syllabus
+You should expect this syllabus to be a dynamic document (not a 'contract'). Although the core expectations for this class are fixed, the details of projects, readings, and assignments will shift based on how the class goes, guest speakers that I arrange, my own readings in this area, etc. As a result, there are four important things to keep in mind:
+
+Although details on this syllabus will change, I will try to ensure that I never change readings more than six days before they are due. This means that if I don't fill in a reading marked "[To Be Decided]" six days before it's due, it is dropped. If I don't change something marked "[Tentative]" before the deadline, then it is assigned. This also means that if you plan to read more than six days ahead, contact me first.
+Because this syllabus is a wiki, you will be able to track every change by clicking the history button on this page when I make changes. I will summarize these changes in the weekly announcement on Canvas] sent that will be emailed to everybody in the class. Closely monitor your email or the announcements section on the course website on Canvas to make sure you don't miss these announcements.
+I will ask the class for voluntary anonymous feedback frequently — especially toward the beginning of the quarter. Please let me know what is working and what can be improved. In the past, I have made many adjustments to courses that I teach while the quarter progressed based on this feedback.
+Many readings are marked as "[Available through UW libraries]". Most of these will be accessible to anybody who connects from the UW network. This means that if you're on campus, it will likely work. Although you can go through the UW libraries website to get most of these, the easiest way to get things using the UW library proxy bookmarklet. This is a little button you can drag-and-drop onto your bookmarks toolbar on your browser. When you press the button, it will ask you to log in using your UW NetID and then will automatically send your traffic through UW libraries. You can also use the other tools on this UW libraries webpage.
+
+Assignments
+The assignments in this class are designed to give you an opportunity to try your hand at using the conceptual material taught in the class. We will do one project and have one short writing assignment reflecting on that project and course topics. Any quizzes will be short and low-stakes. There will be no exams.
+
+Unless otherwise noted, all assignments are due at the end of the day (i.e., 11:59pm on the day they are listed as being due, Pacific time zone).
+
+In Class: Discuss, Listen, Co-Work
+Case discussion
+The course relies heavily on the case study method: a particular form of instructor-mediated discussion. A standard "case" usually involves reading an example—an event and the surrounding context, or an organization or group. It is important to realize that I will not summarize case material in class and I will not cover it in lecture. I expect you all to have read it and we will jump in and start discussing it.
+
+Cases ask students to put themselves in the positions of individuals facing difficult situations to tease out the tensions and forces at play in the case and to construct — through group discussion — the broader lessons and takeaways. Cases are a wonderful way to connect the sometimes abstract concepts taught in many academic courses to real examples of the type of ambiguous situations that you will likely encounter in your career. Generally speaking, there are multiple right answers in cases, and there are definitely poorly-prepared answers versus carefully-considered ones!
+
+Cold Calling
+Cases rely roughly on the socratic method where instructors teaching cases cold call on students—i.e., instructors call on people without asking for volunteers first. I will be doing this in each class. Modern technical work environments include very similar situations: very few lectures (except for "all hands" type meetings and "training" activities), and a range of types of team meetings and group conversations, where you will be expected to be prepared and then participate in key moments.
+
+Because I understand that cold calling can intimidate some students, I will be circulating a list of questions (labeled "Reading Note" in the syllabus) that we will discuss. These will be finalized at least 6 days in advance. I will only cold call to ask questions for which you have time to prepare your answers, or where the general format / structure has been announced in advance so that you can prepare. Although it is a very good idea to write out answers to these questions in advance, I will not be collecting these answers. You are welcome to work with other students to brainstorm possible answers. Although I may also ask spontaneous questions that I do not distribute ahead of time, I will never cold call when asking these questions.
+
+I have written a computer program that will generate a random list of students each day and I will use this list to randomly cold call students in the class. To try to maintain participation balance, the program will try to ensure that everybody is cold called a similar number of times during the quarter. Although there is always some chance that you will called upon next, you will become less likely to be called upon relative to your classmates each time you are called upon.
+
+Assessment for case study discussion
+I have placed detailed information on case study-based discussion on the case discussion section of my assessment page. This describes both the rubrics I will use to assess your case discussion and how I will compute the final grades in the course.
+
+Sprint Planning Meetings
+Once project groups are formed and we have covered the Agile approach, you will conduct sprint planning meetings. In sprint planning, you will examine the sprint backlog and available user stories, then commit to complete that user story during the sprint. Note that work you do in GitHub as part of sprint planning will be scored as part of your sprint grade.
+
+Standup Meetings
+Once project groups are formed and we have covered the Agile approach, you will meet in a standup format at the beginning of each class. In standup, you answer three questions: what did you do since the last standup, what will you do before the next standup, and do you have any blockers? To receive credit for standup, you must be present in the standup and participate in standup during class and document your standup work on Discord.
+
+Out of Class: Read, Watch, Write, and Code
+Each class session will require advance preparation from you, including engagement with class materials and working on course projects. More details on the class materials are in the daily schedule, and more details on course projects are in the assignments section.
+
+Projects
+You will participate in a group project to build a Discord bot as part of this class. The basic project is simple and straightforward, however students also have the option to propose their own bot project. Your ideas may be slightly different than what the course is structured to support. If you have a strong idea, proposing your project early will let us iterate on that proposal in sufficient time to allow timely completion.
+
+The "SW Engineering Project Rubric" section of the detailed page on assessment gives the rubric I will use to evaluate these projects.
+
+The "Writing Rubric" section of the detailed page on assessment gives the rubric I will use to evaluate writing assignments.
+
+Notes on Group Work
+Real-world software engineering is a team sport -- but in a school context it can be frustrating. The project in this course is designed to be lightweight: the purpose is to practice the processes we are learning about, which are mostly about working together to write code. That means facing the challenges of group work. To lighten the coding load, I encourage you to make substantial use of code assistant AI tools in a rapid prototyping mode: treat the AI tool as if it were your intern or a junior member of your team, give it assignments, assess its work.
+
+Group process is key to this course. Think carefully about what kind of group member you want to be, and how you will respond to potential sources of conflict. In general, groups work well when students have motivations that align with the work of the group, varying skillsets, and display mutual respect. I will assess your work based on the evidence I see in behavioral traces: the records left behind in the tools we use for the course.
+
+Building awareness of your own priorities and skills is crucial to being a good group member. I will be collecting confidential feedback on how groups are functioning, and I reserve the right to rearrange group membership to support everyone's learning.
+
+Do you want an excellent grade in the course? Be clear about your expectations and priorities, and seek out groupmates who share your level of commitment.
+
+Are your skills still emerging? Be ready to work hard, to learn from classmates, and to be flexible about which tasks you take on (but don't plan to coast on the efforts of others!).
+
+Have you made life choices that mean you will need to simply be satisfied with an okay grade? Be transparent with your groupmates and only make commitments you can keep.
+
+Although some developers work alone or nearly so, that is not the model for this course. Some of our learning goals require trying out ideas related to coordinating the work of groups of people.
+
+Project: Developing a Discord Bot as a Team
+Your team will develop, analyze, and deploy a Discord bot in ways that indicate your understanding of key course concepts. This overall project has been broken up into multiple tasks, each building on the previous.
+
+Bot Project Task #1
+Task
+Set up your project environment
+Due
+Wednesday, January 21, 11:59 pm Pacific Time
+Deliverables
+You are done with task 1 if you have a GitHub project environment, a Discord test server for yourself, and a Discord deployment server set up for your group, with all group members and Dr. Champion able to access both the project environment and your group's deployment server. This is a <60 minute task; don't over-complicate it!
+Turn In
+A screenshot of your individual Discord test server, a screenshot of your Discord group deployment server, and a screenshot of your GitHub project environment.
+Steps
+
+Devise a team name. (in class)
+Create a GitHub project environment (one per group) to match the name. Fork the example to create a group-level repository, and create a Kanban board to track work associated with your fork; it's ok to just use the provided Kanban template. (in class) Some screenshots of the process Make sure your board is part of the class organization and you enable 'issues' when you create the Github Repository so that Dr. Champion can add issues you will track on your Kanban board.
+Create a personal fork of your team's fork.
+Create a Discord deployment server (one per group) (in class). Some screenshots of the process and Discord has a how-to page as well.
+Create a Discord test server (one per student).
+Update your group's GitHub repository settings and README.md so that the front page reflects the state of your project.
+Add some ideas to your Kanban board reflecting what you might like a discord bot to do (brainstormed ideas are great)
+All group members and Dr. Champion need invites to and should join all group environments.
+Ping Dr. Champion in Discord to tell her you're done. She does not want to install your bot, she only wants to be a member of your server!
+Tips
+Feel free to add customizations / tweak the icons (it will help you tell your environments apart from your classmates')
+Feel free to use AI tools as a tutor or source for debugging any issues that come up.
+Your Discord token needs to be kept private. If you keep your repository private, you can save your token in your .env file. But a repository that is publicly visible can't have a discord token in it. If the repository is public, you can launch the codespace, then edit the .env file, and then launch your app.
+
+Bot Project Task #2
+Task
+Version 0.1 of your bot
+Due
+Friday, January 23rd, 11:59 p.m. Pacific time
+Deliverables
+You are done with task 2 if you have:
+cloned your group repository from our class organization
+deployed a working Discord bot in your individual test environment
+deployed a working Discord bot in your team's deployment environment ('working' in this case means, able to create the simple interaction shown in the tutorial).
+refined your brainstormed bot ideas into user stories
+Turn In
+2 Screenshots with a visible chat history which demonstrates that this is the case: one for your group deployment of the bot, one for your personal test server version of the bot.
+Steps
+
+We will be using Codespaces in GitHub to deploy your bot. This means all of your work goes on in the cloud without impacting your computer. However, it's not the only way to do things; if you would prefer a different working environment, you might be interested in these alternate environment instructions.
+Your codespaces hostname goes into the Discord Developer portal (same place you got your tokens) in the box 'Interactions Endpoint URL'
+
+Bot Project Task #3
+Task
+Version 1.0 of your bot
+Due
+Friday, January 30, 11:59 p.m. Pacific time
+Deliverables
+You are done with task 3 if you have each completed at least one of the user stories you developed -- or which were supplied by Dr. Champion -- for your first sprint and successfully deployed the updated bot to your group deployment environment for Dr. Champion to review. Tag the code so that it is clear which version is 1.0. See list of steps for all the items you'll be graded on.
+Turn in
+1) A screenshot of version 1.0 of your bot in action in the group environment, depicting the feature you implemented in your user story and 2) an estimate of how long it took you to do the work (just a sentence with your Canvas screenshot is plenty).
+Steps
+
+In sprint planning, assign one of the user stories written by Dr. Champion or by the team to each member of the group.
+During the sprint, resolve that user story.
+Commit and test often, with clear commit messages.
+Open a pull request to merge your branch into the team's main.
+Review your pull requests for conflicts.
+Merge code and tag a release when done with the sprint scope with release notes and updates to your project description and README.md
+Update your Kanban board and mark stories as resolved (make sure they are well-formatted and complete user stories...)
+Deploy your version 1.0 into the group deployment environment
+Make sure any issues with the previous submissions are resolved.
+Tips
+The exact path your project takes will be different from other groups at this point. Be ready to sort through conflicts using your group chat or in standups!
+Feel free to use AI tools as a tutor, as a rapid prototyper, for code review, and as a source for debugging any issues that come up.
+If your code lands later and you miss the 1.0 tag, or you discover bugs after the tag has happened, you can tag a new release of 1.0.1, 1.0.2 (etc.)
+
+Bot Project Task #4
+Task
+Analyze the architecture of your assigned bot
+Due
+Friday, February 6, 11:59 p.m. Pacific time.
+Deliverables
+You are done with Task 4 if your group has written an architectural guide and added it to your main repository on GitHub (ARCHITECTURE.md). All group members should have made at least one substantive commit to the guide to receive credit. See list of steps for all the items you'll be graded on.
+Turn in
+No need to turn in something for this; Dr. Champion should be able to grade your work right out of GitHub.
+Steps
+
+Think about the levels or facets of system architecture involved in your project.
+Identify a layer or aspect for each group member to cover.
+Each team member should do at least one diagram from the following types: data flow diagram (DFD), activity diagram, system context diagram, network diagram, control-flow graph, class diagram, use case diagram. If your chosen diagram is trivial, you should do more than one to receive full credit.
+Be concise and accurate in your description and clear in your diagrams. Follow the linked instructions as best you can; Miro is a good tool for this, but you can use whatever tool you like; it's also possible to write diagrams in markdown in GitHub.
+Tips
+Divide up the work so that everyone has a piece to contribute
+Include both system architecture and code architecture.
+If you are short on ideas, here are a few: what patterns does your code use? If someone wants to add new functionality, how should they do that? How is npm involved? How does Codespaces work? How does your code make things happen in Discord? How is the network functioning?
+Consider different audiences: your future self, a curious customer for your bot, a future employer
+Feel free to use AI tools as a tutor or source for debugging any issues that come up, however you are responsible for the accuracy of the content.
+
+Bot Project Task #5
+Task
+Identify bugs, gaps, and technical debt in your bot and start closing the gaps
+Due
+Friday, February 13, 11:59 p.m. Pacific time
+Deliverables
+You are done with Task 5 if you have conducted an analysis of limitations and weaknesses in your assigned bot by (1) publishing a report to the main group repository (everyone from the group should contribute to a single report) and (2) creating user stories drawing from both the problems you've found and any new ideas for improving your bot that arise through this process. See list of steps for all the items you'll be graded on.
+Turn in
+No artifact turn-in required, Professor Champion will grade the state of your repository and project board.
+Steps
+
+Divide up the different perspectives on code analysis and code hardening into tasks for each group member, choosing one from the following:
+Examine your code for technical debt and code smells.
+Assess the cyclomatic complexity of the methods in your bot.
+Measure your cohesion and coupling (architecture diagrams might help with this!).
+Measure your test coverage.
+Build a threat model.
+Write a fuzzer to try to break functionality in your bot.
+Unit tests. Write at least 3, these are easy and quick.
+Smoke test. If you don't have one already, write a test that will call all the major functions in your bot and verify that core features are working.
+Implement continuous integration / continuous deployment for your bot.
+Your own idea about what the bot needs (propose a scope to Dr. Champion)
+Describe your efforts and findings in a shared code analysis report in your repo.
+Create user stories associated with your findings (at least 1 per person; you must write out the story yourself).
+Tips
+Think about how your bot has been used so far. What did your testers say? Did anyone try anything that didn't work or wasn't supported? Maybe that's a bug or feature request?
+Think back to when you were writing the bot. Did you cut any corners or implement something quick and dirty, planning to come back to it later?
+Think like a bad actor: what happens if you try to break your bot?
+Feel free to use AI tools as a tutor or source for debugging any issues that come up, however you are responsible for the content you turn in.
+
+Bot Project Task #6
+Task
+Release version 2.0
+Due
+February 27 (Friday), 11:59 p.m. Seattle time.
+Deliverables
+You are done with Task 6 if you have each completed at least one very large or three small user stories from your second sprint and deployed version 2 to your production environment for Professor Champion to review. Note the rubric on Canvas for this. Tag the code so that it is clear which version is 2.0. See list of steps for all the items you'll be graded on.
+Turn in
+A screenshot of version 2.0 of your bot in action with comments and links to your work, as well as reflections (see rubric)
+Steps
+
+In sprint planning, assign user stories to each member of the group. Note the rubric on Canvas for this task.
+During the sprint, resolve user stories. User stories should be well-formed: assigned, estimated, with specifications: inputs, outputs, acceptance criteria. Link them to the pull request.
+Commit often! Test often! Make sure your commit messages make sense.
+Open a pull request to merge your feature branch into the team's main branch.
+Review your pull requests for conflicts.
+Include an up-to-date SBOM with your release in a standards-compliant format.
+Merge code and tag a release when done with the sprint scope.
+Deploy your version 2.0 into the production environment.
+Update your Kanban board and issue release notes.
+Repository must be clean and clear. If you have files from previous releases, they should be clearly marked.
+Tips
+Feel free to use AI tools as a tutor or source for debugging any issues that come up.
+Be disciplined in your use of GitHub: use feature branches, pull requests, link pull requests and the user stories they resolve.
+Clean up your own messes: don't expect others to fix your conflicts.
+
+Bot Project Task #7
+Task
+Release version 2.1
+Due
+Thursday, March 19, 11:59 p.m. Pacific Time (Note that this is AFTER the demo because you will be incorporating feedback from the demo.)
+Deliverables
+You are done with Task 7 if you have each completed at least one medium sized (or two small, or many tiny) user stories from your third sprint and deployed version 2.1 to your production environment for Professor Champion to review. Tag the code so that it is clear which version is 2.1. See list of steps for all the items you'll be graded on.
+Turn In
+Screenshots of each new feature added for v2.1 and links to the user stories you completed.
+Steps
+
+In sprint planning, think about how your demonstration went and reflect on what refinements you'd like to make
+Assign user stories to each group member.
+Complete at least one well-defined and complete user story.
+Commit, test, merge as usual.
+Tag a release as 2.1 and update the SBOM
+Deploy version 2.1 and screenshot for turn-in purposes.
+Update your Kanban board and release notes.
+Add a time estimate and reflection as prompted in the assignment.
+Repository must be clean and clear. If you have files from previous releases, they should be clearly marked.
+Tips
+You should expect that the grading for 2.1 will be less forgiving than the grading for 2.0, since you are now very familiar with the processes and requirements.
+Your group might want to submit this early to boost your finals week flexibility.
+Feel free to use AI tools as a tutor or source for debugging any issues that come up.
+
+Demonstration of Bot 2.0
+You will demonstrate version 2 of your bot to the class in two ways: a live demo and a pre-made demo, as follows.
+
+Pre-made Demos
+Task: Record a pre-made demo of your bot (8-10 minutes).
+
+Due
+Monday, March 2nd, 11:59 p.m.
+Deliverables
+Each group member will record their own screencapture video of the bot in action with a voiceover.
+Turn In
+a video upload to Canvas (one per student).
+Live Demos
+Task: Conduct a live demo of your bot
+
+Due
+In class on Tuesday, March 3rd.
+Deliverables
+During your 10 minute slot, show your project. See list of steps for all the items you'll be graded on.
+Turn In
+no artifact -- just be present and prepared. The full group should expect to stand up front and be involved.
+Steps
+
+I'll determine an order for presentation
+Make sure your team has discussed how to present the work, including logistics and assignments.
+Who will do what?
+What did you learn about how to demo your bot 'live' from making your pre-recorded demo?
+If you have a 'two-player' or 'observers and contestants' type features, how will you demonstrate the two players or multiple views?
+If you have some randomness in behaviors, how will you trigger / display all of the features?
+Slides are not necessary, but a view of your bot in action is.
+To avoid awkwardness around switching laptops, the podium computer will drive the projector. However, you will present from your own computer. To accomplish this, all presenting laptops will join a Zoom room and screenshare to present.
+We'll allow time for questions / clarifications after the presentation.
+Grade will be based on preparation (is the bot bug-free and rigged so that a demo can happen?) and participation (do all group members have a role to play?)
+Tips
+In case of live demo failure, be prepared to share your pre-made demos as a fallback so that you can get good feedback.
+
+Bot Feedback
+Task: give feedback to 2 other groups
+
+Due
+Wednesday, March 4, 11:59 p.m.
+Deliverables
+a paragraph of highly specific feedback for the group you are assigned; grading will be according to my detailed rubric for giving feedback in brief.
+Turn In
+a text submission on Canvas
+Tips
+I will assign you to give feedback to two projects from other groups.
+You will work individually; each group will get feedback from multiple peers as well as from me.
+If you're not sure what to write based on the demo you saw, take a look at the group's repository and offer feedback based on the code and documentation you see.
+The feedback should be your view and grounded in your observations: do not use AI tools for this assignment.
+
+Reflection on Software Engineering and the Bot Project
+Due
+Sunday, March 22, 11:59 p.m. Pacific Time
+See the brief reflection rubric for details on my expectations in terms of the content of the reflection. A successful essay will do the following things:
+
+Use content and concepts from the course.
+Use evidence from your experience and the bot project. Mention commit IDs, line numbers, dates & times as appropriate.
+Cite your sources; these sources must be real, they must provide support for the statements associated with the citation, and they must be viewable by me. Note that AI tools are notorious for fabricating these and use of AI tools for this assignment is forbidden.
+Be 1000-1500 words. Under 800 is unlikely to achieve the depth I am seeking here, and over 1600 words is unfair to others.
+Do not use AI tools.
+If you are not sure what to write, think about what happened in the project and choose some of these prompts as jumping off points (do not treat the following as questions to answer in order!). What kind of work did you end up doing, and how well did you do? Was the project easy or hard, which parts, how, and why? How did the analysis go, and what did you learn? Walk through each topic we covered. How did course concepts apply (or fail to apply) to the situations you faced in developing your bot? Did anything surprise you or change your mind during the project? Did you experience any failures or problems? How did you solve them? Based on your experience, what is your advice for the students who take this course next? What did you learn about yourself and the ways you prefer to work?
+
+Do not write in a long single paragraph or send me a list of bullets; instead, write a standard essay with an introduction, key points, and conclusion. Choose and use a formatting standard and stick to it (APA, Chicago, ACM, etc.). Do not use AI tools. Do use examples and evidence. This should be an essay that only you could write, because it's about specific events in your experience of the course.
+
+Turn in
+a well-formatted essay via Canvas
+
+Grading
+I will follow the very detailed grading rubric described on my assessment page. Please read it carefully. I will assign grades for each of the following items on the UW 4.0 grade scale according to the weights below:
+
+In-class activities, including labs and case discussion: 50%
+Sprint 1: 10%
+Sprint 2: 15%
+Sprint 3: 15%
+Presentation (Includes Demo, Pre-made Demo, and Feedback): 5%
+Reflection: 5%
+Impact of Missing Class If you must miss class, must be late, or must leave early, file the class absence form to alert me. Not filing this form ('no call, no show') will impact your in-class activities grade. Advance notice lets you avoid a penalty, but it does not serve as a makeup. There is no direct way to make up for missing in-class activities. Instead, you can expect to be called upon more often in subsequent classes to balance out your participation. Please note that if you miss too many classes, it will eventually become impossible to receive full credit for the in-class activities portion of the grade as I will not be cold calling the same person an excessive number of times in a single class session.
+
+Standup participation is equivalent to answering one question in class. There is no way to directly make up missing a standup meeting with your group -- you may find it useful to share an update on Discord, but there is no substitute for the synchronous and timely participation in a standup.
+
+Lab completion is equivalent to answering two questions in class; labs may be more challenging for some students than others and can be completed outside of class.
+
+Grade Questions Everyone makes mistakes and I want to fix mine as quickly as possible. If you have questions about a grade, book a private timeslot on my calendar within 1 week of the grade being released. In a grade consultation session, I will ask you to take the lead: show me in specific detail how your work fulfills the rubric for the assignment type overall, how you fulfilled the criteria for the specific assignment, and how your work meets the learning goals of the course.
+
+Mapping Percentage to the 4.0 Scale Instructors have discretion in how we make use of the 4.0 grading scale; we select the weight for each element of the course, the number of points available, and we decide how best to map a percentage of those points into the 4.0 system. This mapping, and the evenness of spacing within the mapping, may vary from class to class, and it may be quite different from what you are accustomed to seeing elsewhere at UWB (or feel unnatural, if you grew up as I did, receiving letter grades!). For this quarter of this class, I will map an overall 97.0% to a 4.0 and a 60.0% to a 0.7, with even spacing in between. This means to receive a 2.0 for the course, you need a 74.6% in the class. Doing the bare minimum is a high-risk approach (what if life gets busy or messy later in the quarter?), and I don't recommend it. Instead, come to class prepared and do all the work on schedule.
+
+Late Policy With respect to Bot Project Tasks 1-6, note that the assignments are due Fridays at 11:59 p.m. Pacific time. Among these 6 project tasks, you may choose one task for which you want to use one 48-hour extension per quarter, no questions asked. Use Canvas to make your request so that it is private and trackable. I suggest not using your extension unless you cannot avoid it (you might need it later!). Late completion of activities and tasks will lead to a 20% penalty per 48 hour period. Some tasks include a requirement that screenshots be submitted; these are either on time or they're not. Note that assignments in this class tend to build upon one another; being late with an assignment means less time to do the next stage. In addition, the group nature of the assignments means that if your work lands late, you may need to work much harder to resolve code conflicts and coordination problems. Do not expect your groupmates to do extra work to accommodate your need for an extension.
+
+No extension is possible for the Demo and Feedback assignments as those involve coordinating the entire class community and have very tight timing. No extension is possible for the Reflection assignment because it sits at the very end of the quarter and I must submit grades on time.
+
+If you experience a severe or extraordinary interruption to your ability to complete class work in a timely manner, I expect to follow the UWB policy around incompletes and to work with you, the advising office, and the disability services office as required to navigate your difficult situation.
+
+Schedule
+Sprint 1 -- Planning Phase
+January 6 (Tuesday): Introduction to the Course, Software Engineering, and SDLC
+Before Class
+
+Watch the 'Introduction to CSS 360' video. [6m]
+Read over the syllabus (this document!) and be ready to ask questions.
+In-class Goals
+
+Review class structure and plan for the quarter
+Dive in on content: what is software engineering? What is the software development life cycle?
+Start the class checklist
+Time estimation Round 1 exit ticket
+In-class materials
+
+Slides
+Optional Materials
+
+Interested in how this broad idea of a Software Development Lifecycle then gets used to advance our thinking via research? Check out this poster example using a generic SDLC customized for research software as a way to organize our thinking about how to develop software for research: Yehudi Y, Cashman M, Felderer M, Goedicke M, Hasselbring W, Katz DS, et al. Towards Defining Lifecycles and Categories of Research Software. deRSE25 Conference Proceedings. 2025;doi:10.5281/zenodo.15002661. Poster Link
+Interested in how security gets integrated with the Software Development Lifecycle? Read: A. Wee, A. Kudriavtseva and O. Gadyatskaya, ""Have Heard of it": A Study with Practitioners on Adoption of Secure Software Development Frameworks," 2024 IEEE European Symposium on Security and Privacy Workshops (EuroS&PW), Vienna, Austria, 2024, pp. 626-633, doi: 10.1109/EuroSPW61312.2024.00076. Paper Link
+January 7 (Wednesday): DUE: Class Checklist
+Required Task: Complete the class setup checklist, linked on Canvas. This will take as much as 90 minutes (and includes a tutorial on JavaScript) so please plan in advance.
+
+As with most other assignments, you must complete this task by 11:59pm Seattle time.
+
+January 8 (Thursday): Organizing Patterns: Agile, Waterfall, and All That
+Before Class:
+
+Read Reading Note 1 <-- cold call questions are in here!
+Watch the lecture video Organizing Patterns: Agile, Waterfall, and All That Part 1
+and watch Part 2 (this fixes the missing chunk in Part 1).
+Read the Agile Manifesto and the 12 Principles.
+Read Chapter 1 from The Mythical Man Month or the fulltext on Canvas.
+In-class Goals
+
+Class Discussion (see reading note)
+Groups assigned and announced.
+Group Discussion - Scenario matching (see reading note)
+Time estimation Round 2 exit ticket
+In-class Materials
+
+Class Slides
+Miro Discussion Boards
+
+Optional Materials
+
+Interested in even more specifics about Agile and the methodology? IBM offers a Coursera Course on this topic called Introduction to Agile Development and Scrum.
+We'll be reading parts of Frederick P. Brooks' book Mythical Man-Month -- you might be curious to read his pre-Agile take on the need for a prototyping approach in software engineering in Chapter 11 titled 'Plan to Throw One Away' -- the source of his widely-quoted maxim "Plan to throw one away; you will, anyhow."
+Interested in Conway's Law? Check out this blog post from Martin Fowler
+
+Sprint 1 -- Execution Phase
+January 13 (Tuesday): The Problem of Coordination (Git, GitHub, and Going Global)
+Before Class
+
+Read Reading Note #2
+Read Chapter 2 of Mythical Man Month (Access issues? Try accessing the book via the UW Library, or the fulltext on Canvas)
+Read A very short history of Git
+Watch Video and Read Blog Post describing distinction between Git and GitHub [9m]
+Watch my lecture on How to Read a Software Engineering Research Paper [15m]
+Read this research paper: Helena Tendedez, Maria-Angela Ferrario, Jon Whittle. 2018. Software Development and CSCW: Standardization and Flexibility in Large-Scale Agile Development. In Proceedings of the ACM on Human-Computer Interaction, Vol. 2, CSCW, Article 171 (November 2018). ACM, New York, NY. 23 pages. Download Here (or use this Canvas link) (15-30m)
+
+In Class Goals:
+
+Finish Reading Note 1 as needed
+Discuss Reading Note 2
+Standup
+Lab: Runestone Academy 'GitKit' sections 2.3, 2.5, 2.6, 2.7, 2.8, and 2.9. We'll start on the next lab if we have time.
+Use Chrome for best results.
+The Lab will ask you for the name of our class clone of the project to use as your remote. It's https://github.com/CSS360-2026-Winter/GitKit-FarmData2Git
+In Class Materials
+
+Class slides
+Miro discussion board
+
+Optional Materials
+
+Wikipedia entry on Git
+TED Interview with Linus Torvalds
+Read this article on commit messages, Tian et al. 2022.
+January 15 (Thursday) Learning from Failures and Fiascos Part 1
+Please be aware that cases of failure involve some visceral description, human tragedy, and loss of life. Although this material is disturbing, I include it because these are at times the stakes of failure in software engineering: our work touches on every part of life, including transportation, health, and safety systems.
+
+Before Class
+
+Read Reading Note #3
+Watch my mini-lecture on Learning From Failure (Part 1)
+Prepare Case Material
+The Oregon Whale Incident: https://www.youtube.com/watch?v=5kEXAHklDU8 and the Wikipedia article: https://en.wikipedia.org/wiki/Exploding_whale#Florence_whale
+Tacoma Narrows Bridge:
+Watch documentary footage: https://en.wikipedia.org/wiki/File:Tacoma_Narrows_Bridge_destruction.ogv
+Read article and watch 5m video about the event in this PBS article.
+Hyatt Regency walkway collapse: Read the Wikipedia article about the collapse: https://en.wikipedia.org/wiki/Hyatt_Regency_walkway_collapse -- note the 'Investigation' section and accompanying diagram
+Seagate Harddrive Failures and an unusual CVE
+Class Goals:
+
+Host a Teaching Demonstration
+Discuss Reading Note 3
+Standup
+Hands-on / triage issues with Task 1
+Class Materials:
+
+Miro discussion board
+Optional Reading:
+
+If you'd like to read about Brooks' idea of the roles in a software development team, read Chapter 3 of The Mythical Man Month; we won't cover this in class.
+If you'd like to read about Brooks' idea of developing a coherency in operating system architecture, read Chapter 4 of The Mythical Man Month; we won't cover this in class.
+If you are curious about the Tacoma Narrows Bridge Collapse, you might enjoy the Wikipedia article
+If you can't get enough of the exploding whale incident, it also has a Wikipedia article
+If you'd like to hear more about the Regency Collapse, this podcast makes key points in a compelling way: https://timharford.com/2022/03/cautionary-tales-death-on-the-dance-floor/ [47m]
+If the idea of learning through failures is of interest to you I recommend the books Success Through Failure and To Engineer is Human, both by Henry Petroski.
+January 18 (Sunday)
+Lab 1 is Due, 11:59 p.m.
+
+January 20 (Tuesday) Learning from Failures and Fiascos Part 2
+Before Class
+
+Read Reading Note #4
+Watch my mini-lecture on Learning From Failure (Part 2) [15m]
+Prepare Case Material
+Read how Mashable covered the Google Cloud outage
+Read the Register's take on what happened
+Read Google's analysis
+Class Goals:
+
+Finish Reading Note 3 (CVE + Synthesis)
+Discuss Reading Note 4
+Lab: Runestone Academy GitKit 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9
+Standup
+Hands-on / triage issues with Task 1 (due Wednesday) and Task 2 (due Friday!)
+If you're done with Task 2 or well on your way, start coming to consensus in your group with a theme for your bot: what kind of product are you making?
+
+Class Materials:
+
+Miro discussion board
+Optional Materials:
+
+This episode of the Cautionary Tales podcast examines assumptions about work and return to office.
+Brooks uses the Tower of Babel as a case study in software project failure in Chapter 7 of The Mythical Man-Month
+Marian Petre: How expert programmers think about errors
+Wednesday, January 21
+Bot Task 1 is Due, 11:59 p.m.
+
+January 22 (Thursday) -- Gathering and Analyzing Requirements
+Before Class
+
+Read Reading Note #5
+Watch my 2 lectures on requirements: Requirements Part 1 AND Requirements Part 2
+Prepare Case Material
+Read: Joseph Seering, Manas Khadka, Nava Haghighi, Tanya Yang, Zachary Xi, and Michael Bernstein. 2024. Chillbot: Content Moderation in the Backchannel. Proc. ACM Hum.-Comput. Interact. 8, CSCW2, Article 402 (November 2024), 26 pages. https://doi.org/10.1145/3686941 Canvas Link
+Y. A. Kustiawan and T. Y. Lim, "User Stories in Requirements Elicitation: A Systematic Literature Review," 2023 IEEE 8th International Conference On Software Engineering and Computer Systems (ICSECS), Penang, Malaysia, 2023, pp. 211-216, doi: 10.1109/ICSECS58457.2023.10256364.Canvas Link
+Class Goals:
+
+Discuss Reading Note #5
+Standup
+Hands-on / triage issues with Task #3
+Update your repository README.md file to reflect the theme of your bot
+
+Class Materials
+
+Miro discussion board
+Optional Reading:
+
+You might enjoy this blog post, it has a nice take on the topic of Requirements.
+Brooks talks about requirements discipline in Chapter 5 of The Mythical Man-Month as well as perspectives on documenting and disseminating design decisions in Chapter 6.
+Alexander Lill, André N. Meyer, and Thomas Fritz. 2024. On the Helpfulness of Answering Developer Questions on Discord with Similar Conversations and Posts from the Past. In Proceedings of the IEEE/ACM 46th International Conference on Software Engineering (ICSE '24). Association for Computing Machinery, New York, NY, USA, Article 58, 1–13. https://doi.org/10.1145/3597503.3623341
+Keerthana Muthu Subash, Lakshmi Prasanna Kumar, Sri Lakshmi Vadlamani, Preetha Chatterjee, and Olga Baysal. 2022. DISCO: a dataset of discord chat conversations for software engineering research. In Proceedings of the 19th International Conference on Mining Software Repositories (MSR '22). Association for Computing Machinery, New York, NY, USA, 227–231. [FIX Available on Canvas] https://doi.org/10.1145/3524842.3528018
+January 23 (Friday)
+Bot Task 2 (version 0.1) is Due! Lab 2 is due!
+
+January 27 (Tuesday) -- Design Part 1: Patterns
+Before Class
+
+Read Reading Note 6
+Watch my mini-lecture on Patterns
+Prepare to answer the questions from the Reading Note using the following resources:
+Code patterns from the Wikipedia article on Software design patterns
+Dark patterns from the Deceptive Design list
+Vulnerability patterns from the Common Weakness Enumeration Top 25.
+Class Goals:
+
+Discuss Reading Note 6
+Standup
+Runestone Academy GitKit 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8
+If time: Line by Line discussion of Bot Sample Code
+Hands-on / triage issues with Bot Task 3
+
+
+January 29 (Thursday) -- Design Part 2: Architecture and Systems
+Before Class
+
+Read Reading Note 7
+Watch my mini-lecture on Software Architecture
+Watch my mini-lecture on Diagramming
+Do the readings:
+Martin Fowler's blog post on Software Architecture
+This paper -- it is a review of architecture trends 2020-2024.
+The Wikipedia article on Kubernetes -- you can stop reading when you reach the subsection 'Control plane' in the 'Concepts' section -- as the article itself warns, this article goes into a lot of detail.
+Class Goals:
+
+Discuss Reading Note 7
+Standup
+Hands-on / triage issues with Task #3
+Runestone Academy GitKit 5.1, 5.2, 5.3, 5.4, 5.5, 5.6.
+
+Optional Reading:
+
+This guide from Microsoft lists several examples of architectural patterns and how they're fulfilled in an Azure context
+This guide on containerization from Geeks For Geeks is a good resource as well.
+January 30 (Friday)
+Bot Task 3 (version 1.0) is Due!
+Lab 3 (Ch 4) is due!
+
+Sprint 2 -- Planning Phase
+February 3 (Tuesday) -- Testing and CI / CD
+Before Class
+
+Read Reading Note 8
+Watch my mini-lecture on Testing and CI/CD
+Read this chapter from Software Ecosystems: Tooling and Analytics by Mairieli Wessel, Tom Mens, Alexandre Decan, and Pooya Rostami Mazrae
+Class Goals:
+
+Discuss Reading Note 8
+Team practice: Calculating Cyclomatic Complexity
+Class Activity: Graybox Testing (be ready to invite a tester to a Discord chat room to use your bot)
+Standup
+Hands-on / triage issues with Task 4 (and 5
+
+
+Wednesday, February 4
+Lab 4 (Ch 5) is due
+February 5 (Thursday) -- Security and Threat Modeling
+Before Class
+
+Read Reading Note 9
+Read the Threat Modeling Manifesto
+Read Oosthoek, Cable, and Smaragdakis A tale of two markets: Investigating the ransomware payments economy
+Watch my mini-lecture on Security and Threat Modeling
+Class Goals:
+
+Discuss Reading Note 9
+Activity: Threat modeling
+Standup
+Hands-on / triage issues with Tasks 4 and 5
+Introduce 'planning poker'
+Examine your kanban boards and add additional stories
+Take a look at the user stories in your kanban and play a round of planning poker with them
+February 6 (Friday)
+Bot Task 4 is due!
+Lab 5 is due! Extra Credit, on Canvas
+February 10 (Tuesday) -- Evidence Part 1: Static Analysis, Fuzzing, and Scanning
+Before Class:
+
+Read Reading Note 10
+Watch my mini-lecture on Static Analysis, Fuzzing, and Scanning
+Watch this lecture from Marcel Bohme: "On the Surprising Efficiency and Exponential Cost of Fuzzing"
+Read Chapter 9 in Oram & Wilson's Making Software: An Automated Fault Prediction System, chapter written by Weyuker and Ostrand
+Class Goals:
+
+Discuss Reading Note 10
+Standup
+Run ESLint on your code or an equivalent code analysis tool (pylint?). What issues did you find? Any good user stories? This might help you with task 5! This is Lab 6.
+Introducing planning poker
+Getting started with Task 5
+
+Optional Resources
+
+If you didn't follow the Fuzzing video, try this overview of Fuzzing from David Brumley and then give the Bohme lecture another try :)
+The coverage of Fuzzing on Wikipedia is also quite good.
+This great paper describes using architectural and specification documents in predictions of vulnerabilities -- written by Poozhithara, Asuncion, and Lagesse here at UW Bothell
+
+
+February 12 (Thursday) -- Evidence Part 2: Evaluating Evidence, DevOps and Dora
+Before Class
+
+Read Reading Note 11
+Watch my mini-lecture on Evidence, DevOps, and DORA
+Do readings:
+Read only page 1 - 7 and 27 - 31 of this article from Flournoy, Lee, Wu, and Hicks.
+Read this introduction to Ch 1 and all of Ch 2 of Making Software, edited by Oram and Wilson.
+Read the Four Key DORA Metrics
+Class Goals:
+
+Discuss Reading Note 11
+Standup
+Hands-on / triage issues with Task 5
+
+
+February 13 (Friday)
+Lab 6 is due -- details are on Canvas.
+Bot Task 5 is due.
+
+Sprint 2 -- Execution Phase
+February 17 (Tuesday) -- Infrastructures and Supply Chains (Part 1)
+Case
+Left-pad
+Before Class
+
+Read Reading Note 12
+Watch my mini-lecture on Infrastructures and Supply Chains Part 1 (45m)
+Prepare Case Material
+Read Ars Technica's analysis
+Read NPM's account of the situation
+Read NPM & Left-pad: Have We Forgotten How to Program?
+Someone even wrote a snarky microservice
+Read AI's Impending Left-pad Scenario
+Class Goals:
+
+Discuss Reading Note 12
+Standup
+Co-working time on Bot Task 6
+
+
+February 19 (Thursday) -- Infrastructures and Supply Chains (Part 2)
+Case
+Log4J
+Before Class
+
+Read Reading Note 13
+Watch my mini-lecture -- Infrastructure and Supply Chains Part 2
+Prepare Case Material
+Read this account of the incident (from the GitHub blog) -- no need to watch the video, it's a bit long.
+Read the Wikipedia article on Dependency Hell
+Read the CISA webpage about SBOMs
+Read this blog post with a forecast on SBOMs
+Read this blog post explaining the dark matter critique of SBOMs
+
+Class Goals:
+
+Discuss Reading Note 13
+Lab 7 - SBOM
+Standup
+Hands-on / triage issues with Bot task 6
+
+
+February 20 (Friday)
+Lab 7 (SBOM) Due!
+February 24 (Tuesday) -- Quality, the -ibles, and Trade-offs
+Before Class
+
+Read Reading Note 14
+Watch my mini-lecture on Quality, the -ibles, and Trade-offs
+Prepare Case Material
+Read How to pay off Technical Debt from the 'I.M. Wright' blog
+Read Speed at the Cost of Quality by He et al (2025)
+Class Goals:
+
+Discuss Reading Note 14
+Standup
+Hands-on / triage issues with Task 6
+
+Optional Reading:
+
+Material in my lecture is adapted from my paper Qualities of Quality: A Tertiary Review of Software Quality Measurement Research
+February 26 (Thursday) -- Code review
+Before Class
+
+Read Reading Note 15
+Watch my mini-lecture on code review
+Read Ch 18 from Oram and Wilson's Making Software
+Alberto Bacchelli: How code review works (and doesn't) in the real world
+Read this article from Vijayvergiya et al (2024) on AI-Assisted code review.
+Class Goals:
+
+Discuss Reading Note 15
+In-class activity
+Standup
+Hands-on / triage issues with Bot Task
+
+
+February 27 (Friday)
+Bot Task 6 (version 2.0) is due.
+
+Sprint 3 -- Planning Phase
+March 2 (Monday)
+Pre-made demos of your bot are due today at 11:59 p.m. Pacific time.
+
+March 3 (Tuesday) -- Demo Day!
+Demo Day! Your demo of your bot should be done live in class today
+
+March 4 (Wednesday)
+Your bot demo feedback is due, 11:59 p.m. Pacific time.
+
+March 5 (Thursday): Costing, Estimation, and Maintenance
+Before Class
+
+Read Reading Note 16
+Watch my mini-lecture on Costing, Estimation, and Maintenance
+Read:
+Ch. 14 from Brooks' The Mythical Man-Month
+Ch. 27 from Oram and Wilson's Making Software
+
+Class Goals:
+
+Discuss Reading Note 16
+In-class activity: Estimation retrospective (Lab 8)
+Sprint planning
+Review the feedback you received
+Write user stories from this feedback
+Review any old user stories
+Key question: Which user stories will you do for the final sprint?
+Planning poker
+Optional Reading:
+
+Brooks describes the challenges of estimation throughout The Mythical Man-Month -- if you're interested in his discussion of estimating programming time, that's in Chapter 8
+
+Sprint 3 -- Execution Phase
+March 10 (Tuesday) - AI in the SDLC
+Lab 9 -- Software Engineering, AI, and the challenges of fine-tuning
+Before Class
+
+Read the Reading Note
+Read the release of alpaca
+Read the withdrawal of alpaca
+Read IBM's discussion of fine-tuning
+Read this description of how IBM and Amazon are positioning a suite of products for AI-powered SWE
+Read this account in Scientific American about limitations on AI as a code generator
+Class Goals
+
+Hands-on Model Fine-tuning
+Code walkthrough / behind the scenes
+Discussion while iterations run
+March 11 (Wednesday)
+Lab 8 due
+March 12 (Thursday) - Decomissioning, Handoffs, and Transitions
+Case
+The XZ vulnerability
+Before Class
+
+Read Reading Note 17
+Watch my mini-lecture on Decommissioning, Handoffs, and Transitions
+Prepare Case Material
+Read the Wikipedia account of the xz vulnerability
+Read this post from Rob Mensching pointing out a key 'step 0' for the xz incident
+Read Everyone on the Internet Will Die, by Carl Ohman
+Read Your software will be rewritten, by Allan Vital
+Look around the Beyond the Bus Factor site, which offers a guide to thinking through resilience in projects (plan to spend about 15 minutes looking through what the site includes)
+Class Goals:
+
+Discuss Reading Note 17
+Standup
+Discuss plans for the end of the project
+Optional:
+
+This is a great presentation from Bogdan Vasilescu about dependency abandonment
+For alternatives to ending old projects, Kill it with Fire is a useful handbook for how to handle the modernization of legacy systems.
+This article from the New Stack gives a RedHat-focused early analysis of the xz incident
+March 16 (Monday)
+Lab 9 due
+March 17 (Tuesday)
+No class meeting. However, this is the designated timeslot for the final exam for this class. I strongly recommend that you plan to co-work with your group during this time (Professor Champion will run an open lab during this period).
+
+March 19 (Thursday)
+Bot Project Task 7 (Final version of your bot) due at 11:59 p.m. Pacific time.
+
+March 22 (Sunday)
+Reflection Due
+
+Administrative Notes
+UW Bothell STEM has a set of standard policies for undergraduates. In the case that one of the statements in this syllabus contradicts school or UW policy, of course school and UW policy prevail. If you see contradictions or issues with clarity, I hope you will share them with me ASAP so that I may resolve them for everyone's benefit.
+
+Teaching and learning after periods of disruption
+Global events have a tremendous impact on all of us. Many of you missed key portions of the K-12 experience due to the pandemic or have experienced substantial stress due to circumstances beyond your control. We may be struggling to recover our own mental and physical health. Many of us are developing a sense of a "new normal".
+
+As your instructor and colleague, I commit to do my best to approach the course in an adaptive, generous, and empathetic way. I ask that you try to extend a similar attitude towards everyone in the course. When you have questions, feedback, or concerns, please try to share them in an appropriate way. If you require accommodations of any kind at any time, please contact me.
+
+Your Presence in Class
+As detailed in section on case studies and discussion and in my detailed page on assessment, your homework in the class is to prepare for discussion as well as to work on projects. Case discussion and team standup are an important ways that I will assess your learning. Obviously, you must be in class in order to participate. If you need to miss class for any reason, please fill out the course absence form so that I know you are not coming and do not include you in my cold call list. In the event of an absence, you are responsible for obtaining class notes, handouts, assignments, etc.
+
+There are many students who have eagerly requested to join the class, but in some cases there are not enough seats. I want to include as many students in the class as possible. If we run out of space, I may need to drop anyone who misses the first two class sessions and try to replace them with unenrolled students who do attend. This is consistent with college policy and with the course description in the catalog.
+
+Devices in Class
+I ask you to stay focused and avoid distractions for yourself and your peers in the classroom. Spending class time gaming and shopping is a waste of your precious dollars and your precious minutes here --- live, face-to-face opportunities to learn are getting harder to find and they mean so much when we engage with them. That said, you are an adult, and I myself cannot imagine taking a class without being able to take notes on a device and look up topics as they come up. Learning to be present and to control our attention is part of being a modern adult. I promise not to spend class time goofing off online and I think you owe it to yourself to promise the same.
+
+Office Hours
+The best way to get in touch with me about issues in class will be in the Discord server via asychronous messages sent to one of the text channels. This is preferable because any questions you have can be answered in a way that is visible to others in the class.
+
+My available hours are visible in this calendar scheduling site. If my planned availability does not work for you, please contact me in the Discord server or over email to arrange a meeting at another time.
+
+Religious Accommodations
+Washington state law requires that UW develop a policy for accommodation of student absences or significant hardship due to reasons of faith or conscience, or for organized religious activities. The UW's policy, including more information about how to request an accommodation, is available at Religious Accommodations Policy. Accommodations must be requested within the first two weeks of this course using the Religious Accommodations Request form.
+
+Student Conduct
+The University of Washington Student Conduct Code (WAC 478-121) defines prohibited academic and behavioral conduct and describes how the University holds students accountable as they pursue their academic goals. Allegations of misconduct by students may be referred to the appropriate campus office for investigation and resolution. More information can be found online at https://www.washington.edu/studentconduct/
+
+Safety
+Call SafeCampus at 425-352-5359 anytime–no matter where you work or study–to anonymously discuss safety and well-being concerns for yourself or others. SafeCampus's team of caring professionals will provide individualized support, while discussing short- and long-term solutions and connecting you with additional resources when requested.
+
+Use of AI Tools
+In this course, students are permitted to use AI-based tools (such as UW's version of Copilot) on some assignments. The instructions for each assignment will include information about whether and how you may use AI-based tools to complete the assignment. All sources, including AI tools, must be properly cited. Use of AI in ways that are inconsistent with the parameters above will be considered academic misconduct and subject to investigation.
+
+Please note that AI results can be biased and inaccurate. It is your responsibility to ensure that the information you use from AI is accurate. Additionally, pay attention to the privacy of your data. Many AI tools will incorporate and use any content you share, so be careful not to unintentionally share copyrighted materials, original work, or personal information.
+
+Learning how to thoughtfully and strategically use AI-based tools may help you develop your skills, refine your work, and prepare you for your future career. If you have any questions about citation or about what constitutes academic integrity in this course or at the University of Washington, please feel free to contact me to discuss your concerns.
+
+Please note that I do not consider grammar/spellchecking to be a prohibited use of AI, even when other uses for AI are not allowed.
+
+Adapted from: UW sample syllabus statements.
+
+Academic Dishonesty
+This includes: cheating on assignments, plagiarizing (misrepresenting work by another author as your own, paraphrasing or quoting sources without acknowledging the original author, or using information from the internet -- including from AI tools -- without proper citation), and submitting the same or similar paper to meet the requirements of more than one course without instructor approval. Please note that fabricated citations are a form of academic dishonesty. Academic dishonesty in any part of this course is grounds for failure and further disciplinary action. The first incident of plagiarism will result in the student's receiving a zero on the plagiarized assignment. The second incident of plagiarism will result in the student's receiving a zero in the class.
+
+Disability Resources
+If you have already established accommodations with Disability Resources for Students (DRS), please communicate your approved accommodations through their processes at your earliest convenience so we can discuss your needs in this course.
+
+If you have not yet established services through DRS, but have a temporary health condition or permanent disability that requires accommodations (conditions include but not limited to; mental health, attention-related, learning, vision, hearing, physical or health impacts), you are welcome to contact DRS at 425-352-5426 or uwbdrs@uw.edu or disability.uw.edu. DRS offers resources and coordinates reasonable accommodations for students with disabilities and/or temporary health conditions. Reasonable accommodations are established through an interactive process between you, your instructor(s) and DRS. It is the policy and practice of the University of Washington to create inclusive and accessible learning environments consistent with federal and state law.
+
+Mental Health
+Your mental health is important. If you are feeling distressed, anxious, depressed, or in any way struggling with your emotional and psychological wellness, please know that you are not alone. College can be a profoundly difficult time for many of us.
+
+Resources are available for you:
+
+UW 24/7 Help Line 1.866.775.0608
+https://wellbeing.uw.edu/topic/mental-health/
+https://www.crisistextline.org/
+https://www.uwb.edu/student-affairs/counseling
+https://www.veteranscrisisline.net
+Other Student Support
+Any student who has difficulty affording groceries or accessing sufficient food to eat every day, or who lacks a safe and stable place to live, and believes this may affect their performance in the course, is urged to contact campus advising and counseling services for support. Furthermore, please notify the professors if you are comfortable in doing so. This will enable us to provide any resources that we may possess. Please also note the student food pantry: the UWB Husky Pantry.
+
+Credit and Notes
+This course was inspired by the course notes shared with me authored by Jeff Stride, Arkady Retik, and Hazeline Asuncion. In developing the content and approach, I drew from research into effective teaching techniques and challenges facing computer science students, including:
+
+Oram A, Wilson G. 2011. Making software : what really works, and why we believe it. 1st ed. Sebastopol, Calif: O'Reilly.
+Wilson, G., Aranda, J., Hoye, M., Johnson, B.: Experience report: It will never work in theory. IEEE Software 41(03), 80–82 (May 2024). https://doi.org/10.1109/MS.2024.3362649
+Liao, Y. C., & Ringler, M. (2023). Backward design: Integrating active learning into undergraduate computer science courses. Cogent Education, 10(1). https://doi.org/10.1080/2331186X.2023.2204055
+K. Banweer and D. A. Trytten, "WIP: Code Insight: Combining Code Reading and Debugging Practices for Active Learning in Entry-Level Computer Science Courses," 2024 IEEE Frontiers in Education Conference (FIE), Washington, DC, USA, 2024, pp. 1-5, doi: 10.1109/FIE61694.2024.10893296.
+K. Beck (2025). Legitimate Peripheral Participation. Blog post on Substack.
+
+Source: https://wiki.communitydata.science/Software_Engineering_(Winter_2026)
+Last edited on wiki: 22 March 2026
