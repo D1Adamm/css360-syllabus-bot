@@ -72,11 +72,10 @@ export function HomePage() {
           Prototype Scope
         </h2>
         <p className="scope-notice__text">
-          This application is currently a frontend prototype. Navigation, layout,
-          and placeholder pages are in place, but live model inference, training
-          pipelines, and data persistence are not running yet. Future phases will
-          add syllabus exploration, seed data creation, model comparison, and
-          evaluation features.
+          This application is a frontend prototype for classroom research. Navigation, syllabus
+          exploration, seed data creation, simulated model comparison, local evaluation, and
+          results aggregation are implemented. Live model inference, training pipelines, and
+          server-side data storage are not part of the current build.
         </p>
       </section>
     </>
