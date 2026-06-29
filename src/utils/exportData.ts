@@ -1,4 +1,4 @@
-import type { SeedExample } from '../types';
+import type { EvaluationRecord, SeedExample } from '../types';
 
 function downloadFile(content: string, filename: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
@@ -10,8 +10,8 @@ function downloadFile(content: string, filename: string, mimeType: string): void
   URL.revokeObjectURL(url);
 }
 
-export function exportAsJson(seeds: SeedExample[], filename: string): void {
-  const content = JSON.stringify(seeds, null, 2);
+export function exportAsJson<T>(data: T[], filename: string): void {
+  const content = JSON.stringify(data, null, 2);
   downloadFile(content, filename, 'application/json');
 }
 
@@ -34,4 +34,8 @@ export function exportCompleteJsonl(seeds: SeedExample[]): void {
 
 export function exportUserSeedsJsonl(seeds: SeedExample[]): void {
   exportAsJsonl(seeds, 'syllabus-user-seed-data.jsonl');
+}
+
+export function exportEvaluationsJson(evaluations: EvaluationRecord[]): void {
+  exportAsJson(evaluations, 'syllabus-evaluations.json');
 }
