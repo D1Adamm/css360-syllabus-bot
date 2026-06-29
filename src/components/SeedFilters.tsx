@@ -21,6 +21,8 @@ interface SeedFiltersProps {
   onExportFilteredJson: () => void;
   onExportFilteredJsonl: () => void;
   onExportCompleteJsonl: () => void;
+  onExportUserJsonl?: () => void;
+  userSeedCount?: number;
 }
 
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard'] as const;
@@ -53,6 +55,8 @@ export function SeedFilters({
   onExportFilteredJson,
   onExportFilteredJsonl,
   onExportCompleteJsonl,
+  onExportUserJsonl,
+  userSeedCount = 0,
 }: SeedFiltersProps) {
   const searchId = 'seed-dataset-search';
   const sortId = 'seed-dataset-sort';
@@ -191,7 +195,28 @@ export function SeedFilters({
           >
             Export complete dataset as JSONL
           </button>
+          {onExportUserJsonl && (
+            <button
+              type="button"
+              className="seed-filters__export-button"
+              onClick={onExportUserJsonl}
+              disabled={userSeedCount === 0}
+              title={
+                userSeedCount === 0
+                  ? 'Create examples in the Seed Data Builder to enable this export.'
+                  : undefined
+              }
+            >
+              Export user-created examples as JSONL
+            </button>
+          )}
         </div>
+        {onExportUserJsonl && userSeedCount === 0 && (
+          <p className="seed-filters__export-hint">
+            No user-created examples yet. Use the Seed Data Builder to add examples for
+            user-only export.
+          </p>
+        )}
       </div>
     </section>
   );

@@ -1,0 +1,380 @@
+[
+  {
+    "id": "comparison-001",
+    "question": "What should I do if I know I will miss class?",
+    "category": "Attendance",
+    "relevantSyllabusSection": "Course absence form and Impact of Missing Class",
+    "baseResponse": {
+      "text": "If you know you will miss class, email your instructor as soon as possible to explain the situation. Many professors allow makeup work or excused absences if you provide advance notice.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "Submit the course absence form at least one hour before class begins. Advance notice helps you avoid a no-call, no-show penalty, but filing the form does not create a makeup opportunity for missed in-class work.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "Submit the course absence form at least one hour before class begins. This gives advance notice and avoids a no-call, no-show penalty.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "Submit the course absence form at least one hour before class begins. Advance notice avoids a no-call, no-show penalty, but it does not create a makeup for missed in-class activities.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model assumes a generic university policy of emailing for makeup work. RAG and fine-tuned+RAG correctly state the absence form requirement and the key distinction that advance notice is not a makeup. The fine-tuned model knows the form requirement from seed examples but may omit the no-makeup clarification."
+  },
+  {
+    "id": "comparison-002",
+    "question": "Is there a required textbook?",
+    "category": "Course Basics",
+    "relevantSyllabusSection": "Textbook",
+    "baseResponse": {
+      "text": "Most university courses require a textbook that you can purchase from the campus bookstore or rent online. Check the syllabus or Canvas for the specific title and edition.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "No. There is no required textbook for CSS360. Course materials come from a wide range of sources that should be free when accessed through Canvas or the UW Library Proxy.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "No. There is no required textbook. Materials should be free through Canvas or the UW Library Proxy.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "No required textbook. Course materials come from various sources and should be free through Canvas or the UW Library Proxy. Notify the instructor on Discord if you have trouble accessing any material.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model gives a generic answer about textbooks. RAG and combined models state the syllabus fact directly. Fine-tuned alone is concise and mostly correct but may omit the access-detail about notifying the instructor."
+  },
+  {
+    "id": "comparison-003",
+    "question": "Are there exams in this course?",
+    "category": "Exams and Quizzes",
+    "relevantSyllabusSection": "Assignments",
+    "baseResponse": {
+      "text": "Most college courses include a midterm and a final exam. Check the syllabus schedule or ask the instructor about exam dates and format.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "There will be no exams in this course. Any quizzes will be short and low-stakes. Assessment comes from in-class activities, project sprints, a presentation, and a reflection.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "There are no exams in this course. You will have project work, in-class activities, and a reflection instead.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "No exams. The course uses short low-stakes quizzes, in-class activities, sprint projects, a presentation, and a reflection. Do not assume no exams means no quizzes.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "A common confusion is equating no exams with no assessments. The base model assumes traditional exams exist. RAG and combined models distinguish exams from quizzes and list actual assessment types."
+  },
+  {
+    "id": "comparison-004",
+    "question": "When are assignments normally due?",
+    "category": "Assignments",
+    "relevantSyllabusSection": "Assignments",
+    "baseResponse": {
+      "text": "Assignment deadlines vary by course. Many instructors set due dates at midnight in their local time zone. Check Canvas for the exact due time on each assignment.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "Unless otherwise noted, all assignments are due at the end of the day: 11:59 p.m. on the listed due date in the Pacific time zone.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "Assignments are normally due at 11:59 p.m. on the due date unless the syllabus says otherwise.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "Unless otherwise noted, assignments are due at 11:59 p.m. Pacific time on the listed due date. Bot project tasks 1–6 are due Fridays at 11:59 p.m. Pacific.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model hedges with generic advice. RAG gives the exact default deadline and time zone. Fine-tuned knows the 11:59 p.m. pattern but may omit Pacific time. Combined adds project-task specifics."
+  },
+  {
+    "id": "comparison-005",
+    "question": "How should I contact the instructor?",
+    "category": "Communication",
+    "relevantSyllabusSection": "Contact",
+    "baseResponse": {
+      "text": "Email is usually the best way to reach your professor. Include your course number and a clear subject line. Office hours are also a good option for longer questions.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "Preferred contact order: public Discord messages first, then private Discord, then private Canvas messages. Email is only if absolutely necessary. Grade-related discussion must happen through Canvas, not Discord or email.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "Start with a public Discord message so classmates can benefit. Use Canvas for grade-related discussion. Email only if absolutely necessary.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "Contact order: public Discord, private Discord, private Canvas. Email only if absolutely necessary to kaylea@uw.edu. All grade-related discussion must be through Canvas.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model defaults to email, which is the opposite of this course's preference. RAG and combined models preserve the ordered contact channels and the Canvas requirement for grades."
+  },
+  {
+    "id": "comparison-006",
+    "question": "Can I make up an in-class activity?",
+    "category": "Attendance",
+    "relevantSyllabusSection": "Impact of Missing Class",
+    "baseResponse": {
+      "text": "If you miss an in-class activity, ask your instructor about makeup options. Many courses offer alternative assignments or allow you to make up work within a reasonable timeframe.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "No. There is no direct way to make up missed in-class activities. Filing the absence form avoids a no-call, no-show penalty but does not serve as a makeup. You may be called upon more often in later classes to balance participation.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "There is no direct makeup for missed in-class activities. Submit the absence form if you will miss class, but that does not replace the activity.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "No direct makeup exists for missed in-class activities. The absence form prevents a no-call, no-show penalty but is not a makeup. Expect more cold calls in later classes to balance participation.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "This is a high-risk hallucination topic. The base model invents generic makeup policies. Syllabus-grounded responses clearly state no makeup and explain the participation-balancing approach."
+  },
+  {
+    "id": "comparison-007",
+    "question": "What happens if a project task is late?",
+    "category": "Late Work",
+    "relevantSyllabusSection": "Late Policy",
+    "baseResponse": {
+      "text": "Late submission policies depend on the instructor. Some courses deduct points per day late, while others do not accept late work at all. Contact your professor if you anticipate being late.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "Among Bot Project Tasks 1–6, you may use one 48-hour no-questions-asked extension per quarter via Canvas. Otherwise, late completion leads to a 20% penalty per 48-hour period. Late work can also create group coordination problems.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "You get one 48-hour extension on one of the six bot project tasks. After that, late work receives a 20% penalty per 48-hour period.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "Bot Project Tasks 1–6: one 48-hour no-questions-asked extension per quarter (request via Canvas). Other late work incurs a 20% penalty per 48-hour period. Late tasks can delay your group and create merge conflicts.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model gives vague generic policy. RAG states the one-extension rule, penalty rate, and group impact. Fine-tuned captures the extension and penalty but may omit Canvas request details."
+  },
+  {
+    "id": "comparison-008",
+    "question": "What do students do during standup?",
+    "category": "Standups",
+    "relevantSyllabusSection": "Standup Meetings",
+    "baseResponse": {
+      "text": "Standup meetings are common in agile teams. Students typically share updates on their progress, discuss blockers, and coordinate next steps with their group.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "In standup, each student answers three questions: what you did since the last standup, what you will do before the next standup, and whether you have any blockers. You must be present and participate during class and document standup work on Discord to receive credit.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "Answer three standup questions: what you did, what you will do next, and any blockers. Participate during class and document your update on Discord.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "Standup covers three questions: past work, upcoming work, and blockers. Be present in class, participate, and document your standup on Discord for credit.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model describes generic agile standups without course-specific credit requirements. RAG and combined models include the three questions and Discord documentation requirement."
+  },
+  {
+    "id": "comparison-009",
+    "question": "Can I use AI on every assignment?",
+    "category": "AI Policy",
+    "relevantSyllabusSection": "Use of AI Tools",
+    "baseResponse": {
+      "text": "AI tools are increasingly accepted in higher education. You can generally use ChatGPT or similar tools to help with assignments unless your instructor explicitly prohibits it.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "No. AI use depends on each assignment's instructions. Some assignments permit AI-based tools; others forbid them. The reflection assignment explicitly forbids AI tools. All permitted sources, including AI, must be properly cited.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "AI use varies by assignment. Check each assignment's instructions. The reflection does not allow AI tools.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "AI use is assignment-specific—read each assignment's instructions. The reflection forbids AI tools. Cite all sources including AI when permitted. Grammar/spellchecking is not considered prohibited AI use.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model overgeneralizes permissive AI use. Syllabus-grounded responses emphasize per-assignment rules and the reflection prohibition."
+  },
+  {
+    "id": "comparison-010",
+    "question": "How much time should I expect to spend on this course?",
+    "category": "Course Expectations",
+    "relevantSyllabusSection": "Class format and structure",
+    "baseResponse": {
+      "text": "A typical college course expects about 2–3 hours of study per credit hour per week. For a 5-credit class, plan for roughly 10–15 hours of work outside class.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "As a 5-credit class, plan for about 10 hours per week on class work, plus 4 hours per week in class and up to 1 hour per week in lab or office hours. If you spend substantially more or less, consider booking office hours to discuss learning strategies.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "Plan for about 10 hours of coursework per week plus 4 hours in class. Open lab or office hours may add up to 1 hour.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "Expect about 10 hours of weekly coursework, 4 hours in class, and up to 1 hour in lab or office hours. Book office hours if you are spending substantially more or less than expected.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model uses a generic credit-hour rule of thumb. RAG gives the syllabus's specific breakdown including the recommendation to seek help if workload is off."
+  },
+  {
+    "id": "comparison-011",
+    "question": "What should I do if the instructor has not responded?",
+    "category": "Communication",
+    "relevantSyllabusSection": "Turnaround time commitment",
+    "baseResponse": {
+      "text": "If your instructor has not replied, wait a few business days and then send a polite follow-up email. Be patient during busy times like midterms or grading periods.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "If you have not received a response within 48 hours, send a polite follow-up via Discord direct message. A delayed reply is usually unintentional due to high message volume.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "If you have not heard back within 48 hours, send a polite follow-up on Discord.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "Wait 48 hours, then send a polite follow-up via Discord DM. Delays are usually unintentional. Keep your message focused and professional.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model suggests email follow-up after a few days. The syllabus specifies a 48-hour window and Discord DM follow-up, which seed examples also reinforce."
+  },
+  {
+    "id": "comparison-012",
+    "question": "What is the difference between open lab and office hours?",
+    "category": "Office Hours",
+    "relevantSyllabusSection": "Class format and structure and Office Hours",
+    "baseResponse": {
+      "text": "Open lab and office hours are both times when students can get help. Open lab is usually a drop-in session in a computer lab, while office hours are one-on-one time with the instructor in their office.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "Open lab periods are optional drop-in times for questions and assignment work with help available. Office hours appointments give you the instructor's focused attention; book at least 24 hours in advance and confirm on Discord if booking late. Both are optional, but they are not the same experience.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "Open lab is an optional drop-in time for questions and co-working. Office hours are booked appointments for more focused help. Both are optional.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "Open lab: optional drop-in for questions and assignment work. Office hours: booked appointment for focused attention—book 24+ hours ahead. Open lab is not a private appointment and does not guarantee one-on-one time.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model conflates open lab with a generic computer-lab session. Syllabus-grounded responses distinguish optional drop-in open lab from booked private office hours."
+  },
+  {
+    "id": "comparison-013",
+    "question": "Can grade questions be discussed in Discord?",
+    "category": "Communication",
+    "relevantSyllabusSection": "Contact and Grade Questions",
+    "baseResponse": {
+      "text": "Discord is a convenient place to ask course questions, including questions about your grade. Just send a direct message to your instructor with your concern.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "No. All grade-related discussion must happen through Canvas, not Discord or email. Book a private calendar timeslot within one week of the grade being released for a grade consultation.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "No. Grade-related discussion must go through Canvas, not Discord. Use Discord for general course questions.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "No. Grade questions belong in Canvas, not public or private Discord. Book a private timeslot within one week of the grade release for a consultation.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "This is well represented in seed data, so even the fine-tuned model gets it right. The base model incorrectly suggests Discord for grades."
+  },
+  {
+    "id": "comparison-014",
+    "question": "Can the final reflection receive the normal extension?",
+    "category": "Late Work",
+    "relevantSyllabusSection": "Late Policy",
+    "baseResponse": {
+      "text": "Most courses allow at least one extension per quarter if you ask in advance. Submit a request through Canvas or email your instructor explaining why you need more time.",
+      "grounding": "Low",
+      "simulated": true
+    },
+    "ragResponse": {
+      "text": "No. The one 48-hour no-questions-asked extension applies only to one of Bot Project Tasks 1–6. No extension is possible for the Reflection assignment because it sits at the end of the quarter and grades must be submitted on time.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "fineTunedResponse": {
+      "text": "The no-questions-asked extension applies to one bot project task, not the reflection. The reflection cannot be extended.",
+      "grounding": "Medium",
+      "simulated": true
+    },
+    "fineTunedRagResponse": {
+      "text": "No. The 48-hour extension is only for one of Bot Project Tasks 1–6. The Reflection assignment has no extension because it is due at the end of the quarter.",
+      "grounding": "High",
+      "simulated": true
+    },
+    "notes": "The base model assumes a generic extension policy. Syllabus-grounded responses distinguish the single project-task extension from assignments like the reflection that cannot be extended."
+  }
+]

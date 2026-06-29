@@ -1,5 +1,25 @@
 import type { SeedDifficulty, SeedExample } from '../types';
 
+export const USER_SEEDS_STORAGE_KEY = 'syllabus-demo-user-seeds';
+
+export const SEED_CATEGORIES = [
+  'Course Basics',
+  'Communication',
+  'Attendance',
+  'Course Preparation',
+  'Assignments',
+  'Projects',
+  'Standups',
+  'Case Discussions',
+  'Grading',
+  'Late Work',
+  'AI Policy',
+  'Technology',
+  'Office Hours',
+  'Exams and Quizzes',
+  'Course Expectations',
+] as const;
+
 export const ALL_CATEGORIES = 'All categories';
 export const ALL_DIFFICULTIES = 'All difficulties';
 export const ALL_ANSWER_TYPES = 'All';
@@ -20,6 +40,63 @@ const DIFFICULTY_ORDER: Record<SeedDifficulty, number> = {
 
 export function normalizeSearchText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+export function normalizeQuestion(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+export function isMeaningfulText(value: string): boolean {
+  const lettersOrDigits = value.replace(/[^a-zA-Z0-9]/g, '');
+  return lettersOrDigits.length >= 3;
+}
+
+export function generateUserSeedId(): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).slice(2, 8);
+  return `user-seed-${timestamp}-${random}`;
+}
+
+export function isDuplicateQuestion(
+  question: string,
+  existingSeeds: SeedExample[],
+): boolean {
+  const normalized = normalizeQuestion(question);
+  return existingSeeds.some(
+    (seed) => normalizeQuestion(seed.instruction) === normalized,
+  );
+}
+
+export function getUniqueSourceSections(seeds: SeedExample[]): string[] {
+  const sections = new Set(seeds.map((seed) => seed.sourceSection));
+  return Array.from(sections).sort((left, right) => left.localeCompare(right));
+}
+
+export function combinePrototypeAndUserSeeds(
+  prototypeSeeds: SeedExample[],
+  userSeeds: SeedExample[],
+): SeedExample[] {
+  return [...prototypeSeeds, ...userSeeds];
+}
+
+export function isSeedExampleArray(value: unknown): value is SeedExample[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  return value.every(
+    (item) =>
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as SeedExample).id === 'string' &&
+      typeof (item as SeedExample).instruction === 'string' &&
+      typeof (item as SeedExample).response === 'string' &&
+      (item as SeedExample).origin === 'user',
+  );
 }
 
 export function seedMatchesSearch(seed: SeedExample, query: string): boolean {

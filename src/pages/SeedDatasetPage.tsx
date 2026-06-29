@@ -1,15 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import seedData from '../data/seedData.json';
 import { DatasetStats } from '../components/DatasetStats';
 import { PageHeader } from '../components/PageHeader';
 import { ResultsCount } from '../components/ResultsCount';
 import { SeedCard } from '../components/SeedCard';
 import { SeedFilters } from '../components/SeedFilters';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { SeedExample } from '../types';
 import {
   exportCompleteJsonl,
   exportFilteredJson,
   exportFilteredJsonl,
+  exportUserSeedsJsonl,
 } from '../utils/exportData';
 import {
   ALL_ANSWER_TYPES,
@@ -17,22 +19,35 @@ import {
   ALL_DIFFICULTIES,
   type AnswerTypeFilter,
   calculateStatistics,
+  combinePrototypeAndUserSeeds,
   filterSeeds,
   getUniqueCategories,
   type SortOption,
+  USER_SEEDS_STORAGE_KEY,
+  isSeedExampleArray,
 } from '../utils/seedDataUtils';
 
-const allSeeds = seedData as SeedExample[];
+const prototypeSeeds = seedData as SeedExample[];
 
 export function SeedDatasetPage() {
+  const [userSeeds, setUserSeeds] = useLocalStorage<SeedExample[]>(
+    USER_SEEDS_STORAGE_KEY,
+    [],
+    isSeedExampleArray,
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [selectedDifficulty, setSelectedDifficulty] = useState(ALL_DIFFICULTIES);
   const [selectedAnswerType, setSelectedAnswerType] = useState<AnswerTypeFilter>(ALL_ANSWER_TYPES);
   const [sortBy, setSortBy] = useState<SortOption>('id-asc');
 
-  const categories = useMemo(() => getUniqueCategories(allSeeds), []);
-  const stats = useMemo(() => calculateStatistics(allSeeds), []);
+  const allSeeds = useMemo(
+    () => combinePrototypeAndUserSeeds(prototypeSeeds, userSeeds),
+    [userSeeds],
+  );
+
+  const categories = useMemo(() => getUniqueCategories(allSeeds), [allSeeds]);
+  const stats = useMemo(() => calculateStatistics(allSeeds), [allSeeds]);
 
   const filteredSeeds = useMemo(
     () =>
@@ -43,7 +58,14 @@ export function SeedDatasetPage() {
         answerType: selectedAnswerType,
         sortBy,
       }),
-    [searchQuery, selectedCategory, selectedDifficulty, selectedAnswerType, sortBy],
+    [allSeeds, searchQuery, selectedCategory, selectedDifficulty, selectedAnswerType, sortBy],
+  );
+
+  const handleDeleteUserSeed = useCallback(
+    (id: string) => {
+      setUserSeeds((current) => current.filter((seed) => seed.id !== id));
+    },
+    [setUserSeeds],
   );
 
   function clearFilters() {
@@ -58,13 +80,15 @@ export function SeedDatasetPage() {
     <>
       <PageHeader
         title="Seed Dataset"
-        description="Browse prototype question-and-answer examples derived from the syllabus. These pairs demonstrate the kind of training data students could create for fine-tuning a course assistant."
+        description="Browse prototype and user-created question-and-answer examples derived from the syllabus. These pairs demonstrate the kind of training data students could create for fine-tuning a course assistant."
       />
 
-      <aside className="dataset-notice" aria-label="Prototype dataset notice">
+      <aside className="dataset-notice" aria-label="Dataset notice">
         <p>
-          <strong>Prototype dataset:</strong> these examples were generated for the demo
-          and were not submitted by students.
+          <strong>Combined dataset:</strong> this page shows {prototypeSeeds.length} prototype
+          examples and {userSeeds.length} user-created example
+          {userSeeds.length === 1 ? '' : 's'} ({allSeeds.length} total). Prototype examples
+          cannot be deleted here.
         </p>
       </aside>
 
@@ -85,6 +109,8 @@ export function SeedDatasetPage() {
         onExportFilteredJson={() => exportFilteredJson(filteredSeeds)}
         onExportFilteredJsonl={() => exportFilteredJsonl(filteredSeeds)}
         onExportCompleteJsonl={() => exportCompleteJsonl(allSeeds)}
+        onExportUserJsonl={() => exportUserSeedsJsonl(userSeeds)}
+        userSeedCount={userSeeds.length}
       />
 
       <ResultsCount resultCount={filteredSeeds.length} totalCount={allSeeds.length} />
@@ -94,7 +120,7 @@ export function SeedDatasetPage() {
           <h2 className="dataset-empty__title">No matching seed examples</h2>
           <p className="dataset-empty__text">
             Try a different search term or filter combination. You can also clear all
-            filters to browse the full prototype dataset.
+            filters to browse the full dataset.
           </p>
           <button type="button" className="dataset-empty__button" onClick={clearFilters}>
             Clear filters
@@ -103,7 +129,11 @@ export function SeedDatasetPage() {
       ) : (
         <section className="seed-list" aria-label="Seed examples" aria-live="polite">
           {filteredSeeds.map((seed) => (
-            <SeedCard key={seed.id} seed={seed} />
+            <SeedCard
+              key={seed.id}
+              seed={seed}
+              onDelete={seed.origin === 'user' ? handleDeleteUserSeed : undefined}
+            />
           ))}
         </section>
       )}

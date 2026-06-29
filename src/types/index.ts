@@ -17,6 +17,8 @@ export interface SeedExample {
   difficulty: SeedDifficulty;
   directlyAnswered: boolean;
   origin: SeedOrigin;
+  notes?: string;
+  createdAt?: string;
 }
 
 export interface ComparisonResponse {
