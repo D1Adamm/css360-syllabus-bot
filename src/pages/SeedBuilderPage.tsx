@@ -48,12 +48,12 @@ export function SeedBuilderPage() {
 
       <aside className="seed-builder-notice" aria-label="Prototype storage notice">
         <p>
-          <strong>In this prototype, your examples are stored only in this browser.</strong>
+          <strong>Examples are stored in Firebase Realtime Database.</strong>
         </p>
         <p>
-          Examples you create here are saved locally and are not automatically added to a
-          trained model. They can be reviewed on the Seed Dataset page and exported as
-          JSONL.
+          Examples you create here are shared across browsers and devices. They are not
+          automatically used to train a model. You can review and export them from the
+          Seed Dataset page.
         </p>
       </aside>
 

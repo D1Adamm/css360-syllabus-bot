@@ -3,13 +3,12 @@ import { Link } from 'react-router-dom';
 import comparisonData from '../data/comparisonData.json';
 import { ModelBarChart } from '../components/ModelBarChart';
 import { PageHeader } from '../components/PageHeader';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useEvaluations } from '../hooks/useEvaluations';
 import type { ComparisonRecord } from '../types';
 import { exportEvaluationsJson } from '../utils/exportData';
 import {
   countByField,
   countHallucinationFlags,
-  EVALUATIONS_STORAGE_KEY,
   extractRecentComments,
   formatEvaluationDate,
   formatTopModels,
@@ -18,18 +17,21 @@ import {
   getTotalHallucinationFlags,
   getUniqueQuestionCount,
   groupByQuestion,
-  isEvaluationRecordArray,
   MODEL_KEYS,
 } from '../utils/evaluationUtils';
 
 const comparisons = comparisonData as ComparisonRecord[];
 
 export function ResultsPage() {
-  const [evaluations, , resetEvaluations] = useLocalStorage(
-    EVALUATIONS_STORAGE_KEY,
-    [],
-    isEvaluationRecordArray,
-  );
+  const {
+    evaluations,
+    loading,
+    error,
+    saving,
+    saveError,
+    deleteAllEvaluations,
+    clearSaveError,
+  } = useEvaluations();
 
   const totalCount = getTotalEvaluationCount(evaluations);
   const uniqueQuestions = getUniqueQuestionCount(evaluations);
@@ -71,13 +73,42 @@ export function ResultsPage() {
 
   const totalHallucinationFlags = getTotalHallucinationFlags(evaluations);
 
-  function handleReset() {
+  async function handleReset() {
     const confirmed = window.confirm(
-      'Delete all evaluation data stored in this browser? This cannot be undone. User-created seed examples will not be affected.',
+      'Delete all shared evaluation data? This cannot be undone. User-created seed examples will not be affected.',
     );
     if (confirmed) {
-      resetEvaluations();
+      clearSaveError();
+      await deleteAllEvaluations();
     }
+  }
+
+  if (loading) {
+    return (
+      <>
+        <PageHeader
+          title="Results"
+          description="View aggregated evaluation results calculated from ratings in the shared dataset."
+        />
+        <p className="results-status" role="status" aria-live="polite">
+          Loading shared evaluations…
+        </p>
+      </>
+    );
+  }
+
+  if (error) {
+    return (
+      <>
+        <PageHeader
+          title="Results"
+          description="View aggregated evaluation results calculated from ratings in the shared dataset."
+        />
+        <p className="results-status results-status--error" role="alert">
+          Could not load shared evaluations: {error}
+        </p>
+      </>
+    );
   }
 
   if (totalCount === 0) {
@@ -85,13 +116,13 @@ export function ResultsPage() {
       <>
         <PageHeader
           title="Results"
-          description="View aggregated evaluation results calculated from ratings saved in this browser."
+          description="View aggregated evaluation results calculated from ratings in the shared dataset."
         />
 
         <aside className="results-notice" aria-label="Results notice">
           <p>
-            <strong>Local prototype results:</strong> this page only summarizes evaluations
-            saved in this browser.
+            <strong>Shared prototype results:</strong> this page summarizes evaluations stored
+            in Firebase Realtime Database and shared across browsers and devices.
           </p>
         </aside>
 
@@ -99,7 +130,7 @@ export function ResultsPage() {
           <h2 className="results-empty__title">No evaluations yet</h2>
           <p className="results-empty__text">
             Complete at least one evaluation on the Model Comparison workflow to see aggregated
-            results here. Each evaluation is stored locally in your browser.
+            results here. Each evaluation is saved to the shared dataset.
           </p>
           <div className="results-empty__actions">
             <Link to="/compare" className="button-link button-link--primary">
@@ -118,15 +149,21 @@ export function ResultsPage() {
     <>
       <PageHeader
         title="Results"
-        description="View aggregated evaluation results calculated from ratings saved in this browser."
+        description="View aggregated evaluation results calculated from ratings in the shared dataset."
       />
 
       <aside className="results-notice" aria-label="Results notice">
         <p>
-          <strong>Local prototype results:</strong> this page only summarizes evaluations saved
-          in this browser.
+          <strong>Shared prototype results:</strong> this page summarizes evaluations stored in
+          Firebase Realtime Database and shared across browsers and devices.
         </p>
       </aside>
+
+      {saveError && (
+        <p className="results-status results-status--error" role="alert">
+          {saveError}
+        </p>
+      )}
 
       <section className="results-summary" aria-labelledby="results-summary-title">
         <h2 id="results-summary-title" className="results-summary__title">
@@ -343,8 +380,9 @@ export function ResultsPage() {
           type="button"
           className="results-actions__reset"
           onClick={handleReset}
+          disabled={saving}
         >
-          Delete all evaluation data
+          {saving ? 'Deleting evaluations…' : 'Delete all evaluation data'}
         </button>
       </section>
     </>

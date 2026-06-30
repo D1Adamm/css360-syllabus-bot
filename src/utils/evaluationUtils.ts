@@ -1,7 +1,5 @@
 import type { ComparisonRecord, EvaluationRecord, ModelKey } from '../types';
 
-export const EVALUATIONS_STORAGE_KEY = 'syllabus-demo-evaluations';
-
 export const MODEL_KEYS: ModelKey[] = ['base', 'rag', 'fineTuned', 'fineTunedRag'];
 
 const MODEL_LABELS: Record<ModelKey, string> = {
