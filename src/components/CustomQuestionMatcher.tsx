@@ -5,12 +5,14 @@ interface CustomQuestionMatcherProps {
   records: { id: string; question: string }[];
   onMatch: (recordId: string, matchedQuestion: string) => void;
   onNoMatch: () => void;
+  onQuestionSubmit: (question: string) => void;
 }
 
 export function CustomQuestionMatcher({
   records,
   onMatch,
   onNoMatch,
+  onQuestionSubmit,
 }: CustomQuestionMatcherProps) {
   const [customQuestion, setCustomQuestion] = useState('');
   const [notice, setNotice] = useState<{
@@ -26,13 +28,15 @@ export function CustomQuestionMatcher({
       return;
     }
 
+    onQuestionSubmit(trimmed);
+
     const match = findBestComparisonMatch(trimmed, records);
 
     if (match) {
       onMatch(match.recordId, match.matchedQuestion);
       setNotice({
         type: 'match',
-        message: `Matched to predefined question: "${match.matchedQuestion}"`,
+        message: `Matched to predefined question: "${match.matchedQuestion}". The Base Model answer is live; the other three responses remain simulated.`,
       });
       return;
     }
@@ -41,7 +45,7 @@ export function CustomQuestionMatcher({
     setNotice({
       type: 'no-match',
       message:
-        'Live generation is not implemented in this prototype. Your question did not closely match any predefined example, so no new model responses were created.',
+        'The Base Model answer is live. RAG, Fine-Tuned, and Fine-Tuned + RAG remain simulated and only update when your question closely matches a predefined example.',
     });
   }
 
@@ -53,7 +57,7 @@ export function CustomQuestionMatcher({
 
       <form className="custom-question-matcher__form" onSubmit={handleSubmit}>
         <label htmlFor="custom-question-input" className="custom-question-matcher__label">
-          Enter a question to match against predefined examples
+          Enter a question to send to the Base Model
         </label>
         <div className="custom-question-matcher__controls">
           <input
@@ -68,7 +72,7 @@ export function CustomQuestionMatcher({
             placeholder="e.g., Can I email about my grade?"
           />
           <button type="submit" className="custom-question-matcher__submit">
-            Find closest match
+            Ask question
           </button>
         </div>
       </form>

@@ -1776,6 +1776,43 @@ img {
   border-radius: var(--radius-sm);
 }
 
+.model-response-card__live {
+  display: inline-block;
+  padding: 0.15em 0.6em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background-color: #dbeafe;
+  border-radius: var(--radius-sm);
+}
+
+.model-response-card__status {
+  font-size: 0.9375rem;
+  color: var(--color-text-muted);
+  margin: 0;
+  flex: 1;
+  font-style: italic;
+}
+
+.model-response-card__error {
+  font-size: 0.9375rem;
+  color: #991b1b;
+  background-color: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: 0;
+  flex: 1;
+}
+
+.model-response-card--loading {
+  border-color: #93c5fd;
+}
+
+.model-response-card--error {
+  border-color: #fca5a5;
+}
+
 .comparison-explanation__text {
   color: var(--color-text);
   margin: 0 0 var(--spacing-md);
