@@ -5,7 +5,7 @@ import { PageHeader } from '../components/PageHeader';
 import { ResultsCount } from '../components/ResultsCount';
 import { SeedCard } from '../components/SeedCard';
 import { SeedFilters } from '../components/SeedFilters';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useSeedExamples } from '../hooks/useSeedExamples';
 import type { SeedExample } from '../types';
 import {
   exportCompleteJsonl,
@@ -23,18 +23,12 @@ import {
   filterSeeds,
   getUniqueCategories,
   type SortOption,
-  USER_SEEDS_STORAGE_KEY,
-  isSeedExampleArray,
 } from '../utils/seedDataUtils';
 
 const prototypeSeeds = seedData as SeedExample[];
 
 export function SeedDatasetPage() {
-  const [userSeeds, setUserSeeds] = useLocalStorage<SeedExample[]>(
-    USER_SEEDS_STORAGE_KEY,
-    [],
-    isSeedExampleArray,
-  );
+  const { seeds: userSeeds, loading, error, deleteSeed } = useSeedExamples();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [selectedDifficulty, setSelectedDifficulty] = useState(ALL_DIFFICULTIES);
@@ -62,10 +56,10 @@ export function SeedDatasetPage() {
   );
 
   const handleDeleteUserSeed = useCallback(
-    (id: string) => {
-      setUserSeeds((current) => current.filter((seed) => seed.id !== id));
+    async (id: string) => {
+      await deleteSeed(id);
     },
-    [setUserSeeds],
+    [deleteSeed],
   );
 
   function clearFilters() {
@@ -92,50 +86,64 @@ export function SeedDatasetPage() {
         </p>
       </aside>
 
-      <DatasetStats stats={stats} />
+      {error && (
+        <p className="seed-builder-status seed-builder-status--error" role="alert">
+          Could not load shared seed examples: {error}
+        </p>
+      )}
 
-      <SeedFilters
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        categories={categories}
-        selectedCategory={selectedCategory}
-        onCategoryChange={setSelectedCategory}
-        selectedDifficulty={selectedDifficulty}
-        onDifficultyChange={setSelectedDifficulty}
-        selectedAnswerType={selectedAnswerType}
-        onAnswerTypeChange={setSelectedAnswerType}
-        sortBy={sortBy}
-        onSortChange={setSortBy}
-        onExportFilteredJson={() => exportFilteredJson(filteredSeeds)}
-        onExportFilteredJsonl={() => exportFilteredJsonl(filteredSeeds)}
-        onExportCompleteJsonl={() => exportCompleteJsonl(allSeeds)}
-        onExportUserJsonl={() => exportUserSeedsJsonl(userSeeds)}
-        userSeedCount={userSeeds.length}
-      />
-
-      <ResultsCount resultCount={filteredSeeds.length} totalCount={allSeeds.length} />
-
-      {filteredSeeds.length === 0 ? (
-        <section className="dataset-empty" aria-live="polite">
-          <h2 className="dataset-empty__title">No matching seed examples</h2>
-          <p className="dataset-empty__text">
-            Try a different search term or filter combination. You can also clear all
-            filters to browse the full dataset.
-          </p>
-          <button type="button" className="dataset-empty__button" onClick={clearFilters}>
-            Clear filters
-          </button>
-        </section>
+      {loading ? (
+        <p className="seed-builder-status" role="status" aria-live="polite">
+          Loading shared seed examples…
+        </p>
       ) : (
-        <section className="seed-list" aria-label="Seed examples" aria-live="polite">
-          {filteredSeeds.map((seed) => (
-            <SeedCard
-              key={seed.id}
-              seed={seed}
-              onDelete={seed.origin === 'user' ? handleDeleteUserSeed : undefined}
-            />
-          ))}
-        </section>
+        <>
+          <DatasetStats stats={stats} />
+
+          <SeedFilters
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            categories={categories}
+            selectedCategory={selectedCategory}
+            onCategoryChange={setSelectedCategory}
+            selectedDifficulty={selectedDifficulty}
+            onDifficultyChange={setSelectedDifficulty}
+            selectedAnswerType={selectedAnswerType}
+            onAnswerTypeChange={setSelectedAnswerType}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+            onExportFilteredJson={() => exportFilteredJson(filteredSeeds)}
+            onExportFilteredJsonl={() => exportFilteredJsonl(filteredSeeds)}
+            onExportCompleteJsonl={() => exportCompleteJsonl(allSeeds)}
+            onExportUserJsonl={() => exportUserSeedsJsonl(userSeeds)}
+            userSeedCount={userSeeds.length}
+          />
+
+          <ResultsCount resultCount={filteredSeeds.length} totalCount={allSeeds.length} />
+
+          {filteredSeeds.length === 0 ? (
+            <section className="dataset-empty" aria-live="polite">
+              <h2 className="dataset-empty__title">No matching seed examples</h2>
+              <p className="dataset-empty__text">
+                Try a different search term or filter combination. You can also clear all
+                filters to browse the full dataset.
+              </p>
+              <button type="button" className="dataset-empty__button" onClick={clearFilters}>
+                Clear filters
+              </button>
+            </section>
+          ) : (
+            <section className="seed-list" aria-label="Seed examples" aria-live="polite">
+              {filteredSeeds.map((seed) => (
+                <SeedCard
+                  key={seed.id}
+                  seed={seed}
+                  onDelete={seed.origin === 'user' ? handleDeleteUserSeed : undefined}
+                />
+              ))}
+            </section>
+          )}
+        </>
       )}
     </>
   );

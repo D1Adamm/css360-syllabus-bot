@@ -1179,6 +1179,16 @@ img {
   margin-bottom: 0;
 }
 
+.seed-builder-status {
+  margin: 0 0 var(--spacing-lg);
+  font-size: 0.9375rem;
+  color: var(--color-text-muted);
+}
+
+.seed-builder-status--error {
+  color: #b91c1c;
+}
+
 .seed-builder-layout {
   display: grid;
   grid-template-columns: 1fr;

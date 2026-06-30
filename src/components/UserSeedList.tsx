@@ -3,18 +3,18 @@ import { UserSeedCard } from './UserSeedCard';
 
 interface UserSeedListProps {
   seeds: SeedExample[];
-  onDelete: (id: string) => void;
-  onDeleteAll: () => void;
+  onDelete: (id: string) => void | Promise<void>;
+  onDeleteAll: () => void | Promise<void>;
 }
 
 export function UserSeedList({ seeds, onDelete, onDeleteAll }: UserSeedListProps) {
-  function handleDeleteAll() {
+  async function handleDeleteAll() {
     const confirmed = window.confirm(
       'Delete all your examples? This removes only user-created examples from this browser and cannot be undone.',
     );
 
     if (confirmed) {
-      onDeleteAll();
+      await onDeleteAll();
     }
   }
 
