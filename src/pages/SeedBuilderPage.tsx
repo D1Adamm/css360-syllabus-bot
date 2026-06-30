@@ -2,34 +2,42 @@ import { useCallback } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { SeedForm } from '../components/SeedForm';
 import { UserSeedList } from '../components/UserSeedList';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useSeedExamples } from '../hooks/useSeedExamples';
 import type { SeedExample } from '../types';
-import { USER_SEEDS_STORAGE_KEY, isSeedExampleArray } from '../utils/seedDataUtils';
 
 export function SeedBuilderPage() {
-  const [userSeeds, setUserSeeds] = useLocalStorage<SeedExample[]>(
-    USER_SEEDS_STORAGE_KEY,
-    [],
-    isSeedExampleArray,
-  );
+  const {
+    seeds: userSeeds,
+    loading,
+    error,
+    saving,
+    saveError,
+    addSeed,
+    deleteSeed,
+    deleteAllSeeds,
+    clearSaveError,
+  } = useSeedExamples();
 
   const handleAddSeed = useCallback(
-    (seed: SeedExample) => {
-      setUserSeeds((current) => [seed, ...current]);
+    async (seed: SeedExample) => {
+      clearSaveError();
+      await addSeed(seed);
     },
-    [setUserSeeds],
+    [addSeed, clearSaveError],
   );
 
   const handleDeleteSeed = useCallback(
-    (id: string) => {
-      setUserSeeds((current) => current.filter((seed) => seed.id !== id));
+    async (id: string) => {
+      clearSaveError();
+      await deleteSeed(id);
     },
-    [setUserSeeds],
+    [clearSaveError, deleteSeed],
   );
 
-  const handleDeleteAll = useCallback(() => {
-    setUserSeeds([]);
-  }, [setUserSeeds]);
+  const handleDeleteAll = useCallback(async () => {
+    clearSaveError();
+    await deleteAllSeeds();
+  }, [clearSaveError, deleteAllSeeds]);
 
   return (
     <>
@@ -49,18 +57,41 @@ export function SeedBuilderPage() {
         </p>
       </aside>
 
+      {error && (
+        <p className="seed-builder-status seed-builder-status--error" role="alert">
+          Could not load shared seed examples: {error}
+        </p>
+      )}
+
+      {saveError && (
+        <p className="seed-builder-status seed-builder-status--error" role="alert">
+          {saveError}
+        </p>
+      )}
+
       <div className="seed-builder-layout">
         <div className="seed-builder-layout__form">
           <h2 className="seed-builder-layout__section-title">Create a new example</h2>
-          <SeedForm userSeeds={userSeeds} onAddSeed={handleAddSeed} />
+          <SeedForm
+            userSeeds={userSeeds}
+            onAddSeed={handleAddSeed}
+            isSaving={saving}
+            isLoading={loading}
+          />
         </div>
 
         <div className="seed-builder-layout__list">
-          <UserSeedList
-            seeds={userSeeds}
-            onDelete={handleDeleteSeed}
-            onDeleteAll={handleDeleteAll}
-          />
+          {loading ? (
+            <p className="seed-builder-status" role="status" aria-live="polite">
+              Loading shared seed examples…
+            </p>
+          ) : (
+            <UserSeedList
+              seeds={userSeeds}
+              onDelete={handleDeleteSeed}
+              onDeleteAll={handleDeleteAll}
+            />
+          )}
         </div>
       </div>
     </>

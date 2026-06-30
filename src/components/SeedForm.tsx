@@ -18,7 +18,9 @@ const SOURCE_SECTION_CUSTOM = '__custom__';
 
 interface SeedFormProps {
   userSeeds: SeedExample[];
-  onAddSeed: (seed: SeedExample) => void;
+  onAddSeed: (seed: SeedExample) => Promise<void>;
+  isSaving?: boolean;
+  isLoading?: boolean;
 }
 
 interface FormValues {
@@ -65,7 +67,12 @@ function getSourceSectionOptions(): string[] {
 
 const sourceSectionOptions = getSourceSectionOptions();
 
-export function SeedForm({ userSeeds, onAddSeed }: SeedFormProps) {
+export function SeedForm({
+  userSeeds,
+  onAddSeed,
+  isSaving = false,
+  isLoading = false,
+}: SeedFormProps) {
   const formId = useId();
   const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -161,7 +168,7 @@ export function SeedForm({ userSeeds, onAddSeed }: SeedFormProps) {
     firstErrorField?.focus();
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors = validate();
 
@@ -189,11 +196,15 @@ export function SeedForm({ userSeeds, onAddSeed }: SeedFormProps) {
       ...(values.notes.trim() ? { notes: values.notes.trim() } : {}),
     };
 
-    onAddSeed(newSeed);
-    setValues(INITIAL_VALUES);
-    setErrors({});
-    setSuccessMessage('Your example was saved to this browser.');
-    instructionRef.current?.focus();
+    try {
+      await onAddSeed(newSeed);
+      setValues(INITIAL_VALUES);
+      setErrors({});
+      setSuccessMessage('Your example was saved to the shared dataset.');
+      instructionRef.current?.focus();
+    } catch {
+      setSuccessMessage('');
+    }
   }
 
   return (
@@ -390,8 +401,12 @@ export function SeedForm({ userSeeds, onAddSeed }: SeedFormProps) {
         />
       </div>
 
-      <button type="submit" className="seed-form__submit">
-        Save example
+      <button
+        type="submit"
+        className="seed-form__submit"
+        disabled={isSaving || isLoading}
+      >
+        {isSaving ? 'Saving example…' : 'Save example'}
       </button>
     </form>
   );

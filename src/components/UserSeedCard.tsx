@@ -2,17 +2,17 @@ import type { SeedExample } from '../types';
 
 interface UserSeedCardProps {
   seed: SeedExample;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => void | Promise<void>;
 }
 
 export function UserSeedCard({ seed, onDelete }: UserSeedCardProps) {
-  function handleDelete() {
+  async function handleDelete() {
     const confirmed = window.confirm(
       `Delete this example?\n\n"${seed.instruction}"\n\nThis cannot be undone.`,
     );
 
     if (confirmed) {
-      onDelete(seed.id);
+      await onDelete(seed.id);
     }
   }
 

@@ -83,20 +83,27 @@ export function combinePrototypeAndUserSeeds(
   return [...prototypeSeeds, ...userSeeds];
 }
 
+export function isSeedExample(value: unknown): value is SeedExample {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as SeedExample).id === 'string' &&
+    typeof (value as SeedExample).instruction === 'string' &&
+    typeof (value as SeedExample).response === 'string' &&
+    typeof (value as SeedExample).category === 'string' &&
+    typeof (value as SeedExample).sourceSection === 'string' &&
+    typeof (value as SeedExample).difficulty === 'string' &&
+    typeof (value as SeedExample).directlyAnswered === 'boolean' &&
+    (value as SeedExample).origin === 'user'
+  );
+}
+
 export function isSeedExampleArray(value: unknown): value is SeedExample[] {
   if (!Array.isArray(value)) {
     return false;
   }
 
-  return value.every(
-    (item) =>
-      typeof item === 'object' &&
-      item !== null &&
-      typeof (item as SeedExample).id === 'string' &&
-      typeof (item as SeedExample).instruction === 'string' &&
-      typeof (item as SeedExample).response === 'string' &&
-      (item as SeedExample).origin === 'user',
-  );
+  return value.every(isSeedExample);
 }
 
 export function seedMatchesSearch(seed: SeedExample, query: string): boolean {
