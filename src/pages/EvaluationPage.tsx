@@ -5,15 +5,13 @@ import { ComparisonQuestionSelector } from '../components/ComparisonQuestionSele
 import { FormFieldError } from '../components/FormFieldError';
 import { ModelResponseCard } from '../components/ModelResponseCard';
 import { PageHeader } from '../components/PageHeader';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useEvaluations } from '../hooks/useEvaluations';
 import type { ComparisonRecord, EvaluationRecord, ModelKey } from '../types';
 import {
-  EVALUATIONS_STORAGE_KEY,
   formatEvaluationDate,
   generateEvaluationId,
   getModelLabel,
   getRecentEvaluations,
-  isEvaluationRecordArray,
   MODEL_KEYS,
   resolveComparisonId,
 } from '../utils/evaluationUtils';
@@ -92,11 +90,15 @@ interface FormErrors {
 export function EvaluationPage() {
   const formId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [evaluations, setEvaluations] = useLocalStorage<EvaluationRecord[]>(
-    EVALUATIONS_STORAGE_KEY,
-    [],
-    isEvaluationRecordArray,
-  );
+  const {
+    evaluations,
+    loading,
+    error,
+    saving,
+    saveError,
+    addEvaluation,
+    clearSaveError,
+  } = useEvaluations();
 
   const comparisonParam = searchParams.get('comparison');
   const selectedId = useMemo(
@@ -135,6 +137,7 @@ export function EvaluationPage() {
     setValues((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: undefined }));
     setSubmitted(false);
+    clearSaveError();
   }
 
   function toggleHallucinationFlag(model: ModelKey) {
@@ -145,12 +148,14 @@ export function EvaluationPage() {
       return { ...current, hallucinationFlags: flags };
     });
     setSubmitted(false);
+    clearSaveError();
   }
 
   function updateComment(comment: string) {
     setValues((current) => ({ ...current, comment }));
     setErrors((current) => ({ ...current, comment: undefined }));
     setSubmitted(false);
+    clearSaveError();
   }
 
   function validate(): FormErrors {
@@ -169,7 +174,7 @@ export function EvaluationPage() {
     return nextErrors;
   }
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const nextErrors = validate();
     setErrors(nextErrors);
@@ -196,9 +201,16 @@ export function EvaluationPage() {
       createdAt: new Date().toISOString(),
     };
 
-    setEvaluations((current) => [...current, evaluation]);
-    setSubmitted(true);
-    setSubmittedId(evaluation.id);
+    clearSaveError();
+
+    try {
+      const savedEvaluation = await addEvaluation(evaluation);
+      setSubmitted(true);
+      setSubmittedId(savedEvaluation.id);
+    } catch {
+      setSubmitted(false);
+      setSubmittedId('');
+    }
   }
 
   function handleEvaluateAnother() {
@@ -206,6 +218,7 @@ export function EvaluationPage() {
     setErrors({});
     setSubmitted(false);
     setSubmittedId('');
+    clearSaveError();
     formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -245,14 +258,26 @@ export function EvaluationPage() {
 
       <aside className="evaluation-notice" aria-label="Evaluation notices">
         <p>
-          <strong>Local storage only:</strong> Evaluation data is stored only in this browser
-          and is not submitted to a server.
+          <strong>Shared dataset:</strong> Evaluations are stored in Firebase Realtime Database
+          and shared across browsers and devices.
         </p>
         <p>
           <strong>Simulated responses:</strong> These responses are simulated prototype outputs,
           not live model results.
         </p>
       </aside>
+
+      {error && (
+        <p className="evaluation-status evaluation-status--error" role="alert">
+          Could not load shared evaluations: {error}
+        </p>
+      )}
+
+      {loading && (
+        <p className="evaluation-status" role="status" aria-live="polite">
+          Loading shared evaluations…
+        </p>
+      )}
 
       <ComparisonQuestionSelector
         records={records}
@@ -279,8 +304,8 @@ export function EvaluationPage() {
         {submitted && (
           <div className="evaluation-success" role="status" aria-live="polite">
             <p>
-              <strong>Evaluation saved.</strong> Your ratings for this question have been stored
-              locally (ID: {submittedId}).
+              <strong>Evaluation saved.</strong> Your ratings for this question were saved to the
+              shared dataset (ID: {submittedId}).
             </p>
             <div className="evaluation-success__actions">
               <button
@@ -295,6 +320,12 @@ export function EvaluationPage() {
               </Link>
             </div>
           </div>
+        )}
+
+        {saveError && (
+          <p className="evaluation-status evaluation-status--error" role="alert">
+            {saveError}
+          </p>
         )}
 
         <form
@@ -331,6 +362,7 @@ export function EvaluationPage() {
                           onChange={() => updateRating(field.key, modelKey)}
                           aria-invalid={hasError}
                           aria-describedby={hasError ? errorId : undefined}
+                          disabled={saving}
                         />
                         {getModelLabel(modelKey)}
                       </label>
@@ -361,6 +393,7 @@ export function EvaluationPage() {
                       id={inputId}
                       checked={values.hallucinationFlags.includes(modelKey)}
                       onChange={() => toggleHallucinationFlag(modelKey)}
+                      disabled={saving}
                     />
                     {getModelLabel(modelKey)}
                   </label>
@@ -383,6 +416,7 @@ export function EvaluationPage() {
               aria-invalid={Boolean(errors.comment)}
               aria-describedby={errors.comment ? `${formId}-comment-error` : `${formId}-comment-hint`}
               ref={commentErrorRef}
+              disabled={saving}
             />
             <p id={`${formId}-comment-hint`} className="evaluation-form__char-count">
               {values.comment.length} / {COMMENT_MAX_LENGTH} characters
@@ -392,16 +426,16 @@ export function EvaluationPage() {
             )}
           </div>
 
-          <button type="submit" className="evaluation-form__submit">
-            Submit evaluation
+          <button type="submit" className="evaluation-form__submit" disabled={saving}>
+            {saving ? 'Saving evaluation…' : 'Submit evaluation'}
           </button>
         </form>
       </section>
 
-      {recentEvaluations.length > 0 && (
+      {!loading && recentEvaluations.length > 0 && (
         <section className="evaluation-recent" aria-labelledby="evaluation-recent-title">
           <h2 id="evaluation-recent-title" className="evaluation-recent__title">
-            Recent evaluations in this browser
+            Recent evaluations
           </h2>
           <ul className="evaluation-recent__list">
             {recentEvaluations.map((item) => (

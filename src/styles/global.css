@@ -1812,6 +1812,16 @@ img {
   margin-bottom: 0;
 }
 
+.evaluation-status {
+  margin: 0 0 var(--spacing-lg);
+  font-size: 0.9375rem;
+  color: var(--color-text-muted);
+}
+
+.evaluation-status--error {
+  color: #b91c1c;
+}
+
 .evaluation-form-section {
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -2017,6 +2027,16 @@ img {
 }
 
 /* Results */
+
+.results-status {
+  margin: 0 0 var(--spacing-lg);
+  font-size: 0.9375rem;
+  color: var(--color-text-muted);
+}
+
+.results-status--error {
+  color: #b91c1c;
+}
 
 .results-notice {
   background-color: var(--color-banner-bg);

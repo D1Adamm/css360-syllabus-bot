@@ -10,7 +10,7 @@ interface UserSeedListProps {
 export function UserSeedList({ seeds, onDelete, onDeleteAll }: UserSeedListProps) {
   async function handleDeleteAll() {
     const confirmed = window.confirm(
-      'Delete all your examples? This removes only user-created examples from this browser and cannot be undone.',
+      'Delete all your examples? This removes all shared user-created examples and cannot be undone.',
     );
 
     if (confirmed) {
