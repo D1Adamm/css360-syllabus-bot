@@ -16,6 +16,8 @@ __pycache__
 backend/data/syllabus_index.json
 data/exports/*
 !data/exports/.gitkeep
+data/prepared/*
+!data/prepared/.gitkeep
 dist-ssr
 *.local
 
