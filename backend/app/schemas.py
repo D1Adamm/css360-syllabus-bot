@@ -16,7 +16,7 @@ class BaseModelGenerateResponse(BaseModel):
 class RagRetrieveRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Student question for syllabus retrieval")
     top_k: int = Field(
-        default=4,
+        default=3,
         alias="topK",
         ge=1,
         le=20,
@@ -43,7 +43,7 @@ class RagRetrieveResponse(BaseModel):
 class RagGenerateRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Student question for RAG answer generation")
     top_k: int = Field(
-        default=4,
+        default=3,
         alias="topK",
         ge=1,
         le=20,

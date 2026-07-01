@@ -72,10 +72,11 @@ export function HomePage() {
           Prototype Scope
         </h2>
         <p className="scope-notice__text">
-          This application is a frontend prototype for classroom research. Navigation, syllabus
-          exploration, seed data creation, simulated model comparison, local evaluation, and
-          results aggregation are implemented. Live model inference, training pipelines, and
-          server-side data storage are not part of the current build.
+          This application is a classroom research prototype. Navigation, syllabus exploration,
+          seed data creation, local evaluation, and results aggregation are implemented. Base
+          Model and RAG answers on the Model Comparison page are live from the local FastAPI
+          backend. Fine-Tuned and Fine-Tuned + RAG responses remain simulated, and training
+          pipelines are not part of the current build.
         </p>
       </section>
     </>

@@ -253,7 +253,7 @@ export function EvaluationPage() {
     <>
       <PageHeader
         title="Evaluation"
-        description="Rate the simulated model responses shown on the Model Comparison page. Your ratings help compare how different approaches perform on syllabus questions."
+        description="Rate the model responses shown on the Model Comparison page. Your ratings help compare how different approaches perform on syllabus questions."
       />
 
       <aside className="evaluation-notice" aria-label="Evaluation notices">
@@ -262,8 +262,9 @@ export function EvaluationPage() {
           and shared across browsers and devices.
         </p>
         <p>
-          <strong>Simulated responses:</strong> These responses are simulated prototype outputs,
-          not live model results.
+          <strong>Response sources:</strong> On the Model Comparison page, Base Model and RAG
+          answers are live locally. Fine-Tuned and Fine-Tuned + RAG responses shown here remain
+          simulated prototype outputs.
         </p>
       </aside>
 

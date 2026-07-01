@@ -102,7 +102,7 @@ export async function generateBaseModel(
 
 export async function generateRag(
   question: string,
-  topK = 4,
+  topK = 3,
 ): Promise<RagGenerateResponse> {
   return postJson<RagGenerateResponse>(
     '/rag/generate',
