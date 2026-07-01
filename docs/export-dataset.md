@@ -108,6 +108,12 @@ After export:
 3. Clean or curate examples manually as needed
 4. Use the JSONL files later for fine-tuning preparation
 
+See `docs/prepare-dataset.md` for the next step:
+
+```bash
+python3 scripts/prepare_seed_dataset.py
+```
+
 Train/validation/test splits are intentionally **not** created by this script. Split the reviewed dataset in a later step.
 
 ## Related app pages
