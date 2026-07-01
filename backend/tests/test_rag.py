@@ -73,6 +73,35 @@ class RagPromptScopeTests(unittest.TestCase):
         self.assertIn("[Section: Class format and structure]", prompt)
         self.assertIn("[Section: Office Hours]", prompt)
 
+    def test_build_rag_prompt_keeps_separate_conditions_separate(self) -> None:
+        prompt = build_rag_prompt(
+            "What happens if I miss class?",
+            [
+                {
+                    "section": "Impact of Missing Class",
+                    "text": "Missing too many classes can make full in-class credit impossible.",
+                },
+                {
+                    "section": "Your Presence in Class",
+                    "text": "Missing the first two class sessions may result in being dropped.",
+                },
+            ],
+        )
+
+        self.assertIn("Keep separate conditions separate", prompt)
+        self.assertIn("Do not merge consequences from different sentences", prompt)
+        self.assertIn("without combining unrelated conditions", prompt)
+
+    def test_build_rag_prompt_forbids_internal_label_references(self) -> None:
+        prompt = build_rag_prompt(
+            "Do I need a textbook?",
+            [{"section": "Textbook", "text": "We do not have a required textbook."}],
+        )
+
+        self.assertIn("Do not mention internal context labels", prompt)
+        self.assertIn("Section:", prompt)
+        self.assertIn("natural student-facing prose", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
