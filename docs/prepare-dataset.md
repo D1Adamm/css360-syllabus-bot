@@ -37,10 +37,31 @@ The preparation script reads whatever records are present in that file at runtim
    - `createdAt` when available
    - `notes` when available
 5. Flags records recommended for manual review
-6. Removes exact duplicates again using normalized question + answer text
-7. Writes prepared JSON/JSONL outputs
+6. Loads `data/reviews/seed-review-overrides.json` when present and applies manual review overrides
+7. Removes exact duplicates again using normalized question + answer text
+8. Writes prepared JSON/JSONL outputs
 
 Train/validation/test splits are intentionally **not** created here.
+
+## Manual review overrides
+
+Do **not** edit generated files under `data/prepared/`. They are overwritten on every run.
+
+Instead, add review decisions to the tracked override file:
+
+```text
+data/reviews/seed-review-overrides.json
+```
+
+Supported override statuses:
+
+- `accepted`
+- `rejected`
+- `needs_review`
+
+Rejected examples are excluded from `seed-dataset-finetuning.jsonl`.
+
+See `docs/review-overrides.md` for the full workflow and override schema.
 
 ## Output files
 
@@ -68,6 +89,7 @@ Optional arguments:
 ```bash
 python3 scripts/prepare_seed_dataset.py \
   --input data/exports/seed-dataset-combined.json \
+  --overrides data/reviews/seed-review-overrides.json \
   --output-dir data/prepared
 ```
 
@@ -81,7 +103,9 @@ A record is marked `reviewRecommended: true` when any of the following apply:
 - the example is not directly answered by the syllabus
 - the record has validation warnings such as an unknown category
 
-Use `seed-dataset-prepared.json` for manual cleanup before any future fine-tuning step.
+Use `data/prepared/seed-dataset-prepared.json` to inspect generated review output.
+
+Apply manual corrections in `data/reviews/seed-review-overrides.json`, then re-run preparation.
 
 ## Fine-tuning file format
 
@@ -110,11 +134,13 @@ This keeps the dataset compatible with common instruction-tuning workflows witho
    python3 scripts/prepare_seed_dataset.py
    ```
 
-3. Review `data/prepared/seed-dataset-prepared.json`
+3. Inspect `data/prepared/seed-dataset-prepared.json`
 
-4. Clean or curate examples manually as needed
+4. Add or update review overrides in `data/reviews/seed-review-overrides.json`
 
-5. Use `data/prepared/seed-dataset-finetuning.jsonl` in a later training step
+5. Re-run preparation to apply overrides
+
+6. Use `data/prepared/seed-dataset-finetuning.jsonl` in a later training step
 
 ## Runtime counts
 
@@ -130,4 +156,5 @@ Re-run the script after regenerating `data/exports/seed-dataset-combined.json` l
 ## Related docs
 
 - Export step: `docs/export-dataset.md`
+- Review overrides: `docs/review-overrides.md`
 - App schema reference: `docs/data-format.md`
