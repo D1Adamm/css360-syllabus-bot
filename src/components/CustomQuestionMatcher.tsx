@@ -3,6 +3,7 @@ import { findBestComparisonMatch } from '../utils/comparisonUtils';
 
 interface CustomQuestionMatcherProps {
   records: { id: string; question: string }[];
+  isSubmitting?: boolean;
   onMatch: (recordId: string, matchedQuestion: string) => void;
   onNoMatch: () => void;
   onQuestionSubmit: (question: string) => void;
@@ -10,6 +11,7 @@ interface CustomQuestionMatcherProps {
 
 export function CustomQuestionMatcher({
   records,
+  isSubmitting = false,
   onMatch,
   onNoMatch,
   onQuestionSubmit,
@@ -24,7 +26,7 @@ export function CustomQuestionMatcher({
     event.preventDefault();
 
     const trimmed = customQuestion.trim();
-    if (!trimmed) {
+    if (!trimmed || isSubmitting) {
       return;
     }
 
@@ -36,7 +38,7 @@ export function CustomQuestionMatcher({
       onMatch(match.recordId, match.matchedQuestion);
       setNotice({
         type: 'match',
-        message: `Matched to predefined question: "${match.matchedQuestion}". The Base Model answer is live; the other three responses remain simulated.`,
+        message: `Matched to predefined question: "${match.matchedQuestion}". The Base Model and RAG answers are live; Fine-Tuned and Fine-Tuned + RAG remain simulated.`,
       });
       return;
     }
@@ -45,7 +47,7 @@ export function CustomQuestionMatcher({
     setNotice({
       type: 'no-match',
       message:
-        'The Base Model answer is live. RAG, Fine-Tuned, and Fine-Tuned + RAG remain simulated and only update when your question closely matches a predefined example.',
+        'The Base Model and RAG answers are live. Fine-Tuned and Fine-Tuned + RAG remain simulated and only update when your question closely matches a predefined example.',
     });
   }
 
@@ -57,7 +59,7 @@ export function CustomQuestionMatcher({
 
       <form className="custom-question-matcher__form" onSubmit={handleSubmit}>
         <label htmlFor="custom-question-input" className="custom-question-matcher__label">
-          Enter a question to send to the Base Model
+          Enter a question to send to the Base Model and RAG
         </label>
         <div className="custom-question-matcher__controls">
           <input
@@ -71,8 +73,12 @@ export function CustomQuestionMatcher({
             }}
             placeholder="e.g., Can I email about my grade?"
           />
-          <button type="submit" className="custom-question-matcher__submit">
-            Ask question
+          <button
+            type="submit"
+            className="custom-question-matcher__submit"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Generating...' : 'Ask question'}
           </button>
         </div>
       </form>

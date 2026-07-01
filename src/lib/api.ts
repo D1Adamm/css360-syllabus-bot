@@ -4,6 +4,25 @@ export interface BaseModelGenerateResponse {
   responseType: 'base';
 }
 
+export interface RagGenerateSource {
+  section: string;
+}
+
+export interface RagRetrieveResult {
+  chunkId: string;
+  section: string;
+  text: string;
+  score: number;
+}
+
+export interface RagGenerateResponse {
+  answer: string;
+  model: string;
+  sources: RagGenerateSource[];
+  retrievedChunks: RagRetrieveResult[];
+  responseType: 'rag';
+}
+
 export class ApiError extends Error {
   status?: number;
 
@@ -24,9 +43,12 @@ export function getApiBaseUrl(): string | null {
   return value.trim().replace(/\/$/, '');
 }
 
-export async function generateBaseModel(
-  question: string,
-): Promise<BaseModelGenerateResponse> {
+async function postJson<T>(
+  path: string,
+  body: unknown,
+  fallbackErrorMessage: string,
+  unreachableMessage: string,
+): Promise<T> {
   const baseUrl = getApiBaseUrl();
 
   if (!baseUrl) {
@@ -38,21 +60,19 @@ export async function generateBaseModel(
   let response: Response;
 
   try {
-    response = await fetch(`${baseUrl}/base-model/generate`, {
+    response = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(
-      'Could not reach the backend. Make sure the FastAPI server is running.',
-    );
+    throw new ApiError(unreachableMessage);
   }
 
   if (!response.ok) {
-    let detail = 'The backend could not generate a base model response.';
+    let detail = fallbackErrorMessage;
 
     try {
       const errorBody = (await response.json()) as { detail?: string };
@@ -66,5 +86,28 @@ export async function generateBaseModel(
     throw new ApiError(detail, response.status);
   }
 
-  return (await response.json()) as BaseModelGenerateResponse;
+  return (await response.json()) as T;
+}
+
+export async function generateBaseModel(
+  question: string,
+): Promise<BaseModelGenerateResponse> {
+  return postJson<BaseModelGenerateResponse>(
+    '/base-model/generate',
+    { question },
+    'The backend could not generate a base model response.',
+    'Could not reach the backend. Make sure the FastAPI server is running.',
+  );
+}
+
+export async function generateRag(
+  question: string,
+  topK = 4,
+): Promise<RagGenerateResponse> {
+  return postJson<RagGenerateResponse>(
+    '/rag/generate',
+    { question, topK },
+    'The backend could not generate a RAG response.',
+    'Could not reach the backend. Make sure the FastAPI server is running and Ollama is available.',
+  );
 }
