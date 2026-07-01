@@ -76,6 +76,7 @@ export function ComparisonPage() {
   const [activeQuestion, setActiveQuestion] = useState(records[0]?.question ?? '');
   const [baseModelState, setBaseModelState] = useState<LiveModelState>({ status: 'idle' });
   const [ragModelState, setRagModelState] = useState<RagModelState>({ status: 'idle' });
+  const [customMatcherResetKey, setCustomMatcherResetKey] = useState(0);
 
   const selectedRecord = useMemo(
     () => records.find((record) => record.id === selectedId) ?? records[0],
@@ -192,12 +193,14 @@ export function ComparisonPage() {
           if (record) {
             setActiveQuestion(record.question);
           }
+          setCustomMatcherResetKey((current) => current + 1);
         }}
       />
 
       <CustomQuestionMatcher
         records={records}
         isSubmitting={isLiveRequestInFlight}
+        resetKey={customMatcherResetKey}
         onMatch={(recordId) => setSelectedId(recordId)}
         onNoMatch={() => {
           // Keep the current selection for simulated responses.

@@ -52,5 +52,27 @@ class RagLatePolicyTests(unittest.TestCase):
         self.assertTrue(_should_skip_chunk_for_selection(question, bot_task_chunk, selected))
 
 
+class RagPromptScopeTests(unittest.TestCase):
+    def test_build_rag_prompt_requires_section_scope_fidelity(self) -> None:
+        prompt = build_rag_prompt(
+            "What is the difference between open lab and office hours?",
+            [
+                {
+                    "section": "Class format and structure",
+                    "text": "Each session is scheduled to run for a maximum of 120 minutes.",
+                },
+                {
+                    "section": "Office Hours",
+                    "text": "Open lab periods will include time for you to ask your questions.",
+                },
+            ],
+        )
+
+        self.assertIn("Keep each fact tied to the section it comes from", prompt)
+        self.assertIn("Do not attribute class session rules to open lab", prompt)
+        self.assertIn("[Section: Class format and structure]", prompt)
+        self.assertIn("[Section: Office Hours]", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()

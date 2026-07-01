@@ -126,6 +126,22 @@ See `docs/future-work.md` for a detailed roadmap. High-level next steps include 
 - Simulated outputs must not be mistaken for live AI results — the prototype banner and page notices reinforce this.
 - Evaluation ratings are subjective classroom observations, not ground-truth labels.
 
+## Manual compare-page checks
+
+### Custom matcher reset
+
+1. Open `/compare`.
+2. Enter a custom question such as `What is the late policy for bot project tasks?` and click **Ask question**.
+3. Confirm a custom match or no-match notice appears and Base/RAG reload for that question.
+4. Select a different predefined question from the dropdown, such as `What is the difference between open lab and office hours?`
+5. Confirm the custom input is cleared, the custom match notice disappears, and the category / relevant syllabus section / simulated cards all match the newly selected predefined question.
+6. Confirm Base and RAG answers reload for the selected predefined question.
+
+### Open lab scope check
+
+1. With the backend running, ask the predefined open-lab vs office-hours question on `/compare`.
+2. Confirm the RAG answer does not claim open lab sessions are limited to 120 minutes unless the retrieved syllabus context explicitly says so for open lab.
+
 ## Project structure
 
 ```

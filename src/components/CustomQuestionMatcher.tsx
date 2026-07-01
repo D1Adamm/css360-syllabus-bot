@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { findBestComparisonMatch } from '../utils/comparisonUtils';
 
 interface CustomQuestionMatcherProps {
   records: { id: string; question: string }[];
   isSubmitting?: boolean;
+  resetKey?: number;
   onMatch: (recordId: string, matchedQuestion: string) => void;
   onNoMatch: () => void;
   onQuestionSubmit: (question: string) => void;
@@ -12,6 +13,7 @@ interface CustomQuestionMatcherProps {
 export function CustomQuestionMatcher({
   records,
   isSubmitting = false,
+  resetKey = 0,
   onMatch,
   onNoMatch,
   onQuestionSubmit,
@@ -21,6 +23,11 @@ export function CustomQuestionMatcher({
     type: 'match' | 'no-match';
     message: string;
   } | null>(null);
+
+  useEffect(() => {
+    setCustomQuestion('');
+    setNotice(null);
+  }, [resetKey]);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
