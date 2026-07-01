@@ -91,6 +91,34 @@ class RagPromptScopeTests(unittest.TestCase):
         self.assertIn("Keep separate conditions separate", prompt)
         self.assertIn("Do not merge consequences from different sentences", prompt)
         self.assertIn("without combining unrelated conditions", prompt)
+        self.assertIn("beyond the first two", prompt)
+        self.assertIn("first two class sessions", prompt)
+        self.assertIn("repeated absences", prompt)
+        self.assertIn("omit a secondary detail", prompt)
+
+    def test_build_rag_prompt_preserves_attendance_rule_scope(self) -> None:
+        prompt = build_rag_prompt(
+            "What happens if I miss too many classes?",
+            [
+                {
+                    "section": "Impact of Missing Class",
+                    "text": (
+                        "Missing too many classes can make full credit for in-class "
+                        "activities impossible."
+                    ),
+                },
+                {
+                    "section": "Your Presence in Class",
+                    "text": (
+                        "Missing the first two class sessions may result in being dropped "
+                        "if the course is full."
+                    ),
+                },
+            ],
+        )
+
+        self.assertIn("Do not combine a dropped-from-the-course consequence", prompt)
+        self.assertIn("one specific assignment, or all assignments", prompt)
 
     def test_build_rag_prompt_forbids_internal_label_references(self) -> None:
         prompt = build_rag_prompt(

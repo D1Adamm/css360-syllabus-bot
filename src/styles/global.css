@@ -1564,6 +1564,15 @@ img {
   margin: 0;
 }
 
+.comparison-active-question {
+  margin: 0 0 var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+}
+
 .comparison-selector,
 .custom-question-matcher,
 .comparison-explanation {
@@ -1833,6 +1842,21 @@ img {
 
 .model-response-card--error {
   border-color: #fca5a5;
+}
+
+.model-response-card__unavailable {
+  font-size: 0.9375rem;
+  color: #92400e;
+  background-color: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin: 0;
+  flex: 1;
+}
+
+.model-response-card--unavailable {
+  border-color: #fcd34d;
 }
 
 .comparison-explanation__text {
