@@ -639,7 +639,30 @@ def _build_ranked_chunks(
     return sorted(scored_chunks, key=lambda item: item["score"], reverse=True)
 
 
+def _is_late_policy_question(question: str) -> bool:
+    question_lower = question.lower()
+    return "late" in question_lower and any(
+        term in question_lower
+        for term in ("policy", "extension", "penalty", "task", "bot", "project")
+    )
+
+
+def _should_skip_chunk_for_selection(
+    question: str,
+    chunk: dict[str, Any],
+    selected_chunks: list[dict[str, Any]],
+) -> bool:
+    if not _is_late_policy_question(question):
+        return False
+
+    if not any(item["section"] == "Late Policy" for item in selected_chunks):
+        return False
+
+    return bool(BOT_TASK_HEADING_PATTERN.match(chunk["section"]))
+
+
 def _select_diverse_chunks(
+    question: str,
     ranked_chunks: list[dict[str, Any]],
     top_k: int,
 ) -> list[dict[str, Any]]:
@@ -655,6 +678,9 @@ def _select_diverse_chunks(
         for chunk in candidate_pool:
             section = chunk["section"]
             if section in seen_sections:
+                continue
+
+            if _should_skip_chunk_for_selection(question, chunk, selected_chunks):
                 continue
 
             seen_sections.add(section)
@@ -786,7 +812,7 @@ async def retrieve_syllabus_chunks(
 
     scored_chunks.sort(key=lambda item: item["score"], reverse=True)
     ranked_chunks = _build_ranked_chunks(question, scored_chunks)
-    selected_chunks = _select_diverse_chunks(ranked_chunks, top_k)
+    selected_chunks = _select_diverse_chunks(question, ranked_chunks, top_k)
     _log_retrieval_ranking(question, ranked_chunks)
 
     debug_rankings = None
@@ -828,6 +854,10 @@ def build_rag_prompt(question: str, retrieved_chunks: list[dict[str, Any]]) -> s
         "from the context.\n"
         "- Do not say information is absent when the supplied context contains a relevant policy.\n"
         "- Include important qualifiers such as deadlines, penalties, exceptions, and no-makeup rules.\n"
+        "- Preserve exact numbers, numeric ranges, task numbers, dates, times, percentages, and "
+        "deadlines exactly as written in the context. Do not narrow, widen, renumber, or "
+        "paraphrase them.\n"
+        "- If the context says a range such as tasks 1-6, keep that exact range in your answer.\n"
         "- If the context does not contain the answer, clearly say that the syllabus does not "
         "provide that information.\n"
         "- Keep the answer concise and student-friendly, but do not omit important policy details.\n"
