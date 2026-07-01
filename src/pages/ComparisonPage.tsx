@@ -8,6 +8,11 @@ import { ModelResponseCard } from '../components/ModelResponseCard';
 import { PageHeader } from '../components/PageHeader';
 import { ApiError, generateBaseModel, generateRag } from '../lib/api';
 import type { ComparisonRecord, ComparisonResponse } from '../types';
+import {
+  type ComparisonMode,
+  SIMULATED_UNAVAILABLE_MESSAGE,
+  resolveSimulatedRecord,
+} from '../utils/comparisonPageState';
 
 const records = comparisonData as ComparisonRecord[];
 
@@ -74,6 +79,8 @@ function getApiErrorMessage(error: unknown, fallbackMessage: string): string {
 export function ComparisonPage() {
   const [selectedId, setSelectedId] = useState(records[0]?.id ?? '');
   const [activeQuestion, setActiveQuestion] = useState(records[0]?.question ?? '');
+  const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('predefined');
+  const [matchedRecordId, setMatchedRecordId] = useState<string | null>(null);
   const [baseModelState, setBaseModelState] = useState<LiveModelState>({ status: 'idle' });
   const [ragModelState, setRagModelState] = useState<RagModelState>({ status: 'idle' });
   const [customMatcherResetKey, setCustomMatcherResetKey] = useState(0);
@@ -82,6 +89,22 @@ export function ComparisonPage() {
     () => records.find((record) => record.id === selectedId) ?? records[0],
     [selectedId],
   );
+
+  const matchedRecord = useMemo(
+    () =>
+      matchedRecordId
+        ? (records.find((record) => record.id === matchedRecordId) ?? null)
+        : null,
+    [matchedRecordId],
+  );
+
+  const simulatedRecord = useMemo(() => {
+    if (!selectedRecord) {
+      return null;
+    }
+
+    return resolveSimulatedRecord(comparisonMode, selectedRecord, matchedRecord);
+  }, [comparisonMode, matchedRecord, selectedRecord]);
 
   const loadBaseModelResponse = useCallback(async (question: string) => {
     const trimmedQuestion = question.trim();
@@ -158,7 +181,7 @@ export function ComparisonPage() {
     return null;
   }
 
-  const evaluateHref = `/evaluate?comparison=${selectedRecord.id}`;
+  const evaluateHref = `/evaluate?comparison=${simulatedRecord?.id ?? selectedRecord.id}`;
   const isBaseModelLoading = baseModelState.status === 'loading';
   const isRagModelLoading = ragModelState.status === 'loading';
   const isLiveRequestInFlight = isBaseModelLoading || isRagModelLoading;
@@ -169,6 +192,11 @@ export function ComparisonPage() {
   const ragModelResponse =
     ragModelState.status === 'success' ? ragModelState.response : DEFAULT_RAG_RESPONSE;
   const ragSources = ragModelState.status === 'success' ? ragModelState.sources : [];
+  const showSimulatedUnavailable = comparisonMode === 'custom-unmatched';
+  const explanationNotes =
+    comparisonMode === 'custom-unmatched'
+      ? 'Fine-Tuned and Fine-Tuned + RAG simulated responses are only available for predefined questions or custom questions that closely match a predefined example.'
+      : (simulatedRecord?.notes ?? selectedRecord.notes);
 
   return (
     <>
@@ -184,6 +212,10 @@ export function ComparisonPage() {
         </p>
       </aside>
 
+      <p className="comparison-active-question" role="status">
+        <strong>Active question:</strong> {activeQuestion}
+      </p>
+
       <ComparisonQuestionSelector
         records={records}
         selectedId={selectedRecord.id}
@@ -193,6 +225,8 @@ export function ComparisonPage() {
           if (record) {
             setActiveQuestion(record.question);
           }
+          setComparisonMode('predefined');
+          setMatchedRecordId(null);
           setCustomMatcherResetKey((current) => current + 1);
         }}
       />
@@ -201,9 +235,14 @@ export function ComparisonPage() {
         records={records}
         isSubmitting={isLiveRequestInFlight}
         resetKey={customMatcherResetKey}
-        onMatch={(recordId) => setSelectedId(recordId)}
+        onMatch={(recordId) => {
+          setComparisonMode('custom-matched');
+          setMatchedRecordId(recordId);
+          setSelectedId(recordId);
+        }}
         onNoMatch={() => {
-          // Keep the current selection for simulated responses.
+          setComparisonMode('custom-unmatched');
+          setMatchedRecordId(null);
         }}
         onQuestionSubmit={setActiveQuestion}
       />
@@ -237,18 +276,36 @@ export function ComparisonPage() {
             );
           }
 
+          if (!simulatedRecord) {
+            return (
+              <ModelResponseCard
+                key={card.key}
+                modelName={card.modelName}
+                accessDescription={card.accessDescription}
+                response={{
+                  text: '',
+                  grounding: 'High',
+                  simulated: true,
+                }}
+                unavailableMessage={
+                  showSimulatedUnavailable ? SIMULATED_UNAVAILABLE_MESSAGE : null
+                }
+              />
+            );
+          }
+
           return (
             <ModelResponseCard
               key={card.key}
               modelName={card.modelName}
               accessDescription={card.accessDescription}
-              response={selectedRecord[card.responseKey]}
+              response={simulatedRecord[card.responseKey]}
             />
           );
         })}
       </section>
 
-      <ComparisonExplanation notes={selectedRecord.notes} />
+      <ComparisonExplanation notes={explanationNotes} />
 
       <div className="comparison-actions">
         <Link to={evaluateHref} className="button-link button-link--primary">

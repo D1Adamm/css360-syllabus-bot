@@ -7,6 +7,7 @@ interface ModelResponseCardProps {
   isLoading?: boolean;
   error?: string | null;
   sources?: string[];
+  unavailableMessage?: string | null;
 }
 
 function groundingClassName(grounding: ComparisonResponse['grounding']): string {
@@ -20,10 +21,13 @@ export function ModelResponseCard({
   isLoading = false,
   error = null,
   sources = [],
+  unavailableMessage = null,
 }: ModelResponseCardProps) {
+  const showUnavailable = !isLoading && !error && Boolean(unavailableMessage);
+
   return (
     <article
-      className={`model-response-card${isLoading ? ' model-response-card--loading' : ''}${error ? ' model-response-card--error' : ''}`}
+      className={`model-response-card${isLoading ? ' model-response-card--loading' : ''}${error ? ' model-response-card--error' : ''}${showUnavailable ? ' model-response-card--unavailable' : ''}`}
       aria-busy={isLoading}
     >
       <header className="model-response-card__header">
@@ -43,11 +47,17 @@ export function ModelResponseCard({
         </p>
       )}
 
-      {!isLoading && !error && (
+      {showUnavailable && (
+        <p className="model-response-card__unavailable" role="status">
+          {unavailableMessage}
+        </p>
+      )}
+
+      {!isLoading && !error && !showUnavailable && (
         <p className="model-response-card__text">{response.text}</p>
       )}
 
-      {!isLoading && !error && sources.length > 0 && (
+      {!isLoading && !error && !showUnavailable && sources.length > 0 && (
         <div className="model-response-card__sources">
           <p className="model-response-card__sources-label">Syllabus sources</p>
           <ul className="model-response-card__sources-list">
@@ -59,15 +69,15 @@ export function ModelResponseCard({
       )}
 
       <footer className="model-response-card__footer">
-        {!isLoading && !error && (
+        {!isLoading && !error && !showUnavailable && (
           <span className={groundingClassName(response.grounding)}>
             Grounding: {response.grounding}
           </span>
         )}
-        {!isLoading && !error && response.simulated && (
+        {!isLoading && !error && !showUnavailable && response.simulated && (
           <span className="model-response-card__simulated">Simulated response</span>
         )}
-        {!isLoading && !error && !response.simulated && (
+        {!isLoading && !error && !showUnavailable && !response.simulated && (
           <span className="model-response-card__live">Live response</span>
         )}
       </footer>
