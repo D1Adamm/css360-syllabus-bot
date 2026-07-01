@@ -13,6 +13,7 @@ dist
 __pycache__
 *.pyc
 .env
+backend/data/syllabus_index.json
 dist-ssr
 *.local
 

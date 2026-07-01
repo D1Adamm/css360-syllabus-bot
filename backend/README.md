@@ -13,6 +13,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Pull the embedding model used by the RAG retrieval endpoint:
+
+```bash
+ollama pull nomic-embed-text
+```
+
 ## Run
 
 ```bash
@@ -54,3 +60,33 @@ Expected response shape:
 ```
 
 If Ollama is not running, the endpoint returns HTTP 503.
+
+## Test RAG retrieval endpoint
+
+With Ollama running locally and the `nomic-embed-text` model available:
+
+```bash
+curl -X POST http://127.0.0.1:8000/rag/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What should a student do if they miss class?","topK":4}'
+```
+
+Expected response shape:
+
+```json
+{
+  "embeddingModel": "nomic-embed-text",
+  "results": [
+    {
+      "chunkId": "course-absence-form-001",
+      "section": "Course Websites",
+      "text": "...",
+      "score": 0.82
+    }
+  ]
+}
+```
+
+The first request may take longer because the backend builds a local syllabus index at `backend/data/syllabus_index.json`. Later requests reuse that file unless the syllabus content or embedding model changes.
+
+The generated index is local development data and should not be committed to git.
