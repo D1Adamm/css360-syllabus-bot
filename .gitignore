@@ -18,6 +18,8 @@ data/exports/*
 !data/exports/.gitkeep
 data/prepared/*
 !data/prepared/.gitkeep
+data/splits/*
+!data/splits/.gitkeep
 dist-ssr
 *.local
 

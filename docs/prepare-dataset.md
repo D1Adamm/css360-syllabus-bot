@@ -142,6 +142,12 @@ This keeps the dataset compatible with common instruction-tuning workflows witho
 
 6. Use `data/prepared/seed-dataset-finetuning.jsonl` in a later training step
 
+See `docs/split-dataset.md` for the deterministic train/validation/test split step:
+
+```bash
+python3 scripts/split_training_dataset.py
+```
+
 ## Runtime counts
 
 The script prints counts based on the input file available when you run it.
