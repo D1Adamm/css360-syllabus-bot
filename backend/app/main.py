@@ -12,6 +12,7 @@ from app.schemas import (
     RagGenerateResponse,
     RagGenerateSource,
     RagRetrieveRequest,
+    RagRetrieveDebugRanking,
     RagRetrieveResponse,
     RagRetrieveResult,
 )
@@ -58,14 +59,20 @@ async def retrieve_rag_chunks(request: RagRetrieveRequest) -> RagRetrieveRespons
     if not question:
         raise HTTPException(status_code=422, detail="Question must not be empty.")
 
-    embedding_model, results = await retrieve_syllabus_chunks(
+    embedding_model, results, debug_rankings = await retrieve_syllabus_chunks(
         question=question,
         top_k=request.top_k,
+        include_debug=request.debug,
     )
 
     return RagRetrieveResponse(
         embedding_model=embedding_model,
         results=[RagRetrieveResult(**result) for result in results],
+        debug_rankings=(
+            [RagRetrieveDebugRanking(**ranking) for ranking in debug_rankings]
+            if debug_rankings is not None
+            else None
+        ),
     )
 
 

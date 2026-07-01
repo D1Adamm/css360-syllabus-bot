@@ -20,11 +20,12 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip(
 OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 
-CHUNKING_VERSION = "2"
+CHUNKING_VERSION = "3"
 MAX_CHUNK_CHARS = 1800
 MAX_PARAGRAPHS_PER_CHUNK = 4
 MIN_PARAGRAPHS_PER_CHUNK = 2
 DEFAULT_TOP_K = 3
+RAG_DEBUG = os.getenv("RAG_DEBUG", "").lower() in ("1", "true", "yes")
 
 BROAD_SECTIONS = frozenset(
     {
@@ -42,9 +43,18 @@ BROAD_SECTIONS = frozenset(
     }
 )
 BROAD_SECTION_PENALTY = 0.04
+SINGLE_PARAGRAPH_SECTIONS = frozenset({"Course absence form"})
+SINGLE_PARAGRAPH_RETURN_SECTIONS = {
+    "Course absence form": "Course Websites",
+}
+IMPLICIT_SECTION_BOUNDARIES = (
+    "Standup participation is equivalent",
+    "Lab completion is equivalent",
+    "Grade Questions",
+    "Mapping Percentage to the 4.0 Scale",
+)
 
 INLINE_HEADING_PREFIXES = (
-    "Going to be absent?",
     "Impact of Missing Class",
     "Your Presence in Class",
     "Devices in Class",
@@ -155,7 +165,7 @@ EXPLICIT_HEADING_PATTERN = re.compile(
     r"Project: Developing a Discord Bot as a Team|Demonstration of Bot 2\.0|"
     r"Pre-made Demos|Bot Feedback|Reflection on Software Engineering and the Bot Project|"
     r"Credit and Notes|Administrative Notes|Resources are available for you|"
-    r"Going to be absent\?|Contact|Course absence form|Impact of Missing Class|"
+    r"Contact|Course absence form|Impact of Missing Class|"
     r"Your Presence in Class|Devices in Class|Office Hours|Religious Accommodations|"
     r"Student Conduct|Safety|Use of AI Tools|Academic Dishonesty|Disability Resources|"
     r"Mental Health|Other Student Support|Teaching and learning after periods of disruption|"
@@ -212,6 +222,10 @@ def _split_inline_heading(line: str) -> list[str]:
         return ["Course absence form", remainder] if remainder else ["Course absence form"]
 
     return [line]
+
+
+def _is_implicit_section_boundary(line: str) -> bool:
+    return any(line.startswith(marker) for marker in IMPLICIT_SECTION_BOUNDARIES)
 
 
 def _preprocess_syllabus_lines(text: str) -> list[str]:
@@ -361,6 +375,10 @@ def split_syllabus_into_chunks(text: str) -> list[dict[str, str]]:
             current_section = line.rstrip(":")
             continue
 
+        if _is_implicit_section_boundary(line):
+            flush_chunk()
+            current_section = "Grading"
+
         projected_chars = current_chars + len(line) + (2 if current_paragraphs else 0)
         should_flush = current_paragraphs and (
             len(current_paragraphs) >= MAX_PARAGRAPHS_PER_CHUNK
@@ -376,6 +394,14 @@ def split_syllabus_into_chunks(text: str) -> list[dict[str, str]]:
         current_paragraphs.append(line)
         current_chars += len(line) + (2 if len(current_paragraphs) > 1 else 0)
 
+        if current_section in SINGLE_PARAGRAPH_SECTIONS and len(current_paragraphs) >= 1:
+            flushed_section = current_section
+            flush_chunk()
+            current_section = SINGLE_PARAGRAPH_RETURN_SECTIONS.get(
+                flushed_section,
+                current_section,
+            )
+
     flush_chunk()
 
     if not chunks:
@@ -384,7 +410,37 @@ def split_syllabus_into_chunks(text: str) -> list[dict[str, str]]:
             detail="Syllabus chunking produced no chunks.",
         )
 
-    return chunks
+    return _merge_adjacent_section_chunks(chunks)
+
+
+def _merge_adjacent_section_chunks(chunks: list[dict[str, str]]) -> list[dict[str, str]]:
+    if not chunks:
+        return chunks
+
+    merged_chunks: list[dict[str, str]] = []
+
+    for chunk in chunks:
+        if not merged_chunks:
+            merged_chunks.append(chunk)
+            continue
+
+        previous = merged_chunks[-1]
+        if previous["section_title"] != chunk["section_title"]:
+            merged_chunks.append(chunk)
+            continue
+
+        combined_text = f"{previous['text']}\n\n{chunk['text']}"
+        if len(combined_text) > MAX_CHUNK_CHARS:
+            merged_chunks.append(chunk)
+            continue
+
+        merged_chunks[-1] = {
+            "id": previous["id"],
+            "section_title": previous["section_title"],
+            "text": combined_text,
+        }
+
+    return merged_chunks
 
 
 def compute_cosine_similarity(vector_a: list[float], vector_b: list[float]) -> float:
@@ -493,22 +549,100 @@ def _index_is_stale(index_data: dict[str, Any], syllabus_hash: str) -> bool:
     return False
 
 
+def _question_terms(question: str) -> set[str]:
+    return set(re.findall(r"[a-z]{4,}", question.lower()))
+
+
+def _retrieval_score_adjustment(question: str, section: str, text: str) -> float:
+    question_lower = question.lower()
+    section_lower = section.lower()
+    text_lower = text.lower()
+    question_words = _question_terms(question)
+    adjustment = 0.0
+
+    section_words = set(re.findall(r"[a-z]{4,}", section_lower))
+    title_overlap = question_words & section_words
+    if title_overlap:
+        adjustment += 0.05 * len(title_overlap)
+
+    if section_lower in question_lower or question_lower in section_lower:
+        adjustment += 0.12
+
+    if any(term in question_lower for term in ("contact", "instructor", "reach", "message", "email", "discord")):
+        if section == "Contact":
+            adjustment += 0.2
+        if section == "Turnaround time commitment":
+            adjustment += 0.04
+        if section in {"Cold Calling", "Impact of Missing Class"}:
+            adjustment -= 0.14
+        if section == "Office Hours":
+            adjustment -= 0.14
+
+    if any(term in question_lower for term in ("miss", "absent", "absence")):
+        if section in {"Impact of Missing Class", "Your Presence in Class", "Course absence form"}:
+            adjustment += 0.12
+        if "one hour before" in text_lower:
+            adjustment += 0.14
+        if "does not serve as a makeup" in text_lower or "no direct way to make up" in text_lower:
+            adjustment += 0.08
+        if section == "Going to be absent?":
+            adjustment -= 0.05
+
+    if "late" in question_lower and any(
+        term in question_lower for term in ("policy", "extension", "penalty", "task", "bot", "project")
+    ):
+        if section == "Late Policy":
+            adjustment += 0.22
+        if BOT_TASK_HEADING_PATTERN.match(section) and not re.search(r"task\s*#?\s*\d", question_lower):
+            adjustment -= 0.18
+
+    if "policy" in question_lower and section == "Late Policy":
+        adjustment += 0.08
+
+    return adjustment
+
+
 def _adjusted_similarity_score(score: float, section: str) -> float:
     if section in BROAD_SECTIONS:
         return score - BROAD_SECTION_PENALTY
     return score
 
 
-def _select_diverse_chunks(
+def _log_retrieval_ranking(question: str, ranked_chunks: list[dict[str, Any]]) -> None:
+    if not RAG_DEBUG:
+        return
+
+    preview_lines = [
+        f"RAG retrieval ranking for question: {question!r}",
+    ]
+    for index, chunk in enumerate(ranked_chunks[:10], start=1):
+        preview_lines.append(
+            "  "
+            f"{index}. {chunk['section']} | final={chunk['score']:.4f} "
+            f"(base={chunk.get('base_score', chunk['score']):.4f}, "
+            f"adj={chunk.get('score_adjustment', 0.0):+.4f})"
+        )
+    print("\n".join(preview_lines))
+
+
+def _build_ranked_chunks(
+    question: str,
     scored_chunks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    for chunk in scored_chunks:
+        base_score = chunk["score"]
+        adjustment = _retrieval_score_adjustment(question, chunk["section"], chunk["text"])
+        chunk["base_score"] = base_score
+        chunk["score_adjustment"] = adjustment
+        chunk["score"] = _adjusted_similarity_score(base_score, chunk["section"]) + adjustment
+
+    return sorted(scored_chunks, key=lambda item: item["score"], reverse=True)
+
+
+def _select_diverse_chunks(
+    ranked_chunks: list[dict[str, Any]],
     top_k: int,
 ) -> list[dict[str, Any]]:
-    ranked_chunks = sorted(
-        scored_chunks,
-        key=lambda item: _adjusted_similarity_score(item["score"], item["section"]),
-        reverse=True,
-    )
-
     specific_chunks = [
         chunk for chunk in ranked_chunks if chunk["section"] not in BROAD_SECTIONS
     ]
@@ -621,7 +755,8 @@ async def ensure_syllabus_index() -> dict[str, Any]:
 async def retrieve_syllabus_chunks(
     question: str,
     top_k: int = DEFAULT_TOP_K,
-) -> tuple[str, list[dict[str, Any]]]:
+    include_debug: bool = False,
+) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]] | None]:
     index_data = await ensure_syllabus_index()
     chunks = index_data.get("chunks", [])
 
@@ -650,19 +785,36 @@ async def retrieve_syllabus_chunks(
         )
 
     scored_chunks.sort(key=lambda item: item["score"], reverse=True)
-    return index_data["embedding_model"], _select_diverse_chunks(scored_chunks, top_k)
+    ranked_chunks = _build_ranked_chunks(question, scored_chunks)
+    selected_chunks = _select_diverse_chunks(ranked_chunks, top_k)
+    _log_retrieval_ranking(question, ranked_chunks)
+
+    debug_rankings = None
+    if include_debug:
+        selected_ids = {chunk["chunk_id"] for chunk in selected_chunks}
+        debug_rankings = [
+            {
+                "chunk_id": chunk["chunk_id"],
+                "section": chunk["section"],
+                "base_score": chunk["base_score"],
+                "score_adjustment": chunk["score_adjustment"],
+                "score": chunk["score"],
+                "selected": chunk["chunk_id"] in selected_ids,
+            }
+            for chunk in ranked_chunks[:10]
+        ]
+
+    return index_data["embedding_model"], selected_chunks, debug_rankings
 
 
 def build_rag_prompt(question: str, retrieved_chunks: list[dict[str, Any]]) -> str:
     context_blocks: list[str] = []
     source_sections: list[str] = []
 
-    for index, chunk in enumerate(retrieved_chunks, start=1):
+    for chunk in retrieved_chunks:
         section = chunk["section"]
         source_sections.append(section)
-        context_blocks.append(
-            f"[Excerpt {index} | Section: {section}]\n{chunk['text']}"
-        )
+        context_blocks.append(f"[Section: {section}]\n{chunk['text']}")
 
     unique_sections = list(dict.fromkeys(source_sections))
     section_list = "\n".join(f"- {section}" for section in unique_sections)
@@ -672,12 +824,18 @@ def build_rag_prompt(question: str, retrieved_chunks: list[dict[str, Any]]) -> s
         "Rules:\n"
         "- Answer only from the supplied syllabus context.\n"
         "- Do not use general knowledge to invent course policies.\n"
+        "- Carefully extract all directly relevant rules, deadlines, exceptions, and penalties "
+        "from the context.\n"
+        "- Do not say information is absent when the supplied context contains a relevant policy.\n"
+        "- Include important qualifiers such as deadlines, penalties, exceptions, and no-makeup rules.\n"
         "- If the context does not contain the answer, clearly say that the syllabus does not "
         "provide that information.\n"
-        "- Keep the answer concise and student-friendly.\n"
+        "- Keep the answer concise and student-friendly, but do not omit important policy details.\n"
         "- Do not tell the student to email the instructor unless the supplied syllabus context "
         "specifically says to do so.\n"
-        "- Do not mention that the answer was generated by AI.\n\n"
+        "- Do not mention that the answer was generated by AI.\n"
+        "- Do not refer to excerpt numbers or internal labels.\n"
+        "- When multiple syllabus excerpts are provided, synthesize details from all of them.\n\n"
         f"Student question:\n{question}\n\n"
         "Syllabus context:\n"
         f"{chr(10).join(context_blocks)}\n\n"
@@ -691,7 +849,7 @@ async def generate_rag_answer(
     question: str,
     top_k: int = DEFAULT_TOP_K,
 ) -> dict[str, Any]:
-    _, retrieved_chunks = await retrieve_syllabus_chunks(question=question, top_k=top_k)
+    _, retrieved_chunks, _ = await retrieve_syllabus_chunks(question=question, top_k=top_k)
     prompt = build_rag_prompt(question, retrieved_chunks)
     generation = await generate_ollama_completion(prompt)
 

@@ -125,3 +125,15 @@ Expected response shape:
 ```
 
 The endpoint retrieves relevant syllabus chunks, builds a strict context-only prompt, and sends it to the generation model. The first request may take longer if the local syllabus index still needs to be built.
+
+## Debug retrieval ranking
+
+For development, inspect ranked chunks and score adjustments through `/rag/retrieve`:
+
+```bash
+curl -X POST http://127.0.0.1:8000/rag/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"question":"How should I contact the instructor?","topK":3,"debug":true}'
+```
+
+Set `RAG_DEBUG=true` in the backend environment to print the top retrieval rankings to the server console.

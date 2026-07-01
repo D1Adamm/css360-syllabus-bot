@@ -22,6 +22,21 @@ class RagRetrieveRequest(BaseModel):
         le=20,
         description="Number of syllabus chunks to return",
     )
+    debug: bool = Field(
+        default=False,
+        description="Include retrieval ranking debug metadata for development",
+    )
+
+
+class RagRetrieveDebugRanking(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    chunk_id: str = Field(alias="chunkId")
+    section: str
+    base_score: float = Field(alias="baseScore")
+    score_adjustment: float = Field(alias="scoreAdjustment")
+    score: float
+    selected: bool
 
 
 class RagRetrieveResult(BaseModel):
@@ -36,6 +51,10 @@ class RagRetrieveResult(BaseModel):
 class RagRetrieveResponse(BaseModel):
     embedding_model: str = Field(alias="embeddingModel")
     results: list[RagRetrieveResult]
+    debug_rankings: list[RagRetrieveDebugRanking] | None = Field(
+        default=None,
+        alias="debugRankings",
+    )
 
     model_config = {"populate_by_name": True}
 
