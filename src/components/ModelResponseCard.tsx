@@ -6,6 +6,7 @@ interface ModelResponseCardProps {
   response: ComparisonResponse;
   isLoading?: boolean;
   error?: string | null;
+  sources?: string[];
 }
 
 function groundingClassName(grounding: ComparisonResponse['grounding']): string {
@@ -18,6 +19,7 @@ export function ModelResponseCard({
   response,
   isLoading = false,
   error = null,
+  sources = [],
 }: ModelResponseCardProps) {
   return (
     <article
@@ -43,6 +45,17 @@ export function ModelResponseCard({
 
       {!isLoading && !error && (
         <p className="model-response-card__text">{response.text}</p>
+      )}
+
+      {!isLoading && !error && sources.length > 0 && (
+        <div className="model-response-card__sources">
+          <p className="model-response-card__sources-label">Syllabus sources</p>
+          <ul className="model-response-card__sources-list">
+            {sources.map((source) => (
+              <li key={source}>{source}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <footer className="model-response-card__footer">
