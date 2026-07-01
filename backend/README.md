@@ -137,3 +137,22 @@ curl -X POST http://127.0.0.1:8000/rag/retrieve \
 ```
 
 Set `RAG_DEBUG=true` in the backend environment to print the top retrieval rankings to the server console.
+
+## Regression test for late-policy numeric fidelity
+
+Run the backend unit tests:
+
+```bash
+cd backend
+python -m unittest discover -s tests -v
+```
+
+Manual answer check:
+
+```bash
+curl -X POST http://127.0.0.1:8000/rag/generate \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What is the late policy for bot project tasks?","topK":3}'
+```
+
+The answer should preserve the syllabus wording **Bot Project Tasks 1-6**, not 1-5.

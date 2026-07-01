@@ -1,0 +1,56 @@
+import unittest
+
+from app.rag import (
+    _is_late_policy_question,
+    _should_skip_chunk_for_selection,
+    build_rag_prompt,
+    read_syllabus,
+    split_syllabus_into_chunks,
+)
+
+
+class RagLatePolicyTests(unittest.TestCase):
+    def test_late_policy_chunk_preserves_tasks_1_through_6(self) -> None:
+        chunks = split_syllabus_into_chunks(read_syllabus())
+        late_policy_chunk = next(
+            chunk for chunk in chunks if chunk["section_title"] == "Late Policy"
+        )
+
+        self.assertIn("Bot Project Tasks 1-6", late_policy_chunk["text"])
+        self.assertIn("these 6 project tasks", late_policy_chunk["text"])
+        self.assertNotIn("Bot Project Tasks 1-5", late_policy_chunk["text"])
+
+    def test_build_rag_prompt_requires_exact_numeric_preservation(self) -> None:
+        prompt = build_rag_prompt(
+            "What is the late policy for bot project tasks?",
+            [
+                {
+                    "section": "Late Policy",
+                    "text": (
+                        "With respect to Bot Project Tasks 1-6, you may choose one 48-hour "
+                        "extension per quarter."
+                    ),
+                }
+            ],
+        )
+
+        self.assertIn("Preserve exact numbers", prompt)
+        self.assertIn("Bot Project Tasks 1-6", prompt)
+        self.assertIn("Do not narrow, widen, renumber, or paraphrase them.", prompt)
+
+    def test_late_policy_question_skips_bot_task_chunks_after_late_policy_selected(self) -> None:
+        question = "What is the late policy for bot project tasks?"
+        selected = [{"section": "Late Policy", "chunk_id": "late-policy-001", "text": "...", "score": 1.0}]
+        bot_task_chunk = {
+            "section": "Bot Project Task #5",
+            "chunk_id": "bot-project-task-5-001",
+            "text": "...",
+            "score": 0.8,
+        }
+
+        self.assertTrue(_is_late_policy_question(question))
+        self.assertTrue(_should_skip_chunk_for_selection(question, bot_task_chunk, selected))
+
+
+if __name__ == "__main__":
+    unittest.main()
