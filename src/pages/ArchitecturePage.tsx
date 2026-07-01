@@ -59,14 +59,14 @@ export function ArchitecturePage() {
 
       <section className="architecture-section" aria-labelledby="arch-comparison-title">
         <h2 id="arch-comparison-title" className="architecture-section__title">
-          Simulated model outputs
+          Model comparison outputs
         </h2>
         <p className="architecture-section__text">
-          Comparison records in <code>src/data/comparisonData.json</code> contain four
-          pre-written responses per syllabus question—one for each model approach. No live model
-          inference runs in this prototype. Grounding labels (Low, Medium, High) and simulated
-          flags are prototype annotations to support classroom discussion, not measurements from
-          a retrieval or evaluation pipeline.
+          Comparison records in <code>src/data/comparisonData.json</code> contain pre-written
+          responses for Fine-Tuned and Fine-Tuned + RAG. Base Model and RAG responses on the
+          Model Comparison page are live from the local FastAPI backend. Grounding labels (Low,
+          Medium, High) on simulated cards are prototype annotations to support classroom
+          discussion, not automated measurements from a retrieval or evaluation pipeline.
         </p>
       </section>
 
@@ -96,7 +96,9 @@ export function ArchitecturePage() {
             Prototype and user-created seed examples
           </div>
           <div className="architecture-flow__arrow" aria-hidden="true">↓</div>
-          <div className="architecture-flow__step">Simulated model comparisons</div>
+          <div className="architecture-flow__step">
+            Live Base Model / RAG plus simulated Fine-Tuned comparisons
+          </div>
           <div className="architecture-flow__arrow" aria-hidden="true">↓</div>
           <div className="architecture-flow__step">Local evaluations</div>
           <div className="architecture-flow__arrow" aria-hidden="true">↓</div>
@@ -140,6 +142,8 @@ export function ArchitecturePage() {
               <li>Dataset filtering, sorting, and statistics</li>
               <li>JSON and JSONL export</li>
               <li>Model comparison interface with question selection</li>
+              <li>Live Base Model and RAG inference via local FastAPI backend</li>
+              <li>Local syllabus retrieval index and cosine-similarity search</li>
               <li>Evaluation workflow with form validation</li>
               <li>Results aggregation and export</li>
             </ul>
@@ -147,10 +151,8 @@ export function ArchitecturePage() {
           <div className="architecture-comparison__column">
             <h3 className="architecture-comparison__heading">Simulated (not implemented)</h3>
             <ul className="architecture-section__list">
-              <li>Model inference and text generation</li>
-              <li>Retrieval-augmented generation</li>
               <li>Fine-tuning and training pipelines</li>
-              <li>Embedding and vector search</li>
+              <li>Fine-Tuned and Fine-Tuned + RAG live inference</li>
               <li>Automated grounding scores</li>
               <li>Server-side evaluation storage</li>
               <li>Shared classroom database</li>

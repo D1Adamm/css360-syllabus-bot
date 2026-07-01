@@ -68,7 +68,7 @@ With Ollama running locally and the `nomic-embed-text` model available:
 ```bash
 curl -X POST http://127.0.0.1:8000/rag/retrieve \
   -H "Content-Type: application/json" \
-  -d '{"question":"What should a student do if they miss class?","topK":4}'
+  -d '{"question":"What should a student do if they miss class?","topK":3}'
 ```
 
 Expected response shape:
@@ -98,7 +98,7 @@ With Ollama running locally, the `nomic-embed-text` embedding model available, a
 ```bash
 curl -X POST http://127.0.0.1:8000/rag/generate \
   -H "Content-Type: application/json" \
-  -d '{"question":"What should a student do if they miss class?","topK":4}'
+  -d '{"question":"What should a student do if they miss class?","topK":3}'
 ```
 
 Expected response shape:

@@ -4,26 +4,26 @@ A classroom prototype for comparing how base models, retrieval-augmented generat
 
 ## Purpose
 
-Syllabus Model Lab supports CSS 360 classroom research on syllabus-grounded AI assistants. Students explore official syllabus content, review and create seed training examples, compare simulated model responses, evaluate those responses, and review aggregated local results. The goal is to learn how different model approaches behave on course-policy questions without requiring live model infrastructure during early classroom sessions.
+Syllabus Model Lab supports CSS 360 classroom research on syllabus-grounded AI assistants. Students explore official syllabus content, review and create seed training examples, compare Base Model and RAG live responses alongside simulated fine-tuned outputs, evaluate those responses, and review aggregated results.
 
 ## Activity flow
 
 1. **Explore syllabus topics** — Browse structured syllabus summaries on the Syllabus page.
 2. **Review prototype seed data** — Inspect instruction–response pairs on the Dataset page.
 3. **Create new seed examples** — Add classroom-created examples on the Seed Data Builder page.
-4. **Compare four model approaches** — Review simulated responses on the Model Comparison page.
+4. **Compare four model approaches** — Review live Base Model and RAG responses alongside simulated fine-tuned outputs on the Model Comparison page.
 5. **Evaluate responses** — Rate accuracy, helpfulness, conciseness, grounding, and preference.
 6. **Review local results** — View aggregated metrics and export evaluation data.
 
 ## Current features
 
-- Persistent prototype banner identifying the app as a simulation
+- Persistent prototype banner noting live Base Model and RAG responses
 - Syllabus Explorer with search and category filtering
 - Prototype seed dataset with statistics, filters, and sorting
 - User seed creation with validation and duplicate detection
 - Combined prototype and user seed dataset view
 - JSON and JSONL export for seeds
-- Simulated four-model comparison interface
+- Hybrid four-model comparison interface with live Base Model and RAG responses
 - Custom question matcher (keyword overlap against predefined questions)
 - Evaluation workflow with form validation and localStorage persistence
 - Results dashboard with summary metrics, bar charts, and per-question breakdown
@@ -65,7 +65,7 @@ npm run lint
 | `/syllabus` | Syllabus Explorer | Browse structured syllabus topics |
 | `/seed-builder` | Seed Data Builder | Create user seed examples |
 | `/dataset` | Seed Dataset | Browse and export seed data |
-| `/compare` | Model Comparison | Compare four simulated model responses |
+| `/compare` | Model Comparison | Compare live Base Model and RAG responses with simulated fine-tuned outputs |
 | `/evaluate` | Evaluation | Rate model responses (`?comparison=<id>`) |
 | `/results` | Results | View aggregated evaluation metrics |
 | `/architecture` | Architecture | Technical architecture overview |

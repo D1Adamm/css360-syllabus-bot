@@ -1,7 +1,10 @@
 export function PrototypeBanner() {
   return (
     <aside className="prototype-banner" role="status" aria-live="polite">
-      <p>Prototype mode: model outputs and training features are not live yet.</p>
+      <p>
+        <strong>Hybrid prototype:</strong> Base Model and RAG are live locally. Fine-Tuned and
+        Fine-Tuned + RAG remain simulated.
+      </p>
     </aside>
   );
 }

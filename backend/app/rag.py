@@ -20,9 +20,48 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip(
 OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 
-MAX_CHUNK_CHARS = 2500
-MAX_PARAGRAPHS_PER_CHUNK = 6
-MIN_PARAGRAPHS_PER_CHUNK = 3
+CHUNKING_VERSION = "2"
+MAX_CHUNK_CHARS = 1800
+MAX_PARAGRAPHS_PER_CHUNK = 4
+MIN_PARAGRAPHS_PER_CHUNK = 2
+DEFAULT_TOP_K = 3
+
+BROAD_SECTIONS = frozenset(
+    {
+        "Course Introduction",
+        "Course Websites",
+        "Grading",
+        "Class Goals",
+        "Before Class",
+        "In Class Goals",
+        "Optional Reading",
+        "Optional Materials",
+        "Optional Resources",
+        "Administrative Notes",
+        "Schedule",
+    }
+)
+BROAD_SECTION_PENALTY = 0.04
+
+INLINE_HEADING_PREFIXES = (
+    "Going to be absent?",
+    "Impact of Missing Class",
+    "Your Presence in Class",
+    "Devices in Class",
+    "Office Hours",
+    "Religious Accommodations",
+    "Student Conduct",
+    "Safety",
+    "Use of AI Tools",
+    "Academic Dishonesty",
+    "Disability Resources",
+    "Mental Health",
+    "Other Student Support",
+    "Teaching and learning after periods of disruption",
+    "Grade Questions",
+    "Late Policy",
+    "Mapping Percentage to the 4.0 Scale",
+)
 
 NUMBERED_HEADING_PATTERN = re.compile(r"^\d+(?:\.\d+)*\s+\S")
 BOT_TASK_HEADING_PATTERN = re.compile(r"^Bot Project Task #\d+$", re.IGNORECASE)
@@ -115,7 +154,12 @@ EXPLICIT_HEADING_PATTERN = re.compile(
     r"In Class: Discuss, Listen, Co-Work|Out of Class: Read, Watch, Write, and Code|"
     r"Project: Developing a Discord Bot as a Team|Demonstration of Bot 2\.0|"
     r"Pre-made Demos|Bot Feedback|Reflection on Software Engineering and the Bot Project|"
-    r"Credit and Notes|Administrative Notes|Resources are available for you)$",
+    r"Credit and Notes|Administrative Notes|Resources are available for you|"
+    r"Going to be absent\?|Contact|Course absence form|Impact of Missing Class|"
+    r"Your Presence in Class|Devices in Class|Office Hours|Religious Accommodations|"
+    r"Student Conduct|Safety|Use of AI Tools|Academic Dishonesty|Disability Resources|"
+    r"Mental Health|Other Student Support|Teaching and learning after periods of disruption|"
+    r"Grade Questions|Late Policy|Mapping Percentage to the 4\.0 Scale|Textbook|Course Meetings)$",
     re.IGNORECASE,
 )
 
@@ -149,6 +193,32 @@ def read_syllabus() -> str:
 
 def _iter_line_units(text: str) -> list[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _split_inline_heading(line: str) -> list[str]:
+    for heading in INLINE_HEADING_PREFIXES:
+        if line.startswith(heading):
+            remainder = line[len(heading) :].strip()
+            if remainder:
+                return [heading, remainder]
+            return [heading]
+
+    if line.startswith("Contact:") and len(line) > len("Contact:"):
+        remainder = line[len("Contact:") :].strip()
+        return ["Contact", remainder] if remainder else ["Contact"]
+
+    if line.startswith("Course absence form:") and len(line) > len("Course absence form:"):
+        remainder = line[len("Course absence form:") :].strip()
+        return ["Course absence form", remainder] if remainder else ["Course absence form"]
+
+    return [line]
+
+
+def _preprocess_syllabus_lines(text: str) -> list[str]:
+    processed_lines: list[str] = []
+    for line in _iter_line_units(text):
+        processed_lines.extend(_split_inline_heading(line))
+    return processed_lines
 
 
 def _is_contents_table_entry(line: str) -> bool:
@@ -241,7 +311,7 @@ def _make_chunk_id(section_title: str, chunk_number: int) -> str:
 
 
 def split_syllabus_into_chunks(text: str) -> list[dict[str, str]]:
-    lines = _iter_line_units(text)
+    lines = _preprocess_syllabus_lines(text)
     chunks: list[dict[str, str]] = []
     current_section = "Course Introduction"
     current_paragraphs: list[str] = []
@@ -417,7 +487,49 @@ def _index_is_stale(index_data: dict[str, Any], syllabus_hash: str) -> bool:
     if index_data.get("embedding_model") != OLLAMA_EMBEDDING_MODEL:
         return True
 
+    if index_data.get("chunking_version") != CHUNKING_VERSION:
+        return True
+
     return False
+
+
+def _adjusted_similarity_score(score: float, section: str) -> float:
+    if section in BROAD_SECTIONS:
+        return score - BROAD_SECTION_PENALTY
+    return score
+
+
+def _select_diverse_chunks(
+    scored_chunks: list[dict[str, Any]],
+    top_k: int,
+) -> list[dict[str, Any]]:
+    ranked_chunks = sorted(
+        scored_chunks,
+        key=lambda item: _adjusted_similarity_score(item["score"], item["section"]),
+        reverse=True,
+    )
+
+    specific_chunks = [
+        chunk for chunk in ranked_chunks if chunk["section"] not in BROAD_SECTIONS
+    ]
+    broad_chunks = [chunk for chunk in ranked_chunks if chunk["section"] in BROAD_SECTIONS]
+
+    selected_chunks: list[dict[str, Any]] = []
+    seen_sections: set[str] = set()
+
+    for candidate_pool in (specific_chunks, broad_chunks):
+        for chunk in candidate_pool:
+            section = chunk["section"]
+            if section in seen_sections:
+                continue
+
+            seen_sections.add(section)
+            selected_chunks.append(chunk)
+
+            if len(selected_chunks) >= top_k:
+                return selected_chunks
+
+    return selected_chunks
 
 
 async def build_and_save_syllabus_index() -> dict[str, Any]:
@@ -444,6 +556,7 @@ async def build_and_save_syllabus_index() -> dict[str, Any]:
     index_data = {
         "syllabus_content_hash": syllabus_hash,
         "embedding_model": OLLAMA_EMBEDDING_MODEL,
+        "chunking_version": CHUNKING_VERSION,
         "chunk_count": len(indexed_chunks),
         "chunks": indexed_chunks,
     }
@@ -507,7 +620,7 @@ async def ensure_syllabus_index() -> dict[str, Any]:
 
 async def retrieve_syllabus_chunks(
     question: str,
-    top_k: int = 4,
+    top_k: int = DEFAULT_TOP_K,
 ) -> tuple[str, list[dict[str, Any]]]:
     index_data = await ensure_syllabus_index()
     chunks = index_data.get("chunks", [])
@@ -537,7 +650,7 @@ async def retrieve_syllabus_chunks(
         )
 
     scored_chunks.sort(key=lambda item: item["score"], reverse=True)
-    return index_data["embedding_model"], scored_chunks[:top_k]
+    return index_data["embedding_model"], _select_diverse_chunks(scored_chunks, top_k)
 
 
 def build_rag_prompt(question: str, retrieved_chunks: list[dict[str, Any]]) -> str:
@@ -576,7 +689,7 @@ def build_rag_prompt(question: str, retrieved_chunks: list[dict[str, Any]]) -> s
 
 async def generate_rag_answer(
     question: str,
-    top_k: int = 4,
+    top_k: int = DEFAULT_TOP_K,
 ) -> dict[str, Any]:
     _, retrieved_chunks = await retrieve_syllabus_chunks(question=question, top_k=top_k)
     prompt = build_rag_prompt(question, retrieved_chunks)
