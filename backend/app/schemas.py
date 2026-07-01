@@ -38,3 +38,28 @@ class RagRetrieveResponse(BaseModel):
     results: list[RagRetrieveResult]
 
     model_config = {"populate_by_name": True}
+
+
+class RagGenerateRequest(BaseModel):
+    question: str = Field(..., min_length=1, description="Student question for RAG answer generation")
+    top_k: int = Field(
+        default=4,
+        alias="topK",
+        ge=1,
+        le=20,
+        description="Number of syllabus chunks to retrieve for context",
+    )
+
+
+class RagGenerateSource(BaseModel):
+    section: str
+
+
+class RagGenerateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    answer: str
+    model: str
+    sources: list[RagGenerateSource]
+    retrieved_chunks: list[RagRetrieveResult] = Field(alias="retrievedChunks")
+    response_type: str = Field(default="rag", alias="responseType")

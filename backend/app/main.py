@@ -4,10 +4,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.ollama import generate_base_model_response
-from app.rag import retrieve_syllabus_chunks
+from app.rag import generate_rag_answer, retrieve_syllabus_chunks
 from app.schemas import (
     BaseModelGenerateRequest,
     BaseModelGenerateResponse,
+    RagGenerateRequest,
+    RagGenerateResponse,
+    RagGenerateSource,
     RagRetrieveRequest,
     RagRetrieveResponse,
     RagRetrieveResult,
@@ -63,4 +66,20 @@ async def retrieve_rag_chunks(request: RagRetrieveRequest) -> RagRetrieveRespons
     return RagRetrieveResponse(
         embedding_model=embedding_model,
         results=[RagRetrieveResult(**result) for result in results],
+    )
+
+
+@app.post("/rag/generate", response_model=RagGenerateResponse)
+async def generate_rag_response(request: RagGenerateRequest) -> RagGenerateResponse:
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=422, detail="Question must not be empty.")
+
+    result = await generate_rag_answer(question=question, top_k=request.top_k)
+
+    return RagGenerateResponse(
+        answer=result["answer"],
+        model=result["model"],
+        sources=[RagGenerateSource(**source) for source in result["sources"]],
+        retrieved_chunks=[RagRetrieveResult(**chunk) for chunk in result["retrieved_chunks"]],
     )

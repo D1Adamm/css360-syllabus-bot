@@ -8,10 +8,10 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 
 
-async def generate_base_model_response(question: str) -> dict[str, str]:
+async def generate_ollama_completion(prompt: str) -> dict[str, str]:
     payload = {
         "model": OLLAMA_MODEL,
-        "prompt": question,
+        "prompt": prompt,
         "stream": False,
     }
 
@@ -55,5 +55,12 @@ async def generate_base_model_response(question: str) -> dict[str, str]:
     return {
         "answer": answer,
         "model": data.get("model", OLLAMA_MODEL),
+    }
+
+
+async def generate_base_model_response(question: str) -> dict[str, str]:
+    result = await generate_ollama_completion(question)
+    return {
+        **result,
         "response_type": "base",
     }

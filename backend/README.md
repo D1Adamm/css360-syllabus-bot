@@ -90,3 +90,38 @@ Expected response shape:
 The first request may take longer because the backend builds a local syllabus index at `backend/data/syllabus_index.json`. Later requests reuse that file unless the syllabus content or embedding model changes.
 
 The generated index is local development data and should not be committed to git.
+
+## Test RAG answer generation endpoint
+
+With Ollama running locally, the `nomic-embed-text` embedding model available, and the `llama3.2:3b` generation model available:
+
+```bash
+curl -X POST http://127.0.0.1:8000/rag/generate \
+  -H "Content-Type: application/json" \
+  -d '{"question":"What should a student do if they miss class?","topK":4}'
+```
+
+Expected response shape:
+
+```json
+{
+  "answer": "...",
+  "model": "llama3.2:3b",
+  "sources": [
+    {
+      "section": "Course Websites"
+    }
+  ],
+  "retrievedChunks": [
+    {
+      "chunkId": "course-websites-001",
+      "section": "Course Websites",
+      "text": "...",
+      "score": 0.82
+    }
+  ],
+  "responseType": "rag"
+}
+```
+
+The endpoint retrieves relevant syllabus chunks, builds a strict context-only prompt, and sends it to the generation model. The first request may take longer if the local syllabus index still needs to be built.
