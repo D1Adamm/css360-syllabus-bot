@@ -161,6 +161,48 @@ A student's ratings for one comparison question.
 
 **Storage key:** `syllabus-demo-evaluations` (localStorage JSON array)
 
+## CourseMetadata
+
+Per-course metadata stored at Firebase path `courses/{courseId}/metadata`.
+
+```json
+{
+  "name": "CSS 360",
+  "title": "Software Engineering",
+  "term": "Spring 2026",
+  "instructorName": "Instructor Name",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "syllabusStatus": "none",
+  "syllabusFileName": null,
+  "syllabusType": null,
+  "chunkCount": 0
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Short course name (e.g. `CSS 360`) |
+| `title` | string | Full course title |
+| `term` | string | Academic term label |
+| `instructorName` | string | Instructor display name |
+| `createdAt` | string | ISO 8601 creation timestamp |
+| `syllabusStatus` | `"none"` \| `"uploaded"` \| `"processing"` \| `"ready"` \| `"error"` | Syllabus pipeline status |
+| `syllabusFileName` | string \| null | Uploaded file name when present |
+| `syllabusType` | string \| null | Uploaded file MIME type when present |
+| `chunkCount` | number | Number of syllabus chunks indexed |
+
+### Firebase multi-course paths
+
+| Path | Contents |
+|------|----------|
+| `courses/{courseId}/metadata` | `CourseMetadata` |
+| `courses/{courseId}/seedExamples/{seedExampleId}` | Existing `SeedExample` fields |
+| `courses/{courseId}/evaluations/{evaluationId}` | Existing `EvaluationRecord` fields |
+
+`courseId` must be lowercase letters, numbers, and hyphens only (no leading/trailing hyphen; no `/`, `.`, `[`, `]`, `$`, or traversal patterns).
+
+**Migration note:** Existing CSS 360 seed examples and evaluations remain at the legacy global paths `seedExamples` and `evaluations`. They are not moved under `courses/` in this step. Helpers keep temporary backward compatibility with those global paths.
+
 ## JSON export
 
 Exports a formatted JSON array with 2-space indentation. Each element is a complete object.
