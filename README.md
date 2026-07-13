@@ -91,6 +91,20 @@ npm run lint
 
 User seeds and evaluations are stored independently. Resetting one does not affect the other.
 
+### Firebase Realtime Database (multi-course foundation)
+
+The Firebase helpers now support a per-course layout for future multi-course work:
+
+```
+courses/
+  {courseId}/
+    metadata/
+    seedExamples/
+    evaluations/
+```
+
+The current UI still reads and writes the legacy global paths `seedExamples` and `evaluations`. Existing CSS 360 data is **not migrated** in this step. A reserved default course id is `css360-default` for a later migration.
+
 ## Export formats
 
 ### JSON

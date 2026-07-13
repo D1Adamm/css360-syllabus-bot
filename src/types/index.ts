@@ -60,3 +60,27 @@ export interface SyllabusTopic {
   sourceSection: string;
   details: string[];
 }
+
+/** Syllabus processing status for a course in Firebase. */
+export type SyllabusStatus =
+  | 'none'
+  | 'uploaded'
+  | 'processing'
+  | 'ready'
+  | 'error';
+
+/**
+ * Metadata stored at courses/{courseId}/metadata.
+ * File-related fields are nullable until a syllabus is uploaded.
+ */
+export interface CourseMetadata {
+  name: string;
+  title: string;
+  term: string;
+  instructorName: string;
+  createdAt: string;
+  syllabusStatus: SyllabusStatus;
+  syllabusFileName: string | null;
+  syllabusType: string | null;
+  chunkCount: number;
+}

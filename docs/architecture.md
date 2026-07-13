@@ -122,6 +122,22 @@ The frontend would shift from static JSON imports to API calls while preserving 
 
 Each service would need version tracking, prompt templates, and reproducible evaluation runs for classroom research.
 
+## Firebase multi-course foundation
+
+Firebase Realtime Database helpers now include a course-scoped layout:
+
+```
+courses/{courseId}/metadata
+courses/{courseId}/seedExamples/{seedExampleId}
+courses/{courseId}/evaluations/{evaluationId}
+```
+
+See `CourseMetadata` in `src/types/index.ts` and helpers in `src/lib/coursesDb.ts`, `src/lib/seedExamplesDb.ts`, and `src/lib/evaluationsDb.ts`.
+
+The live UI continues to use legacy global paths (`seedExamples`, `evaluations`) via backward-compatible overloads. Existing CSS 360 Firebase data is not migrated yet. `DEFAULT_COURSE_ID` (`css360-default`) is reserved for a later migration step.
+
+Course routes, syllabus upload, PDF processing, and RAG course scoping are intentionally out of scope for this foundation step.
+
 ## Future database role
 
 A database would store:
