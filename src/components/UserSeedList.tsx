@@ -37,7 +37,7 @@ export function UserSeedList({ seeds, onDelete, onDeleteAll }: UserSeedListProps
 
       {seeds.length === 0 ? (
         <p className="user-seed-list__empty">
-          You have not created any examples yet. Submit the form to add your first one.
+          No seed examples for this course yet. Submit the form to add your first one.
         </p>
       ) : (
         <ul className="user-seed-list__items">

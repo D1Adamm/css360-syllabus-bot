@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useCourseId } from '../context/CourseContext';
 import {
   createEvaluation,
   deleteAllEvaluations,
@@ -19,7 +20,13 @@ interface UseEvaluationsResult {
   clearSaveError: () => void;
 }
 
+/**
+ * Course-scoped evaluations from courses/{courseId}/evaluations.
+ * courseId comes from the course route context (DEFAULT_COURSE_ID fallback only
+ * outside a course provider).
+ */
 export function useEvaluations(): UseEvaluationsResult {
+  const courseId = useCourseId();
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +35,11 @@ export function useEvaluations(): UseEvaluationsResult {
 
   useEffect(() => {
     setLoading(true);
+    setEvaluations([]);
+    setError(null);
 
     const unsubscribe = subscribeToEvaluations(
+      courseId,
       (nextEvaluations) => {
         setEvaluations(nextEvaluations);
         setError(null);
@@ -42,46 +52,52 @@ export function useEvaluations(): UseEvaluationsResult {
     );
 
     return unsubscribe;
-  }, []);
+  }, [courseId]);
 
-  const addEvaluation = useCallback(async (evaluation: EvaluationRecord) => {
-    setSaving(true);
-    setSaveError(null);
+  const addEvaluation = useCallback(
+    async (evaluation: EvaluationRecord) => {
+      setSaving(true);
+      setSaveError(null);
 
-    try {
-      return await createEvaluation(evaluation);
-    } catch (caughtError) {
-      const message =
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Could not save the evaluation to Firebase.';
-      setSaveError(message);
-      throw caughtError;
-    } finally {
-      setSaving(false);
-    }
-  }, []);
+      try {
+        return await createEvaluation(courseId, evaluation);
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'Could not save the evaluation to Firebase.';
+        setSaveError(message);
+        throw caughtError;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [courseId],
+  );
 
-  const deleteEvaluationById = useCallback(async (id: string) => {
-    setSaveError(null);
+  const deleteEvaluationById = useCallback(
+    async (id: string) => {
+      setSaveError(null);
 
-    try {
-      await deleteEvaluation(id);
-    } catch (caughtError) {
-      const message =
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Could not delete the evaluation from Firebase.';
-      setSaveError(message);
-      throw caughtError;
-    }
-  }, []);
+      try {
+        await deleteEvaluation(courseId, id);
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'Could not delete the evaluation from Firebase.';
+        setSaveError(message);
+        throw caughtError;
+      }
+    },
+    [courseId],
+  );
 
   const deleteAllEvaluationsFromDb = useCallback(async () => {
     setSaveError(null);
 
     try {
-      await deleteAllEvaluations(evaluations);
+      await deleteAllEvaluations(courseId, evaluations);
     } catch (caughtError) {
       const message =
         caughtError instanceof Error
@@ -90,7 +106,7 @@ export function useEvaluations(): UseEvaluationsResult {
       setSaveError(message);
       throw caughtError;
     }
-  }, [evaluations]);
+  }, [courseId, evaluations]);
 
   const clearSaveError = useCallback(() => {
     setSaveError(null);

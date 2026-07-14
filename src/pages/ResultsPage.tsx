@@ -132,8 +132,9 @@ export function ResultsPage() {
         <section className="results-empty" aria-live="polite">
           <h2 className="results-empty__title">No evaluations yet</h2>
           <p className="results-empty__text">
-            Complete at least one evaluation on the Model Comparison workflow to see aggregated
-            results here. Each evaluation is saved to the shared dataset.
+            No evaluations for this course yet. Complete at least one evaluation on the Model
+            Comparison workflow to see aggregated results here. Each evaluation is saved under
+            this course only.
           </p>
           <div className="results-empty__actions">
             <Link to={coursePagePath(courseId, 'compare')} className="button-link button-link--primary">
