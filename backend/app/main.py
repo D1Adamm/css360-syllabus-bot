@@ -1,6 +1,6 @@
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.ollama import generate_base_model_response
@@ -15,7 +15,10 @@ from app.schemas import (
     RagRetrieveDebugRanking,
     RagRetrieveResponse,
     RagRetrieveResult,
+    SyllabusUploadResponse,
 )
+from app.storage import get_course_artifact_storage
+from app.syllabus_upload import SyllabusUploadError, validate_syllabus_upload
 
 app = FastAPI(title="CSS360 Syllabus Model Backend")
 
@@ -89,4 +92,47 @@ async def generate_rag_response(request: RagGenerateRequest) -> RagGenerateRespo
         model=result["model"],
         sources=[RagGenerateSource(**source) for source in result["sources"]],
         retrieved_chunks=[RagRetrieveResult(**chunk) for chunk in result["retrieved_chunks"]],
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/syllabus",
+    response_model=SyllabusUploadResponse,
+    status_code=201,
+)
+async def upload_course_syllabus(
+    course_id: str,
+    syllabus_file: UploadFile = File(...),
+) -> SyllabusUploadResponse:
+    storage = get_course_artifact_storage()
+
+    try:
+        validated = await validate_syllabus_upload(course_id, syllabus_file)
+    except SyllabusUploadError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    finally:
+        await syllabus_file.close()
+
+    try:
+        storage.save_original_syllabus(
+            validated.course_id,
+            validated.syllabus_type,
+            validated.content,
+        )
+    except Exception as exc:  # noqa: BLE001 - map unexpected storage failures to HTTP 500
+        try:
+            storage.delete_partial_files(validated.course_id)
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=500,
+            detail="Could not save the syllabus file to local course storage.",
+        ) from exc
+
+    return SyllabusUploadResponse(
+        courseId=validated.course_id,
+        syllabusFileName=validated.original_filename,
+        syllabusType=validated.syllabus_type,
+        syllabusStatus="uploaded",
+        fileSize=validated.file_size,
     )
