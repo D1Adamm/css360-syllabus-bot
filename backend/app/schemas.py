@@ -82,3 +82,13 @@ class RagGenerateResponse(BaseModel):
     sources: list[RagGenerateSource]
     retrieved_chunks: list[RagRetrieveResult] = Field(alias="retrievedChunks")
     response_type: str = Field(default="rag", alias="responseType")
+
+
+class SyllabusUploadResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    syllabus_file_name: str = Field(alias="syllabusFileName")
+    syllabus_type: str = Field(alias="syllabusType")
+    syllabus_status: str = Field(alias="syllabusStatus")
+    file_size: int = Field(alias="fileSize")
