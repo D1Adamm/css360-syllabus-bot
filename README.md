@@ -133,8 +133,8 @@ courses/
 
 | File | Purpose |
 |------|---------|
-| `src/data/seedData.json` | Read-only prototype seed examples shown with course seeds |
-| `src/data/comparisonData.json` | Simulated Fine-Tuned comparison records |
+| `src/data/seedData.json` | Offline/export fixture for fine-tuning scripts — **not** merged into live Dataset pages |
+| `src/data/comparisonData.json` | Simulated Fine-Tuned comparison records on Compare/Evaluate |
 | `docs/syllabus.txt` | Legacy CSS 360 syllabus fixture for backend chunking unit tests only — **not** used by live course pages |
 
 ## Current limitations

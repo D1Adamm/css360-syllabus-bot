@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -181,6 +181,9 @@ describe('course-scoped seed and evaluation data', () => {
     expect(getCourseSeedExamplesPath(courseId)).toBe(
       'courses/css360-default/seedExamples',
     );
+    expect(
+      await screen.findByText('No seed examples have been created for this course yet.'),
+    ).toBeInTheDocument();
   });
 
   it('Results reads from courses/{courseId}/evaluations', async () => {

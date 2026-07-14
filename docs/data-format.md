@@ -22,7 +22,7 @@ Stored at `courses/{courseId}/metadata`.
 
 Instruction–response pair for fine-tuning demonstration and classroom seed building.
 
-Stored under `courses/{courseId}/seedExamples/{id}` (plus read-only prototype rows from `src/data/seedData.json` in the Dataset UI).
+Stored under `courses/{courseId}/seedExamples/{id}`. Live Dataset pages load only that path (no merge of static CSS 360 prototype JSON).
 
 | Field | Type | Description |
 |-------|------|-------------|
