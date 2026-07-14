@@ -13,6 +13,7 @@ import { database } from './firebase';
 
 const SYLLABUS_STATUSES: readonly SyllabusStatus[] = [
   'none',
+  'not_uploaded',
   'uploaded',
   'processing',
   'ready',

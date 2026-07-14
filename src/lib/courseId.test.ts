@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { assertValidCourseId, DEFAULT_COURSE_ID, isValidCourseId } from './courseId';
+import {
+  assertValidCourseId,
+  DEFAULT_COURSE_ID,
+  generateCourseId,
+  isValidCourseId,
+  slugifyCourseIdPart,
+} from './courseId';
 import {
   getCourseEvaluationPath,
   getCourseEvaluationsPath,
@@ -54,6 +60,35 @@ describe('assertValidCourseId', () => {
 
   it('does not throw for valid course ids', () => {
     expect(() => assertValidCourseId('css360-default')).not.toThrow();
+  });
+});
+
+describe('generateCourseId', () => {
+  it('builds lowercase hyphenated ids from name and term', () => {
+    const courseId = generateCourseId('CSS 430', 'Summer 2026');
+    expect(courseId).toMatch(/^css-430-summer-2026-[a-z0-9]{4}$/);
+    expect(isValidCourseId(courseId)).toBe(true);
+  });
+
+  it('removes unsafe characters from the input', () => {
+    expect(slugifyCourseIdPart('CSS/430..OS$[Lab]!')).toBe('css-430-os-lab');
+    const courseId = generateCourseId('CSS/430..OS$[Lab]!', 'Fall 2026');
+    expect(courseId).toMatch(/^css-430-os-lab-fall-2026-[a-z0-9]{4}$/);
+    expect(courseId).not.toMatch(/[./\\[\]$]/);
+    expect(isValidCourseId(courseId)).toBe(true);
+  });
+
+  it('includes a short random suffix', () => {
+    const first = generateCourseId('CSS 430', 'Summer 2026');
+    expect(first).toMatch(/-[a-z0-9]{4}$/);
+    expect(first.slice(-4)).toMatch(/^[a-z0-9]{4}$/);
+  });
+
+  it('does not begin or end with a hyphen', () => {
+    const courseId = generateCourseId('  ---CSS 430---  ', '  ---Summer 2026---  ');
+    expect(courseId.startsWith('-')).toBe(false);
+    expect(courseId.endsWith('-')).toBe(false);
+    expect(isValidCourseId(courseId)).toBe(true);
   });
 });
 

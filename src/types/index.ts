@@ -64,6 +64,7 @@ export interface SyllabusTopic {
 /** Syllabus processing status for a course in Firebase. */
 export type SyllabusStatus =
   | 'none'
+  | 'not_uploaded'
   | 'uploaded'
   | 'processing'
   | 'ready'

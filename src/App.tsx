@@ -5,6 +5,7 @@ import { LegacyCourseRedirect } from './components/LegacyCourseRedirect';
 import { ScrollToTop } from './components/ScrollToTop';
 import { ArchitecturePage } from './pages/ArchitecturePage';
 import { ComparisonPage } from './pages/ComparisonPage';
+import { CreateCoursePage } from './pages/CreateCoursePage';
 import { EvaluationPage } from './pages/EvaluationPage';
 import { HomePage } from './pages/HomePage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -18,6 +19,7 @@ export function AppRoutes() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/architecture" element={<ArchitecturePage />} />
+        <Route path="/create-course" element={<CreateCoursePage />} />
 
         {/* Legacy routes → default course (temporary backward compatibility) */}
         <Route path="/" element={<LegacyCourseRedirect segment="home" />} />
