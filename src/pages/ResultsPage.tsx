@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import comparisonData from '../data/comparisonData.json';
 import { ModelBarChart } from '../components/ModelBarChart';
 import { PageHeader } from '../components/PageHeader';
+import { useCourseId } from '../context/CourseContext';
 import { useEvaluations } from '../hooks/useEvaluations';
+import { coursePagePath } from '../lib/courseRoutes';
 import type { ComparisonRecord } from '../types';
 import { exportEvaluationsJson } from '../utils/exportData';
 import {
@@ -23,6 +25,7 @@ import {
 const comparisons = comparisonData as ComparisonRecord[];
 
 export function ResultsPage() {
+  const courseId = useCourseId();
   const {
     evaluations,
     loading,
@@ -133,10 +136,10 @@ export function ResultsPage() {
             results here. Each evaluation is saved to the shared dataset.
           </p>
           <div className="results-empty__actions">
-            <Link to="/compare" className="button-link button-link--primary">
+            <Link to={coursePagePath(courseId, 'compare')} className="button-link button-link--primary">
               Go to Model Comparison
             </Link>
-            <Link to="/evaluate" className="button-link button-link--secondary">
+            <Link to={coursePagePath(courseId, 'evaluate')} className="button-link button-link--secondary">
               Start evaluating
             </Link>
           </div>

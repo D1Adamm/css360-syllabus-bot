@@ -1,23 +1,43 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { coursePagePath, type CoursePageSegment } from '../lib/courseRoutes';
 
-const navItems = [
-  { to: '/', label: 'Home', end: true },
-  { to: '/syllabus', label: 'Syllabus' },
-  { to: '/seed-builder', label: 'Build Seeds' },
-  { to: '/dataset', label: 'Dataset' },
-  { to: '/compare', label: 'Compare' },
-  { to: '/evaluate', label: 'Evaluate' },
-  { to: '/results', label: 'Results' },
-  { to: '/architecture', label: 'Architecture' },
-] as const;
+interface NavItem {
+  to: string;
+  label: string;
+  end?: boolean;
+}
+
+function buildNavItems(courseId: string): NavItem[] {
+  const courseLink = (segment: CoursePageSegment, label: string, end?: boolean): NavItem => ({
+    to: coursePagePath(courseId, segment),
+    label,
+    end,
+  });
+
+  return [
+    courseLink('home', 'Home', true),
+    courseLink('syllabus', 'Syllabus'),
+    courseLink('seeds', 'Build Seeds'),
+    courseLink('dataset', 'Dataset'),
+    courseLink('compare', 'Compare'),
+    courseLink('evaluate', 'Evaluate'),
+    courseLink('results', 'Results'),
+    { to: '/architecture', label: 'Architecture' },
+  ];
+}
 
 function getNavLinkClass(isActive: boolean): string {
   return isActive ? 'nav-link nav-link--active' : 'nav-link';
 }
 
-export function Navigation() {
+interface NavigationProps {
+  courseId: string;
+}
+
+export function Navigation({ courseId }: NavigationProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const navItems = buildNavItems(courseId);
 
   function closeMobile() {
     setMobileOpen(false);
@@ -31,12 +51,12 @@ export function Navigation() {
     <>
       <nav className="nav-desktop" aria-label="Main navigation">
         <ul className="nav-list">
-          {navItems.map(({ to, label, ...rest }) => (
-            <li key={to}>
+          {navItems.map(({ to, label, end }) => (
+            <li key={`${label}-${to}`}>
               <NavLink
                 to={to}
+                end={end}
                 className={({ isActive }) => getNavLinkClass(isActive)}
-                {...rest}
               >
                 {label}
               </NavLink>
@@ -62,13 +82,13 @@ export function Navigation() {
         aria-label="Mobile navigation"
       >
         <ul className="nav-list nav-list--mobile">
-          {navItems.map(({ to, label, ...rest }) => (
-            <li key={to}>
+          {navItems.map(({ to, label, end }) => (
+            <li key={`${label}-${to}`}>
               <NavLink
                 to={to}
+                end={end}
                 className={({ isActive }) => getNavLinkClass(isActive)}
                 onClick={closeMobile}
-                {...rest}
               >
                 {label}
               </NavLink>

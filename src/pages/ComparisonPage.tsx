@@ -6,7 +6,9 @@ import { ComparisonQuestionSelector } from '../components/ComparisonQuestionSele
 import { CustomQuestionMatcher } from '../components/CustomQuestionMatcher';
 import { ModelResponseCard } from '../components/ModelResponseCard';
 import { PageHeader } from '../components/PageHeader';
+import { useCourseId } from '../context/CourseContext';
 import { ApiError, generateBaseModel, generateRag } from '../lib/api';
+import { coursePagePath } from '../lib/courseRoutes';
 import type { ComparisonRecord, ComparisonResponse } from '../types';
 import {
   type ComparisonMode,
@@ -77,6 +79,7 @@ function getApiErrorMessage(error: unknown, fallbackMessage: string): string {
 }
 
 export function ComparisonPage() {
+  const courseId = useCourseId();
   const [selectedId, setSelectedId] = useState(records[0]?.id ?? '');
   const [activeQuestion, setActiveQuestion] = useState(records[0]?.question ?? '');
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('predefined');
@@ -181,7 +184,7 @@ export function ComparisonPage() {
     return null;
   }
 
-  const evaluateHref = `/evaluate?comparison=${simulatedRecord?.id ?? selectedRecord.id}`;
+  const evaluateHref = `${coursePagePath(courseId, 'evaluate')}?comparison=${simulatedRecord?.id ?? selectedRecord.id}`;
   const isBaseModelLoading = baseModelState.status === 'loading';
   const isRagModelLoading = ragModelState.status === 'loading';
   const isLiveRequestInFlight = isBaseModelLoading || isRagModelLoading;

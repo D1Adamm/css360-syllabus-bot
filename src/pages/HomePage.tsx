@@ -1,5 +1,7 @@
 import { ButtonLink } from '../components/ButtonLink';
 import { SectionCard } from '../components/SectionCard';
+import { useCourseId } from '../context/CourseContext';
+import { coursePagePath } from '../lib/courseRoutes';
 
 const workflowSteps = [
   'Syllabus',
@@ -10,6 +12,8 @@ const workflowSteps = [
 ];
 
 export function HomePage() {
+  const courseId = useCourseId();
+
   return (
     <>
       <section className="hero" aria-labelledby="hero-title">
@@ -22,8 +26,8 @@ export function HomePage() {
           questions about a course syllabus.
         </p>
         <div className="hero__actions">
-          <ButtonLink to="/seed-builder">Seed Data Builder</ButtonLink>
-          <ButtonLink to="/compare" variant="secondary">
+          <ButtonLink to={coursePagePath(courseId, 'seeds')}>Seed Data Builder</ButtonLink>
+          <ButtonLink to={coursePagePath(courseId, 'compare')} variant="secondary">
             Model Comparison
           </ButtonLink>
         </div>
