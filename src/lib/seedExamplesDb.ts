@@ -162,6 +162,9 @@ export async function deleteSeedExample(
   await remove(getSeedExampleRef(courseIdOrId));
 }
 
-export async function deleteAllSeedExamples(seeds: SeedExample[]): Promise<void> {
-  await Promise.all(seeds.map((seed) => deleteSeedExample(seed.id)));
+export async function deleteAllSeedExamples(
+  courseId: string,
+  seeds: SeedExample[],
+): Promise<void> {
+  await Promise.all(seeds.map((seed) => deleteSeedExample(courseId, seed.id)));
 }

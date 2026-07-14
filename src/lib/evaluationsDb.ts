@@ -149,6 +149,11 @@ export async function deleteEvaluation(
   await remove(getEvaluationRef(courseIdOrId));
 }
 
-export async function deleteAllEvaluations(evaluations: EvaluationRecord[]): Promise<void> {
-  await Promise.all(evaluations.map((evaluation) => deleteEvaluation(evaluation.id)));
+export async function deleteAllEvaluations(
+  courseId: string,
+  evaluations: EvaluationRecord[],
+): Promise<void> {
+  await Promise.all(
+    evaluations.map((evaluation) => deleteEvaluation(courseId, evaluation.id)),
+  );
 }

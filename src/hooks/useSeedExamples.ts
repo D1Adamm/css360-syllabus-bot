@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useCourseId } from '../context/CourseContext';
 import {
   createSeedExample,
   deleteAllSeedExamples,
@@ -19,7 +20,13 @@ interface UseSeedExamplesResult {
   clearSaveError: () => void;
 }
 
+/**
+ * Course-scoped seed examples from courses/{courseId}/seedExamples.
+ * courseId comes from the course route context (DEFAULT_COURSE_ID fallback only
+ * outside a course provider).
+ */
 export function useSeedExamples(): UseSeedExamplesResult {
+  const courseId = useCourseId();
   const [seeds, setSeeds] = useState<SeedExample[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +35,11 @@ export function useSeedExamples(): UseSeedExamplesResult {
 
   useEffect(() => {
     setLoading(true);
+    setSeeds([]);
+    setError(null);
 
     const unsubscribe = subscribeToSeedExamples(
+      courseId,
       (nextSeeds) => {
         setSeeds(nextSeeds);
         setError(null);
@@ -42,46 +52,52 @@ export function useSeedExamples(): UseSeedExamplesResult {
     );
 
     return unsubscribe;
-  }, []);
+  }, [courseId]);
 
-  const addSeed = useCallback(async (seed: SeedExample) => {
-    setSaving(true);
-    setSaveError(null);
+  const addSeed = useCallback(
+    async (seed: SeedExample) => {
+      setSaving(true);
+      setSaveError(null);
 
-    try {
-      await createSeedExample(seed);
-    } catch (caughtError) {
-      const message =
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Could not save the example to Firebase.';
-      setSaveError(message);
-      throw caughtError;
-    } finally {
-      setSaving(false);
-    }
-  }, []);
+      try {
+        await createSeedExample(courseId, seed);
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'Could not save the example to Firebase.';
+        setSaveError(message);
+        throw caughtError;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [courseId],
+  );
 
-  const deleteSeed = useCallback(async (id: string) => {
-    setSaveError(null);
+  const deleteSeed = useCallback(
+    async (id: string) => {
+      setSaveError(null);
 
-    try {
-      await deleteSeedExample(id);
-    } catch (caughtError) {
-      const message =
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Could not delete the example from Firebase.';
-      setSaveError(message);
-      throw caughtError;
-    }
-  }, []);
+      try {
+        await deleteSeedExample(courseId, id);
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'Could not delete the example from Firebase.';
+        setSaveError(message);
+        throw caughtError;
+      }
+    },
+    [courseId],
+  );
 
   const deleteAllSeeds = useCallback(async () => {
     setSaveError(null);
 
     try {
-      await deleteAllSeedExamples(seeds);
+      await deleteAllSeedExamples(courseId, seeds);
     } catch (caughtError) {
       const message =
         caughtError instanceof Error
@@ -90,7 +106,7 @@ export function useSeedExamples(): UseSeedExamplesResult {
       setSaveError(message);
       throw caughtError;
     }
-  }, [seeds]);
+  }, [courseId, seeds]);
 
   const clearSaveError = useCallback(() => {
     setSaveError(null);
