@@ -37,6 +37,6 @@ Older prototypes wrote to root-level `seedExamples/` and `evaluations/`. The liv
 
 ## Prototype static data
 
-- `src/data/seedData.json` — read-only prototype seeds shown beside course seeds
+- `src/data/seedData.json` — offline/export fixture only (not shown on live Dataset pages)
 - `src/data/comparisonData.json` — simulated Fine-Tuned comparison records
 - `docs/syllabus.txt` — fixture for backend chunking unit tests only

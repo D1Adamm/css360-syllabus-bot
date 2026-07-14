@@ -46,14 +46,14 @@ export function SeedBuilderPage() {
         description="Create question-and-answer examples based on the syllabus. In a full course workflow, students would use this page to build training examples for fine-tuning experiments."
       />
 
-      <aside className="seed-builder-notice" aria-label="Prototype storage notice">
+      <aside className="seed-builder-notice" aria-label="Course storage notice">
         <p>
-          <strong>Examples are stored in Firebase Realtime Database.</strong>
+          <strong>Examples are stored under this course in Firebase Realtime Database.</strong>
         </p>
         <p>
-          Examples you create here are shared across browsers and devices. They are not
-          automatically used to train a model. You can review and export them from the
-          Seed Dataset page.
+          Seeds save to <code>courses/{'{courseId}'}/seedExamples</code> for the active course
+          only. They are not shared with other courses and are not automatically used to train a
+          model. Review and export them from the Seed Dataset page.
         </p>
       </aside>
 

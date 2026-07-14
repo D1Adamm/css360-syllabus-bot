@@ -1,5 +1,4 @@
 import { useId, useMemo, useRef, useState } from 'react';
-import seedData from '../data/seedData.json';
 import type { SeedDifficulty, SeedExample } from '../types';
 import {
   generateUserSeedId,
@@ -8,8 +7,6 @@ import {
   SEED_CATEGORIES,
 } from '../utils/seedDataUtils';
 import { FormFieldError } from './FormFieldError';
-
-const prototypeSeeds = seedData as SeedExample[];
 
 const DIFFICULTIES: SeedDifficulty[] = ['Easy', 'Medium', 'Hard'];
 
@@ -67,9 +64,7 @@ export function SeedForm({
   const instructionRef = useRef<HTMLTextAreaElement>(null);
 
   const sourceSectionOptions = useMemo(() => {
-    const fromPrototype = prototypeSeeds.map((seed) => seed.sourceSection);
-    const fromUserSeeds = userSeeds.map((seed) => seed.sourceSection);
-    return Array.from(new Set([...fromPrototype, ...fromUserSeeds]))
+    return Array.from(new Set(userSeeds.map((seed) => seed.sourceSection)))
       .filter((section) => section.trim() !== '')
       .sort((left, right) => left.localeCompare(right));
   }, [userSeeds]);
@@ -105,7 +100,7 @@ export function SeedForm({
       nextErrors.instruction = 'The question must be 300 characters or fewer.';
     } else if (!isMeaningfulText(instruction)) {
       nextErrors.instruction = 'Enter a meaningful question, not only punctuation.';
-    } else if (isDuplicateQuestion(instruction, [...prototypeSeeds, ...userSeeds])) {
+    } else if (isDuplicateQuestion(instruction, userSeeds)) {
       nextErrors.instruction = 'This question already exists in the dataset.';
     }
 

@@ -74,26 +74,23 @@ export function getUniqueSourceSections(seeds: SeedExample[]): string[] {
   return Array.from(sections).sort((left, right) => left.localeCompare(right));
 }
 
-export function combinePrototypeAndUserSeeds(
-  prototypeSeeds: SeedExample[],
-  userSeeds: SeedExample[],
-): SeedExample[] {
-  return [...prototypeSeeds, ...userSeeds];
-}
-
 export function isSeedExample(value: unknown): value is SeedExample {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as SeedExample).id === 'string' &&
-    typeof (value as SeedExample).instruction === 'string' &&
-    typeof (value as SeedExample).response === 'string' &&
-    typeof (value as SeedExample).category === 'string' &&
-    typeof (value as SeedExample).sourceSection === 'string' &&
-    typeof (value as SeedExample).difficulty === 'string' &&
-    typeof (value as SeedExample).directlyAnswered === 'boolean' &&
-    (value as SeedExample).origin === 'user'
-  );
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    typeof (value as SeedExample).id !== 'string' ||
+    typeof (value as SeedExample).instruction !== 'string' ||
+    typeof (value as SeedExample).response !== 'string' ||
+    typeof (value as SeedExample).category !== 'string' ||
+    typeof (value as SeedExample).sourceSection !== 'string' ||
+    typeof (value as SeedExample).difficulty !== 'string' ||
+    typeof (value as SeedExample).directlyAnswered !== 'boolean'
+  ) {
+    return false;
+  }
+
+  const origin = (value as SeedExample).origin;
+  return origin === 'user' || origin === 'prototype';
 }
 
 export function isSeedExampleArray(value: unknown): value is SeedExample[] {

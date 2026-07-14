@@ -1,17 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
-import seedData from '../data/seedData.json';
 import { DatasetStats } from '../components/DatasetStats';
 import { PageHeader } from '../components/PageHeader';
 import { ResultsCount } from '../components/ResultsCount';
 import { SeedCard } from '../components/SeedCard';
 import { SeedFilters } from '../components/SeedFilters';
+import { useCourseId } from '../context/CourseContext';
 import { useSeedExamples } from '../hooks/useSeedExamples';
-import type { SeedExample } from '../types';
 import {
   exportCompleteJsonl,
   exportFilteredJson,
   exportFilteredJsonl,
-  exportUserSeedsJsonl,
 } from '../utils/exportData';
 import {
   ALL_ANSWER_TYPES,
@@ -19,43 +17,36 @@ import {
   ALL_DIFFICULTIES,
   type AnswerTypeFilter,
   calculateStatistics,
-  combinePrototypeAndUserSeeds,
   filterSeeds,
   getUniqueCategories,
   type SortOption,
 } from '../utils/seedDataUtils';
 
-const prototypeSeeds = seedData as SeedExample[];
-
 export function SeedDatasetPage() {
-  const { seeds: userSeeds, loading, error, deleteSeed } = useSeedExamples();
+  const courseId = useCourseId();
+  const { seeds, loading, error, deleteSeed } = useSeedExamples();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [selectedDifficulty, setSelectedDifficulty] = useState(ALL_DIFFICULTIES);
   const [selectedAnswerType, setSelectedAnswerType] = useState<AnswerTypeFilter>(ALL_ANSWER_TYPES);
   const [sortBy, setSortBy] = useState<SortOption>('id-asc');
 
-  const allSeeds = useMemo(
-    () => combinePrototypeAndUserSeeds(prototypeSeeds, userSeeds),
-    [userSeeds],
-  );
-
-  const categories = useMemo(() => getUniqueCategories(allSeeds), [allSeeds]);
-  const stats = useMemo(() => calculateStatistics(allSeeds), [allSeeds]);
+  const categories = useMemo(() => getUniqueCategories(seeds), [seeds]);
+  const stats = useMemo(() => calculateStatistics(seeds), [seeds]);
 
   const filteredSeeds = useMemo(
     () =>
-      filterSeeds(allSeeds, {
+      filterSeeds(seeds, {
         searchQuery,
         category: selectedCategory,
         difficulty: selectedDifficulty,
         answerType: selectedAnswerType,
         sortBy,
       }),
-    [allSeeds, searchQuery, selectedCategory, selectedDifficulty, selectedAnswerType, sortBy],
+    [seeds, searchQuery, selectedCategory, selectedDifficulty, selectedAnswerType, sortBy],
   );
 
-  const handleDeleteUserSeed = useCallback(
+  const handleDeleteSeed = useCallback(
     async (id: string) => {
       await deleteSeed(id);
     },
@@ -74,28 +65,34 @@ export function SeedDatasetPage() {
     <>
       <PageHeader
         title="Seed Dataset"
-        description="Browse prototype and user-created question-and-answer examples derived from the syllabus. These pairs demonstrate the kind of training data students could create for fine-tuning a course assistant."
+        description="Browse seed examples created for this course. These pairs can support future fine-tuning experiments for a course-specific syllabus assistant."
       />
 
       <aside className="dataset-notice" aria-label="Dataset notice">
         <p>
-          <strong>Combined dataset:</strong> this page shows {prototypeSeeds.length} prototype
-          examples and {userSeeds.length} user-created example
-          {userSeeds.length === 1 ? '' : 's'} ({allSeeds.length} total). Prototype examples
-          cannot be deleted here.
+          <strong>Course-specific dataset:</strong> examples shown here come only from Firebase{' '}
+          <code>courses/{courseId}/seedExamples</code>. Different courses do not share seed
+          examples.
         </p>
       </aside>
 
       {error && (
         <p className="seed-builder-status seed-builder-status--error" role="alert">
-          Could not load shared seed examples: {error}
+          Could not load seed examples for this course: {error}
         </p>
       )}
 
       {loading ? (
         <p className="seed-builder-status" role="status" aria-live="polite">
-          Loading shared seed examples…
+          Loading seed examples for this course…
         </p>
+      ) : seeds.length === 0 ? (
+        <section className="dataset-empty" aria-live="polite">
+          <h2 className="dataset-empty__title">No seed examples yet</h2>
+          <p className="dataset-empty__text">
+            No seed examples have been created for this course yet.
+          </p>
+        </section>
       ) : (
         <>
           <DatasetStats stats={stats} />
@@ -114,12 +111,10 @@ export function SeedDatasetPage() {
             onSortChange={setSortBy}
             onExportFilteredJson={() => exportFilteredJson(filteredSeeds)}
             onExportFilteredJsonl={() => exportFilteredJsonl(filteredSeeds)}
-            onExportCompleteJsonl={() => exportCompleteJsonl(allSeeds)}
-            onExportUserJsonl={() => exportUserSeedsJsonl(userSeeds)}
-            userSeedCount={userSeeds.length}
+            onExportCompleteJsonl={() => exportCompleteJsonl(seeds)}
           />
 
-          <ResultsCount resultCount={filteredSeeds.length} totalCount={allSeeds.length} />
+          <ResultsCount resultCount={filteredSeeds.length} totalCount={seeds.length} />
 
           {filteredSeeds.length === 0 ? (
             <section className="dataset-empty" aria-live="polite">
@@ -135,11 +130,7 @@ export function SeedDatasetPage() {
           ) : (
             <section className="seed-list" aria-label="Seed examples" aria-live="polite">
               {filteredSeeds.map((seed) => (
-                <SeedCard
-                  key={seed.id}
-                  seed={seed}
-                  onDelete={seed.origin === 'user' ? handleDeleteUserSeed : undefined}
-                />
+                <SeedCard key={seed.id} seed={seed} onDelete={handleDeleteSeed} />
               ))}
             </section>
           )}
