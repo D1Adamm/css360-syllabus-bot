@@ -35,6 +35,23 @@ vi.mock('./lib/api', () => ({
   })),
 }));
 
+const subscribeToCoursesMock = vi.hoisted(() =>
+  vi.fn((onData: (courses: unknown[]) => void) => {
+    onData([]);
+    return () => undefined;
+  }),
+);
+
+vi.mock('./lib/coursesDb', async () => {
+  const actual = await vi.importActual<typeof import('./lib/coursesDb')>(
+    './lib/coursesDb',
+  );
+  return {
+    ...actual,
+    subscribeToCourses: subscribeToCoursesMock,
+  };
+});
+
 import { AppRoutes } from './App';
 import { DEFAULT_COURSE_ID } from './lib/courseId';
 
@@ -60,10 +77,29 @@ function renderApp(initialEntry: string) {
 describe('course-specific routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    subscribeToCoursesMock.mockImplementation((onData: (courses: unknown[]) => void) => {
+      onData([]);
+      return () => undefined;
+    });
   });
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('renders the course picker on the root route instead of redirecting', async () => {
+    const view = renderApp('/');
+
+    await waitFor(() => {
+      expect(view.getByTestId('location')).toHaveTextContent('/');
+    });
+    expect(view.getByRole('heading', { name: 'Courses' })).toBeInTheDocument();
+    const main = view.container.querySelector('main');
+    expect(main).not.toBeNull();
+    expect(
+      within(main as HTMLElement).getByRole('link', { name: 'Create Course' }),
+    ).toHaveAttribute('href', '/create-course');
+    expect(view.getByTestId('location').textContent).toBe('/');
   });
 
   it('redirects /course/css360-default to /course/css360-default/home', async () => {

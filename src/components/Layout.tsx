@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { DEFAULT_COURSE_ID } from '../lib/courseId';
-import { coursePagePath, getCourseIdFromPathname } from '../lib/courseRoutes';
+import { getCourseIdFromPathname } from '../lib/courseRoutes';
 import { Navigation } from './Navigation';
 import { PrototypeBanner } from './PrototypeBanner';
 
@@ -11,14 +11,13 @@ function useNavCourseId(): string {
 
 export function Layout() {
   const courseId = useNavCourseId();
-  const homePath = coursePagePath(courseId, 'home');
 
   return (
     <div className="app-layout">
       <PrototypeBanner />
       <header className="app-header">
         <div className="app-header__inner">
-          <Link to={homePath} className="app-logo">
+          <Link to="/" className="app-logo">
             Syllabus Model Lab
           </Link>
           <Navigation courseId={courseId} />

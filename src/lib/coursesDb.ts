@@ -7,9 +7,15 @@ import {
   type Unsubscribe,
 } from 'firebase/database';
 import type { CourseMetadata, SyllabusStatus } from '../types';
-import { assertValidCourseId } from './courseId';
-import { getCourseMetadataPath } from './coursePaths';
+import { assertValidCourseId, isValidCourseId } from './courseId';
+import { COURSES_ROOT_PATH, getCourseMetadataPath } from './coursePaths';
 import { database } from './firebase';
+
+/** Course picker list item: metadata plus the Firebase child key as courseId. */
+export interface CourseListItem {
+  courseId: string;
+  metadata: CourseMetadata;
+}
 
 const SYLLABUS_STATUSES: readonly SyllabusStatus[] = [
   'none',
@@ -118,4 +124,81 @@ export async function courseExists(courseId: string): Promise<boolean> {
   assertValidCourseId(courseId);
   const snapshot = await get(getCourseMetadataRef(courseId));
   return snapshot.exists();
+}
+
+export function getCoursesRef() {
+  return ref(database, COURSES_ROOT_PATH);
+}
+
+export function sortCoursesNewestFirst(courses: CourseListItem[]): CourseListItem[] {
+  return [...courses].sort((left, right) => {
+    const leftTime = Date.parse(left.metadata.createdAt);
+    const rightTime = Date.parse(right.metadata.createdAt);
+
+    if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+      return left.courseId.localeCompare(right.courseId);
+    }
+    if (Number.isNaN(leftTime)) {
+      return 1;
+    }
+    if (Number.isNaN(rightTime)) {
+      return -1;
+    }
+    if (rightTime !== leftTime) {
+      return rightTime - leftTime;
+    }
+
+    return left.courseId.localeCompare(right.courseId);
+  });
+}
+
+/**
+ * Transform a `courses` RTDB snapshot value into validated CourseListItem entries.
+ * Only children with a valid courseId and metadata object are included.
+ */
+export function parseCoursesSnapshot(value: unknown): CourseListItem[] {
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+
+  const items: CourseListItem[] = [];
+
+  for (const [courseId, courseNode] of Object.entries(value as Record<string, unknown>)) {
+    if (!isValidCourseId(courseId) || !courseNode || typeof courseNode !== 'object') {
+      continue;
+    }
+
+    const metadata = (courseNode as Record<string, unknown>).metadata;
+    if (!isCourseMetadata(metadata)) {
+      continue;
+    }
+
+    items.push({ courseId, metadata });
+  }
+
+  return sortCoursesNewestFirst(items);
+}
+
+/**
+ * Subscribe to all courses under `courses` for the course picker.
+ * Does not load seed examples or evaluations—only child metadata.
+ */
+export function subscribeToCourses(
+  onData: (courses: CourseListItem[]) => void,
+  onError?: (message: string) => void,
+): Unsubscribe {
+  return onValue(
+    getCoursesRef(),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onData([]);
+        return;
+      }
+
+      onData(parseCoursesSnapshot(snapshot.val()));
+    },
+    (error) => {
+      onError?.(error.message);
+    },
+  );
 }

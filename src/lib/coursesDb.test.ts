@@ -31,6 +31,9 @@ import {
   createCourseMetadata,
   getCourseMetadata,
   isCourseMetadata,
+  parseCoursesSnapshot,
+  sortCoursesNewestFirst,
+  subscribeToCourses,
   updateCourseMetadata,
 } from './coursesDb';
 import {
@@ -167,6 +170,75 @@ describe('course metadata Firebase helpers', () => {
       /Invalid courseId/,
     );
     expect(setMock).not.toHaveBeenCalled();
+  });
+
+  it('subscribes to courses and maps child metadata into a list', () => {
+    onValueMock.mockImplementation((_ref, onData) => {
+      onData({
+        exists: () => true,
+        val: () => ({
+          'css-430-summer-2026-ibce': {
+            metadata: {
+              ...sampleMetadata,
+              name: 'CSS 430',
+              createdAt: '2026-06-01T00:00:00.000Z',
+            },
+            seedExamples: { ignored: true },
+          },
+          'css-350-spring-2026-abcd': {
+            metadata: {
+              ...sampleMetadata,
+              name: 'CSS 350',
+              createdAt: '2026-07-01T00:00:00.000Z',
+            },
+          },
+          'Bad_Id': {
+            metadata: sampleMetadata,
+          },
+        }),
+      });
+      return () => undefined;
+    });
+
+    const onData = vi.fn();
+    subscribeToCourses(onData);
+
+    expect(refMock).toHaveBeenCalledWith(expect.anything(), 'courses');
+    expect(onData).toHaveBeenCalledTimes(1);
+    const courses = onData.mock.calls[0]?.[0] as Array<{ courseId: string; metadata: CourseMetadata }>;
+    expect(courses.map((course) => course.courseId)).toEqual([
+      'css-350-spring-2026-abcd',
+      'css-430-summer-2026-ibce',
+    ]);
+    expect(courses[0]?.metadata.name).toBe('CSS 350');
+  });
+
+  it('sorts courses newest first by createdAt', () => {
+    const sorted = sortCoursesNewestFirst([
+      {
+        courseId: 'older-course',
+        metadata: { ...sampleMetadata, createdAt: '2026-01-01T00:00:00.000Z' },
+      },
+      {
+        courseId: 'newer-course',
+        metadata: { ...sampleMetadata, createdAt: '2026-06-01T00:00:00.000Z' },
+      },
+    ]);
+
+    expect(sorted.map((course) => course.courseId)).toEqual([
+      'newer-course',
+      'older-course',
+    ]);
+  });
+
+  it('ignores course nodes without valid metadata', () => {
+    expect(
+      parseCoursesSnapshot({
+        'valid-course': { metadata: sampleMetadata },
+        'broken-course': { metadata: { name: 'Broken' } },
+        'seed-only': { seedExamples: {} },
+      }),
+    ).toEqual([{ courseId: 'valid-course', metadata: sampleMetadata }]);
   });
 });
 
