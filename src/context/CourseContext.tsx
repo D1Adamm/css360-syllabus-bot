@@ -1,5 +1,4 @@
 import { createContext, useContext } from 'react';
-import { DEFAULT_COURSE_ID } from '../lib/courseId';
 
 export interface CourseContextValue {
   courseId: string;
@@ -21,9 +20,14 @@ export function CourseProvider({
 
 /**
  * Returns the validated courseId from the nearest CourseProvider.
- * Falls back to DEFAULT_COURSE_ID for components rendered outside a course route
- * (e.g. Architecture, Not Found).
+ * Course pages must be rendered under `/course/:courseId/...`.
  */
 export function useCourseId(): string {
-  return useContext(CourseContext)?.courseId ?? DEFAULT_COURSE_ID;
+  const value = useContext(CourseContext);
+  if (!value) {
+    throw new Error(
+      'useCourseId requires a CourseProvider. Open a course route under /course/:courseId/.',
+    );
+  }
+  return value.courseId;
 }

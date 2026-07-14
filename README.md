@@ -1,99 +1,117 @@
 # Syllabus Model Lab
 
-A classroom prototype for comparing how base models, retrieval-augmented generation (RAG), fine-tuning, and fine-tuning combined with RAG answer questions about a course syllabus.
+A classroom prototype for comparing how base models, retrieval-augmented generation (RAG), fine-tuning, and fine-tuning combined with RAG answer questions about a course syllabus — across multiple courses.
 
 ## Purpose
 
-Syllabus Model Lab supports CSS 360 classroom research on syllabus-grounded AI assistants. Students explore official syllabus content, review and create seed training examples, compare Base Model and RAG live responses alongside simulated fine-tuned outputs, evaluate those responses, and review aggregated results.
+Syllabus Model Lab supports multi-course syllabus-grounded AI assistant research. Instructors or facilitators create courses, upload syllabi, and students explore extracted syllabus text, create seed training examples, compare live Base Model and course-specific RAG answers alongside simulated fine-tuned outputs, evaluate responses, and review results.
+
+## Phase 1 complete
+
+Phase 1 delivers a working dynamic multi-course system:
+
+- Courses are separated by `courseId` under Firebase `courses/{courseId}/...`
+- Each course has its own syllabus artifacts, seed examples, evaluations, and RAG index
+- Uploaded syllabus artifacts and embedding indexes are stored **locally** by the FastAPI backend for now
+- A future storage backend will move those artifacts to **GCP** (or a VM)
+- Instructor authentication is **not** implemented yet
+- Fine-Tuned and Fine-Tuned + RAG comparison responses are **still simulated**
+
+Legacy root-level Firebase nodes (`seedExamples/`, `evaluations/`) may still exist in the database from earlier prototypes. The live UI no longer reads or writes them. They can be **manually deleted in the Firebase console** after confirming nothing external still depends on them. This repository does not delete Firebase data automatically.
+
+## Architecture
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | React + TypeScript + Vite, Firebase Hosting |
+| Course data | Firebase Realtime Database (`courses/{courseId}/metadata\|seedExamples\|evaluations`) |
+| Backend | FastAPI |
+| Generation | Ollama `llama3.2:3b` |
+| Embeddings | Ollama `nomic-embed-text` |
+| Artifacts | Local course storage (`backend/course_data/...`, `backend/data/indexes/...`) |
+| Syllabus pipeline | Dynamic multi-course upload → extract → chunk → embed |
+| RAG | Course-specific indexes (`backend/data/indexes/{courseId}.json`) |
+| Fine-tuning UI | Fine-Tuned and Fine-Tuned + RAG still simulated |
+| Future hosting | Move artifact storage / services toward GCP or a VM |
 
 ## Activity flow
 
-1. **Explore syllabus topics** — Browse structured syllabus summaries on the Syllabus page.
-2. **Review prototype seed data** — Inspect instruction–response pairs on the Dataset page.
-3. **Create new seed examples** — Add classroom-created examples on the Seed Data Builder page.
-4. **Compare four model approaches** — Review live Base Model and RAG responses alongside simulated fine-tuned outputs on the Model Comparison page.
-5. **Evaluate responses** — Rate accuracy, helpfulness, conciseness, grounding, and preference.
-6. **Review local results** — View aggregated metrics and export evaluation data.
+1. **Pick or create a course** — Open `/` or create a course at `/create-course`.
+2. **Upload a syllabus** — PDF/TXT upload extracts text, chunks it, and builds a course RAG index.
+3. **Read the syllabus** — `/course/{courseId}/syllabus` shows that course’s extracted text.
+4. **Review / create seed examples** — Dataset and Seed Data Builder pages use `courses/{courseId}/seedExamples`.
+5. **Compare model approaches** — Live Base Model and course-specific RAG; Fine-Tuned cards remain simulated.
+6. **Evaluate responses** — Ratings save to `courses/{courseId}/evaluations`.
+7. **Review results** — Aggregated metrics for the selected course.
 
-## Current features
+## Local run guide
 
-- Persistent prototype banner noting live Base Model and RAG responses
-- Syllabus Explorer with search and category filtering
-- Prototype seed dataset with statistics, filters, and sorting
-- User seed creation with validation and duplicate detection
-- Combined prototype and user seed dataset view
-- JSON and JSONL export for seeds
-- Hybrid four-model comparison interface with live Base Model and RAG responses
-- Custom question matcher (keyword overlap against predefined questions)
-- Evaluation workflow with form validation and localStorage persistence
-- Results dashboard with summary metrics, bar charts, and per-question breakdown
-- Evaluation JSON export and evaluation data reset
-- Architecture documentation page
-- Responsive navigation and mobile menu
-- Accessible form controls with fieldsets, legends, and error messages
+Use three terminals.
 
-## Technology stack
+**Terminal 1 — Ollama**
 
-- React
-- TypeScript
-- Vite
-- React Router
-- Plain CSS
-- JSON
-- JSONL
-- localStorage
+```bash
+ollama serve
+```
 
-## Setup
+Ensure models are available locally (for example `ollama pull llama3.2:3b` and `ollama pull nomic-embed-text`).
+
+**Terminal 2 — FastAPI backend**
+
+```bash
+cd backend
+source .venv/bin/activate
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
+```
+
+**Terminal 3 — Frontend**
+
+```bash
+npm run dev
+```
+
+Configure frontend env (`.env`) with Firebase settings and:
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8001
+```
+
+Other useful commands:
 
 ```bash
 npm install
-npm run dev
+npm test
 npm run build
 npm run lint
 ```
 
-- `npm run dev` — Start the Vite development server.
-- `npm run build` — Type-check and build for production.
-- `npm run lint` — Run oxlint on the source files.
-- `npm run preview` — Preview the production build locally.
+Backend tests:
+
+```bash
+cd backend
+source .venv/bin/activate
+pytest
+```
 
 ## Routes
 
-| Route | Page | Description |
-|-------|------|-------------|
-| `/` | Home | Overview and classroom workflow |
-| `/syllabus` | Syllabus Explorer | Browse structured syllabus topics |
-| `/seed-builder` | Seed Data Builder | Create user seed examples |
-| `/dataset` | Seed Dataset | Browse and export seed data |
-| `/compare` | Model Comparison | Compare live Base Model and RAG responses with simulated fine-tuned outputs |
-| `/evaluate` | Evaluation | Rate model responses (`?comparison=<id>`) |
-| `/results` | Results | View aggregated evaluation metrics |
-| `/architecture` | Architecture | Technical architecture overview |
-| `*` | Not Found | Invalid route handler |
+| Route | Description |
+|-------|-------------|
+| `/` | Course picker (lists Firebase courses) |
+| `/create-course` | Create a course and optionally upload a syllabus |
+| `/architecture` | Architecture overview |
+| `/course/:courseId/home` | Course home |
+| `/course/:courseId/syllabus` | Extracted syllabus text for that course |
+| `/course/:courseId/seeds` | Seed Data Builder |
+| `/course/:courseId/dataset` | Seed dataset browser/export |
+| `/course/:courseId/compare` | Model comparison (live Base + course RAG) |
+| `/course/:courseId/evaluate` | Evaluation form |
+| `/course/:courseId/results` | Evaluation results |
+| `/home`, `/syllabus`, `/compare`, … | Legacy redirects to `/course/css360-default/...` |
 
-## Data storage
+## Data locations
 
-### Prototype JSON files (read-only at runtime)
-
-| File | Purpose |
-|------|---------|
-| `docs/syllabus.txt` | Authoritative syllabus source text |
-| `src/data/syllabusTopics.json` | Structured syllabus topic summaries |
-| `src/data/seedData.json` | Prototype seed examples |
-| `src/data/comparisonData.json` | Simulated model comparison records |
-
-### localStorage keys
-
-| Key | Contents |
-|-----|----------|
-| `syllabus-demo-user-seeds` | User-created seed examples (JSON array) |
-| `syllabus-demo-evaluations` | Evaluation records (JSON array) |
-
-User seeds and evaluations are stored independently. Resetting one does not affect the other.
-
-### Firebase Realtime Database (multi-course foundation)
-
-The Firebase helpers now support a per-course layout for future multi-course work:
+### Firebase Realtime Database
 
 ```
 courses/
@@ -103,82 +121,55 @@ courses/
     evaluations/
 ```
 
-The current UI still reads and writes the legacy global paths `seedExamples` and `evaluations`. Existing CSS 360 data is **not migrated** in this step. A reserved default course id is `css360-default` for a later migration.
+### Local backend artifacts (not in Firebase)
 
-## Export formats
+| Path | Purpose |
+|------|---------|
+| `backend/course_data/{courseId}/original.(pdf\|txt)` | Uploaded original file |
+| `backend/course_data/{courseId}/syllabus.txt` | Extracted syllabus text |
+| `backend/data/indexes/{courseId}.json` | Course-specific embedding index |
 
-### JSON
+### Prototype static files
 
-Exports a formatted JSON array. Used for filtered seed exports and evaluation exports (`syllabus-evaluations.json`).
-
-### JSONL
-
-Exports one JSON object per line (newline-delimited JSON). Used for complete seed datasets and user seed exports. Suitable for fine-tuning pipeline input in future phases.
+| File | Purpose |
+|------|---------|
+| `src/data/seedData.json` | Read-only prototype seed examples shown with course seeds |
+| `src/data/comparisonData.json` | Simulated Fine-Tuned comparison records |
+| `docs/syllabus.txt` | Legacy CSS 360 syllabus fixture for backend chunking unit tests only — **not** used by live course pages |
 
 ## Current limitations
 
-- No backend server or API
-- No authentication or user accounts
-- No shared classroom database across browsers
-- No real model inference or text generation
-- No real RAG retrieval, embeddings, or vector databases
-- No real fine-tuning or training scripts
-- No live evaluation service or server-side storage
-- Grounding labels on comparison responses are prototype annotations, not automated scores
-- Results reflect only evaluations saved in the current browser
-
-## Future phases
-
-See `docs/future-work.md` for a detailed roadmap. High-level next steps include adding a backend API, shared evaluation storage, syllabus parsing and chunking, embeddings, vector retrieval, connecting real model services, building a reviewed fine-tuning dataset, and deployment with monitoring.
+- No instructor authentication or access control
+- Syllabus artifacts and indexes are local disk only (not GCP yet)
+- Fine-Tuned and Fine-Tuned + RAG answers are simulated
+- Grounding labels on simulated cards are prototype annotations
+- Root-level legacy Firebase `seedExamples` / `evaluations` data is not auto-migrated or auto-deleted
 
 ## Privacy and ethics
 
-- All user-created seeds and evaluations are stored **only in the browser** via localStorage.
-- **No data is submitted** to a server in the current prototype.
-- Avoid entering sensitive personal information into seed examples or evaluation notes.
-- Simulated model outputs may contain incorrect or invented information by design.
-- Simulated outputs must not be mistaken for live AI results — the prototype banner and page notices reinforce this.
-- Evaluation ratings are subjective classroom observations, not ground-truth labels.
-
-## Manual compare-page checks
-
-### Custom matcher reset
-
-1. Open `/compare`.
-2. Enter a custom question such as `What is the late policy for bot project tasks?` and click **Ask question**.
-3. Confirm a custom match or no-match notice appears and Base/RAG reload for that question.
-4. Select a different predefined question from the dropdown, such as `What is the difference between open lab and office hours?`
-5. Confirm the custom input is cleared, the custom match notice disappears, and the category / relevant syllabus section / simulated cards all match the newly selected predefined question.
-6. Confirm Base and RAG answers reload for the selected predefined question.
-
-### Open lab scope check
-
-1. With the backend running, ask the predefined open-lab vs office-hours question on `/compare`.
-2. Confirm the RAG answer does not claim open lab sessions are limited to 120 minutes unless the retrieved syllabus context explicitly says so for open lab.
+- Course seeds and evaluations are stored in the configured Firebase project under `courses/{courseId}/...`
+- Avoid entering sensitive personal information into seed examples or evaluation notes
+- Simulated model outputs may contain incorrect or invented information by design
+- Live reasoning models can still hallucinate; use syllabus sources and instructor judgment
+- Evaluation ratings are subjective classroom observations, not ground-truth labels
 
 ## Project structure
 
 ```
 .
-├── docs/
-│   ├── architecture.md       # Technical architecture details
-│   ├── data-format.md        # Data type and export documentation
-│   ├── future-work.md        # Planned future phases
-│   └── syllabus.txt          # Official syllabus source (do not modify)
+├── backend/                  # FastAPI + Ollama RAG/upload pipeline
+├── docs/                     # Architecture and notes
+├── scripts/                  # Offline dataset helpers
 ├── src/
-│   ├── components/           # Reusable UI components
-│   ├── data/                 # Static JSON prototype data
-│   ├── hooks/                # React hooks (e.g. useLocalStorage)
-│   ├── pages/                # Route page components
+│   ├── components/
+│   ├── context/              # CourseProvider / useCourseId
+│   ├── data/                 # Prototype JSON (seeds, comparisons)
+│   ├── hooks/                # Course-scoped Firebase hooks
+│   ├── lib/                  # API client, Firebase helpers, course ids
+│   ├── pages/
 │   ├── styles/
-│   │   └── global.css        # Application styles
 │   ├── types/
-│   │   └── index.ts          # Shared TypeScript types
-│   ├── utils/                # Pure utility functions
-│   ├── App.tsx               # Router configuration
-│   └── main.tsx              # Application entry point
-├── index.html
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
+│   └── utils/
+├── README.md
+└── package.json
 ```

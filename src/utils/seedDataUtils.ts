@@ -1,7 +1,5 @@
 import type { SeedDifficulty, SeedExample } from '../types';
 
-export const USER_SEEDS_STORAGE_KEY = 'syllabus-demo-user-seeds';
-
 export const SEED_CATEGORIES = [
   'Course Basics',
   'Communication',

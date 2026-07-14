@@ -52,15 +52,6 @@ export interface EvaluationRecord {
   createdAt: string;
 }
 
-export interface SyllabusTopic {
-  id: string;
-  title: string;
-  category: string;
-  summary: string;
-  sourceSection: string;
-  details: string[];
-}
-
 /** Syllabus processing status for a course in Firebase. */
 export type SyllabusStatus =
   | 'none'

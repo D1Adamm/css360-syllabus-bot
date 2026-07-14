@@ -1,7 +1,7 @@
 /**
- * Temporary default course id for future multi-course migration.
- * Existing CSS 360 data remains at global `seedExamples` / `evaluations`
- * until an explicit migration step moves it under courses/{DEFAULT_COURSE_ID}.
+ * Reserved course id used only by legacy flat-route redirects
+ * (`/home`, `/compare`, … → `/course/css360-default/...`).
+ * Live pages always take courseId from `/course/:courseId/...`.
  */
 export const DEFAULT_COURSE_ID = 'css360-default';
 

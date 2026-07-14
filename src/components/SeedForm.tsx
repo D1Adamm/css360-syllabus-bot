@@ -1,6 +1,5 @@
-import { useId, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import seedData from '../data/seedData.json';
-import syllabusTopics from '../data/syllabusTopics.json';
 import type { SeedDifficulty, SeedExample } from '../types';
 import {
   generateUserSeedId,
@@ -55,18 +54,6 @@ const INITIAL_VALUES: FormValues = {
   notes: '',
 };
 
-function getSourceSectionOptions(): string[] {
-  const fromSeeds = prototypeSeeds.map((seed) => seed.sourceSection);
-  const fromTopics = (syllabusTopics as { sourceSection: string }[]).map(
-    (topic) => topic.sourceSection,
-  );
-  return Array.from(new Set([...fromSeeds, ...fromTopics])).sort((a, b) =>
-    a.localeCompare(b),
-  );
-}
-
-const sourceSectionOptions = getSourceSectionOptions();
-
 export function SeedForm({
   userSeeds,
   onAddSeed,
@@ -78,6 +65,14 @@ export function SeedForm({
   const [errors, setErrors] = useState<FormErrors>({});
   const [successMessage, setSuccessMessage] = useState('');
   const instructionRef = useRef<HTMLTextAreaElement>(null);
+
+  const sourceSectionOptions = useMemo(() => {
+    const fromPrototype = prototypeSeeds.map((seed) => seed.sourceSection);
+    const fromUserSeeds = userSeeds.map((seed) => seed.sourceSection);
+    return Array.from(new Set([...fromPrototype, ...fromUserSeeds]))
+      .filter((section) => section.trim() !== '')
+      .sort((left, right) => left.localeCompare(right));
+  }, [userSeeds]);
 
   const instructionErrorId = `${formId}-instruction-error`;
   const responseErrorId = `${formId}-response-error`;
