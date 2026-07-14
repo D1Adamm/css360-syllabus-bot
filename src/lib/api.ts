@@ -48,9 +48,9 @@ export function getApiBaseUrl(): string | null {
   return value.trim().replace(/\/$/, '');
 }
 
-async function postJson<T>(
+async function requestJson<T>(
   path: string,
-  body: unknown,
+  init: RequestInit,
   fallbackErrorMessage: string,
   unreachableMessage: string,
 ): Promise<T> {
@@ -65,13 +65,7 @@ async function postJson<T>(
   let response: Response;
 
   try {
-    response = await fetch(`${baseUrl}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    response = await fetch(`${baseUrl}${path}`, init);
   } catch {
     throw new ApiError(unreachableMessage);
   }
@@ -92,6 +86,39 @@ async function postJson<T>(
   }
 
   return (await response.json()) as T;
+}
+
+async function postJson<T>(
+  path: string,
+  body: unknown,
+  fallbackErrorMessage: string,
+  unreachableMessage: string,
+): Promise<T> {
+  return requestJson<T>(
+    path,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    },
+    fallbackErrorMessage,
+    unreachableMessage,
+  );
+}
+
+async function getJson<T>(
+  path: string,
+  fallbackErrorMessage: string,
+  unreachableMessage: string,
+): Promise<T> {
+  return requestJson<T>(
+    path,
+    { method: 'GET' },
+    fallbackErrorMessage,
+    unreachableMessage,
+  );
 }
 
 export async function generateBaseModel(
@@ -127,6 +154,22 @@ export interface SyllabusUploadResponse {
   fileSize: number;
   characterCount: number;
   chunkCount: number;
+}
+
+export interface SyllabusTextResponse {
+  courseId: string;
+  text: string;
+  characterCount: number;
+}
+
+export async function fetchCourseSyllabusText(
+  courseId: string,
+): Promise<SyllabusTextResponse> {
+  return getJson<SyllabusTextResponse>(
+    `/api/courses/${courseId}/syllabus/text`,
+    'The backend could not load the syllabus text for this course.',
+    'Could not reach the backend to load the syllabus. Make sure the FastAPI server is running.',
+  );
 }
 
 export async function uploadCourseSyllabus(

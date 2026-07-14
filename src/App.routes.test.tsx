@@ -28,6 +28,11 @@ vi.mock('./lib/api', () => ({
   ApiError: class ApiError extends Error {},
   generateBaseModel: vi.fn(),
   generateRag: vi.fn(),
+  fetchCourseSyllabusText: vi.fn(async () => ({
+    courseId: 'css360-default',
+    text: 'Mock syllabus text for route tests.',
+    characterCount: 34,
+  })),
 }));
 
 import { AppRoutes } from './App';
