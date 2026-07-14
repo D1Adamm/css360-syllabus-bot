@@ -119,6 +119,7 @@ export interface SyllabusUploadResponse {
   syllabusStatus: string;
   fileSize: number;
   characterCount: number;
+  chunkCount: number;
 }
 
 export async function uploadCourseSyllabus(

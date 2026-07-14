@@ -2,7 +2,7 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
@@ -130,16 +130,27 @@ class TextCleaningAndExtractionTests(unittest.TestCase):
 class SyllabusUploadEndpointTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
-        self.course_data_dir = Path(self._temp_dir.name)
-        self.storage = LocalCourseArtifactStorage(root_dir=self.course_data_dir)
+        root = Path(self._temp_dir.name)
+        self.course_data_dir = root / "course_data"
+        self.index_dir = root / "indexes"
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=self.course_data_dir,
+            index_dir=self.index_dir,
+        )
         self._storage_patch = patch(
             "app.main.get_course_artifact_storage",
             return_value=self.storage,
         )
         self._storage_patch.start()
+        self._embed_patch = patch(
+            "app.course_index.get_embedding",
+            new=AsyncMock(return_value=[0.01, 0.02, 0.03]),
+        )
+        self._embed_patch.start()
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
+        self._embed_patch.stop()
         self._storage_patch.stop()
         self._temp_dir.cleanup()
 
@@ -178,15 +189,17 @@ class SyllabusUploadEndpointTests(unittest.TestCase):
         self.assertEqual(body["courseId"], "css-430-summer-2026-a82f")
         self.assertEqual(body["syllabusFileName"], "css430-syllabus.pdf")
         self.assertEqual(body["syllabusType"], "pdf")
-        self.assertEqual(body["syllabusStatus"], "extracted")
+        self.assertEqual(body["syllabusStatus"], "indexed")
         self.assertEqual(body["fileSize"], len(pdf_bytes))
         self.assertGreaterEqual(body["characterCount"], 50)
+        self.assertGreaterEqual(body["chunkCount"], 1)
 
         saved = self.course_data_dir / "css-430-summer-2026-a82f" / "original.pdf"
         self.assertTrue(saved.is_file())
         extracted = self.course_data_dir / "css-430-summer-2026-a82f" / "syllabus.txt"
         self.assertTrue(extracted.is_file())
         self.assertGreaterEqual(len(extracted.read_text(encoding="utf-8")), 50)
+        self.assertTrue(self.storage.index_exists("css-430-summer-2026-a82f"))
 
     def test_valid_txt_upload(self) -> None:
         content = SAMPLE_SYLLABUS_TEXT.encode("utf-8")
@@ -200,8 +213,9 @@ class SyllabusUploadEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         body = response.json()
         self.assertEqual(body["syllabusType"], "txt")
-        self.assertEqual(body["syllabusStatus"], "extracted")
+        self.assertEqual(body["syllabusStatus"], "indexed")
         self.assertEqual(body["characterCount"], len(SAMPLE_SYLLABUS_TEXT))
+        self.assertGreaterEqual(body["chunkCount"], 1)
 
         original = self.course_data_dir / "course-alpha" / "original.txt"
         extracted = self.course_data_dir / "course-alpha" / "syllabus.txt"
@@ -209,6 +223,7 @@ class SyllabusUploadEndpointTests(unittest.TestCase):
         self.assertEqual(original.read_bytes(), content)
         self.assertTrue(extracted.is_file())
         self.assertEqual(extracted.read_text(encoding="utf-8"), SAMPLE_SYLLABUS_TEXT)
+        self.assertTrue(self.storage.index_exists("course-alpha"))
 
     def test_utf8_bom_txt_upload(self) -> None:
         content = ("\ufeff" + SAMPLE_SYLLABUS_TEXT).encode("utf-8")
@@ -262,7 +277,7 @@ class SyllabusUploadEndpointTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("Invalid courseId", response.json()["detail"])
-        self.assertFalse(any(self.course_data_dir.iterdir()))
+        self.assertFalse(self.course_data_dir.exists() and any(self.course_data_dir.iterdir()))
 
     def test_unsupported_extension(self) -> None:
         response = self._upload(

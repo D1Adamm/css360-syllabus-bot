@@ -93,6 +93,7 @@ class SyllabusUploadResponse(BaseModel):
     syllabus_status: str = Field(alias="syllabusStatus")
     file_size: int = Field(alias="fileSize")
     character_count: int = Field(alias="characterCount")
+    chunk_count: int = Field(alias="chunkCount")
 
 
 class SyllabusTextResponse(BaseModel):
@@ -101,3 +102,20 @@ class SyllabusTextResponse(BaseModel):
     course_id: str = Field(alias="courseId")
     text: str
     character_count: int = Field(alias="characterCount")
+
+
+class CourseChunkMetadata(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    chunk_id: str = Field(alias="chunkId")
+    section_title: str = Field(alias="sectionTitle")
+    text: str
+    order: int
+
+
+class CourseChunksResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    chunk_count: int = Field(alias="chunkCount")
+    chunks: list[CourseChunkMetadata]
