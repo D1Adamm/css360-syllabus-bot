@@ -23,6 +23,7 @@ function buildNavItems(courseId: string): NavItem[] {
     courseLink('compare', 'Compare'),
     courseLink('evaluate', 'Evaluate'),
     courseLink('results', 'Results'),
+    { to: '/create-course', label: 'Create Course' },
     { to: '/architecture', label: 'Architecture' },
   ];
 }

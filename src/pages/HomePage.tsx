@@ -30,6 +30,9 @@ export function HomePage() {
           <ButtonLink to={coursePagePath(courseId, 'compare')} variant="secondary">
             Model Comparison
           </ButtonLink>
+          <ButtonLink to="/create-course" variant="secondary">
+            Create Course
+          </ButtonLink>
         </div>
       </section>
 
