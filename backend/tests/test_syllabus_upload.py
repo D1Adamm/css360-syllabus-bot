@@ -339,6 +339,11 @@ class SyllabusUploadEndpointTests(unittest.TestCase):
         response = self.client.get("/api/courses/missing-course/syllabus/text")
         self.assertEqual(response.status_code, 404)
 
+    def test_get_syllabus_text_rejects_invalid_course_id(self) -> None:
+        response = self.client.get("/api/courses/Bad_Id/syllabus/text")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid courseId", response.json()["detail"])
+
     def test_partial_file_cleanup_after_original_save_failure(self) -> None:
         with patch.object(
             self.storage,

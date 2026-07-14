@@ -464,7 +464,7 @@ img {
   margin-bottom: var(--spacing-xl);
 }
 
-/* Syllabus Explorer */
+/* Syllabus page */
 
 .syllabus-notice {
   background-color: var(--color-banner-bg);
@@ -474,6 +474,70 @@ img {
   margin-bottom: var(--spacing-xl);
   font-size: 0.9375rem;
   color: var(--color-banner-text);
+}
+
+.syllabus-state {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-xl);
+  margin-bottom: var(--spacing-xl);
+}
+
+.syllabus-state__title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-sm);
+}
+
+.syllabus-state__text {
+  margin: 0;
+  color: var(--color-text-muted, var(--color-text));
+  line-height: 1.55;
+}
+
+.syllabus-state__text code {
+  font-size: 0.875rem;
+}
+
+.syllabus-document-section {
+  margin-bottom: var(--spacing-xl);
+}
+
+.syllabus-document-meta {
+  margin: 0 0 var(--spacing-md);
+  font-size: 0.875rem;
+  color: var(--color-text-muted, var(--color-text));
+}
+
+.syllabus-document {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-xl);
+}
+
+.syllabus-document__heading {
+  font-size: 1.125rem;
+  font-weight: 650;
+  margin: 0 0 var(--spacing-md);
+  line-height: 1.35;
+}
+
+.syllabus-document__heading + .syllabus-document__paragraph,
+.syllabus-document__heading + .syllabus-document__heading {
+  margin-top: 0;
+}
+
+.syllabus-document__paragraph {
+  margin: 0 0 var(--spacing-md);
+  line-height: 1.65;
+  white-space: normal;
+}
+
+.syllabus-document__paragraph:last-child,
+.syllabus-document__heading:last-child {
+  margin-bottom: 0;
 }
 
 .syllabus-notice p {

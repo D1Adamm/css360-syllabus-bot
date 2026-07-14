@@ -1,139 +1,186 @@
-import { useMemo, useState } from 'react';
-import syllabusTopicsData from '../data/syllabusTopics.json';
-import { ALL_CATEGORIES, CategoryFilter } from '../components/CategoryFilter';
+import { Fragment, useEffect, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
-import { SyllabusSearch } from '../components/SyllabusSearch';
-import { SyllabusTopicCard } from '../components/SyllabusTopicCard';
-import type { SyllabusTopic } from '../types';
+import { useCourseId } from '../context/CourseContext';
+import { ApiError, fetchCourseSyllabusText } from '../lib/api';
+import { parseSyllabusDocument } from '../lib/syllabusDocument';
 
-const syllabusTopics = syllabusTopicsData as SyllabusTopic[];
+type SyllabusPageState =
+  | { status: 'loading' }
+  | { status: 'success'; text: string; characterCount: number }
+  | { status: 'empty' }
+  | { status: 'not-found' }
+  | { status: 'invalid-course'; message: string }
+  | { status: 'unavailable'; message: string }
+  | { status: 'error'; message: string };
 
-function normalizeSearchText(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ');
-}
+function getErrorState(error: unknown): Exclude<SyllabusPageState, { status: 'loading' | 'success' | 'empty' }> {
+  if (error instanceof ApiError) {
+    if (error.status === 404) {
+      return { status: 'not-found' };
+    }
 
-function topicMatchesSearch(topic: SyllabusTopic, query: string): boolean {
-  if (!query) {
-    return true;
+    if (error.status === 400) {
+      return {
+        status: 'invalid-course',
+        message: error.message || 'This course id is not valid.',
+      };
+    }
+
+    if (error.status === undefined) {
+      return {
+        status: 'unavailable',
+        message:
+          error.message ||
+          'Could not reach the backend to load the syllabus. Make sure the FastAPI server is running.',
+      };
+    }
+
+    return {
+      status: 'error',
+      message: error.message || 'The syllabus could not be loaded for this course.',
+    };
   }
 
-  const searchableText = [
-    topic.title,
-    topic.summary,
-    topic.category,
-    topic.sourceSection,
-    ...topic.details,
-  ]
-    .join(' ')
-    .toLowerCase();
-
-  return searchableText.includes(query);
+  return {
+    status: 'unavailable',
+    message: 'Could not reach the backend to load the syllabus. Make sure the FastAPI server is running.',
+  };
 }
 
 export function SyllabusPage() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
+  const courseId = useCourseId();
+  const [state, setState] = useState<SyllabusPageState>({ status: 'loading' });
 
-  const categories = useMemo(() => {
-    const uniqueCategories = new Set(syllabusTopics.map((topic) => topic.category));
-    return Array.from(uniqueCategories).sort((left, right) => left.localeCompare(right));
-  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    setState({ status: 'loading' });
 
-  const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      [ALL_CATEGORIES]: syllabusTopics.length,
+    void fetchCourseSyllabusText(courseId)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (result.text.trim() === '') {
+          setState({ status: 'empty' });
+          return;
+        }
+
+        setState({
+          status: 'success',
+          text: result.text,
+          characterCount: result.characterCount,
+        });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setState(getErrorState(error));
+        }
+      });
+
+    return () => {
+      cancelled = true;
     };
-
-    for (const category of categories) {
-      counts[category] = syllabusTopics.filter((topic) => topic.category === category).length;
-    }
-
-    return counts;
-  }, [categories]);
-
-  const normalizedQuery = normalizeSearchText(searchQuery);
-
-  const filteredTopics = useMemo(() => {
-    return syllabusTopics.filter((topic) => {
-      const matchesCategory =
-        selectedCategory === ALL_CATEGORIES || topic.category === selectedCategory;
-      const matchesSearch = topicMatchesSearch(topic, normalizedQuery);
-
-      return matchesCategory && matchesSearch;
-    });
-  }, [normalizedQuery, selectedCategory]);
-
-  function clearFilters() {
-    setSearchQuery('');
-    setSelectedCategory(ALL_CATEGORIES);
-  }
+  }, [courseId]);
 
   return (
     <>
       <PageHeader
-        title="Syllabus Explorer"
-        description="Browse searchable course policies and expectations organized by topic to help you find answers about CSS360."
+        title="Syllabus"
+        description={`Extracted syllabus text for course ${courseId}. This is the text used to build the course-specific RAG index.`}
       />
 
       <aside className="syllabus-notice" aria-label="Syllabus source note">
         <p>
-          <strong>Prototype note:</strong> Topic summaries are drawn from{' '}
-          <code>docs/syllabus.txt</code>. Always consult the official syllabus on Canvas
-          and weekly announcements for the most current details.
+          <strong>Course syllabus:</strong> Content is loaded from the extracted{' '}
+          <code>syllabus.txt</code> for <code>{courseId}</code>. Always consult the official
+          syllabus on Canvas and weekly announcements for the most current details.
         </p>
       </aside>
 
-      <section className="syllabus-overview" aria-labelledby="category-overview-title">
-        <h2 id="category-overview-title" className="syllabus-overview__title">
-          Topics by category
-        </h2>
-        <ul className="syllabus-overview__list">
-          {categories.map((category) => (
-            <li key={category} className="syllabus-overview__item">
-              <span className="syllabus-overview__category">{category}</span>
-              <span className="syllabus-overview__count">{categoryCounts[category]}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="syllabus-controls" aria-label="Search and filter syllabus topics">
-        <SyllabusSearch
-          value={searchQuery}
-          onChange={setSearchQuery}
-          resultCount={filteredTopics.length}
-          totalCount={syllabusTopics.length}
-        />
-        <CategoryFilter
-          categories={categories}
-          selectedCategory={selectedCategory}
-          onChange={setSelectedCategory}
-          categoryCounts={categoryCounts}
-        />
-      </section>
-
-      {filteredTopics.length === 0 ? (
-        <section className="syllabus-empty" aria-live="polite">
-          <h2 className="syllabus-empty__title">No matching topics</h2>
-          <p className="syllabus-empty__text">
-            Try a different search term or category. You can also clear all filters to
-            browse every syllabus topic.
+      {state.status === 'loading' ? (
+        <section className="syllabus-state" aria-live="polite" aria-busy="true">
+          <h2 className="syllabus-state__title">Loading syllabus</h2>
+          <p className="syllabus-state__text">
+            Fetching the extracted syllabus text for this course…
           </p>
-          <button type="button" className="syllabus-empty__button" onClick={clearFilters}>
-            Clear filters
-          </button>
         </section>
-      ) : (
+      ) : null}
+
+      {state.status === 'not-found' ? (
+        <section className="syllabus-state" aria-live="polite">
+          <h2 className="syllabus-state__title">Syllabus not found</h2>
+          <p className="syllabus-state__text">
+            No extracted syllabus text is available for <code>{courseId}</code> yet. Upload a
+            syllabus for this course to generate <code>syllabus.txt</code>.
+          </p>
+        </section>
+      ) : null}
+
+      {state.status === 'empty' ? (
+        <section className="syllabus-state" aria-live="polite">
+          <h2 className="syllabus-state__title">Empty syllabus</h2>
+          <p className="syllabus-state__text">
+            The extracted syllabus file for <code>{courseId}</code> exists but does not contain
+            displayable text.
+          </p>
+        </section>
+      ) : null}
+
+      {state.status === 'invalid-course' ? (
+        <section className="syllabus-state" aria-live="polite">
+          <h2 className="syllabus-state__title">Invalid course</h2>
+          <p className="syllabus-state__text">{state.message}</p>
+        </section>
+      ) : null}
+
+      {state.status === 'unavailable' ? (
+        <section className="syllabus-state" aria-live="polite">
+          <h2 className="syllabus-state__title">Backend unavailable</h2>
+          <p className="syllabus-state__text">{state.message}</p>
+        </section>
+      ) : null}
+
+      {state.status === 'error' ? (
+        <section className="syllabus-state" aria-live="polite">
+          <h2 className="syllabus-state__title">Unable to load syllabus</h2>
+          <p className="syllabus-state__text">{state.message}</p>
+        </section>
+      ) : null}
+
+      {state.status === 'success' ? (
         <section
-          className="syllabus-topics"
-          aria-label="Syllabus topics"
+          className="syllabus-document-section"
+          aria-label="Extracted syllabus text"
           aria-live="polite"
         >
-          {filteredTopics.map((topic) => (
-            <SyllabusTopicCard key={topic.id} topic={topic} />
-          ))}
+          <p className="syllabus-document-meta">
+            {state.characterCount.toLocaleString()} characters
+          </p>
+          <article className="syllabus-document" data-testid="syllabus-document">
+            {parseSyllabusDocument(state.text).map((block, index) => {
+              if (block.type === 'heading') {
+                return (
+                  <h2 key={`heading-${index}`} className="syllabus-document__heading">
+                    {block.text}
+                  </h2>
+                );
+              }
+
+              return (
+                <p key={`paragraph-${index}`} className="syllabus-document__paragraph">
+                  {block.lines.map((line, lineIndex) => (
+                    <Fragment key={`line-${index}-${lineIndex}`}>
+                      {line}
+                      {lineIndex < block.lines.length - 1 ? <br /> : null}
+                    </Fragment>
+                  ))}
+                </p>
+              );
+            })}
+          </article>
         </section>
-      )}
+      ) : null}
     </>
   );
 }
