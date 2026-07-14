@@ -5,7 +5,9 @@ import { ComparisonQuestionSelector } from '../components/ComparisonQuestionSele
 import { FormFieldError } from '../components/FormFieldError';
 import { ModelResponseCard } from '../components/ModelResponseCard';
 import { PageHeader } from '../components/PageHeader';
+import { useCourseId } from '../context/CourseContext';
 import { useEvaluations } from '../hooks/useEvaluations';
+import { coursePagePath } from '../lib/courseRoutes';
 import type { ComparisonRecord, EvaluationRecord, ModelKey } from '../types';
 import {
   formatEvaluationDate,
@@ -88,6 +90,7 @@ interface FormErrors {
 }
 
 export function EvaluationPage() {
+  const courseId = useCourseId();
   const formId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const {
@@ -316,7 +319,7 @@ export function EvaluationPage() {
               >
                 Evaluate another question
               </button>
-              <Link to="/results" className="button-link button-link--secondary">
+              <Link to={coursePagePath(courseId, 'results')} className="button-link button-link--secondary">
                 View results
               </Link>
             </div>
