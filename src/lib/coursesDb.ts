@@ -15,6 +15,7 @@ const SYLLABUS_STATUSES: readonly SyllabusStatus[] = [
   'none',
   'not_uploaded',
   'uploaded',
+  'extracted',
   'upload_failed',
   'processing',
   'ready',

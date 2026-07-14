@@ -130,7 +130,7 @@ export function CreateCoursePage() {
       const uploadResult = await uploadCourseSyllabus(courseId, syllabusFile);
 
       await updateCourseMetadata(courseId, {
-        syllabusStatus: 'uploaded',
+        syllabusStatus: 'extracted',
         syllabusFileName: uploadResult.syllabusFileName,
         syllabusType: uploadResult.syllabusType,
         chunkCount: 0,
@@ -167,7 +167,7 @@ export function CreateCoursePage() {
     <>
       <PageHeader
         title="Create Course"
-        description="Create a new course record, upload a PDF or TXT syllabus, and open its course-specific home page. Text extraction and RAG indexing are not part of this step."
+        description="Create a new course record, upload a PDF or TXT syllabus, extract readable text, and open its course-specific home page. Chunking and RAG indexing are not part of this step."
       />
 
       <aside className="seed-builder-notice" aria-label="Course creation notice">
@@ -175,9 +175,9 @@ export function CreateCoursePage() {
           <strong>Course metadata is stored in Firebase Realtime Database.</strong>
         </p>
         <p>
-          The syllabus file is uploaded to the FastAPI backend local course storage. After a
-          successful create and upload you will be taken to{' '}
-          <code>/course/{'{courseId}'}/home</code>.
+          The syllabus file is uploaded to the FastAPI backend, which stores the original file and
+          extracted <code>syllabus.txt</code>. After a successful create and extraction you will
+          be taken to <code>/course/{'{courseId}'}/home</code>.
         </p>
       </aside>
 

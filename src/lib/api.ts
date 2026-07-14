@@ -118,6 +118,7 @@ export interface SyllabusUploadResponse {
   syllabusType: string;
   syllabusStatus: string;
   fileSize: number;
+  characterCount: number;
 }
 
 export async function uploadCourseSyllabus(

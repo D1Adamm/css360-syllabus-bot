@@ -1,5 +1,6 @@
 fastapi
 httpx
 python-multipart
+pypdf
 uvicorn[standard]
 pytest

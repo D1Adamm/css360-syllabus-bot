@@ -66,6 +66,7 @@ export type SyllabusStatus =
   | 'none'
   | 'not_uploaded'
   | 'uploaded'
+  | 'extracted'
   | 'upload_failed'
   | 'processing'
   | 'ready'
