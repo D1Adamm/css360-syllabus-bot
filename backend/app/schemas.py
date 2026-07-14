@@ -92,3 +92,12 @@ class SyllabusUploadResponse(BaseModel):
     syllabus_type: str = Field(alias="syllabusType")
     syllabus_status: str = Field(alias="syllabusStatus")
     file_size: int = Field(alias="fileSize")
+    character_count: int = Field(alias="characterCount")
+
+
+class SyllabusTextResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    text: str
+    character_count: int = Field(alias="characterCount")

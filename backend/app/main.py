@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.course_id import assert_valid_course_id
 from app.ollama import generate_base_model_response
 from app.rag import generate_rag_answer, retrieve_syllabus_chunks
 from app.schemas import (
@@ -15,9 +16,11 @@ from app.schemas import (
     RagRetrieveDebugRanking,
     RagRetrieveResponse,
     RagRetrieveResult,
+    SyllabusTextResponse,
     SyllabusUploadResponse,
 )
 from app.storage import get_course_artifact_storage
+from app.syllabus_extract import extract_clean_syllabus_text
 from app.syllabus_upload import SyllabusUploadError, validate_syllabus_upload
 
 app = FastAPI(title="CSS360 Syllabus Model Backend")
@@ -119,6 +122,14 @@ async def upload_course_syllabus(
             validated.syllabus_type,
             validated.content,
         )
+        extracted_text = extract_clean_syllabus_text(validated)
+        storage.save_extracted_text(validated.course_id, extracted_text)
+    except SyllabusUploadError as exc:
+        try:
+            storage.delete_partial_files(validated.course_id)
+        except Exception:
+            pass
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except Exception as exc:  # noqa: BLE001 - map unexpected storage failures to HTTP 500
         try:
             storage.delete_partial_files(validated.course_id)
@@ -126,13 +137,39 @@ async def upload_course_syllabus(
             pass
         raise HTTPException(
             status_code=500,
-            detail="Could not save the syllabus file to local course storage.",
+            detail="Could not save or extract the syllabus file.",
         ) from exc
 
     return SyllabusUploadResponse(
         courseId=validated.course_id,
         syllabusFileName=validated.original_filename,
         syllabusType=validated.syllabus_type,
-        syllabusStatus="uploaded",
+        syllabusStatus="extracted",
         fileSize=validated.file_size,
+        characterCount=len(extracted_text),
+    )
+
+
+@app.get(
+    "/api/courses/{course_id}/syllabus/text",
+    response_model=SyllabusTextResponse,
+)
+def get_course_syllabus_text(course_id: str) -> SyllabusTextResponse:
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    storage = get_course_artifact_storage()
+    text = storage.load_extracted_text(safe_course_id)
+    if text is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Extracted syllabus text was not found for this course.",
+        )
+
+    return SyllabusTextResponse(
+        courseId=safe_course_id,
+        text=text,
+        characterCount=len(text),
     )

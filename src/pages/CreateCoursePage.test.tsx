@@ -125,8 +125,9 @@ describe('CreateCoursePage', () => {
       courseId: 'css-430-summer-2026-a82f',
       syllabusFileName: 'css430-syllabus.pdf',
       syllabusType: 'pdf',
-      syllabusStatus: 'uploaded',
+      syllabusStatus: 'extracted',
       fileSize: 16,
+      characterCount: 18000,
     });
 
     const view = renderCreateCoursePage();
@@ -147,7 +148,7 @@ describe('CreateCoursePage', () => {
       expect(updateCourseMetadataMock).toHaveBeenCalledWith(
         'css-430-summer-2026-a82f',
         expect.objectContaining({
-          syllabusStatus: 'uploaded',
+          syllabusStatus: 'extracted',
           syllabusFileName: 'css430-syllabus.pdf',
           syllabusType: 'pdf',
           chunkCount: 0,

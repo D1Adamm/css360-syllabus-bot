@@ -15,6 +15,7 @@ from app.course_id import assert_valid_course_id
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_COURSE_DATA_DIR = "course_data"
 ALLOWED_SYLLABUS_EXTENSIONS = frozenset({"pdf", "txt"})
+EXTRACTED_TEXT_FILENAME = "syllabus.txt"
 
 
 class CourseArtifactStorage(ABC):
@@ -35,6 +36,18 @@ class CourseArtifactStorage(ABC):
         syllabus_type: str,
         content: bytes,
     ) -> Path:
+        raise NotImplementedError
+
+    @abstractmethod
+    def extracted_text_path(self, course_id: str) -> Path:
+        raise NotImplementedError
+
+    @abstractmethod
+    def save_extracted_text(self, course_id: str, text: str) -> Path:
+        raise NotImplementedError
+
+    @abstractmethod
+    def load_extracted_text(self, course_id: str) -> str | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -78,6 +91,22 @@ class LocalCourseArtifactStorage(CourseArtifactStorage):
         destination.write_bytes(content)
         return destination
 
+    def extracted_text_path(self, course_id: str) -> Path:
+        safe_course_id = assert_valid_course_id(course_id)
+        return self.root_dir / safe_course_id / EXTRACTED_TEXT_FILENAME
+
+    def save_extracted_text(self, course_id: str, text: str) -> Path:
+        self.ensure_course_dir(course_id)
+        destination = self.extracted_text_path(course_id)
+        destination.write_text(text, encoding="utf-8")
+        return destination
+
+    def load_extracted_text(self, course_id: str) -> str | None:
+        path = self.extracted_text_path(course_id)
+        if not path.is_file():
+            return None
+        return path.read_text(encoding="utf-8")
+
     def syllabus_exists(self, course_id: str) -> bool:
         safe_course_id = assert_valid_course_id(course_id)
         course_dir = self.root_dir / safe_course_id
@@ -98,6 +127,10 @@ class LocalCourseArtifactStorage(CourseArtifactStorage):
             path = course_dir / f"original.{extension}"
             if path.exists():
                 path.unlink()
+
+        extracted = course_dir / EXTRACTED_TEXT_FILENAME
+        if extracted.exists():
+            extracted.unlink()
 
         try:
             course_dir.rmdir()
