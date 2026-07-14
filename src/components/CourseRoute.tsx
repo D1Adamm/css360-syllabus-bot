@@ -5,7 +5,7 @@ import { InvalidCoursePage } from './InvalidCoursePage';
 
 /**
  * Validates :courseId from the URL, exposes it via CourseProvider, and renders
- * nested course page routes. Does not load Firebase course metadata yet.
+ * nested course page routes.
  */
 export function CourseRoute() {
   const { courseId } = useParams<{ courseId: string }>();

@@ -8,11 +8,10 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 
-from app.ollama import generate_ollama_completion
-
 APP_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = APP_DIR.parent
 REPO_ROOT = BACKEND_DIR.parent
+# Fixture used by legacy CSS 360 chunking unit tests (not the live multi-course API).
 SYLLABUS_PATH = REPO_ROOT / "docs" / "syllabus.txt"
 INDEX_PATH = BACKEND_DIR / "data" / "syllabus_index.json"
 
@@ -898,26 +897,3 @@ def build_rag_prompt(question: str, retrieved_chunks: list[dict[str, Any]]) -> s
     )
 
 
-async def generate_rag_answer(
-    question: str,
-    top_k: int = DEFAULT_TOP_K,
-) -> dict[str, Any]:
-    _, retrieved_chunks, _ = await retrieve_syllabus_chunks(question=question, top_k=top_k)
-    prompt = build_rag_prompt(question, retrieved_chunks)
-    generation = await generate_ollama_completion(prompt)
-
-    sources: list[dict[str, Any]] = []
-    seen_sections: set[str] = set()
-    for chunk in retrieved_chunks:
-        section = chunk["section"]
-        if section in seen_sections:
-            continue
-        seen_sections.add(section)
-        sources.append({"section": section})
-
-    return {
-        "answer": generation["answer"],
-        "model": generation["model"],
-        "sources": sources,
-        "retrieved_chunks": retrieved_chunks,
-    }

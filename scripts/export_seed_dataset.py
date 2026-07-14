@@ -17,7 +17,13 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SEED_DATA_PATH = PROJECT_ROOT / "src" / "data" / "seedData.json"
 EXPORT_DIR = PROJECT_ROOT / "data" / "exports"
-FIREBASE_PATH = "seedExamples"
+# Prefer course-scoped seeds. Override with EXPORT_COURSE_ID.
+# Legacy root `seedExamples` is no longer used by the live UI.
+def firebase_seed_examples_path() -> str:
+    course_id = os.getenv("EXPORT_COURSE_ID", "").strip()
+    if course_id:
+        return f"courses/{course_id}/seedExamples"
+    return "seedExamples"
 
 COMBINED_JSON = "seed-dataset-combined.json"
 COMBINED_JSONL = "seed-dataset-combined.jsonl"
@@ -174,7 +180,7 @@ def fetch_firebase_seed_examples() -> list[ExportRecord]:
     database_url = get_database_url()
     auth_token = os.environ.get("FIREBASE_AUTH_TOKEN", "").strip()
 
-    request_url = f"{database_url}/{FIREBASE_PATH}.json"
+    request_url = f"{database_url}/{firebase_seed_examples_path()}.json"
     if auth_token:
         request_url = f"{request_url}?auth={auth_token}"
 
@@ -290,7 +296,7 @@ def main() -> int:
         student_records = fetch_firebase_seed_examples()
         firebase_access = (
             "Firebase read used the Realtime Database REST API with "
-            f"{get_database_url()}/{FIREBASE_PATH}.json"
+            f"{get_database_url()}/{firebase_seed_examples_path()}.json"
         )
         if os.environ.get("FIREBASE_AUTH_TOKEN", "").strip():
             firebase_access += " (authenticated with FIREBASE_AUTH_TOKEN)"
@@ -322,7 +328,7 @@ def main() -> int:
     print("Seed dataset export complete")
     print("============================")
     print(f"Prototype source: {SEED_DATA_PATH}")
-    print(f"Firebase path: {FIREBASE_PATH}")
+    print(f"Firebase path: {firebase_seed_examples_path()}")
     print(f"Export directory: {EXPORT_DIR}")
     print(f"Duplicates removed: {duplicate_count}")
     print("\nFiles written:")

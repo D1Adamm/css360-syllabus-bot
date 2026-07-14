@@ -8,7 +8,17 @@ interface NavItem {
   end?: boolean;
 }
 
-function buildNavItems(courseId: string): NavItem[] {
+function buildNavItems(courseId: string | null): NavItem[] {
+  const shared: NavItem[] = [
+    { to: '/', label: 'Courses', end: true },
+    { to: '/create-course', label: 'Create Course' },
+    { to: '/architecture', label: 'Architecture' },
+  ];
+
+  if (!courseId) {
+    return shared;
+  }
+
   const courseLink = (segment: CoursePageSegment, label: string, end?: boolean): NavItem => ({
     to: coursePagePath(courseId, segment),
     label,
@@ -23,8 +33,7 @@ function buildNavItems(courseId: string): NavItem[] {
     courseLink('compare', 'Compare'),
     courseLink('evaluate', 'Evaluate'),
     courseLink('results', 'Results'),
-    { to: '/create-course', label: 'Create Course' },
-    { to: '/architecture', label: 'Architecture' },
+    ...shared,
   ];
 }
 
@@ -33,7 +42,7 @@ function getNavLinkClass(isActive: boolean): string {
 }
 
 interface NavigationProps {
-  courseId: string;
+  courseId: string | null;
 }
 
 export function Navigation({ courseId }: NavigationProps) {

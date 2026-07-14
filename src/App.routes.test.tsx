@@ -197,9 +197,9 @@ describe('course-specific routes', () => {
     expect(
       view.getByText(/The course id "Bad_Id" is not valid/),
     ).toBeInTheDocument();
-    expect(view.getByRole('link', { name: 'Go to default course' })).toHaveAttribute(
+    expect(view.getByRole('link', { name: 'Back to Courses' })).toHaveAttribute(
       'href',
-      `/course/${DEFAULT_COURSE_ID}/home`,
+      '/',
     );
   });
 

@@ -5,17 +5,6 @@ import { assertValidCourseId } from './courseId';
 import { getCourseEvaluationPath, getCourseEvaluationsPath } from './coursePaths';
 import { database } from './firebase';
 
-/** Legacy global path used by the current UI. Not yet migrated under courses/. */
-export const EVALUATIONS_PATH = 'evaluations';
-
-export function getEvaluationsRef() {
-  return ref(database, EVALUATIONS_PATH);
-}
-
-export function getEvaluationRef(id: string) {
-  return ref(database, `${EVALUATIONS_PATH}/${id}`);
-}
-
 export function getCourseEvaluationsRef(courseId: string) {
   return ref(database, getCourseEvaluationsPath(courseId));
 }
@@ -34,47 +23,14 @@ export function parseEvaluationsFromSnapshot(data: unknown): EvaluationRecord[] 
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
-/**
- * Subscribe to evaluations.
- * - Global (legacy UI): subscribeToEvaluations(onData, onError)
- * - Course-aware: subscribeToEvaluations(courseId, onData, onError)
- */
-export function subscribeToEvaluations(
-  onData: (evaluations: EvaluationRecord[]) => void,
-  onError: (message: string) => void,
-): Unsubscribe;
+/** Subscribe to courses/{courseId}/evaluations. */
 export function subscribeToEvaluations(
   courseId: string,
   onData: (evaluations: EvaluationRecord[]) => void,
   onError: (message: string) => void,
-): Unsubscribe;
-export function subscribeToEvaluations(
-  courseIdOrOnData: string | ((evaluations: EvaluationRecord[]) => void),
-  onDataOrOnError:
-    | ((evaluations: EvaluationRecord[]) => void)
-    | ((message: string) => void),
-  maybeOnError?: (message: string) => void,
 ): Unsubscribe {
-  if (typeof courseIdOrOnData === 'string') {
-    assertValidCourseId(courseIdOrOnData);
-    const onData = onDataOrOnError as (evaluations: EvaluationRecord[]) => void;
-    const onError = maybeOnError as (message: string) => void;
-    const evaluationsRef = getCourseEvaluationsRef(courseIdOrOnData);
-
-    return onValue(
-      evaluationsRef,
-      (snapshot) => {
-        onData(parseEvaluationsFromSnapshot(snapshot.val()));
-      },
-      (error) => {
-        onError(error.message);
-      },
-    );
-  }
-
-  const onData = courseIdOrOnData;
-  const onError = onDataOrOnError as (message: string) => void;
-  const evaluationsRef = getEvaluationsRef();
+  assertValidCourseId(courseId);
+  const evaluationsRef = getCourseEvaluationsRef(courseId);
 
   return onValue(
     evaluationsRef,
@@ -87,38 +43,13 @@ export function subscribeToEvaluations(
   );
 }
 
-/**
- * Create an evaluation.
- * - Global (legacy UI): createEvaluation(evaluation)
- * - Course-aware: createEvaluation(courseId, evaluation)
- */
-export async function createEvaluation(
-  evaluation: EvaluationRecord,
-): Promise<EvaluationRecord>;
+/** Create an evaluation under courses/{courseId}/evaluations. */
 export async function createEvaluation(
   courseId: string,
   evaluation: EvaluationRecord,
-): Promise<EvaluationRecord>;
-export async function createEvaluation(
-  courseIdOrEvaluation: string | EvaluationRecord,
-  maybeEvaluation?: EvaluationRecord,
 ): Promise<EvaluationRecord> {
-  if (typeof courseIdOrEvaluation === 'string') {
-    assertValidCourseId(courseIdOrEvaluation);
-    const evaluation = maybeEvaluation as EvaluationRecord;
-    const evaluationRef = push(getCourseEvaluationsRef(courseIdOrEvaluation));
-    const storedEvaluation: EvaluationRecord = {
-      ...evaluation,
-      id: evaluationRef.key ?? evaluation.id,
-      createdAt: evaluation.createdAt ?? new Date().toISOString(),
-    };
-
-    await set(evaluationRef, storedEvaluation);
-    return storedEvaluation;
-  }
-
-  const evaluation = courseIdOrEvaluation;
-  const evaluationRef = push(getEvaluationsRef());
+  assertValidCourseId(courseId);
+  const evaluationRef = push(getCourseEvaluationsRef(courseId));
   const storedEvaluation: EvaluationRecord = {
     ...evaluation,
     id: evaluationRef.key ?? evaluation.id,
@@ -129,24 +60,13 @@ export async function createEvaluation(
   return storedEvaluation;
 }
 
-/**
- * Delete an evaluation.
- * - Global (legacy UI): deleteEvaluation(evaluationId)
- * - Course-aware: deleteEvaluation(courseId, evaluationId)
- */
-export async function deleteEvaluation(id: string): Promise<void>;
-export async function deleteEvaluation(courseId: string, evaluationId: string): Promise<void>;
+/** Delete an evaluation from courses/{courseId}/evaluations/{evaluationId}. */
 export async function deleteEvaluation(
-  courseIdOrId: string,
-  maybeEvaluationId?: string,
+  courseId: string,
+  evaluationId: string,
 ): Promise<void> {
-  if (maybeEvaluationId !== undefined) {
-    assertValidCourseId(courseIdOrId);
-    await remove(getCourseEvaluationRef(courseIdOrId, maybeEvaluationId));
-    return;
-  }
-
-  await remove(getEvaluationRef(courseIdOrId));
+  assertValidCourseId(courseId);
+  await remove(getCourseEvaluationRef(courseId, evaluationId));
 }
 
 export async function deleteAllEvaluations(

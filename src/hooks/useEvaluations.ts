@@ -20,11 +20,7 @@ interface UseEvaluationsResult {
   clearSaveError: () => void;
 }
 
-/**
- * Course-scoped evaluations from courses/{courseId}/evaluations.
- * courseId comes from the course route context (DEFAULT_COURSE_ID fallback only
- * outside a course provider).
- */
+/** Course-scoped evaluations from courses/{courseId}/evaluations. */
 export function useEvaluations(): UseEvaluationsResult {
   const courseId = useCourseId();
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>([]);

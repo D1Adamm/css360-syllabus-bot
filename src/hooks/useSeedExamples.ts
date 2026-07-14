@@ -20,11 +20,7 @@ interface UseSeedExamplesResult {
   clearSaveError: () => void;
 }
 
-/**
- * Course-scoped seed examples from courses/{courseId}/seedExamples.
- * courseId comes from the course route context (DEFAULT_COURSE_ID fallback only
- * outside a course provider).
- */
+/** Course-scoped seed examples from courses/{courseId}/seedExamples. */
 export function useSeedExamples(): UseSeedExamplesResult {
   const courseId = useCourseId();
   const [seeds, setSeeds] = useState<SeedExample[]>([]);

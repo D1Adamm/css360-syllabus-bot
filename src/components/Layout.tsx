@@ -1,16 +1,11 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { DEFAULT_COURSE_ID } from '../lib/courseId';
 import { getCourseIdFromPathname } from '../lib/courseRoutes';
 import { Navigation } from './Navigation';
 import { PrototypeBanner } from './PrototypeBanner';
 
-function useNavCourseId(): string {
-  const { pathname } = useLocation();
-  return getCourseIdFromPathname(pathname) ?? DEFAULT_COURSE_ID;
-}
-
 export function Layout() {
-  const courseId = useNavCourseId();
+  const { pathname } = useLocation();
+  const courseId = getCourseIdFromPathname(pathname);
 
   return (
     <div className="app-layout">

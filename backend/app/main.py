@@ -7,7 +7,6 @@ from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
 from app.course_rag import generate_course_rag_answer
 from app.ollama import generate_base_model_response
-from app.rag import retrieve_syllabus_chunks
 from app.schemas import (
     BaseModelGenerateRequest,
     BaseModelGenerateResponse,
@@ -16,9 +15,6 @@ from app.schemas import (
     RagGenerateRequest,
     RagGenerateResponse,
     RagGenerateSource,
-    RagRetrieveRequest,
-    RagRetrieveDebugRanking,
-    RagRetrieveResponse,
     RagRetrieveResult,
     SyllabusTextResponse,
     SyllabusUploadResponse,
@@ -27,7 +23,7 @@ from app.storage import get_course_artifact_storage
 from app.syllabus_extract import extract_clean_syllabus_text
 from app.syllabus_upload import SyllabusUploadError, validate_syllabus_upload
 
-app = FastAPI(title="CSS360 Syllabus Model Backend")
+app = FastAPI(title="Syllabus Model Lab Backend")
 
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
@@ -51,7 +47,7 @@ app.add_middleware(
 def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "service": "css360-syllabus-model-backend",
+        "service": "syllabus-model-lab-backend",
     }
 
 
@@ -75,30 +71,6 @@ async def generate_base_model(
         model=result["model"],
         responseType=result["response_type"],
         courseId=safe_course_id,
-    )
-
-
-@app.post("/rag/retrieve", response_model=RagRetrieveResponse)
-async def retrieve_rag_chunks(request: RagRetrieveRequest) -> RagRetrieveResponse:
-    """Legacy fixed-index retrieve kept for older CSS 360 tooling/tests."""
-    question = request.question.strip()
-    if not question:
-        raise HTTPException(status_code=422, detail="Question must not be empty.")
-
-    embedding_model, results, debug_rankings = await retrieve_syllabus_chunks(
-        question=question,
-        top_k=request.top_k,
-        include_debug=request.debug,
-    )
-
-    return RagRetrieveResponse(
-        embedding_model=embedding_model,
-        results=[RagRetrieveResult(**result) for result in results],
-        debug_rankings=(
-            [RagRetrieveDebugRanking(**ranking) for ranking in debug_rankings]
-            if debug_rankings is not None
-            else None
-        ),
     )
 
 

@@ -299,11 +299,6 @@ describe('course-aware seed-example helpers', () => {
     });
   });
 
-  it('preserves legacy global seed path when courseId is omitted', async () => {
-    await createSeedExample(sampleSeed);
-
-    expect(refMock).toHaveBeenCalledWith(expect.anything(), 'seedExamples');
-  });
 });
 
 describe('course-aware evaluation helpers', () => {
@@ -358,9 +353,4 @@ describe('course-aware evaluation helpers', () => {
     });
   });
 
-  it('preserves legacy global evaluation path when courseId is omitted', async () => {
-    await createEvaluation(sampleEvaluation);
-
-    expect(refMock).toHaveBeenCalledWith(expect.anything(), 'evaluations');
-  });
 });

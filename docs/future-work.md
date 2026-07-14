@@ -68,7 +68,7 @@ Implement user accounts if shared classroom storage or instructor review workflo
 
 ### 13. Add shared classroom submission storage
 
-Move evaluations and user seeds from localStorage to a shared database so instructors can aggregate results across students.
+Course-scoped Firebase storage for seeds and evaluations already exists. Next: instructor-facing aggregation across students/courses, with auth as needed.
 
 ### 14. Add server-side evaluation storage
 
