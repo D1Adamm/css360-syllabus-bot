@@ -5,8 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
+from app.course_rag import generate_course_rag_answer
 from app.ollama import generate_base_model_response
-from app.rag import generate_rag_answer, retrieve_syllabus_chunks
+from app.rag import retrieve_syllabus_chunks
 from app.schemas import (
     BaseModelGenerateRequest,
     BaseModelGenerateResponse,
@@ -58,12 +59,28 @@ def health() -> dict[str, str]:
 async def generate_base_model(
     request: BaseModelGenerateRequest,
 ) -> BaseModelGenerateResponse:
-    result = await generate_base_model_response(request.question.strip())
-    return BaseModelGenerateResponse(**result)
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=422, detail="Question must not be empty.")
+
+    try:
+        safe_course_id = assert_valid_course_id(request.course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # courseId is validated for route isolation but unused by the base model itself.
+    result = await generate_base_model_response(question)
+    return BaseModelGenerateResponse(
+        answer=result["answer"],
+        model=result["model"],
+        responseType=result["response_type"],
+        courseId=safe_course_id,
+    )
 
 
 @app.post("/rag/retrieve", response_model=RagRetrieveResponse)
 async def retrieve_rag_chunks(request: RagRetrieveRequest) -> RagRetrieveResponse:
+    """Legacy fixed-index retrieve kept for older CSS 360 tooling/tests."""
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=422, detail="Question must not be empty.")
@@ -91,13 +108,21 @@ async def generate_rag_response(request: RagGenerateRequest) -> RagGenerateRespo
     if not question:
         raise HTTPException(status_code=422, detail="Question must not be empty.")
 
-    result = await generate_rag_answer(question=question, top_k=request.top_k)
+    result = await generate_course_rag_answer(
+        course_id=request.course_id,
+        question=question,
+        top_k=request.top_k,
+    )
 
     return RagGenerateResponse(
+        courseId=result["courseId"],
         answer=result["answer"],
         model=result["model"],
         sources=[RagGenerateSource(**source) for source in result["sources"]],
-        retrieved_chunks=[RagRetrieveResult(**chunk) for chunk in result["retrieved_chunks"]],
+        retrievedChunks=[
+            RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
+        ],
+        responseType=result["responseType"],
     )
 
 

@@ -2,10 +2,14 @@ export interface BaseModelGenerateResponse {
   answer: string;
   model: string;
   responseType: 'base';
+  courseId?: string;
 }
 
 export interface RagGenerateSource {
-  section: string;
+  chunkId: string;
+  sectionTitle: string;
+  text: string;
+  score: number;
 }
 
 export interface RagRetrieveResult {
@@ -16,6 +20,7 @@ export interface RagRetrieveResult {
 }
 
 export interface RagGenerateResponse {
+  courseId: string;
   answer: string;
   model: string;
   sources: RagGenerateSource[];
@@ -90,23 +95,25 @@ async function postJson<T>(
 }
 
 export async function generateBaseModel(
+  courseId: string,
   question: string,
 ): Promise<BaseModelGenerateResponse> {
   return postJson<BaseModelGenerateResponse>(
     '/base-model/generate',
-    { question },
+    { courseId, question },
     'The backend could not generate a base model response.',
     'Could not reach the backend. Make sure the FastAPI server is running.',
   );
 }
 
 export async function generateRag(
+  courseId: string,
   question: string,
   topK = 3,
 ): Promise<RagGenerateResponse> {
   return postJson<RagGenerateResponse>(
     '/rag/generate',
-    { question, topK },
+    { courseId, question, topK },
     'The backend could not generate a RAG response.',
     'Could not reach the backend. Make sure the FastAPI server is running and Ollama is available.',
   );

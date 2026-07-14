@@ -2,6 +2,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class BaseModelGenerateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(
+        ...,
+        alias="courseId",
+        min_length=1,
+        description="Course id from the active course route",
+    )
     question: str = Field(..., min_length=1, description="Student question to send to the base model")
 
 
@@ -9,6 +17,7 @@ class BaseModelGenerateResponse(BaseModel):
     answer: str
     model: str
     response_type: str = Field(alias="responseType")
+    course_id: str | None = Field(default=None, alias="courseId")
 
     model_config = {"populate_by_name": True}
 
@@ -60,6 +69,14 @@ class RagRetrieveResponse(BaseModel):
 
 
 class RagGenerateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(
+        ...,
+        alias="courseId",
+        min_length=1,
+        description="Course id whose syllabus index should be used for retrieval",
+    )
     question: str = Field(..., min_length=1, description="Student question for RAG answer generation")
     top_k: int = Field(
         default=3,
@@ -71,12 +88,18 @@ class RagGenerateRequest(BaseModel):
 
 
 class RagGenerateSource(BaseModel):
-    section: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    chunk_id: str = Field(alias="chunkId")
+    section_title: str = Field(alias="sectionTitle")
+    text: str
+    score: float
 
 
 class RagGenerateResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    course_id: str = Field(alias="courseId")
     answer: str
     model: str
     sources: list[RagGenerateSource]

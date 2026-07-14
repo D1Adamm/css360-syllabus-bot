@@ -119,7 +119,7 @@ export function ComparisonPage() {
     setBaseModelState({ status: 'loading', question: trimmedQuestion });
 
     try {
-      const result = await generateBaseModel(trimmedQuestion);
+      const result = await generateBaseModel(courseId, trimmedQuestion);
 
       setBaseModelState({
         status: 'success',
@@ -140,7 +140,7 @@ export function ComparisonPage() {
         ),
       });
     }
-  }, []);
+  }, [courseId]);
 
   const loadRagModelResponse = useCallback(async (question: string) => {
     const trimmedQuestion = question.trim();
@@ -152,7 +152,7 @@ export function ComparisonPage() {
     setRagModelState({ status: 'loading', question: trimmedQuestion });
 
     try {
-      const result = await generateRag(trimmedQuestion);
+      const result = await generateRag(courseId, trimmedQuestion);
 
       setRagModelState({
         status: 'success',
@@ -162,7 +162,7 @@ export function ComparisonPage() {
           grounding: 'High',
           simulated: false,
         },
-        sources: result.sources.map((source) => source.section),
+        sources: result.sources.map((source) => source.sectionTitle),
       });
     } catch (error) {
       setRagModelState({
@@ -171,7 +171,7 @@ export function ComparisonPage() {
         message: getApiErrorMessage(error, 'The RAG response could not be loaded.'),
       });
     }
-  }, []);
+  }, [courseId]);
 
   useEffect(() => {
     void Promise.all([
