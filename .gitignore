@@ -14,6 +14,7 @@ __pycache__
 *.pyc
 .env
 backend/data/syllabus_index.json
+backend/data/indexes/
 backend/course_data/
 data/exports/*
 !data/exports/.gitkeep

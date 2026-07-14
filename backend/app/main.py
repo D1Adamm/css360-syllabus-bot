@@ -4,11 +4,14 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.course_id import assert_valid_course_id
+from app.course_index import build_course_rag_index
 from app.ollama import generate_base_model_response
 from app.rag import generate_rag_answer, retrieve_syllabus_chunks
 from app.schemas import (
     BaseModelGenerateRequest,
     BaseModelGenerateResponse,
+    CourseChunkMetadata,
+    CourseChunksResponse,
     RagGenerateRequest,
     RagGenerateResponse,
     RagGenerateSource,
@@ -124,6 +127,12 @@ async def upload_course_syllabus(
         )
         extracted_text = extract_clean_syllabus_text(validated)
         storage.save_extracted_text(validated.course_id, extracted_text)
+        index_data = await build_course_rag_index(
+            course_id=validated.course_id,
+            source_file=validated.original_filename,
+            syllabus_text=extracted_text,
+            storage=storage,
+        )
     except SyllabusUploadError as exc:
         try:
             storage.delete_partial_files(validated.course_id)
@@ -137,16 +146,17 @@ async def upload_course_syllabus(
             pass
         raise HTTPException(
             status_code=500,
-            detail="Could not save or extract the syllabus file.",
+            detail="Could not save, extract, or index the syllabus file.",
         ) from exc
 
     return SyllabusUploadResponse(
         courseId=validated.course_id,
         syllabusFileName=validated.original_filename,
         syllabusType=validated.syllabus_type,
-        syllabusStatus="extracted",
+        syllabusStatus="indexed",
         fileSize=validated.file_size,
         characterCount=len(extracted_text),
+        chunkCount=int(index_data["chunkCount"]),
     )
 
 
@@ -172,4 +182,39 @@ def get_course_syllabus_text(course_id: str) -> SyllabusTextResponse:
         courseId=safe_course_id,
         text=text,
         characterCount=len(text),
+    )
+
+
+@app.get(
+    "/api/courses/{course_id}/chunks",
+    response_model=CourseChunksResponse,
+)
+def get_course_chunks(course_id: str) -> CourseChunksResponse:
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    storage = get_course_artifact_storage()
+    index_data = storage.load_index(safe_course_id)
+    if index_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Course syllabus index was not found.",
+        )
+
+    chunks = [
+        CourseChunkMetadata(
+            chunkId=chunk["chunkId"],
+            sectionTitle=chunk["sectionTitle"],
+            text=chunk["text"],
+            order=chunk["order"],
+        )
+        for chunk in index_data.get("chunks", [])
+    ]
+
+    return CourseChunksResponse(
+        courseId=safe_course_id,
+        chunkCount=len(chunks),
+        chunks=chunks,
     )

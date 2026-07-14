@@ -22,7 +22,7 @@ interface FormErrors {
   syllabusFile?: string;
 }
 
-type ProgressState = 'idle' | 'creating' | 'uploading' | 'created';
+type ProgressState = 'idle' | 'creating' | 'uploading' | 'indexing' | 'created';
 
 const INITIAL_VALUES: FormValues = {
   name: '',
@@ -69,6 +69,8 @@ function progressMessage(progress: ProgressState): string | null {
       return 'Creating course…';
     case 'uploading':
       return 'Uploading syllabus…';
+    case 'indexing':
+      return 'Building syllabus index…';
     case 'created':
       return 'Course created';
     default:
@@ -85,7 +87,8 @@ export function CreateCoursePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const saving = progress === 'creating' || progress === 'uploading';
+  const saving =
+    progress === 'creating' || progress === 'uploading' || progress === 'indexing';
   const nameErrorId = `${formId}-name-error`;
   const titleErrorId = `${formId}-title-error`;
   const termErrorId = `${formId}-term-error`;
@@ -126,14 +129,14 @@ export function CreateCoursePage() {
       });
       courseId = created.courseId;
 
-      setProgress('uploading');
+      setProgress('indexing');
       const uploadResult = await uploadCourseSyllabus(courseId, syllabusFile);
 
       await updateCourseMetadata(courseId, {
-        syllabusStatus: 'extracted',
+        syllabusStatus: 'indexed',
         syllabusFileName: uploadResult.syllabusFileName,
         syllabusType: uploadResult.syllabusType,
-        chunkCount: 0,
+        chunkCount: uploadResult.chunkCount,
       });
 
       setProgress('created');
@@ -143,7 +146,7 @@ export function CreateCoursePage() {
       if (courseId) {
         try {
           await updateCourseMetadata(courseId, {
-            syllabusStatus: 'upload_failed',
+            syllabusStatus: 'index_failed',
             chunkCount: 0,
           });
         } catch {
@@ -167,7 +170,7 @@ export function CreateCoursePage() {
     <>
       <PageHeader
         title="Create Course"
-        description="Create a new course record, upload a PDF or TXT syllabus, extract readable text, and open its course-specific home page. Chunking and RAG indexing are not part of this step."
+        description="Create a new course record, upload a PDF or TXT syllabus, extract text, build a course-specific RAG index, and open its home page. Course-specific RAG answering is not connected yet."
       />
 
       <aside className="seed-builder-notice" aria-label="Course creation notice">
@@ -175,9 +178,9 @@ export function CreateCoursePage() {
           <strong>Course metadata is stored in Firebase Realtime Database.</strong>
         </p>
         <p>
-          The syllabus file is uploaded to the FastAPI backend, which stores the original file and
-          extracted <code>syllabus.txt</code>. After a successful create and extraction you will
-          be taken to <code>/course/{'{courseId}'}/home</code>.
+          The syllabus file is uploaded to the FastAPI backend, which stores the original file,
+          extracted <code>syllabus.txt</code>, and a per-course embedding index. After successful
+          indexing you will be taken to <code>/course/{'{courseId}'}/home</code>.
         </p>
       </aside>
 

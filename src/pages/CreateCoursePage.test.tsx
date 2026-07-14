@@ -125,9 +125,10 @@ describe('CreateCoursePage', () => {
       courseId: 'css-430-summer-2026-a82f',
       syllabusFileName: 'css430-syllabus.pdf',
       syllabusType: 'pdf',
-      syllabusStatus: 'extracted',
+      syllabusStatus: 'indexed',
       fileSize: 16,
       characterCount: 18000,
+      chunkCount: 18,
     });
 
     const view = renderCreateCoursePage();
@@ -148,10 +149,10 @@ describe('CreateCoursePage', () => {
       expect(updateCourseMetadataMock).toHaveBeenCalledWith(
         'css-430-summer-2026-a82f',
         expect.objectContaining({
-          syllabusStatus: 'extracted',
+          syllabusStatus: 'indexed',
           syllabusFileName: 'css430-syllabus.pdf',
           syllabusType: 'pdf',
-          chunkCount: 0,
+          chunkCount: 18,
         }),
       );
     });
@@ -191,7 +192,7 @@ describe('CreateCoursePage', () => {
     );
     expect(updateCourseMetadataMock).toHaveBeenCalledWith(
       'css-430-summer-2026-a82f',
-      expect.objectContaining({ syllabusStatus: 'upload_failed' }),
+      expect.objectContaining({ syllabusStatus: 'index_failed', chunkCount: 0 }),
     );
     expect(screen.getByTestId('location')).toHaveTextContent('/create-course');
   });

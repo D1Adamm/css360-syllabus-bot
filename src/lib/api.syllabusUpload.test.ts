@@ -17,9 +17,10 @@ describe('uploadCourseSyllabus', () => {
         courseId: 'course-alpha',
         syllabusFileName: 'syllabus.pdf',
         syllabusType: 'pdf',
-        syllabusStatus: 'extracted',
+        syllabusStatus: 'indexed',
         fileSize: 12,
         characterCount: 18000,
+        chunkCount: 18,
       }),
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -34,7 +35,8 @@ describe('uploadCourseSyllabus', () => {
     expect(options.body).toBeInstanceOf(FormData);
     const formData = options.body as FormData;
     expect(formData.get('syllabus_file')).toBeInstanceOf(File);
-    expect(result.syllabusStatus).toBe('extracted');
+    expect(result.syllabusStatus).toBe('indexed');
     expect(result.characterCount).toBe(18000);
+    expect(result.chunkCount).toBe(18);
   });
 });
