@@ -8,7 +8,9 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from app.course_id import assert_valid_course_id
 from app.ollama import generate_ollama_completion
+from app.storage import CourseArtifactStorage, get_course_artifact_storage
 
 SEED_GENERATION_MODEL = "qwen3:4b"
 DEFAULT_SEED_COUNT = 3
@@ -150,21 +152,74 @@ def _normalize_seed(
     }
 
 
+def _load_chunk_text(
+    *,
+    course_id: str,
+    chunk_id: str,
+    storage: CourseArtifactStorage,
+) -> str:
+    """Load one stored chunk's text from the course syllabus index."""
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    cleaned_chunk_id = chunk_id.strip()
+    if not cleaned_chunk_id:
+        raise HTTPException(status_code=422, detail="chunkId must not be empty.")
+
+    index_data = storage.load_index(safe_course_id)
+    if index_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f'No syllabus index found for course "{safe_course_id}".',
+        )
+
+    raw_chunks = index_data.get("chunks", [])
+    if not isinstance(raw_chunks, list):
+        raise HTTPException(
+            status_code=404,
+            detail=f'No syllabus chunks found for course "{safe_course_id}".',
+        )
+
+    for raw_chunk in raw_chunks:
+        if not isinstance(raw_chunk, dict):
+            continue
+        stored_id = raw_chunk.get("chunkId") or raw_chunk.get("id")
+        if not isinstance(stored_id, str) or stored_id.strip() != cleaned_chunk_id:
+            continue
+
+        text = raw_chunk.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f'Chunk "{cleaned_chunk_id}" was found for course '
+                    f'"{safe_course_id}" but has no usable text.'
+                ),
+            )
+        return text.strip()
+
+    raise HTTPException(
+        status_code=404,
+        detail=(
+            f'Chunk "{cleaned_chunk_id}" was not found for course "{safe_course_id}".'
+        ),
+    )
+
+
 async def generate_seeds_from_chunk(
     *,
     course_id: str,
     chunk_id: str,
-    chunk_text: str,
     count: int = DEFAULT_SEED_COUNT,
+    storage: CourseArtifactStorage | None = None,
 ) -> dict[str, Any]:
-    """Generate a small batch of AI seeds from one supplied syllabus chunk.
+    """Generate a small batch of AI seeds from one stored syllabus chunk.
 
-    Does not persist to Firebase or mutate course creation flows.
+    Loads chunk text from the course index. Does not persist to Firebase or
+    mutate course creation flows.
     """
-    cleaned_text = chunk_text.strip()
-    if not cleaned_text:
-        raise HTTPException(status_code=422, detail="chunkText must not be empty.")
-
     cleaned_chunk_id = chunk_id.strip()
     if not cleaned_chunk_id:
         raise HTTPException(status_code=422, detail="chunkId must not be empty.")
@@ -175,7 +230,14 @@ async def generate_seeds_from_chunk(
             detail=f"count must be between 1 and {MAX_SEED_COUNT}.",
         )
 
-    prompt = _build_seed_prompt(cleaned_chunk_id, cleaned_text, count)
+    artifact_storage = storage or get_course_artifact_storage()
+    chunk_text = _load_chunk_text(
+        course_id=course_id,
+        chunk_id=cleaned_chunk_id,
+        storage=artifact_storage,
+    )
+
+    prompt = _build_seed_prompt(cleaned_chunk_id, chunk_text, count)
     generation = await generate_ollama_completion(
         prompt,
         model=SEED_GENERATION_MODEL,

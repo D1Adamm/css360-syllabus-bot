@@ -151,13 +151,7 @@ class SeedGenerateRequest(BaseModel):
         ...,
         alias="chunkId",
         min_length=1,
-        description="Id of the syllabus chunk used as seed context",
-    )
-    chunk_text: str = Field(
-        ...,
-        alias="chunkText",
-        min_length=1,
-        description="Syllabus chunk text used to generate seed examples",
+        description="Id of the stored syllabus chunk used as seed context",
     )
     count: int = Field(
         default=3,

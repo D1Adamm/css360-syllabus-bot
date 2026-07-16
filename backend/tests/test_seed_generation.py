@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
@@ -15,6 +17,7 @@ from app.seed_generation import (
     SEED_GENERATION_MODEL,
     generate_seeds_from_chunk,
 )
+from app.storage import LocalCourseArtifactStorage
 
 
 def _valid_seeds_payload(count: int = 3) -> str:
@@ -29,8 +32,66 @@ def _valid_seeds_payload(count: int = 3) -> str:
     return json.dumps({"seeds": seeds})
 
 
+def _index(course_id: str, chunks: list[dict]) -> dict:
+    return {
+        "courseId": course_id,
+        "embeddingModel": "nomic-embed-text",
+        "chunkCount": len(chunks),
+        "chunks": chunks,
+    }
+
+
+def _chunk(
+    chunk_id: str,
+    section_title: str,
+    text: str,
+    order: int = 1,
+) -> dict:
+    return {
+        "chunkId": chunk_id,
+        "sectionTitle": section_title,
+        "text": text,
+        "order": order,
+        "embedding": [1.0, 0.0, 0.0],
+    }
+
+
 class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_generate_seeds_success(self) -> None:
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self._temp_dir.name)
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=root / "course_data",
+            index_dir=root / "indexes",
+        )
+        self.course_id = "css-360-summer-2026-demo"
+        self.chunk_id = "chunk-001"
+        self.chunk_text = "Late work may be submitted within 24 hours for half credit."
+        self.storage.save_index(
+            self.course_id,
+            _index(
+                self.course_id,
+                [
+                    _chunk(
+                        self.chunk_id,
+                        "Late Policy",
+                        self.chunk_text,
+                        order=1,
+                    ),
+                    _chunk(
+                        "chunk-002",
+                        "Office Hours",
+                        "Office hours are Tuesdays at 2pm.",
+                        order=2,
+                    ),
+                ],
+            ),
+        )
+
+    def tearDown(self) -> None:
+        self._temp_dir.cleanup()
+
+    async def test_generate_seeds_from_stored_chunk(self) -> None:
         with patch(
             "app.seed_generation.generate_ollama_completion",
             new=AsyncMock(
@@ -41,14 +102,14 @@ class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
         ) as mock_generate:
             result = await generate_seeds_from_chunk(
-                course_id="css-360-summer-2026-demo",
-                chunk_id="chunk-late-1",
-                chunk_text="Late work may be submitted within 24 hours for half credit.",
+                course_id=self.course_id,
+                chunk_id=self.chunk_id,
                 count=3,
+                storage=self.storage,
             )
 
-        self.assertEqual(result["courseId"], "css-360-summer-2026-demo")
-        self.assertEqual(result["chunkId"], "chunk-late-1")
+        self.assertEqual(result["courseId"], self.course_id)
+        self.assertEqual(result["chunkId"], self.chunk_id)
         self.assertEqual(result["model"], SEED_GENERATION_MODEL)
         self.assertEqual(result["count"], 3)
         self.assertEqual(len(result["seeds"]), 3)
@@ -57,26 +118,52 @@ class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["question"], "Question 1?")
         self.assertEqual(first["answer"], "Answer 1.")
         self.assertEqual(first["category"], "grading")
-        self.assertEqual(first["sourceChunkIds"], ["chunk-late-1"])
+        self.assertEqual(first["sourceChunkIds"], [self.chunk_id])
         self.assertEqual(first["origin"], "ai_generated")
         self.assertEqual(first["status"], "generated")
 
         mock_generate.assert_awaited_once()
-        call_kwargs = mock_generate.await_args.kwargs
+        call_args = mock_generate.await_args
+        prompt = call_args.args[0]
+        self.assertIn(self.chunk_text, prompt)
+        self.assertIn(self.chunk_id, prompt)
+        call_kwargs = call_args.kwargs
         self.assertEqual(call_kwargs["model"], SEED_GENERATION_MODEL)
         self.assertEqual(call_kwargs["response_format"], "json")
         self.assertIs(call_kwargs["think"], False)
 
-    async def test_empty_chunk_text_raises_422(self) -> None:
+    async def test_missing_course_index_raises_404(self) -> None:
         with self.assertRaises(HTTPException) as ctx:
             await generate_seeds_from_chunk(
-                course_id="css-360-summer-2026-demo",
-                chunk_id="chunk-late-1",
-                chunk_text="   ",
+                course_id="css-999-missing-course",
+                chunk_id=self.chunk_id,
                 count=3,
+                storage=self.storage,
+            )
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertIn("No syllabus index found", ctx.exception.detail)
+
+    async def test_missing_chunk_raises_404(self) -> None:
+        with self.assertRaises(HTTPException) as ctx:
+            await generate_seeds_from_chunk(
+                course_id=self.course_id,
+                chunk_id="chunk-999",
+                count=3,
+                storage=self.storage,
+            )
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertIn("was not found", ctx.exception.detail)
+
+    async def test_count_validation_raises_422(self) -> None:
+        with self.assertRaises(HTTPException) as ctx:
+            await generate_seeds_from_chunk(
+                course_id=self.course_id,
+                chunk_id=self.chunk_id,
+                count=6,
+                storage=self.storage,
             )
         self.assertEqual(ctx.exception.status_code, 422)
-        self.assertIn("chunkText", ctx.exception.detail)
+        self.assertIn("count must be between 1 and 5", ctx.exception.detail)
 
     async def test_malformed_json_raises_502(self) -> None:
         with patch(
@@ -90,10 +177,10 @@ class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(HTTPException) as ctx:
                 await generate_seeds_from_chunk(
-                    course_id="css-360-summer-2026-demo",
-                    chunk_id="chunk-late-1",
-                    chunk_text="Office hours are Tuesdays at 2pm.",
+                    course_id=self.course_id,
+                    chunk_id=self.chunk_id,
                     count=3,
+                    storage=self.storage,
                 )
         self.assertEqual(ctx.exception.status_code, 502)
         self.assertIn("malformed JSON", ctx.exception.detail)
@@ -119,10 +206,10 @@ class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(HTTPException) as ctx:
                 await generate_seeds_from_chunk(
-                    course_id="css-360-summer-2026-demo",
-                    chunk_id="chunk-late-1",
-                    chunk_text="Late work may be submitted within 24 hours.",
+                    course_id=self.course_id,
+                    chunk_id=self.chunk_id,
                     count=3,
+                    storage=self.storage,
                 )
         self.assertEqual(ctx.exception.status_code, 502)
         self.assertIn("missing a question or answer", ctx.exception.detail)
@@ -139,10 +226,10 @@ class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(HTTPException) as ctx:
                 await generate_seeds_from_chunk(
-                    course_id="css-360-summer-2026-demo",
-                    chunk_id="chunk-late-1",
-                    chunk_text="Late work may be submitted within 24 hours.",
+                    course_id=self.course_id,
+                    chunk_id=self.chunk_id,
                     count=3,
+                    storage=self.storage,
                 )
         self.assertEqual(ctx.exception.status_code, 503)
         self.assertIn("Ollama is unavailable", ctx.exception.detail)
@@ -211,53 +298,56 @@ class OllamaEmptyResponseTests(unittest.IsolatedAsyncioTestCase):
 
 class SeedGenerationEndpointTests(unittest.TestCase):
     def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self._temp_dir.name)
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=root / "course_data",
+            index_dir=root / "indexes",
+        )
+        self._storage_patch = patch(
+            "app.seed_generation.get_course_artifact_storage",
+            return_value=self.storage,
+        )
+        self._storage_patch.start()
+
         self.client = TestClient(app)
         self.course_id = "css-360-summer-2026-demo"
+        self.chunk_id = "chunk-001"
+        self.chunk_text = "Late work may be submitted within 24 hours for half credit."
         self.url = f"/api/courses/{self.course_id}/seeds/generate"
+        self.storage.save_index(
+            self.course_id,
+            _index(
+                self.course_id,
+                [
+                    _chunk(
+                        self.chunk_id,
+                        "Late Policy",
+                        self.chunk_text,
+                        order=1,
+                    )
+                ],
+            ),
+        )
 
-    def test_endpoint_success(self) -> None:
+    def tearDown(self) -> None:
+        self._storage_patch.stop()
+        self._temp_dir.cleanup()
+
+    def test_endpoint_success_uses_stored_chunk(self) -> None:
         with patch(
-            "app.main.generate_seeds_from_chunk",
+            "app.seed_generation.generate_ollama_completion",
             new=AsyncMock(
                 return_value={
-                    "courseId": self.course_id,
-                    "chunkId": "chunk-late-1",
+                    "answer": _valid_seeds_payload(3),
                     "model": SEED_GENERATION_MODEL,
-                    "count": 3,
-                    "seeds": [
-                        {
-                            "question": "Can I submit late?",
-                            "answer": "Yes, within 24 hours for half credit.",
-                            "category": "late policy",
-                            "sourceChunkIds": ["chunk-late-1"],
-                            "origin": "ai_generated",
-                            "status": "generated",
-                        },
-                        {
-                            "question": "What is the late penalty?",
-                            "answer": "Half credit.",
-                            "category": "late policy",
-                            "sourceChunkIds": ["chunk-late-1"],
-                            "origin": "ai_generated",
-                            "status": "generated",
-                        },
-                        {
-                            "question": "How long is the late window?",
-                            "answer": "24 hours.",
-                            "category": "late policy",
-                            "sourceChunkIds": ["chunk-late-1"],
-                            "origin": "ai_generated",
-                            "status": "generated",
-                        },
-                    ],
                 }
             ),
-        ):
+        ) as mock_generate:
             response = self.client.post(
                 self.url,
                 json={
-                    "chunkId": "chunk-late-1",
-                    "chunkText": "Late work may be submitted within 24 hours for half credit.",
+                    "chunkId": self.chunk_id,
                     "count": 3,
                 },
             )
@@ -265,31 +355,66 @@ class SeedGenerationEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["courseId"], self.course_id)
-        self.assertEqual(body["chunkId"], "chunk-late-1")
+        self.assertEqual(body["chunkId"], self.chunk_id)
         self.assertEqual(body["model"], SEED_GENERATION_MODEL)
         self.assertEqual(body["count"], 3)
         self.assertEqual(len(body["seeds"]), 3)
         self.assertEqual(body["seeds"][0]["origin"], "ai_generated")
         self.assertEqual(body["seeds"][0]["status"], "generated")
-        self.assertEqual(body["seeds"][0]["sourceChunkIds"], ["chunk-late-1"])
+        self.assertEqual(body["seeds"][0]["sourceChunkIds"], [self.chunk_id])
 
-    def test_endpoint_empty_chunk_text(self) -> None:
+        prompt = mock_generate.await_args.args[0]
+        self.assertIn(self.chunk_text, prompt)
+        self.assertIs(mock_generate.await_args.kwargs["think"], False)
+
+    def test_endpoint_missing_course(self) -> None:
+        response = self.client.post(
+            "/api/courses/css-999-missing-course/seeds/generate",
+            json={"chunkId": self.chunk_id, "count": 3},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("No syllabus index found", response.json()["detail"])
+
+    def test_endpoint_missing_chunk(self) -> None:
+        response = self.client.post(
+            self.url,
+            json={"chunkId": "chunk-999", "count": 3},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("was not found", response.json()["detail"])
+
+    def test_endpoint_count_validation(self) -> None:
+        response = self.client.post(
+            self.url,
+            json={"chunkId": self.chunk_id, "count": 6},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_endpoint_rejects_chunk_text_field(self) -> None:
+        """Swagger/request schema no longer accepts client-supplied chunkText."""
         with patch(
             "app.seed_generation.generate_ollama_completion",
-            new=AsyncMock(),
+            new=AsyncMock(
+                return_value={
+                    "answer": _valid_seeds_payload(3),
+                    "model": SEED_GENERATION_MODEL,
+                }
+            ),
         ) as mock_generate:
             response = self.client.post(
                 self.url,
                 json={
-                    "chunkId": "chunk-late-1",
-                    "chunkText": "   ",
+                    "chunkId": self.chunk_id,
+                    "chunkText": "Client-supplied text that must be ignored.",
                     "count": 3,
                 },
             )
 
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("chunkText", response.json()["detail"])
-        mock_generate.assert_not_called()
+        # Extra fields are ignored by default; stored chunk text is used.
+        self.assertEqual(response.status_code, 200)
+        prompt = mock_generate.await_args.args[0]
+        self.assertIn(self.chunk_text, prompt)
+        self.assertNotIn("Client-supplied text that must be ignored.", prompt)
 
     def test_endpoint_malformed_json(self) -> None:
         with patch(
@@ -303,10 +428,7 @@ class SeedGenerationEndpointTests(unittest.TestCase):
         ):
             response = self.client.post(
                 self.url,
-                json={
-                    "chunkId": "chunk-late-1",
-                    "chunkText": "Office hours are Tuesdays at 2pm.",
-                },
+                json={"chunkId": self.chunk_id, "count": 3},
             )
 
         self.assertEqual(response.status_code, 502)
@@ -333,11 +455,7 @@ class SeedGenerationEndpointTests(unittest.TestCase):
         ):
             response = self.client.post(
                 self.url,
-                json={
-                    "chunkId": "chunk-late-1",
-                    "chunkText": "Office hours are Tuesdays at 2pm.",
-                    "count": 3,
-                },
+                json={"chunkId": self.chunk_id, "count": 3},
             )
 
         self.assertEqual(response.status_code, 502)
@@ -355,10 +473,7 @@ class SeedGenerationEndpointTests(unittest.TestCase):
         ):
             response = self.client.post(
                 self.url,
-                json={
-                    "chunkId": "chunk-late-1",
-                    "chunkText": "Office hours are Tuesdays at 2pm.",
-                },
+                json={"chunkId": self.chunk_id, "count": 3},
             )
 
         self.assertEqual(response.status_code, 503)

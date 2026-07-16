@@ -241,7 +241,6 @@ async def generate_course_seeds(
     result = await generate_seeds_from_chunk(
         course_id=safe_course_id,
         chunk_id=request.chunk_id,
-        chunk_text=request.chunk_text,
         count=request.count,
     )
 
