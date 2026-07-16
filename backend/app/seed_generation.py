@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -20,8 +21,15 @@ STARTER_SEEDS_PER_CHUNK = 2
 DEFAULT_STARTER_TARGET_COUNT = 50
 MAX_STARTER_TARGET_COUNT = 50
 MAX_STARTER_SELECTED_CHUNKS = 35
-MAX_STARTER_OLLAMA_CALLS = 40
+DEFAULT_STARTER_MAX_TOTAL_OLLAMA_CALLS = 80
 MIN_STARTER_CHUNK_CHARS = 80
+MIN_QUESTION_CHARS = 8
+MAX_QUESTION_CHARS = 300
+MIN_ANSWER_CHARS = 8
+MAX_ANSWER_CHARS = 600
+MIN_VALIDATION_SCORE = 0.80
+
+VALIDATION_PROMPT_MARKER = "You validate syllabus seed examples."
 
 _JSON_FENCE_RE = re.compile(
     r"```(?:json)?\s*(.*?)\s*```",
@@ -29,6 +37,18 @@ _JSON_FENCE_RE = re.compile(
 )
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9\s]+")
 _WHITESPACE_RE = re.compile(r"\s+")
+
+
+def get_starter_max_total_ollama_calls() -> int:
+    """Total Ollama call budget for starter generation plus validation."""
+    raw = os.getenv("STARTER_MAX_TOTAL_OLLAMA_CALLS")
+    if raw is None:
+        return DEFAULT_STARTER_MAX_TOTAL_OLLAMA_CALLS
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_STARTER_MAX_TOTAL_OLLAMA_CALLS
+    return max(1, value)
 
 
 def _build_seed_prompt(chunk_id: str, chunk_text: str, count: int) -> str:
@@ -58,6 +78,42 @@ Required JSON shape:
 Chunk id: {chunk_id}
 
 Chunk text:
+{chunk_text}
+"""
+
+
+def _build_validation_prompt(question: str, answer: str, chunk_text: str) -> str:
+    return f"""{VALIDATION_PROMPT_MARKER}
+
+Decide whether a generated syllabus Q&A seed is supported by the source chunk.
+
+Rules:
+- grounded: the answer uses only facts present in the chunk text
+- correct: the answer is factually correct relative to the chunk
+- clear: the question and answer are understandable
+- useful: the pair would help a student understand syllabus policy
+- score: overall quality from 0.0 to 1.0
+- reason: one short sentence explaining the decision
+
+Return ONLY valid JSON (no markdown, no commentary).
+
+Required JSON shape:
+{{
+  "grounded": true,
+  "correct": true,
+  "clear": true,
+  "useful": true,
+  "score": 0.95,
+  "reason": "short explanation"
+}}
+
+Question:
+{question}
+
+Answer:
+{answer}
+
+Source chunk text:
 {chunk_text}
 """
 
@@ -120,6 +176,71 @@ def _parse_seed_payload(raw: str) -> list[dict[str, Any]]:
         )
 
     return seeds
+
+
+def _try_parse_validation_payload(raw: str) -> dict[str, Any] | None:
+    try:
+        parsed = json.loads(_extract_json_text(raw))
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+
+    grounded = parsed.get("grounded")
+    correct = parsed.get("correct")
+    clear = parsed.get("clear")
+    useful = parsed.get("useful")
+    score = parsed.get("score")
+    reason = parsed.get("reason")
+
+    if not all(isinstance(flag, bool) for flag in (grounded, correct, clear, useful)):
+        return None
+    if not isinstance(score, (int, float)):
+        return None
+    if not isinstance(reason, str) or not reason.strip():
+        return None
+
+    normalized_score = float(score)
+    if normalized_score < 0.0 or normalized_score > 1.0:
+        return None
+
+    return {
+        "grounded": grounded,
+        "correct": correct,
+        "clear": clear,
+        "useful": useful,
+        "score": normalized_score,
+        "reason": reason.strip(),
+    }
+
+
+def validation_result_accepts(result: dict[str, Any]) -> bool:
+    return (
+        result.get("grounded") is True
+        and result.get("correct") is True
+        and result.get("clear") is True
+        and result.get("useful") is True
+        and float(result.get("score", 0.0)) >= MIN_VALIDATION_SCORE
+    )
+
+
+def passes_programmatic_candidate_checks(candidate: dict[str, Any]) -> bool:
+    question = str(candidate.get("question", "")).strip()
+    answer = str(candidate.get("answer", "")).strip()
+    if not question or not answer:
+        return False
+    if len(question) < MIN_QUESTION_CHARS or len(question) > MAX_QUESTION_CHARS:
+        return False
+    if len(answer) < MIN_ANSWER_CHARS or len(answer) > MAX_ANSWER_CHARS:
+        return False
+
+    source_chunk_ids = candidate.get("sourceChunkIds")
+    if not isinstance(source_chunk_ids, list) or not source_chunk_ids:
+        return False
+    if not any(str(item).strip() for item in source_chunk_ids):
+        return False
+    return True
 
 
 def _normalize_seed(
@@ -350,6 +471,22 @@ async def _generate_candidates_for_chunk(
     return seeds, model
 
 
+async def _validate_candidate(
+    *,
+    question: str,
+    answer: str,
+    chunk_text: str,
+) -> dict[str, Any] | None:
+    prompt = _build_validation_prompt(question, answer, chunk_text)
+    generation = await generate_ollama_completion(
+        prompt,
+        model=SEED_GENERATION_MODEL,
+        response_format="json",
+        think=False,
+    )
+    return _try_parse_validation_payload(generation["answer"])
+
+
 async def generate_seeds_from_chunk(
     *,
     course_id: str,
@@ -442,19 +579,29 @@ async def generate_starter_seeds_for_course(
     seeds: list[dict[str, Any]] = []
     seen_questions: set[str] = set()
     chunks_processed = 0
+    generation_calls = 0
+    validation_calls = 0
     ollama_calls = 0
     candidates_generated = 0
+    candidates_validated = 0
+    candidates_accepted = 0
+    candidates_rejected = 0
     duplicates_removed = 0
     model_used = SEED_GENERATION_MODEL
+    max_total_calls = get_starter_max_total_ollama_calls()
+
+    def _budget_remaining() -> bool:
+        return ollama_calls < max_total_calls
 
     for chunk in selected:
         if len(seeds) >= target_count:
             break
-        if ollama_calls >= MAX_STARTER_OLLAMA_CALLS:
+        if not _budget_remaining():
             break
 
         chunks_processed += 1
         ollama_calls += 1
+        generation_calls += 1
         try:
             candidates, model_used = await _generate_candidates_for_chunk(
                 chunk_id=chunk["chunkId"],
@@ -472,6 +619,11 @@ async def generate_starter_seeds_for_course(
         for candidate in candidates:
             if len(seeds) >= target_count:
                 break
+
+            if not passes_programmatic_candidate_checks(candidate):
+                candidates_rejected += 1
+                continue
+
             normalized_question = normalize_question_for_dedupe(candidate["question"])
             if not normalized_question:
                 duplicates_removed += 1
@@ -479,8 +631,33 @@ async def generate_starter_seeds_for_course(
             if normalized_question in seen_questions:
                 duplicates_removed += 1
                 continue
+
+            if not _budget_remaining():
+                break
+
+            ollama_calls += 1
+            validation_calls += 1
+            try:
+                validation = await _validate_candidate(
+                    question=candidate["question"],
+                    answer=candidate["answer"],
+                    chunk_text=chunk["text"],
+                )
+            except HTTPException as exc:
+                if exc.status_code == 503:
+                    raise
+                candidates_validated += 1
+                candidates_rejected += 1
+                continue
+
+            candidates_validated += 1
+            if validation is None or not validation_result_accepts(validation):
+                candidates_rejected += 1
+                continue
+
             seen_questions.add(normalized_question)
-            seeds.append(candidate)
+            candidates_accepted += 1
+            seeds.append({**candidate, "validation": validation})
 
     return {
         "courseId": safe_course_id,
@@ -492,8 +669,13 @@ async def generate_starter_seeds_for_course(
             "selectedChunks": len(selected),
             "chunksProcessed": chunks_processed,
             "chunksSkipped": chunks_skipped,
+            "generationCalls": generation_calls,
+            "validationCalls": validation_calls,
             "ollamaCalls": ollama_calls,
             "candidatesGenerated": candidates_generated,
+            "candidatesValidated": candidates_validated,
+            "candidatesAccepted": candidates_accepted,
+            "candidatesRejected": candidates_rejected,
             "duplicatesRemoved": duplicates_removed,
             "finalCount": len(seeds),
         },

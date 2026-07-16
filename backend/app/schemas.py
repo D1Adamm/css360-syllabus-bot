@@ -170,6 +170,18 @@ class GeneratedSeedExample(BaseModel):
     source_chunk_ids: list[str] = Field(alias="sourceChunkIds")
     origin: str
     status: str
+    validation: "SeedValidationResult | None" = None
+
+
+class SeedValidationResult(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    grounded: bool
+    correct: bool
+    clear: bool
+    useful: bool
+    score: float = Field(ge=0.0, le=1.0)
+    reason: str
 
 
 class SeedGenerateResponse(BaseModel):
@@ -201,8 +213,13 @@ class StarterSeedProgress(BaseModel):
     selected_chunks: int = Field(alias="selectedChunks")
     chunks_processed: int = Field(alias="chunksProcessed")
     chunks_skipped: int = Field(alias="chunksSkipped")
+    generation_calls: int = Field(alias="generationCalls")
+    validation_calls: int = Field(alias="validationCalls")
     ollama_calls: int = Field(alias="ollamaCalls")
     candidates_generated: int = Field(alias="candidatesGenerated")
+    candidates_validated: int = Field(alias="candidatesValidated")
+    candidates_accepted: int = Field(alias="candidatesAccepted")
+    candidates_rejected: int = Field(alias="candidatesRejected")
     duplicates_removed: int = Field(alias="duplicatesRemoved")
     final_count: int = Field(alias="finalCount")
 

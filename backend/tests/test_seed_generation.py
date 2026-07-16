@@ -15,9 +15,58 @@ from app.main import app
 from app.ollama import generate_ollama_completion
 from app.seed_generation import (
     SEED_GENERATION_MODEL,
+    VALIDATION_PROMPT_MARKER,
     generate_seeds_from_chunk,
 )
 from app.storage import LocalCourseArtifactStorage
+
+
+def _passing_validation_payload(score: float = 0.95) -> str:
+    return json.dumps(
+        {
+            "grounded": True,
+            "correct": True,
+            "clear": True,
+            "useful": True,
+            "score": score,
+            "reason": "Supported by the source chunk.",
+        }
+    )
+
+
+def _rejecting_validation_payload(score: float = 0.4) -> str:
+    return json.dumps(
+        {
+            "grounded": False,
+            "correct": True,
+            "clear": True,
+            "useful": False,
+            "score": score,
+            "reason": "Not clearly supported by the chunk.",
+        }
+    )
+
+
+def _starter_ollama_side_effect(
+    *,
+    generate_side_effect: object | None = None,
+    validation_payload: str | None = None,
+) -> AsyncMock:
+    validation_answer = validation_payload or _passing_validation_payload()
+
+    async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+        if VALIDATION_PROMPT_MARKER in prompt:
+            return {
+                "answer": validation_answer,
+                "model": SEED_GENERATION_MODEL,
+            }
+        if generate_side_effect is not None:
+            if isinstance(generate_side_effect, AsyncMock):
+                return await generate_side_effect(prompt, **kwargs)
+            return await generate_side_effect(prompt, **kwargs)  # type: ignore[misc]
+        raise AssertionError("Unexpected generation call without side effect")
+
+    return AsyncMock(side_effect=_fake_generate)
 
 
 def _valid_seeds_payload(count: int = 3) -> str:
@@ -546,12 +595,12 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
                 "seeds": [
                     {
                         "question": f"Unique question {n}a?",
-                        "answer": f"Answer {n}a.",
+                        "answer": f"Answer {n}a with enough detail.",
                         "category": "general",
                     },
                     {
                         "question": f"Unique question {n}b?",
-                        "answer": f"Answer {n}b.",
+                        "answer": f"Answer {n}b with enough detail.",
                         "category": "general",
                     },
                 ]
@@ -561,15 +610,16 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
                 "model": SEED_GENERATION_MODEL,
             }
 
-        return AsyncMock(side_effect=_fake_generate)
+        return _starter_ollama_side_effect(generate_side_effect=_fake_generate)
 
     async def test_starter_stops_at_target_count(self) -> None:
         from app.seed_generation import generate_starter_seeds_for_course
 
+        mock_generate = self._unique_seed_side_effect()
         with patch(
             "app.seed_generation.generate_ollama_completion",
-            new=self._unique_seed_side_effect(),
-        ) as mock_generate:
+            new=mock_generate,
+        ):
             result = await generate_starter_seeds_for_course(
                 course_id=self.course_id,
                 target_count=6,
@@ -581,7 +631,14 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["progress"]["chunksSkipped"], 1)
         self.assertEqual(result["progress"]["eligibleChunks"], 12)
         self.assertLessEqual(result["progress"]["chunksProcessed"], 4)
-        self.assertLessEqual(result["progress"]["ollamaCalls"], 4)
+        self.assertEqual(result["progress"]["candidatesAccepted"], 6)
+        self.assertEqual(result["progress"]["candidatesValidated"], 6)
+        self.assertGreater(result["progress"]["ollamaCalls"], result["progress"]["generationCalls"])
+        self.assertEqual(
+            result["progress"]["ollamaCalls"],
+            result["progress"]["generationCalls"] + result["progress"]["validationCalls"],
+        )
+        self.assertEqual(result["seeds"][0]["validation"]["score"], 0.95)
         self.assertEqual(mock_generate.await_args.kwargs["think"], False)
         self.assertEqual(mock_generate.await_args.kwargs["model"], SEED_GENERATION_MODEL)
 
@@ -593,12 +650,12 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
                 "seeds": [
                     {
                         "question": "Can I submit late?",
-                        "answer": "Yes.",
+                        "answer": "Yes, within the allowed window.",
                         "category": "late policy",
                     },
                     {
                         "question": "can i submit late???",
-                        "answer": "Within 24 hours.",
+                        "answer": "Within 24 hours for half credit.",
                         "category": "late policy",
                     },
                 ]
@@ -607,7 +664,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
 
         with patch(
             "app.seed_generation.generate_ollama_completion",
-            new=AsyncMock(side_effect=_dup_generate),
+            new=_starter_ollama_side_effect(generate_side_effect=_dup_generate),
         ):
             result = await generate_starter_seeds_for_course(
                 course_id=self.course_id,
@@ -618,6 +675,112 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["progress"]["finalCount"], 1)
         self.assertGreaterEqual(result["progress"]["duplicatesRemoved"], 1)
         self.assertEqual(result["seeds"][0]["question"], "Can I submit late?")
+
+    async def test_starter_validation_accepts_candidate(self) -> None:
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        async def _single_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            payload = {
+                "seeds": [
+                    {
+                        "question": "What is the attendance policy?",
+                        "answer": "Attendance is required for all lectures.",
+                        "category": "attendance",
+                    }
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        with patch(
+            "app.seed_generation.generate_ollama_completion",
+            new=_starter_ollama_side_effect(
+                generate_side_effect=_single_generate,
+                validation_payload=_passing_validation_payload(0.92),
+            ),
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=1,
+                storage=self.storage,
+            )
+
+        self.assertEqual(result["progress"]["finalCount"], 1)
+        self.assertEqual(result["progress"]["candidatesAccepted"], 1)
+        self.assertEqual(result["seeds"][0]["validation"]["score"], 0.92)
+        self.assertTrue(result["seeds"][0]["validation"]["grounded"])
+
+    async def test_starter_validation_rejects_candidate(self) -> None:
+        from app import seed_generation
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        async def _single_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            payload = {
+                "seeds": [
+                    {
+                        "question": "Can I skip every assignment?",
+                        "answer": "Yes, assignments are optional.",
+                        "category": "assignments",
+                    }
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        with (
+            patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 1),
+            patch(
+                "app.seed_generation.generate_ollama_completion",
+                new=_starter_ollama_side_effect(
+                    generate_side_effect=_single_generate,
+                    validation_payload=_rejecting_validation_payload(),
+                ),
+            ),
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=1,
+                storage=self.storage,
+            )
+
+        self.assertEqual(result["progress"]["finalCount"], 0)
+        self.assertEqual(result["progress"]["candidatesAccepted"], 0)
+        self.assertEqual(result["progress"]["candidatesRejected"], 1)
+        self.assertEqual(result["progress"]["candidatesValidated"], 1)
+
+    async def test_starter_malformed_validator_response_rejects_candidate(self) -> None:
+        from app import seed_generation
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        async def _single_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            payload = {
+                "seeds": [
+                    {
+                        "question": "When are office hours?",
+                        "answer": "Office hours are on Tuesdays at 2pm.",
+                        "category": "office hours",
+                    }
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        with (
+            patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 1),
+            patch(
+                "app.seed_generation.generate_ollama_completion",
+                new=_starter_ollama_side_effect(
+                    generate_side_effect=_single_generate,
+                    validation_payload="{not valid validator json",
+                ),
+            ),
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=1,
+                storage=self.storage,
+            )
+
+        self.assertEqual(result["progress"]["finalCount"], 0)
+        self.assertEqual(result["progress"]["candidatesValidated"], 1)
+        self.assertEqual(result["progress"]["candidatesRejected"], 1)
 
     async def test_starter_missing_course_raises_404(self) -> None:
         from app.seed_generation import generate_starter_seeds_for_course
@@ -630,7 +793,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(ctx.exception.status_code, 404)
 
-    async def test_starter_respects_ollama_call_cap(self) -> None:
+    async def test_starter_respects_total_ollama_call_cap(self) -> None:
         from app import seed_generation
         from app.seed_generation import generate_starter_seeds_for_course
 
@@ -638,17 +801,21 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
 
         async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
             call_count["n"] += 1
-            # Always return duplicates so target is never reached.
+            if VALIDATION_PROMPT_MARKER in prompt:
+                return {
+                    "answer": _rejecting_validation_payload(),
+                    "model": SEED_GENERATION_MODEL,
+                }
             payload = {
                 "seeds": [
                     {
-                        "question": "Same question?",
-                        "answer": "A",
+                        "question": f"Question {call_count['n']}?",
+                        "answer": "A sufficiently detailed answer here.",
                         "category": "general",
                     },
                     {
-                        "question": "Same question???",
-                        "answer": "B",
+                        "question": f"Another question {call_count['n']}?",
+                        "answer": "Another sufficiently detailed answer.",
                         "category": "general",
                     },
                 ]
@@ -656,7 +823,11 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
 
         with (
-            patch.object(seed_generation, "MAX_STARTER_OLLAMA_CALLS", 3),
+            patch.object(
+                seed_generation,
+                "get_starter_max_total_ollama_calls",
+                return_value=3,
+            ),
             patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 10),
             patch(
                 "app.seed_generation.generate_ollama_completion",
@@ -671,7 +842,45 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(call_count["n"], 3)
         self.assertEqual(result["progress"]["ollamaCalls"], 3)
-        self.assertEqual(result["progress"]["finalCount"], 1)
+        self.assertEqual(result["progress"]["generationCalls"], 1)
+        self.assertEqual(result["progress"]["validationCalls"], 2)
+        self.assertEqual(result["progress"]["finalCount"], 0)
+        self.assertGreaterEqual(result["progress"]["candidatesRejected"], 2)
+
+    async def test_starter_validation_ollama_failure_returns_503(self) -> None:
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        async def _single_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            payload = {
+                "seeds": [
+                    {
+                        "question": "What is the grading policy?",
+                        "answer": "Grades are based on exams and assignments.",
+                        "category": "grading",
+                    }
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        async def _failing_validate(prompt: str, **kwargs: object) -> dict[str, str]:
+            if VALIDATION_PROMPT_MARKER in prompt:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Ollama is unavailable. Start Ollama locally and try again.",
+                )
+            return await _single_generate(prompt, **kwargs)
+
+        with patch(
+            "app.seed_generation.generate_ollama_completion",
+            new=AsyncMock(side_effect=_failing_validate),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                await generate_starter_seeds_for_course(
+                    course_id=self.course_id,
+                    target_count=1,
+                    storage=self.storage,
+                )
+        self.assertEqual(ctx.exception.status_code, 503)
 
 
 class StarterSeedEndpointTests(unittest.TestCase):
@@ -716,12 +925,12 @@ class StarterSeedEndpointTests(unittest.TestCase):
                 "seeds": [
                     {
                         "question": f"Endpoint question {n}a?",
-                        "answer": f"Answer {n}a.",
+                        "answer": f"Answer {n}a with enough detail.",
                         "category": "general",
                     },
                     {
                         "question": f"Endpoint question {n}b?",
-                        "answer": f"Answer {n}b.",
+                        "answer": f"Answer {n}b with enough detail.",
                         "category": "general",
                     },
                 ]
@@ -730,7 +939,7 @@ class StarterSeedEndpointTests(unittest.TestCase):
 
         with patch(
             "app.seed_generation.generate_ollama_completion",
-            new=AsyncMock(side_effect=_fake_generate),
+            new=_starter_ollama_side_effect(generate_side_effect=_fake_generate),
         ):
             response = self.client.post(
                 self.url,
@@ -746,9 +955,14 @@ class StarterSeedEndpointTests(unittest.TestCase):
         self.assertIn("eligibleChunks", body["progress"])
         self.assertIn("selectedChunks", body["progress"])
         self.assertIn("chunksProcessed", body["progress"])
+        self.assertIn("generationCalls", body["progress"])
+        self.assertIn("validationCalls", body["progress"])
         self.assertIn("ollamaCalls", body["progress"])
+        self.assertIn("candidatesValidated", body["progress"])
+        self.assertIn("candidatesAccepted", body["progress"])
         self.assertEqual(body["seeds"][0]["origin"], "ai_generated")
         self.assertEqual(body["seeds"][0]["status"], "generated")
+        self.assertEqual(body["seeds"][0]["validation"]["score"], 0.95)
 
     def test_endpoint_missing_course(self) -> None:
         response = self.client.post(
