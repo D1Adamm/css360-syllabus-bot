@@ -16,10 +16,19 @@ SEED_GENERATION_MODEL = "qwen3:4b"
 DEFAULT_SEED_COUNT = 3
 MAX_SEED_COUNT = 5
 
+STARTER_SEEDS_PER_CHUNK = 2
+DEFAULT_STARTER_TARGET_COUNT = 50
+MAX_STARTER_TARGET_COUNT = 50
+MAX_STARTER_SELECTED_CHUNKS = 35
+MAX_STARTER_OLLAMA_CALLS = 40
+MIN_STARTER_CHUNK_CHARS = 80
+
 _JSON_FENCE_RE = re.compile(
     r"```(?:json)?\s*(.*?)\s*```",
     re.DOTALL | re.IGNORECASE,
 )
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9\s]+")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _build_seed_prompt(chunk_id: str, chunk_text: str, count: int) -> str:
@@ -152,6 +161,43 @@ def _normalize_seed(
     }
 
 
+def _try_normalize_seed(
+    raw_seed: Any,
+    *,
+    chunk_id: str,
+    index: int,
+) -> dict[str, Any] | None:
+    try:
+        return _normalize_seed(raw_seed, chunk_id=chunk_id, index=index)
+    except HTTPException:
+        return None
+
+
+def normalize_question_for_dedupe(question: str) -> str:
+    """Normalize a question for exact-match deduplication."""
+    lowered = question.strip().lower()
+    without_punct = _NON_ALNUM_RE.sub(" ", lowered)
+    return _WHITESPACE_RE.sub(" ", without_punct).strip()
+
+
+def _load_course_index(
+    course_id: str,
+    storage: CourseArtifactStorage,
+) -> dict[str, Any]:
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    index_data = storage.load_index(safe_course_id)
+    if index_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f'No syllabus index found for course "{safe_course_id}".',
+        )
+    return index_data
+
+
 def _load_chunk_text(
     *,
     course_id: str,
@@ -168,13 +214,7 @@ def _load_chunk_text(
     if not cleaned_chunk_id:
         raise HTTPException(status_code=422, detail="chunkId must not be empty.")
 
-    index_data = storage.load_index(safe_course_id)
-    if index_data is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f'No syllabus index found for course "{safe_course_id}".',
-        )
-
+    index_data = _load_course_index(safe_course_id, storage)
     raw_chunks = index_data.get("chunks", [])
     if not isinstance(raw_chunks, list):
         raise HTTPException(
@@ -208,6 +248,108 @@ def _load_chunk_text(
     )
 
 
+def _extract_eligible_chunks(
+    raw_chunks: list[Any],
+    *,
+    min_chars: int = MIN_STARTER_CHUNK_CHARS,
+) -> tuple[list[dict[str, str]], int]:
+    """Return (eligible chunks in order, skipped count)."""
+    eligible: list[dict[str, str]] = []
+    skipped = 0
+
+    for raw_chunk in raw_chunks:
+        if not isinstance(raw_chunk, dict):
+            skipped += 1
+            continue
+
+        chunk_id = raw_chunk.get("chunkId") or raw_chunk.get("id")
+        text = raw_chunk.get("text")
+        if not isinstance(chunk_id, str) or not chunk_id.strip():
+            skipped += 1
+            continue
+        if not isinstance(text, str) or len(text.strip()) < min_chars:
+            skipped += 1
+            continue
+
+        eligible.append(
+            {
+                "chunkId": chunk_id.strip(),
+                "text": text.strip(),
+            }
+        )
+
+    return eligible, skipped
+
+
+def select_evenly_spaced_chunks(
+    chunks: list[dict[str, str]],
+    max_count: int,
+) -> list[dict[str, str]]:
+    """Pick up to max_count chunks spread evenly across the list, preserving order."""
+    if max_count <= 0:
+        return []
+    total = len(chunks)
+    if total <= max_count:
+        return list(chunks)
+    if max_count == 1:
+        return [chunks[0]]
+
+    selected: list[tuple[int, dict[str, str]]] = []
+    used_indices: set[int] = set()
+    for i in range(max_count):
+        idx = int(round(i * (total - 1) / (max_count - 1)))
+        if idx in used_indices:
+            nudged = idx
+            while nudged in used_indices and nudged < total - 1:
+                nudged += 1
+            if nudged in used_indices:
+                nudged = idx
+                while nudged in used_indices and nudged > 0:
+                    nudged -= 1
+            idx = nudged
+        if idx in used_indices:
+            continue
+        used_indices.add(idx)
+        selected.append((idx, chunks[idx]))
+
+    selected.sort(key=lambda item: item[0])
+    return [chunk for _, chunk in selected]
+
+
+async def _generate_candidates_for_chunk(
+    *,
+    chunk_id: str,
+    chunk_text: str,
+    count: int,
+    require_exact_count: bool,
+) -> tuple[list[dict[str, Any]], str]:
+    prompt = _build_seed_prompt(chunk_id, chunk_text, count)
+    generation = await generate_ollama_completion(
+        prompt,
+        model=SEED_GENERATION_MODEL,
+        response_format="json",
+        think=False,
+    )
+    raw_seeds = _parse_seed_payload(generation["answer"])
+    if require_exact_count and len(raw_seeds) < count:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Ollama returned {len(raw_seeds)} seeds but {count} were requested.",
+        )
+
+    seeds: list[dict[str, Any]] = []
+    for index, raw_seed in enumerate(raw_seeds[:count]):
+        if require_exact_count:
+            seeds.append(_normalize_seed(raw_seed, chunk_id=chunk_id, index=index))
+        else:
+            normalized = _try_normalize_seed(raw_seed, chunk_id=chunk_id, index=index)
+            if normalized is not None:
+                seeds.append(normalized)
+
+    model = generation.get("model", SEED_GENERATION_MODEL)
+    return seeds, model
+
+
 async def generate_seeds_from_chunk(
     *,
     course_id: str,
@@ -237,30 +379,122 @@ async def generate_seeds_from_chunk(
         storage=artifact_storage,
     )
 
-    prompt = _build_seed_prompt(cleaned_chunk_id, chunk_text, count)
-    generation = await generate_ollama_completion(
-        prompt,
-        model=SEED_GENERATION_MODEL,
-        response_format="json",
-        think=False,
+    seeds, model = await _generate_candidates_for_chunk(
+        chunk_id=cleaned_chunk_id,
+        chunk_text=chunk_text,
+        count=count,
+        require_exact_count=True,
     )
-
-    raw_seeds = _parse_seed_payload(generation["answer"])
-    if len(raw_seeds) < count:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Ollama returned {len(raw_seeds)} seeds but {count} were requested.",
-        )
-
-    seeds = [
-        _normalize_seed(raw_seed, chunk_id=cleaned_chunk_id, index=index)
-        for index, raw_seed in enumerate(raw_seeds[:count])
-    ]
 
     return {
         "courseId": course_id,
         "chunkId": cleaned_chunk_id,
-        "model": generation.get("model", SEED_GENERATION_MODEL),
+        "model": model,
         "count": len(seeds),
         "seeds": seeds,
+    }
+
+
+async def generate_starter_seeds_for_course(
+    *,
+    course_id: str,
+    target_count: int = DEFAULT_STARTER_TARGET_COUNT,
+    storage: CourseArtifactStorage | None = None,
+) -> dict[str, Any]:
+    """Generate up to target_count starter seeds across a course syllabus.
+
+    Processes an evenly spaced subset of eligible chunks (not only the opening
+    sections). Does not persist to Firebase or trigger course creation.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if target_count < 1 or target_count > MAX_STARTER_TARGET_COUNT:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"targetCount must be between 1 and {MAX_STARTER_TARGET_COUNT}."
+            ),
+        )
+
+    artifact_storage = storage or get_course_artifact_storage()
+    index_data = _load_course_index(safe_course_id, artifact_storage)
+    raw_chunks = index_data.get("chunks", [])
+    if not isinstance(raw_chunks, list) or not raw_chunks:
+        raise HTTPException(
+            status_code=404,
+            detail=f'No syllabus chunks found for course "{safe_course_id}".',
+        )
+
+    eligible, chunks_skipped = _extract_eligible_chunks(raw_chunks)
+    if not eligible:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f'No eligible syllabus chunks found for course "{safe_course_id}".'
+            ),
+        )
+
+    selected = select_evenly_spaced_chunks(eligible, MAX_STARTER_SELECTED_CHUNKS)
+
+    seeds: list[dict[str, Any]] = []
+    seen_questions: set[str] = set()
+    chunks_processed = 0
+    ollama_calls = 0
+    candidates_generated = 0
+    duplicates_removed = 0
+    model_used = SEED_GENERATION_MODEL
+
+    for chunk in selected:
+        if len(seeds) >= target_count:
+            break
+        if ollama_calls >= MAX_STARTER_OLLAMA_CALLS:
+            break
+
+        chunks_processed += 1
+        ollama_calls += 1
+        try:
+            candidates, model_used = await _generate_candidates_for_chunk(
+                chunk_id=chunk["chunkId"],
+                chunk_text=chunk["text"],
+                count=STARTER_SEEDS_PER_CHUNK,
+                require_exact_count=False,
+            )
+        except HTTPException as exc:
+            # Infrastructure failures should abort; per-chunk model/parse issues skip.
+            if exc.status_code == 503:
+                raise
+            continue
+
+        candidates_generated += len(candidates)
+        for candidate in candidates:
+            if len(seeds) >= target_count:
+                break
+            normalized_question = normalize_question_for_dedupe(candidate["question"])
+            if not normalized_question:
+                duplicates_removed += 1
+                continue
+            if normalized_question in seen_questions:
+                duplicates_removed += 1
+                continue
+            seen_questions.add(normalized_question)
+            seeds.append(candidate)
+
+    return {
+        "courseId": safe_course_id,
+        "model": model_used,
+        "targetCount": target_count,
+        "seeds": seeds,
+        "progress": {
+            "eligibleChunks": len(eligible),
+            "selectedChunks": len(selected),
+            "chunksProcessed": chunks_processed,
+            "chunksSkipped": chunks_skipped,
+            "ollamaCalls": ollama_calls,
+            "candidatesGenerated": candidates_generated,
+            "duplicatesRemoved": duplicates_removed,
+            "finalCount": len(seeds),
+        },
     }

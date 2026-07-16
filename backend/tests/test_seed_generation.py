@@ -478,3 +478,288 @@ class SeedGenerationEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn("Ollama is unavailable", response.json()["detail"])
+
+
+class StarterSeedSelectionTests(unittest.TestCase):
+    def test_select_evenly_spaced_preserves_order_and_spreads(self) -> None:
+        from app.seed_generation import select_evenly_spaced_chunks
+
+        chunks = [{"chunkId": f"chunk-{i:03d}", "text": "x" * 100} for i in range(1, 11)]
+        selected = select_evenly_spaced_chunks(chunks, 4)
+        selected_ids = [chunk["chunkId"] for chunk in selected]
+
+        self.assertEqual(len(selected_ids), 4)
+        self.assertEqual(selected_ids, sorted(selected_ids))
+        self.assertEqual(selected_ids[0], "chunk-001")
+        self.assertEqual(selected_ids[-1], "chunk-010")
+        # Should not be only the first four consecutive opening chunks.
+        self.assertNotEqual(selected_ids, ["chunk-001", "chunk-002", "chunk-003", "chunk-004"])
+
+    def test_normalize_question_for_dedupe(self) -> None:
+        from app.seed_generation import normalize_question_for_dedupe
+
+        left = normalize_question_for_dedupe("  Can I submit late??? ")
+        right = normalize_question_for_dedupe("can i submit late")
+        self.assertEqual(left, right)
+
+
+class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self._temp_dir.name)
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=root / "course_data",
+            index_dir=root / "indexes",
+        )
+        self.course_id = "css-360-summer-2026-demo"
+        chunks = []
+        for index in range(1, 13):
+            text = (
+                f"Section {index} content about syllabus policies and assignments. "
+                * 3
+            )
+            chunks.append(
+                _chunk(
+                    f"chunk-{index:03d}",
+                    f"Section {index}",
+                    text,
+                    order=index,
+                )
+            )
+        # Extremely short chunk should be skipped.
+        chunks.insert(
+            2,
+            _chunk("chunk-short", "Short", "too short", order=99),
+        )
+        self.storage.save_index(self.course_id, _index(self.course_id, chunks))
+
+    def tearDown(self) -> None:
+        self._temp_dir.cleanup()
+
+    def _unique_seed_side_effect(self) -> AsyncMock:
+        call_state = {"n": 0}
+
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            call_state["n"] += 1
+            n = call_state["n"]
+            payload = {
+                "seeds": [
+                    {
+                        "question": f"Unique question {n}a?",
+                        "answer": f"Answer {n}a.",
+                        "category": "general",
+                    },
+                    {
+                        "question": f"Unique question {n}b?",
+                        "answer": f"Answer {n}b.",
+                        "category": "general",
+                    },
+                ]
+            }
+            return {
+                "answer": json.dumps(payload),
+                "model": SEED_GENERATION_MODEL,
+            }
+
+        return AsyncMock(side_effect=_fake_generate)
+
+    async def test_starter_stops_at_target_count(self) -> None:
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        with patch(
+            "app.seed_generation.generate_ollama_completion",
+            new=self._unique_seed_side_effect(),
+        ) as mock_generate:
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=6,
+                storage=self.storage,
+            )
+
+        self.assertEqual(result["progress"]["finalCount"], 6)
+        self.assertEqual(len(result["seeds"]), 6)
+        self.assertEqual(result["progress"]["chunksSkipped"], 1)
+        self.assertEqual(result["progress"]["eligibleChunks"], 12)
+        self.assertLessEqual(result["progress"]["chunksProcessed"], 4)
+        self.assertLessEqual(result["progress"]["ollamaCalls"], 4)
+        self.assertEqual(mock_generate.await_args.kwargs["think"], False)
+        self.assertEqual(mock_generate.await_args.kwargs["model"], SEED_GENERATION_MODEL)
+
+    async def test_starter_deduplicates_normalized_questions(self) -> None:
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        async def _dup_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            payload = {
+                "seeds": [
+                    {
+                        "question": "Can I submit late?",
+                        "answer": "Yes.",
+                        "category": "late policy",
+                    },
+                    {
+                        "question": "can i submit late???",
+                        "answer": "Within 24 hours.",
+                        "category": "late policy",
+                    },
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        with patch(
+            "app.seed_generation.generate_ollama_completion",
+            new=AsyncMock(side_effect=_dup_generate),
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=6,
+                storage=self.storage,
+            )
+
+        self.assertEqual(result["progress"]["finalCount"], 1)
+        self.assertGreaterEqual(result["progress"]["duplicatesRemoved"], 1)
+        self.assertEqual(result["seeds"][0]["question"], "Can I submit late?")
+
+    async def test_starter_missing_course_raises_404(self) -> None:
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        with self.assertRaises(HTTPException) as ctx:
+            await generate_starter_seeds_for_course(
+                course_id="css-999-missing-course",
+                target_count=6,
+                storage=self.storage,
+            )
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    async def test_starter_respects_ollama_call_cap(self) -> None:
+        from app import seed_generation
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        call_count = {"n": 0}
+
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            call_count["n"] += 1
+            # Always return duplicates so target is never reached.
+            payload = {
+                "seeds": [
+                    {
+                        "question": "Same question?",
+                        "answer": "A",
+                        "category": "general",
+                    },
+                    {
+                        "question": "Same question???",
+                        "answer": "B",
+                        "category": "general",
+                    },
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        with (
+            patch.object(seed_generation, "MAX_STARTER_OLLAMA_CALLS", 3),
+            patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 10),
+            patch(
+                "app.seed_generation.generate_ollama_completion",
+                new=AsyncMock(side_effect=_fake_generate),
+            ),
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=50,
+                storage=self.storage,
+            )
+
+        self.assertEqual(call_count["n"], 3)
+        self.assertEqual(result["progress"]["ollamaCalls"], 3)
+        self.assertEqual(result["progress"]["finalCount"], 1)
+
+
+class StarterSeedEndpointTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self._temp_dir.name)
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=root / "course_data",
+            index_dir=root / "indexes",
+        )
+        self._storage_patch = patch(
+            "app.seed_generation.get_course_artifact_storage",
+            return_value=self.storage,
+        )
+        self._storage_patch.start()
+        self.client = TestClient(app)
+        self.course_id = "css-360-summer-2026-demo"
+        self.url = f"/api/courses/{self.course_id}/seeds/generate-starter"
+
+        chunks = [
+            _chunk(
+                f"chunk-{index:03d}",
+                f"Section {index}",
+                f"Section {index} syllabus details " * 20,
+                order=index,
+            )
+            for index in range(1, 9)
+        ]
+        self.storage.save_index(self.course_id, _index(self.course_id, chunks))
+
+    def tearDown(self) -> None:
+        self._storage_patch.stop()
+        self._temp_dir.cleanup()
+
+    def test_endpoint_success_with_progress(self) -> None:
+        call_state = {"n": 0}
+
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            call_state["n"] += 1
+            n = call_state["n"]
+            payload = {
+                "seeds": [
+                    {
+                        "question": f"Endpoint question {n}a?",
+                        "answer": f"Answer {n}a.",
+                        "category": "general",
+                    },
+                    {
+                        "question": f"Endpoint question {n}b?",
+                        "answer": f"Answer {n}b.",
+                        "category": "general",
+                    },
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        with patch(
+            "app.seed_generation.generate_ollama_completion",
+            new=AsyncMock(side_effect=_fake_generate),
+        ):
+            response = self.client.post(
+                self.url,
+                json={"targetCount": 6},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["courseId"], self.course_id)
+        self.assertEqual(body["targetCount"], 6)
+        self.assertEqual(body["progress"]["finalCount"], 6)
+        self.assertEqual(len(body["seeds"]), 6)
+        self.assertIn("eligibleChunks", body["progress"])
+        self.assertIn("selectedChunks", body["progress"])
+        self.assertIn("chunksProcessed", body["progress"])
+        self.assertIn("ollamaCalls", body["progress"])
+        self.assertEqual(body["seeds"][0]["origin"], "ai_generated")
+        self.assertEqual(body["seeds"][0]["status"], "generated")
+
+    def test_endpoint_missing_course(self) -> None:
+        response = self.client.post(
+            "/api/courses/css-999-missing-course/seeds/generate-starter",
+            json={"targetCount": 6},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_endpoint_target_count_validation(self) -> None:
+        response = self.client.post(
+            self.url,
+            json={"targetCount": 51},
+        )
+        self.assertEqual(response.status_code, 422)

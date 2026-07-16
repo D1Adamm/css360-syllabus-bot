@@ -19,10 +19,13 @@ from app.schemas import (
     RagRetrieveResult,
     SeedGenerateRequest,
     SeedGenerateResponse,
+    StarterSeedGenerateRequest,
+    StarterSeedGenerateResponse,
+    StarterSeedProgress,
     SyllabusTextResponse,
     SyllabusUploadResponse,
 )
-from app.seed_generation import generate_seeds_from_chunk
+from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
 from app.storage import get_course_artifact_storage
 from app.syllabus_extract import extract_clean_syllabus_text
 from app.syllabus_upload import SyllabusUploadError, validate_syllabus_upload
@@ -250,4 +253,35 @@ async def generate_course_seeds(
         model=result["model"],
         count=result["count"],
         seeds=[GeneratedSeedExample(**seed) for seed in result["seeds"]],
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/seeds/generate-starter",
+    response_model=StarterSeedGenerateResponse,
+)
+async def generate_course_starter_seeds(
+    course_id: str,
+    request: StarterSeedGenerateRequest,
+) -> StarterSeedGenerateResponse:
+    """Temporary endpoint for course-level starter seed generation.
+
+    Does not persist seeds to Firebase or trigger course creation.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = await generate_starter_seeds_for_course(
+        course_id=safe_course_id,
+        target_count=request.target_count,
+    )
+
+    return StarterSeedGenerateResponse(
+        courseId=result["courseId"],
+        model=result["model"],
+        targetCount=result["targetCount"],
+        seeds=[GeneratedSeedExample(**seed) for seed in result["seeds"]],
+        progress=StarterSeedProgress(**result["progress"]),
     )

@@ -180,3 +180,39 @@ class SeedGenerateResponse(BaseModel):
     model: str
     count: int
     seeds: list[GeneratedSeedExample]
+
+
+class StarterSeedGenerateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    target_count: int = Field(
+        default=50,
+        alias="targetCount",
+        ge=1,
+        le=50,
+        description="Maximum number of starter seeds to collect (default 50, max 50)",
+    )
+
+
+class StarterSeedProgress(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    eligible_chunks: int = Field(alias="eligibleChunks")
+    selected_chunks: int = Field(alias="selectedChunks")
+    chunks_processed: int = Field(alias="chunksProcessed")
+    chunks_skipped: int = Field(alias="chunksSkipped")
+    ollama_calls: int = Field(alias="ollamaCalls")
+    candidates_generated: int = Field(alias="candidatesGenerated")
+    duplicates_removed: int = Field(alias="duplicatesRemoved")
+    final_count: int = Field(alias="finalCount")
+
+
+class StarterSeedGenerateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    model: str
+    target_count: int = Field(alias="targetCount")
+    seeds: list[GeneratedSeedExample]
+    progress: StarterSeedProgress
+
