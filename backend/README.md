@@ -15,6 +15,8 @@ ollama pull llama3.2:3b
 
 ## Run
 
+Copy `.env.example` to `.env` and set values (including `FIREBASE_DATABASE_URL` for seed persistence). The backend loads `backend/.env` automatically on startup.
+
 ```bash
 source .venv/bin/activate
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8001

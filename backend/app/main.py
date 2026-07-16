@@ -1,5 +1,11 @@
 import os
 
+# Load backend/.env before other app modules read configuration.
+from app import config as _config  # noqa: F401
+from app.config import load_backend_env
+
+load_backend_env()
+
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 

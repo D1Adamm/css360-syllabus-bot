@@ -1,5 +1,6 @@
 fastapi
 httpx
+python-dotenv
 python-multipart
 pypdf
 uvicorn[standard]
