@@ -6,7 +6,7 @@ from app.config import load_backend_env
 
 load_backend_env()
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.course_id import assert_valid_course_id
@@ -33,6 +33,10 @@ from app.schemas import (
     SyllabusUploadResponse,
 )
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
+from app.starter_jobs import (
+    run_auto_starter_seed_generation,
+    try_queue_starter_seed_generation,
+)
 from app.storage import get_course_artifact_storage
 from app.syllabus_extract import extract_clean_syllabus_text
 from app.syllabus_upload import SyllabusUploadError, validate_syllabus_upload
@@ -119,6 +123,7 @@ async def generate_rag_response(request: RagGenerateRequest) -> RagGenerateRespo
 )
 async def upload_course_syllabus(
     course_id: str,
+    background_tasks: BackgroundTasks,
     syllabus_file: UploadFile = File(...),
 ) -> SyllabusUploadResponse:
     storage = get_course_artifact_storage()
@@ -160,6 +165,13 @@ async def upload_course_syllabus(
             detail="Could not save, extract, or index the syllabus file.",
         ) from exc
 
+    queue_result = await try_queue_starter_seed_generation(validated.course_id)
+    if queue_result.get("queued"):
+        background_tasks.add_task(
+            run_auto_starter_seed_generation,
+            validated.course_id,
+        )
+
     return SyllabusUploadResponse(
         courseId=validated.course_id,
         syllabusFileName=validated.original_filename,
@@ -168,6 +180,7 @@ async def upload_course_syllabus(
         fileSize=validated.file_size,
         characterCount=len(extracted_text),
         chunkCount=int(index_data["chunkCount"]),
+        starterSeedGenerationStatus=queue_result.get("status"),
     )
 
 

@@ -117,6 +117,11 @@ class SyllabusUploadResponse(BaseModel):
     file_size: int = Field(alias="fileSize")
     character_count: int = Field(alias="characterCount")
     chunk_count: int = Field(alias="chunkCount")
+    starter_seed_generation_status: str | None = Field(
+        default=None,
+        alias="starterSeedGenerationStatus",
+        description="queued when automatic starter generation was scheduled",
+    )
 
 
 class SyllabusTextResponse(BaseModel):

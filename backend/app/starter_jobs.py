@@ -1,0 +1,200 @@
+"""Background starter-seed generation jobs after syllabus indexing."""
+
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Any
+
+from app.course_id import assert_valid_course_id
+from app.firebase_metadata import (
+    best_effort_patch_starter_seed_generation,
+    read_starter_seed_generation_status,
+)
+from app.seed_generation import generate_starter_seeds_for_course
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_STARTER_AUTO_GENERATE_COUNT = 50
+ACTIVE_STARTER_STATUSES = frozenset({"queued", "generating"})
+
+# Process-local guard: course ids with a scheduled or running auto job.
+_active_starter_jobs: set[str] = set()
+
+
+def get_starter_auto_generate_count() -> int:
+    raw = os.getenv("STARTER_AUTO_GENERATE_COUNT")
+    if raw is None:
+        return DEFAULT_STARTER_AUTO_GENERATE_COUNT
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_STARTER_AUTO_GENERATE_COUNT
+    return max(0, min(value, 50))
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def is_course_starter_job_active(course_id: str) -> bool:
+    return course_id in _active_starter_jobs
+
+
+def clear_active_starter_jobs_for_tests() -> None:
+    """Reset process-local job set (tests only)."""
+    _active_starter_jobs.clear()
+
+
+async def _durable_status_is_active(course_id: str) -> bool:
+    status = await read_starter_seed_generation_status(course_id)
+    return status in ACTIVE_STARTER_STATUSES
+
+
+def _resolve_terminal_status(
+    *,
+    target_count: int,
+    final_count: int,
+    saved_count: int,
+) -> str:
+    if target_count <= 0:
+        return "ready"
+    if final_count >= target_count and saved_count >= target_count:
+        return "ready"
+    if final_count > 0 or saved_count > 0:
+        return "partial"
+    return "failed"
+
+
+async def try_queue_starter_seed_generation(course_id: str) -> dict[str, Any]:
+    """Mark a course for auto starter generation if no job is already active.
+
+    Returns a small status dict for the upload response. Does not run generation.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError:
+        return {"queued": False, "status": "not_started", "reason": "invalid_course_id"}
+
+    target_count = get_starter_auto_generate_count()
+    if target_count <= 0:
+        return {
+            "queued": False,
+            "status": "not_started",
+            "reason": "auto_generate_disabled",
+            "targetCount": 0,
+        }
+
+    if safe_course_id in _active_starter_jobs:
+        return {
+            "queued": False,
+            "status": "generating",
+            "reason": "job_already_active",
+            "targetCount": target_count,
+        }
+
+    if await _durable_status_is_active(safe_course_id):
+        return {
+            "queued": False,
+            "status": "queued",
+            "reason": "durable_status_active",
+            "targetCount": target_count,
+        }
+
+    _active_starter_jobs.add(safe_course_id)
+    queued_payload = {
+        "status": "queued",
+        "targetCount": target_count,
+        "finalCount": 0,
+        "savedCount": 0,
+        "failedToSaveCount": 0,
+        "error": None,
+        "startedAt": None,
+        "completedAt": None,
+    }
+    await best_effort_patch_starter_seed_generation(safe_course_id, queued_payload)
+
+    return {
+        "queued": True,
+        "status": "queued",
+        "targetCount": target_count,
+    }
+
+
+async def run_auto_starter_seed_generation(course_id: str) -> None:
+    """Background worker: process a previously queued starter-seed job.
+
+    Expected entry status is ``queued``. Does not no-op solely because status is
+    queued — that is the normal state for the job about to run.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError:
+        return
+
+    target_count = get_starter_auto_generate_count()
+    if target_count <= 0:
+        _active_starter_jobs.discard(safe_course_id)
+        return
+
+    started_at = _utc_now()
+    await best_effort_patch_starter_seed_generation(
+        safe_course_id,
+        {
+            "status": "generating",
+            "targetCount": target_count,
+            "startedAt": started_at,
+            "error": None,
+        },
+    )
+
+    try:
+        result = await generate_starter_seeds_for_course(
+            course_id=safe_course_id,
+            target_count=target_count,
+            save=True,
+        )
+        progress = result.get("progress") or {}
+        persistence = result.get("persistence") or {}
+        final_count = int(progress.get("finalCount", 0))
+        saved_count = int(persistence.get("savedCount", 0))
+        failed_to_save = int(persistence.get("failedToSaveCount", 0))
+        terminal = _resolve_terminal_status(
+            target_count=target_count,
+            final_count=final_count,
+            saved_count=saved_count,
+        )
+        await best_effort_patch_starter_seed_generation(
+            safe_course_id,
+            {
+                "status": terminal,
+                "targetCount": target_count,
+                "finalCount": final_count,
+                "savedCount": saved_count,
+                "failedToSaveCount": failed_to_save,
+                "error": None,
+                "startedAt": started_at,
+                "completedAt": _utc_now(),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - background job must not crash the server
+        logger.exception(
+            "Automatic starter seed generation failed for course %s",
+            safe_course_id,
+        )
+        await best_effort_patch_starter_seed_generation(
+            safe_course_id,
+            {
+                "status": "failed",
+                "targetCount": target_count,
+                "finalCount": 0,
+                "savedCount": 0,
+                "failedToSaveCount": 0,
+                "error": str(exc)[:500],
+                "startedAt": started_at,
+                "completedAt": _utc_now(),
+            },
+        )
+    finally:
+        _active_starter_jobs.discard(safe_course_id)

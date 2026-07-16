@@ -41,9 +41,21 @@ class CourseIndexEndpointTests(unittest.TestCase):
             new=AsyncMock(return_value=[0.1, -0.2, 0.3]),
         )
         self._embed_patch.start()
+        self._queue_patch = patch(
+            "app.main.try_queue_starter_seed_generation",
+            new=AsyncMock(
+                return_value={
+                    "queued": False,
+                    "status": "not_started",
+                    "reason": "test_disabled",
+                }
+            ),
+        )
+        self._queue_patch.start()
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
+        self._queue_patch.stop()
         self._embed_patch.stop()
         self._storage_patch.stop()
         self._temp_dir.cleanup()
