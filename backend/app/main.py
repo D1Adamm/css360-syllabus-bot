@@ -21,6 +21,7 @@ from app.schemas import (
     SeedGenerateResponse,
     StarterSeedGenerateRequest,
     StarterSeedGenerateResponse,
+    StarterSeedPersistence,
     StarterSeedProgress,
     SyllabusTextResponse,
     SyllabusUploadResponse,
@@ -266,7 +267,8 @@ async def generate_course_starter_seeds(
 ) -> StarterSeedGenerateResponse:
     """Temporary endpoint for course-level starter seed generation.
 
-    Does not persist seeds to Firebase or trigger course creation.
+    Set save=true to persist accepted validated seeds to Firebase.
+    Does not trigger course creation.
     """
     try:
         safe_course_id = assert_valid_course_id(course_id)
@@ -276,7 +278,12 @@ async def generate_course_starter_seeds(
     result = await generate_starter_seeds_for_course(
         course_id=safe_course_id,
         target_count=request.target_count,
+        save=request.save,
     )
+
+    persistence = None
+    if result.get("persistence") is not None:
+        persistence = StarterSeedPersistence(**result["persistence"])
 
     return StarterSeedGenerateResponse(
         courseId=result["courseId"],
@@ -284,4 +291,5 @@ async def generate_course_starter_seeds(
         targetCount=result["targetCount"],
         seeds=[GeneratedSeedExample(**seed) for seed in result["seeds"]],
         progress=StarterSeedProgress(**result["progress"]),
+        persistence=persistence,
     )

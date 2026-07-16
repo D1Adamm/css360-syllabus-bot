@@ -545,7 +545,7 @@ class StarterSeedSelectionTests(unittest.TestCase):
         self.assertNotEqual(selected_ids, ["chunk-001", "chunk-002", "chunk-003", "chunk-004"])
 
     def test_normalize_question_for_dedupe(self) -> None:
-        from app.seed_generation import normalize_question_for_dedupe
+        from app.seed_dedupe import normalize_question_for_dedupe
 
         left = normalize_question_for_dedupe("  Can I submit late??? ")
         right = normalize_question_for_dedupe("can i submit late")
@@ -882,6 +882,61 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
                 )
         self.assertEqual(ctx.exception.status_code, 503)
 
+    async def test_starter_save_false_does_not_persist(self) -> None:
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        with (
+            patch(
+                "app.seed_generation.generate_ollama_completion",
+                new=self._unique_seed_side_effect(),
+            ),
+            patch(
+                "app.seed_generation.persist_accepted_seeds",
+                new=AsyncMock(),
+            ) as mock_persist,
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=2,
+                save=False,
+                storage=self.storage,
+            )
+
+        self.assertEqual(result["progress"]["finalCount"], 2)
+        self.assertNotIn("persistence", result)
+        mock_persist.assert_not_called()
+
+    async def test_starter_save_true_persists_accepted_seeds(self) -> None:
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        with (
+            patch(
+                "app.seed_generation.generate_ollama_completion",
+                new=self._unique_seed_side_effect(),
+            ),
+            patch(
+                "app.seed_generation.persist_accepted_seeds",
+                new=AsyncMock(
+                    return_value={
+                        "generatedCount": 2,
+                        "savedCount": 2,
+                        "alreadyExistingCount": 0,
+                        "failedToSaveCount": 0,
+                    }
+                ),
+            ) as mock_persist,
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=2,
+                save=True,
+                storage=self.storage,
+            )
+
+        self.assertEqual(result["persistence"]["savedCount"], 2)
+        mock_persist.assert_awaited_once()
+        self.assertEqual(mock_persist.await_args.kwargs["course_id"], self.course_id)
+
 
 class StarterSeedEndpointTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -977,3 +1032,115 @@ class StarterSeedEndpointTests(unittest.TestCase):
             json={"targetCount": 51},
         )
         self.assertEqual(response.status_code, 422)
+
+    def test_endpoint_generate_only_when_save_false(self) -> None:
+        call_state = {"n": 0}
+
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            call_state["n"] += 1
+            payload = {
+                "seeds": [
+                    {
+                        "question": "Generate-only question here?",
+                        "answer": "Generate-only answer with enough detail.",
+                        "category": "general",
+                    }
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        with (
+            patch(
+                "app.seed_generation.generate_ollama_completion",
+                new=_starter_ollama_side_effect(generate_side_effect=_fake_generate),
+            ),
+            patch(
+                "app.seed_generation.persist_accepted_seeds",
+                new=AsyncMock(),
+            ) as mock_persist,
+        ):
+            response = self.client.post(
+                self.url,
+                json={"targetCount": 1, "save": False},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json().get("persistence"))
+        mock_persist.assert_not_called()
+
+    def test_endpoint_save_true_returns_persistence_metadata(self) -> None:
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            payload = {
+                "seeds": [
+                    {
+                        "question": "Saved starter question here?",
+                        "answer": "Saved starter answer with enough detail.",
+                        "category": "general",
+                    }
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        with (
+            patch(
+                "app.seed_generation.generate_ollama_completion",
+                new=_starter_ollama_side_effect(generate_side_effect=_fake_generate),
+            ),
+            patch(
+                "app.seed_generation.persist_accepted_seeds",
+                new=AsyncMock(
+                    return_value={
+                        "generatedCount": 1,
+                        "savedCount": 1,
+                        "alreadyExistingCount": 0,
+                        "failedToSaveCount": 0,
+                    }
+                ),
+            ),
+        ):
+            response = self.client.post(
+                self.url,
+                json={"targetCount": 1, "save": True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["persistence"]["savedCount"], 1)
+        self.assertEqual(body["persistence"]["generatedCount"], 1)
+
+    def test_endpoint_save_true_missing_firebase_configuration(self) -> None:
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            payload = {
+                "seeds": [
+                    {
+                        "question": "Question for firebase config test?",
+                        "answer": "Answer for firebase config test here.",
+                        "category": "general",
+                    }
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        from app.firebase_seeds import FirebaseConfigurationError
+
+        with (
+            patch(
+                "app.seed_generation.generate_ollama_completion",
+                new=_starter_ollama_side_effect(generate_side_effect=_fake_generate),
+            ),
+            patch(
+                "app.seed_generation.persist_accepted_seeds",
+                new=AsyncMock(
+                    side_effect=FirebaseConfigurationError(
+                        "Firebase is not configured for seed persistence."
+                    )
+                ),
+            ),
+        ):
+            response = self.client.post(
+                self.url,
+                json={"targetCount": 1, "save": True},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("Firebase is not configured", response.json()["detail"])

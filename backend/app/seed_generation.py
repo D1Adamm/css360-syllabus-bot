@@ -10,7 +10,13 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.course_id import assert_valid_course_id
+from app.firebase_seeds import (
+    FirebaseConfigurationError,
+    build_chunk_section_lookup,
+    persist_accepted_seeds,
+)
 from app.ollama import generate_ollama_completion
+from app.seed_dedupe import normalize_question_for_dedupe
 from app.storage import CourseArtifactStorage, get_course_artifact_storage
 
 SEED_GENERATION_MODEL = "qwen3:4b"
@@ -35,8 +41,6 @@ _JSON_FENCE_RE = re.compile(
     r"```(?:json)?\s*(.*?)\s*```",
     re.DOTALL | re.IGNORECASE,
 )
-_NON_ALNUM_RE = re.compile(r"[^a-z0-9\s]+")
-_WHITESPACE_RE = re.compile(r"\s+")
 
 
 def get_starter_max_total_ollama_calls() -> int:
@@ -294,13 +298,6 @@ def _try_normalize_seed(
         return None
 
 
-def normalize_question_for_dedupe(question: str) -> str:
-    """Normalize a question for exact-match deduplication."""
-    lowered = question.strip().lower()
-    without_punct = _NON_ALNUM_RE.sub(" ", lowered)
-    return _WHITESPACE_RE.sub(" ", without_punct).strip()
-
-
 def _load_course_index(
     course_id: str,
     storage: CourseArtifactStorage,
@@ -536,12 +533,14 @@ async def generate_starter_seeds_for_course(
     *,
     course_id: str,
     target_count: int = DEFAULT_STARTER_TARGET_COUNT,
+    save: bool = False,
     storage: CourseArtifactStorage | None = None,
 ) -> dict[str, Any]:
     """Generate up to target_count starter seeds across a course syllabus.
 
     Processes an evenly spaced subset of eligible chunks (not only the opening
-    sections). Does not persist to Firebase or trigger course creation.
+    sections). When save=True, persists accepted validated seeds to Firebase.
+    Does not trigger course creation.
     """
     try:
         safe_course_id = assert_valid_course_id(course_id)
@@ -659,7 +658,7 @@ async def generate_starter_seeds_for_course(
             candidates_accepted += 1
             seeds.append({**candidate, "validation": validation})
 
-    return {
+    result: dict[str, Any] = {
         "courseId": safe_course_id,
         "model": model_used,
         "targetCount": target_count,
@@ -680,3 +679,16 @@ async def generate_starter_seeds_for_course(
             "finalCount": len(seeds),
         },
     }
+
+    if save:
+        try:
+            chunk_sections = build_chunk_section_lookup(raw_chunks)
+            result["persistence"] = await persist_accepted_seeds(
+                course_id=safe_course_id,
+                seeds=seeds,
+                chunk_sections=chunk_sections,
+            )
+        except FirebaseConfigurationError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return result

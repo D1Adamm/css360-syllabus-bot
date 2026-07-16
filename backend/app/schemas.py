@@ -204,6 +204,22 @@ class StarterSeedGenerateRequest(BaseModel):
         le=50,
         description="Maximum number of starter seeds to collect (default 50, max 50)",
     )
+    save: bool = Field(
+        default=False,
+        description=(
+            "When true, persist accepted validated seeds to Firebase. "
+            "Defaults to false (generate-only)."
+        ),
+    )
+
+
+class StarterSeedPersistence(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    generated_count: int = Field(alias="generatedCount")
+    saved_count: int = Field(alias="savedCount")
+    already_existing_count: int = Field(alias="alreadyExistingCount")
+    failed_to_save_count: int = Field(alias="failedToSaveCount")
 
 
 class StarterSeedProgress(BaseModel):
@@ -232,4 +248,5 @@ class StarterSeedGenerateResponse(BaseModel):
     target_count: int = Field(alias="targetCount")
     seeds: list[GeneratedSeedExample]
     progress: StarterSeedProgress
+    persistence: StarterSeedPersistence | None = None
 
