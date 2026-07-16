@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import type { SeedExample } from '../types';
+import { getSeedOriginLabel } from '../utils/seedDataUtils';
 
 interface SeedCardProps {
   seed: SeedExample;
@@ -16,18 +17,20 @@ function truncateText(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength).trimEnd()}…`;
 }
 
-function getOriginLabel(origin: SeedExample['origin']): string {
-  return origin === 'user' ? 'User created' : 'Prototype generated';
-}
-
 export function SeedCard({ seed, onDelete }: SeedCardProps) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
   const preview = truncateText(seed.response, PREVIEW_LENGTH);
-  const isUserCreated = seed.origin === 'user';
+  const canDelete = seed.origin === 'user' || seed.origin === 'ai_generated';
+  const originClassName =
+    seed.origin === 'user'
+      ? 'seed-card__origin seed-card__origin--user'
+      : seed.origin === 'ai_generated'
+        ? 'seed-card__origin seed-card__origin--ai'
+        : 'seed-card__origin';
 
   function handleDelete() {
-    if (!onDelete) {
+    if (!onDelete || !canDelete) {
       return;
     }
 
@@ -57,13 +60,15 @@ export function SeedCard({ seed, onDelete }: SeedCardProps) {
           >
             {seed.directlyAnswered ? 'Directly answered' : 'Requires clarification'}
           </span>
-          <span
-            className={`seed-card__origin${
-              isUserCreated ? ' seed-card__origin--user' : ''
-            }`}
-          >
-            {getOriginLabel(seed.origin)}
-          </span>
+          <span className={originClassName}>{getSeedOriginLabel(seed.origin)}</span>
+          {typeof seed.validation?.score === 'number' && (
+            <span className="seed-card__validation">
+              Validation {Math.round(seed.validation.score * 100)}%
+            </span>
+          )}
+          {seed.status && seed.origin === 'ai_generated' && (
+            <span className="seed-card__status">{seed.status}</span>
+          )}
         </div>
         <h2 className="seed-card__instruction">{seed.instruction}</h2>
       </div>
@@ -82,8 +87,20 @@ export function SeedCard({ seed, onDelete }: SeedCardProps) {
             <span className="seed-card__meta-label">ID:</span> {seed.id}
           </p>
           <p className="seed-card__meta-item">
-            <span className="seed-card__meta-label">Origin:</span> {getOriginLabel(seed.origin)}
+            <span className="seed-card__meta-label">Origin:</span>{' '}
+            {getSeedOriginLabel(seed.origin)}
           </p>
+          {seed.status && (
+            <p className="seed-card__meta-item">
+              <span className="seed-card__meta-label">Status:</span> {seed.status}
+            </p>
+          )}
+          {seed.validation && (
+            <p className="seed-card__meta-item">
+              <span className="seed-card__meta-label">Validation:</span>{' '}
+              {Math.round(seed.validation.score * 100)}% — {seed.validation.reason}
+            </p>
+          )}
           {seed.notes && (
             <p className="seed-card__meta-item">
               <span className="seed-card__meta-label">Notes:</span> {seed.notes}
@@ -103,7 +120,7 @@ export function SeedCard({ seed, onDelete }: SeedCardProps) {
           {expanded ? 'Collapse example' : 'Expand example'}
         </button>
 
-        {isUserCreated && onDelete && (
+        {canDelete && onDelete && (
           <button type="button" className="seed-card__delete" onClick={handleDelete}>
             Delete example
           </button>

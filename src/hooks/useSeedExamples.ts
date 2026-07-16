@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useCourseId } from '../context/CourseContext';
 import {
   createSeedExample,
-  deleteAllSeedExamples,
+  deleteAllUserSeedExamples,
   deleteSeedExample,
   subscribeToSeedExamples,
 } from '../lib/seedExamplesDb';
@@ -93,7 +93,7 @@ export function useSeedExamples(): UseSeedExamplesResult {
     setSaveError(null);
 
     try {
-      await deleteAllSeedExamples(courseId, seeds);
+      await deleteAllUserSeedExamples(courseId, seeds);
     } catch (caughtError) {
       const message =
         caughtError instanceof Error

@@ -1,12 +1,21 @@
 export type SeedDifficulty = 'Easy' | 'Medium' | 'Hard';
 
-export type SeedOrigin = 'prototype' | 'user';
+export type SeedOrigin = 'prototype' | 'user' | 'ai_generated';
 
 export type ModelKey =
   | 'base'
   | 'rag'
   | 'fineTuned'
   | 'fineTunedRag';
+
+export interface SeedValidationInfo {
+  grounded: boolean;
+  correct: boolean;
+  clear: boolean;
+  useful: boolean;
+  score: number;
+  reason: string;
+}
 
 export interface SeedExample {
   id: string;
@@ -19,6 +28,9 @@ export interface SeedExample {
   origin: SeedOrigin;
   notes?: string;
   createdAt?: string;
+  status?: string;
+  sourceChunkIds?: string[];
+  validation?: SeedValidationInfo;
 }
 
 export interface ComparisonResponse {

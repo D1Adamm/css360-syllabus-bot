@@ -9,6 +9,7 @@ const {
   createSeedExampleMock,
   deleteSeedExampleMock,
   deleteAllSeedExamplesMock,
+  deleteAllUserSeedExamplesMock,
   updateSeedExampleMock,
   subscribeToEvaluationsMock,
   createEvaluationMock,
@@ -19,6 +20,7 @@ const {
   createSeedExampleMock: vi.fn(),
   deleteSeedExampleMock: vi.fn(),
   deleteAllSeedExamplesMock: vi.fn(),
+  deleteAllUserSeedExamplesMock: vi.fn(),
   updateSeedExampleMock: vi.fn(),
   subscribeToEvaluationsMock: vi.fn(),
   createEvaluationMock: vi.fn(),
@@ -51,6 +53,7 @@ vi.mock('../lib/seedExamplesDb', async () => {
     createSeedExample: createSeedExampleMock,
     deleteSeedExample: deleteSeedExampleMock,
     deleteAllSeedExamples: deleteAllSeedExamplesMock,
+    deleteAllUserSeedExamples: deleteAllUserSeedExamplesMock,
     updateSeedExample: updateSeedExampleMock,
   };
 });

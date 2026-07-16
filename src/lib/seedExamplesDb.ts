@@ -8,7 +8,7 @@ import {
   type Unsubscribe,
 } from 'firebase/database';
 import type { SeedExample } from '../types';
-import { isSeedExample } from '../utils/seedDataUtils';
+import { normalizeSeedExample } from '../utils/seedDataUtils';
 import { assertValidCourseId } from './courseId';
 import { getCourseSeedExamplePath, getCourseSeedExamplesPath } from './coursePaths';
 import { database } from './firebase';
@@ -26,13 +26,20 @@ export function parseSeedExamplesFromSnapshot(data: unknown): SeedExample[] {
     return [];
   }
 
-  return Object.values(data)
-    .filter(isSeedExample)
-    .sort((left, right) => {
-      const leftTime = left.createdAt ?? '';
-      const rightTime = right.createdAt ?? '';
-      return rightTime.localeCompare(leftTime);
-    });
+  const seeds: SeedExample[] = [];
+
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    const normalized = normalizeSeedExample(value, key);
+    if (normalized) {
+      seeds.push(normalized);
+    }
+  }
+
+  return seeds.sort((left, right) => {
+    const leftTime = left.createdAt ?? '';
+    const rightTime = right.createdAt ?? '';
+    return rightTime.localeCompare(leftTime);
+  });
 }
 
 /** Subscribe to courses/{courseId}/seedExamples. */
@@ -94,4 +101,13 @@ export async function deleteAllSeedExamples(
   seeds: SeedExample[],
 ): Promise<void> {
   await Promise.all(seeds.map((seed) => deleteSeedExample(courseId, seed.id)));
+}
+
+/** Delete only student-created seeds (origin "user"). */
+export async function deleteAllUserSeedExamples(
+  courseId: string,
+  seeds: SeedExample[],
+): Promise<void> {
+  const userSeeds = seeds.filter((seed) => seed.origin === 'user');
+  await deleteAllSeedExamples(courseId, userSeeds);
 }

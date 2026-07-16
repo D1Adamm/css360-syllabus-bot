@@ -19,6 +19,7 @@ vi.mock('../lib/seedExamplesDb', () => ({
   createSeedExample: vi.fn(),
   deleteSeedExample: vi.fn(),
   deleteAllSeedExamples: vi.fn(),
+  deleteAllUserSeedExamples: vi.fn(),
   updateSeedExample: vi.fn(),
 }));
 

@@ -8,9 +8,11 @@ interface UserSeedListProps {
 }
 
 export function UserSeedList({ seeds, onDelete, onDeleteAll }: UserSeedListProps) {
+  const userSeedCount = seeds.filter((seed) => seed.origin === 'user').length;
+
   async function handleDeleteAll() {
     const confirmed = window.confirm(
-      'Delete all your examples? This removes all shared user-created examples and cannot be undone.',
+      'Delete all your examples? This removes all shared user-created examples and cannot be undone. AI-generated starter seeds are left unchanged.',
     );
 
     if (confirmed) {
@@ -22,9 +24,9 @@ export function UserSeedList({ seeds, onDelete, onDeleteAll }: UserSeedListProps
     <section className="user-seed-list" aria-labelledby="user-seed-list-title">
       <div className="user-seed-list__header">
         <h2 id="user-seed-list-title" className="user-seed-list__title">
-          Your examples ({seeds.length})
+          Course examples ({seeds.length})
         </h2>
-        {seeds.length > 0 && (
+        {userSeedCount > 0 && (
           <button
             type="button"
             className="user-seed-list__delete-all"
@@ -37,7 +39,8 @@ export function UserSeedList({ seeds, onDelete, onDeleteAll }: UserSeedListProps
 
       {seeds.length === 0 ? (
         <p className="user-seed-list__empty">
-          No seed examples for this course yet. Submit the form to add your first one.
+          No seed examples for this course yet. Submit the form to add your first one, or
+          generate AI starter seeds from the backend.
         </p>
       ) : (
         <ul className="user-seed-list__items">

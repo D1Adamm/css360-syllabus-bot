@@ -1,4 +1,9 @@
-import type { SeedDifficulty, SeedExample } from '../types';
+import type {
+  SeedDifficulty,
+  SeedExample,
+  SeedOrigin,
+  SeedValidationInfo,
+} from '../types';
 
 export const SEED_CATEGORIES = [
   'Course Basics',
@@ -36,6 +41,9 @@ const DIFFICULTY_ORDER: Record<SeedDifficulty, number> = {
   Hard: 2,
 };
 
+const VALID_DIFFICULTIES: readonly SeedDifficulty[] = ['Easy', 'Medium', 'Hard'];
+const VALID_ORIGINS: readonly SeedOrigin[] = ['prototype', 'user', 'ai_generated'];
+
 export function normalizeSearchText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -59,6 +67,18 @@ export function generateUserSeedId(): string {
   return `user-seed-${timestamp}-${random}`;
 }
 
+export function getSeedOriginLabel(origin: SeedOrigin): string {
+  switch (origin) {
+    case 'user':
+      return 'User created';
+    case 'ai_generated':
+      return 'AI-generated starter seed';
+    case 'prototype':
+    default:
+      return 'Prototype generated';
+  }
+}
+
 export function isDuplicateQuestion(
   question: string,
   existingSeeds: SeedExample[],
@@ -74,23 +94,164 @@ export function getUniqueSourceSections(seeds: SeedExample[]): string[] {
   return Array.from(sections).sort((left, right) => left.localeCompare(right));
 }
 
-export function isSeedExample(value: unknown): value is SeedExample {
-  if (
-    typeof value !== 'object' ||
-    value === null ||
-    typeof (value as SeedExample).id !== 'string' ||
-    typeof (value as SeedExample).instruction !== 'string' ||
-    typeof (value as SeedExample).response !== 'string' ||
-    typeof (value as SeedExample).category !== 'string' ||
-    typeof (value as SeedExample).sourceSection !== 'string' ||
-    typeof (value as SeedExample).difficulty !== 'string' ||
-    typeof (value as SeedExample).directlyAnswered !== 'boolean'
-  ) {
-    return false;
+function isSeedDifficulty(value: unknown): value is SeedDifficulty {
+  return typeof value === 'string' && VALID_DIFFICULTIES.includes(value as SeedDifficulty);
+}
+
+function isSeedOrigin(value: unknown): value is SeedOrigin {
+  return typeof value === 'string' && VALID_ORIGINS.includes(value as SeedOrigin);
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+function parseValidation(value: unknown): SeedValidationInfo | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
   }
 
-  const origin = (value as SeedExample).origin;
-  return origin === 'user' || origin === 'prototype';
+  const record = value as Record<string, unknown>;
+  const { grounded, correct, clear, useful, score, reason } = record;
+
+  if (
+    typeof grounded !== 'boolean' ||
+    typeof correct !== 'boolean' ||
+    typeof clear !== 'boolean' ||
+    typeof useful !== 'boolean' ||
+    typeof score !== 'number' ||
+    !Number.isFinite(score) ||
+    typeof reason !== 'string' ||
+    reason.trim() === ''
+  ) {
+    return undefined;
+  }
+
+  return {
+    grounded,
+    correct,
+    clear,
+    useful,
+    score,
+    reason: reason.trim(),
+  };
+}
+
+function parseSourceChunkIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const ids = value
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter((item) => item.length > 0);
+  return ids.length > 0 ? ids : undefined;
+}
+
+/**
+ * Normalize a Firebase (or local) seed record into the frontend SeedExample shape.
+ * Accepts dual AI field names (question/answer) and classic instruction/response.
+ */
+export function normalizeSeedExample(
+  value: unknown,
+  fallbackId?: string,
+): SeedExample | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const origin = record.origin;
+  if (!isSeedOrigin(origin)) {
+    return null;
+  }
+
+  const id = readNonEmptyString(record.id) ?? readNonEmptyString(fallbackId);
+  const instruction =
+    readNonEmptyString(record.instruction) ?? readNonEmptyString(record.question);
+  const response =
+    readNonEmptyString(record.response) ?? readNonEmptyString(record.answer);
+
+  if (!id || !instruction || !response) {
+    return null;
+  }
+
+  const sourceChunkIds = parseSourceChunkIds(record.sourceChunkIds);
+  const sourceSection =
+    readNonEmptyString(record.sourceSection) ??
+    (sourceChunkIds ? sourceChunkIds.join(', ') : null) ??
+    (origin === 'ai_generated' ? 'General' : null);
+
+  if (!sourceSection) {
+    return null;
+  }
+
+  let difficulty: SeedDifficulty;
+  if (isSeedDifficulty(record.difficulty)) {
+    difficulty = record.difficulty;
+  } else if (origin === 'ai_generated') {
+    difficulty = 'Medium';
+  } else {
+    return null;
+  }
+
+  let directlyAnswered: boolean;
+  if (typeof record.directlyAnswered === 'boolean') {
+    directlyAnswered = record.directlyAnswered;
+  } else if (origin === 'ai_generated') {
+    directlyAnswered = true;
+  } else {
+    return null;
+  }
+
+  const category = readNonEmptyString(record.category);
+  if (!category) {
+    return null;
+  }
+
+  const seed: SeedExample = {
+    id,
+    instruction,
+    response,
+    category,
+    sourceSection,
+    difficulty,
+    directlyAnswered,
+    origin,
+  };
+
+  const notes = readNonEmptyString(record.notes);
+  if (notes) {
+    seed.notes = notes;
+  }
+
+  const createdAt = readNonEmptyString(record.createdAt);
+  if (createdAt) {
+    seed.createdAt = createdAt;
+  }
+
+  const status = readNonEmptyString(record.status);
+  if (status) {
+    seed.status = status;
+  }
+
+  if (sourceChunkIds) {
+    seed.sourceChunkIds = sourceChunkIds;
+  }
+
+  const validation = parseValidation(record.validation);
+  if (validation) {
+    seed.validation = validation;
+  }
+
+  return seed;
+}
+
+export function isSeedExample(value: unknown): value is SeedExample {
+  return normalizeSeedExample(value) !== null;
 }
 
 export function isSeedExampleArray(value: unknown): value is SeedExample[] {
