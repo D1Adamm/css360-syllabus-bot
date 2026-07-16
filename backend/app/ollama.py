@@ -8,12 +8,31 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 
 
-async def generate_ollama_completion(prompt: str) -> dict[str, str]:
-    payload = {
-        "model": OLLAMA_MODEL,
+async def generate_ollama_completion(
+    prompt: str,
+    *,
+    model: str | None = None,
+    response_format: str | None = None,
+    think: bool | None = None,
+) -> dict[str, str]:
+    """Generate a completion from Ollama.
+
+    Defaults to OLLAMA_MODEL (llama3.2:3b) so Base Model and RAG stay unchanged.
+    Pass model= to use a different local model (e.g. qwen3:4b for seed generation).
+    Pass response_format="json" to request structured JSON from Ollama.
+    Pass think=False for models like qwen3 that otherwise put output in `thinking`
+    and leave `response` empty.
+    """
+    selected_model = model or OLLAMA_MODEL
+    payload: dict[str, object] = {
+        "model": selected_model,
         "prompt": prompt,
         "stream": False,
     }
+    if response_format is not None:
+        payload["format"] = response_format
+    if think is not None:
+        payload["think"] = think
 
     try:
         async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
@@ -54,7 +73,7 @@ async def generate_ollama_completion(prompt: str) -> dict[str, str]:
 
     return {
         "answer": answer,
-        "model": data.get("model", OLLAMA_MODEL),
+        "model": data.get("model", selected_model),
     }
 
 

@@ -12,13 +12,17 @@ from app.schemas import (
     BaseModelGenerateResponse,
     CourseChunkMetadata,
     CourseChunksResponse,
+    GeneratedSeedExample,
     RagGenerateRequest,
     RagGenerateResponse,
     RagGenerateSource,
     RagRetrieveResult,
+    SeedGenerateRequest,
+    SeedGenerateResponse,
     SyllabusTextResponse,
     SyllabusUploadResponse,
 )
+from app.seed_generation import generate_seeds_from_chunk
 from app.storage import get_course_artifact_storage
 from app.syllabus_extract import extract_clean_syllabus_text
 from app.syllabus_upload import SyllabusUploadError, validate_syllabus_upload
@@ -214,4 +218,37 @@ def get_course_chunks(course_id: str) -> CourseChunksResponse:
         courseId=safe_course_id,
         chunkCount=len(chunks),
         chunks=chunks,
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/seeds/generate",
+    response_model=SeedGenerateResponse,
+)
+async def generate_course_seeds(
+    course_id: str,
+    request: SeedGenerateRequest,
+) -> SeedGenerateResponse:
+    """Temporary endpoint for testing AI seed generation from one chunk.
+
+    Does not persist seeds to Firebase or trigger course creation.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = await generate_seeds_from_chunk(
+        course_id=safe_course_id,
+        chunk_id=request.chunk_id,
+        chunk_text=request.chunk_text,
+        count=request.count,
+    )
+
+    return SeedGenerateResponse(
+        courseId=result["courseId"],
+        chunkId=result["chunkId"],
+        model=result["model"],
+        count=result["count"],
+        seeds=[GeneratedSeedExample(**seed) for seed in result["seeds"]],
     )

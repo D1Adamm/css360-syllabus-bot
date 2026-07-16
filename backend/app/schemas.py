@@ -142,3 +142,47 @@ class CourseChunksResponse(BaseModel):
     course_id: str = Field(alias="courseId")
     chunk_count: int = Field(alias="chunkCount")
     chunks: list[CourseChunkMetadata]
+
+
+class SeedGenerateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    chunk_id: str = Field(
+        ...,
+        alias="chunkId",
+        min_length=1,
+        description="Id of the syllabus chunk used as seed context",
+    )
+    chunk_text: str = Field(
+        ...,
+        alias="chunkText",
+        min_length=1,
+        description="Syllabus chunk text used to generate seed examples",
+    )
+    count: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="Number of seed examples to generate (default 3, max 5)",
+    )
+
+
+class GeneratedSeedExample(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    question: str
+    answer: str
+    category: str
+    source_chunk_ids: list[str] = Field(alias="sourceChunkIds")
+    origin: str
+    status: str
+
+
+class SeedGenerateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    chunk_id: str = Field(alias="chunkId")
+    model: str
+    count: int
+    seeds: list[GeneratedSeedExample]
