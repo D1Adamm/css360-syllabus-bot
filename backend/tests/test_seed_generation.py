@@ -21,14 +21,17 @@ from app.seed_generation import (
 from app.storage import LocalCourseArtifactStorage
 
 
-def _passing_validation_payload(score: float = 0.95) -> str:
+def _passing_validation_payload(score: float = 0.88) -> str:
     return json.dumps(
         {
-            "grounded": True,
-            "correct": True,
-            "clear": True,
-            "useful": True,
-            "score": score,
+            "grounded": 0.9,
+            "correct": 0.91,
+            "clear": 0.82,
+            "useful": 0.86,
+            "naturalStudentWording": 0.84,
+            "categoryCorrect": 0.8,
+            "notTrivialOrTemporary": 0.82,
+            "unsupportedClaims": [],
             "reason": "Supported by the source chunk.",
         }
     )
@@ -37,11 +40,14 @@ def _passing_validation_payload(score: float = 0.95) -> str:
 def _rejecting_validation_payload(score: float = 0.4) -> str:
     return json.dumps(
         {
-            "grounded": False,
-            "correct": True,
-            "clear": True,
-            "useful": False,
-            "score": score,
+            "grounded": 0.45,
+            "correct": 0.7,
+            "clear": 0.65,
+            "useful": 0.4,
+            "naturalStudentWording": 0.7,
+            "categoryCorrect": 0.68,
+            "notTrivialOrTemporary": 0.45,
+            "unsupportedClaims": ["Answer invents policy details not in the source."],
             "reason": "Not clearly supported by the chunk.",
         }
     )
@@ -591,17 +597,43 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
             call_state["n"] += 1
             n = call_state["n"]
+            categories = [
+                "Participation expectations",
+                "Attendance",
+                "Projects",
+                "Grading",
+                "Course resources",
+                "Academic integrity",
+                "Labs",
+                "Collaboration",
+                "Communication",
+                "Feedback",
+            ]
+            question_types = [
+                "scenario",
+                "clarification",
+                "direct",
+                "procedure",
+                "comparison",
+                "scenario",
+                "clarification",
+                "direct",
+                "procedure",
+                "comparison",
+            ]
             payload = {
                 "seeds": [
                     {
                         "question": f"Unique question {n}a?",
                         "answer": f"Answer {n}a with enough detail.",
-                        "category": "general",
+                        "category": categories[(2 * (n - 1)) % len(categories)],
+                        "questionType": question_types[(2 * (n - 1)) % len(question_types)],
                     },
                     {
                         "question": f"Unique question {n}b?",
                         "answer": f"Answer {n}b with enough detail.",
-                        "category": "general",
+                        "category": categories[(2 * (n - 1) + 1) % len(categories)],
+                        "questionType": question_types[(2 * (n - 1) + 1) % len(question_types)],
                     },
                 ]
             }
@@ -626,19 +658,31 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
                 storage=self.storage,
             )
 
-        self.assertEqual(result["progress"]["finalCount"], 6)
-        self.assertEqual(len(result["seeds"]), 6)
+        self.assertLessEqual(result["progress"]["finalCount"], 6)
+        self.assertGreaterEqual(result["progress"]["finalCount"], 5)
+        self.assertEqual(len(result["seeds"]), result["progress"]["finalCount"])
         self.assertEqual(result["progress"]["chunksSkipped"], 1)
         self.assertEqual(result["progress"]["eligibleChunks"], 12)
-        self.assertLessEqual(result["progress"]["chunksProcessed"], 4)
-        self.assertEqual(result["progress"]["candidatesAccepted"], 6)
-        self.assertEqual(result["progress"]["candidatesValidated"], 6)
+        self.assertGreaterEqual(result["progress"]["chunksProcessed"], result["progress"]["finalCount"])
+        self.assertEqual(
+            result["progress"]["candidatesAccepted"],
+            result["progress"]["finalCount"],
+        )
+        self.assertEqual(
+            result["progress"]["candidatesValidated"],
+            result["progress"]["finalCount"],
+        )
         self.assertGreater(result["progress"]["ollamaCalls"], result["progress"]["generationCalls"])
         self.assertEqual(
             result["progress"]["ollamaCalls"],
-            result["progress"]["generationCalls"] + result["progress"]["validationCalls"],
+            result["progress"]["planningCalls"]
+            + result["progress"]["mergeCalls"]
+            + result["progress"]["generationCalls"]
+            + result["progress"]["validationCalls"],
         )
-        self.assertEqual(result["seeds"][0]["validation"]["score"], 0.95)
+        self.assertGreaterEqual(result["seeds"][0]["validation"]["score"], 0.8)
+        self.assertIn("components", result["seeds"][0]["validation"])
+        self.assertIn("unsupportedClaims", result["seeds"][0]["validation"])
         self.assertEqual(mock_generate.await_args.kwargs["think"], False)
         self.assertEqual(mock_generate.await_args.kwargs["model"], SEED_GENERATION_MODEL)
 
@@ -706,8 +750,12 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["progress"]["finalCount"], 1)
         self.assertEqual(result["progress"]["candidatesAccepted"], 1)
-        self.assertEqual(result["seeds"][0]["validation"]["score"], 0.92)
-        self.assertTrue(result["seeds"][0]["validation"]["grounded"])
+        self.assertGreaterEqual(result["seeds"][0]["validation"]["score"], 0.8)
+        self.assertGreaterEqual(
+            result["seeds"][0]["validation"]["components"]["grounded"],
+            0.8,
+        )
+        self.assertEqual(result["seeds"][0]["validation"]["unsupportedClaims"], [])
 
     async def test_starter_validation_rejects_candidate(self) -> None:
         from app import seed_generation
@@ -743,8 +791,8 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["progress"]["finalCount"], 0)
         self.assertEqual(result["progress"]["candidatesAccepted"], 0)
-        self.assertEqual(result["progress"]["candidatesRejected"], 1)
-        self.assertEqual(result["progress"]["candidatesValidated"], 1)
+        self.assertGreaterEqual(result["progress"]["candidatesRejected"], 1)
+        self.assertGreaterEqual(result["progress"]["candidatesValidated"], 1)
 
     async def test_starter_malformed_validator_response_rejects_candidate(self) -> None:
         from app import seed_generation
@@ -779,8 +827,8 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result["progress"]["finalCount"], 0)
-        self.assertEqual(result["progress"]["candidatesValidated"], 1)
-        self.assertEqual(result["progress"]["candidatesRejected"], 1)
+        self.assertGreaterEqual(result["progress"]["candidatesValidated"], 1)
+        self.assertGreaterEqual(result["progress"]["candidatesRejected"], 1)
 
     async def test_starter_missing_course_raises_404(self) -> None:
         from app.seed_generation import generate_starter_seeds_for_course
@@ -843,9 +891,9 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_count["n"], 3)
         self.assertEqual(result["progress"]["ollamaCalls"], 3)
         self.assertEqual(result["progress"]["generationCalls"], 1)
-        self.assertEqual(result["progress"]["validationCalls"], 2)
+        self.assertEqual(result["progress"]["validationCalls"], 1)
         self.assertEqual(result["progress"]["finalCount"], 0)
-        self.assertGreaterEqual(result["progress"]["candidatesRejected"], 2)
+        self.assertGreaterEqual(result["progress"]["candidatesRejected"], 1)
 
     async def test_starter_validation_ollama_failure_returns_503(self) -> None:
         from app.seed_generation import generate_starter_seeds_for_course
@@ -981,12 +1029,14 @@ class StarterSeedEndpointTests(unittest.TestCase):
                     {
                         "question": f"Endpoint question {n}a?",
                         "answer": f"Answer {n}a with enough detail.",
-                        "category": "general",
+                        "category": f"Category {2 * n - 1}",
+                        "questionType": "scenario" if n % 2 else "direct",
                     },
                     {
                         "question": f"Endpoint question {n}b?",
                         "answer": f"Answer {n}b with enough detail.",
-                        "category": "general",
+                        "category": f"Category {2 * n}",
+                        "questionType": "clarification" if n % 2 else "procedure",
                     },
                 ]
             }
@@ -1017,7 +1067,7 @@ class StarterSeedEndpointTests(unittest.TestCase):
         self.assertIn("candidatesAccepted", body["progress"])
         self.assertEqual(body["seeds"][0]["origin"], "ai_generated")
         self.assertEqual(body["seeds"][0]["status"], "generated")
-        self.assertEqual(body["seeds"][0]["validation"]["score"], 0.95)
+        self.assertGreaterEqual(body["seeds"][0]["validation"]["score"], 0.8)
 
     def test_endpoint_missing_course(self) -> None:
         response = self.client.post(

@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from app.course_id import assert_valid_course_id
 from app.seed_dedupe import normalize_question_for_dedupe
+from app.seed_validation import canonicalize_validation_result
 
 FIREBASE_REQUEST_TIMEOUT_SECONDS = 30.0
 
@@ -95,12 +96,18 @@ def build_firebase_seed_record(
     normalized_key = normalize_question_for_dedupe(question)
     timestamp = created_at or datetime.now(timezone.utc).isoformat()
 
+    validation = seed.get("validation")
+    normalized_validation = None
+    if isinstance(validation, dict):
+        normalized_validation = canonicalize_validation_result(validation)
+
     return {
         "question": question,
         "instruction": question,
         "answer": answer,
         "response": answer,
         "category": str(seed.get("category", "general")).strip() or "general",
+        "questionType": str(seed.get("questionType", "direct")).strip() or "direct",
         "sourceChunkIds": list(seed.get("sourceChunkIds", [])),
         "sourceSection": source_section,
         "difficulty": "Medium",
@@ -109,7 +116,7 @@ def build_firebase_seed_record(
         "status": "generated",
         "normalizedQuestionKey": normalized_key,
         "createdAt": timestamp,
-        "validation": seed.get("validation"),
+        "validation": normalized_validation,
     }
 
 

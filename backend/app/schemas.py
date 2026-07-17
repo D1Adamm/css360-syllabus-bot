@@ -172,21 +172,62 @@ class GeneratedSeedExample(BaseModel):
     question: str
     answer: str
     category: str
+    question_type: str | None = Field(default=None, alias="questionType")
     source_chunk_ids: list[str] = Field(alias="sourceChunkIds")
     origin: str
     status: str
     validation: "SeedValidationResult | None" = None
 
 
+class SeedValidationComponents(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    grounded: float = Field(ge=0.0, le=1.0)
+    correct: float = Field(ge=0.0, le=1.0)
+    clear: float = Field(ge=0.0, le=1.0)
+    useful: float = Field(ge=0.0, le=1.0)
+    natural_student_wording: float = Field(alias="naturalStudentWording", ge=0.0, le=1.0)
+    category_correct: float = Field(alias="categoryCorrect", ge=0.0, le=1.0)
+    not_trivial_or_temporary: float = Field(
+        alias="notTrivialOrTemporary",
+        ge=0.0,
+        le=1.0,
+    )
+
+
 class SeedValidationResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    grounded: bool
-    correct: bool
-    clear: bool
-    useful: bool
     score: float = Field(ge=0.0, le=1.0)
     reason: str
+    unsupported_claims: list[str] = Field(
+        default_factory=list,
+        alias="unsupportedClaims",
+    )
+    components: SeedValidationComponents
+    # Optional legacy/top-level mirrors for older clients.
+    grounded: float | None = Field(default=None, ge=0.0, le=1.0)
+    correct: float | None = Field(default=None, ge=0.0, le=1.0)
+    clear: float | None = Field(default=None, ge=0.0, le=1.0)
+    useful: float | None = Field(default=None, ge=0.0, le=1.0)
+    natural_student_wording: float | None = Field(
+        default=None,
+        alias="naturalStudentWording",
+        ge=0.0,
+        le=1.0,
+    )
+    category_correct: float | None = Field(
+        default=None,
+        alias="categoryCorrect",
+        ge=0.0,
+        le=1.0,
+    )
+    not_trivial_or_temporary: float | None = Field(
+        default=None,
+        alias="notTrivialOrTemporary",
+        ge=0.0,
+        le=1.0,
+    )
 
 
 class SeedGenerateResponse(BaseModel):
@@ -234,14 +275,36 @@ class StarterSeedProgress(BaseModel):
     selected_chunks: int = Field(alias="selectedChunks")
     chunks_processed: int = Field(alias="chunksProcessed")
     chunks_skipped: int = Field(alias="chunksSkipped")
+    planning_calls: int = Field(alias="planningCalls", default=0)
+    merge_calls: int = Field(alias="mergeCalls", default=0)
     generation_calls: int = Field(alias="generationCalls")
     validation_calls: int = Field(alias="validationCalls")
     ollama_calls: int = Field(alias="ollamaCalls")
+    embedding_calls: int = Field(alias="embeddingCalls", default=0)
     candidates_generated: int = Field(alias="candidatesGenerated")
     candidates_validated: int = Field(alias="candidatesValidated")
     candidates_accepted: int = Field(alias="candidatesAccepted")
     candidates_rejected: int = Field(alias="candidatesRejected")
     duplicates_removed: int = Field(alias="duplicatesRemoved")
+    semantic_duplicates_removed: int = Field(alias="semanticDuplicatesRemoved", default=0)
+    candidates_rejected_invalid: int = Field(alias="candidatesRejectedInvalid", default=0)
+    candidates_rejected_validation: int = Field(
+        alias="candidatesRejectedValidation",
+        default=0,
+    )
+    candidates_rejected_unsupported_claims: int = Field(
+        alias="candidatesRejectedUnsupportedClaims",
+        default=0,
+    )
+    candidates_rejected_balancing: int = Field(
+        alias="candidatesRejectedBalancing",
+        default=0,
+    )
+    schedule_count: int = Field(alias="scheduleCount", default=0)
+    scenario_or_clarification_minimum: int = Field(
+        alias="scenarioOrClarificationMinimum",
+        default=0,
+    )
     final_count: int = Field(alias="finalCount")
 
 
