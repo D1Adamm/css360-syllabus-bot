@@ -8,13 +8,26 @@ export type ModelKey =
   | 'fineTuned'
   | 'fineTunedRag';
 
+export interface SeedValidationComponents {
+  grounded: number;
+  correct: number;
+  clear: number;
+  useful: number;
+  naturalStudentWording: number;
+  categoryCorrect: number;
+  notTrivialOrTemporary: number;
+}
+
 export interface SeedValidationInfo {
-  grounded: boolean;
-  correct: boolean;
-  clear: boolean;
-  useful: boolean;
   score: number;
   reason: string;
+  unsupportedClaims?: string[];
+  components?: SeedValidationComponents;
+  /** Legacy boolean or numeric mirrors from older records. */
+  grounded?: boolean | number;
+  correct?: boolean | number;
+  clear?: boolean | number;
+  useful?: boolean | number;
 }
 
 export interface SeedExample {
@@ -29,6 +42,7 @@ export interface SeedExample {
   notes?: string;
   createdAt?: string;
   status?: string;
+  questionType?: string;
   sourceChunkIds?: string[];
   validation?: SeedValidationInfo;
 }

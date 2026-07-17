@@ -114,6 +114,16 @@ describe('seedExamplesDb AI-aware parsing', () => {
         directlyAnswered: true,
         origin: 'ai_generated',
       },
+      {
+        id: 'proto-1',
+        instruction: 'Prototype Q?',
+        response: 'Prototype A.',
+        category: 'Course Basics',
+        sourceSection: 'Meetings',
+        difficulty: 'Easy',
+        directlyAnswered: true,
+        origin: 'prototype',
+      },
     ];
 
     await deleteAllUserSeedExamples('css-360-summer-2026-89m4', seeds);

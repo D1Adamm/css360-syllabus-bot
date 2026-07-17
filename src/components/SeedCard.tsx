@@ -17,17 +17,23 @@ function truncateText(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength).trimEnd()}…`;
 }
 
+function formatComponentPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
 export function SeedCard({ seed, onDelete }: SeedCardProps) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
   const preview = truncateText(seed.response, PREVIEW_LENGTH);
-  const canDelete = seed.origin === 'user' || seed.origin === 'ai_generated';
+  const canDelete = seed.origin === 'user';
   const originClassName =
     seed.origin === 'user'
       ? 'seed-card__origin seed-card__origin--user'
       : seed.origin === 'ai_generated'
         ? 'seed-card__origin seed-card__origin--ai'
         : 'seed-card__origin';
+  const components = seed.validation?.components;
+  const unsupportedClaims = seed.validation?.unsupportedClaims ?? [];
 
   function handleDelete() {
     if (!onDelete || !canDelete) {
@@ -61,6 +67,9 @@ export function SeedCard({ seed, onDelete }: SeedCardProps) {
             {seed.directlyAnswered ? 'Directly answered' : 'Requires clarification'}
           </span>
           <span className={originClassName}>{getSeedOriginLabel(seed.origin)}</span>
+          {seed.questionType && (
+            <span className="seed-card__question-type">{seed.questionType}</span>
+          )}
           {typeof seed.validation?.score === 'number' && (
             <span className="seed-card__validation">
               Validation {Math.round(seed.validation.score * 100)}%
@@ -90,6 +99,12 @@ export function SeedCard({ seed, onDelete }: SeedCardProps) {
             <span className="seed-card__meta-label">Origin:</span>{' '}
             {getSeedOriginLabel(seed.origin)}
           </p>
+          {seed.questionType && (
+            <p className="seed-card__meta-item">
+              <span className="seed-card__meta-label">Question type:</span>{' '}
+              {seed.questionType}
+            </p>
+          )}
           {seed.status && (
             <p className="seed-card__meta-item">
               <span className="seed-card__meta-label">Status:</span> {seed.status}
@@ -99,6 +114,24 @@ export function SeedCard({ seed, onDelete }: SeedCardProps) {
             <p className="seed-card__meta-item">
               <span className="seed-card__meta-label">Validation:</span>{' '}
               {Math.round(seed.validation.score * 100)}% — {seed.validation.reason}
+            </p>
+          )}
+          {components && (
+            <p className="seed-card__meta-item">
+              <span className="seed-card__meta-label">Component scores:</span>{' '}
+              grounded {formatComponentPercent(components.grounded)}, correct{' '}
+              {formatComponentPercent(components.correct)}, clear{' '}
+              {formatComponentPercent(components.clear)}, useful{' '}
+              {formatComponentPercent(components.useful)}, natural wording{' '}
+              {formatComponentPercent(components.naturalStudentWording)}, category{' '}
+              {formatComponentPercent(components.categoryCorrect)}, not trivial{' '}
+              {formatComponentPercent(components.notTrivialOrTemporary)}
+            </p>
+          )}
+          {unsupportedClaims.length > 0 && (
+            <p className="seed-card__meta-item">
+              <span className="seed-card__meta-label">Unsupported claims:</span>{' '}
+              {unsupportedClaims.join('; ')}
             </p>
           )}
           {seed.notes && (

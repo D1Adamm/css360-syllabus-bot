@@ -41,7 +41,45 @@ describe('normalizeSeedExample', () => {
     expect(seed?.status).toBe('generated');
     expect(seed?.sourceChunkIds).toEqual(['chunk-001']);
     expect(seed?.validation?.score).toBe(0.95);
+    expect(seed?.validation?.grounded).toBe(true);
     expect(getSeedOriginLabel(seed!.origin)).toBe('AI-generated starter seed');
+  });
+
+  it('parses new rubric validation records with components and unsupportedClaims', () => {
+    const seed = normalizeSeedExample(
+      {
+        question: 'How should we organize project work?',
+        answer: 'Team projects require weekly status updates and a final demo.',
+        category: 'Team Project Requirements',
+        questionType: 'scenario',
+        sourceChunkIds: ['chunk-006'],
+        origin: 'ai_generated',
+        status: 'generated',
+        validation: {
+          score: 0.84,
+          reason: 'Grounded but one embellished claim.',
+          unsupportedClaims: ['Suggested coding/docs/testing split'],
+          components: {
+            grounded: 0.78,
+            correct: 0.8,
+            clear: 0.88,
+            useful: 0.9,
+            naturalStudentWording: 0.86,
+            categoryCorrect: 0.85,
+            notTrivialOrTemporary: 0.82,
+          },
+        },
+      },
+      'push-ai-2',
+    );
+
+    expect(seed).not.toBeNull();
+    expect(seed?.questionType).toBe('scenario');
+    expect(seed?.validation?.score).toBe(0.84);
+    expect(seed?.validation?.components?.grounded).toBe(0.78);
+    expect(seed?.validation?.unsupportedClaims).toEqual([
+      'Suggested coding/docs/testing split',
+    ]);
   });
 
   it('parses AI records that only provide question/answer', () => {

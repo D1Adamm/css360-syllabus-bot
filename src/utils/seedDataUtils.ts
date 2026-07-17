@@ -110,35 +110,129 @@ function readNonEmptyString(value: unknown): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
+function readFiniteScore(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  if (value < 0 || value > 1) {
+    return null;
+  }
+  return value;
+}
+
+function parseUnsupportedClaims(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const claims = value
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter((item) => item.length > 0);
+  return claims;
+}
+
+function parseValidationComponents(
+  value: unknown,
+): SeedValidationInfo['components'] | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const grounded = readFiniteScore(record.grounded);
+  const correct = readFiniteScore(record.correct);
+  const clear = readFiniteScore(record.clear);
+  const useful = readFiniteScore(record.useful);
+  const naturalStudentWording = readFiniteScore(record.naturalStudentWording);
+  const categoryCorrect = readFiniteScore(record.categoryCorrect);
+  const notTrivialOrTemporary = readFiniteScore(record.notTrivialOrTemporary);
+  if (
+    grounded === null ||
+    correct === null ||
+    clear === null ||
+    useful === null ||
+    naturalStudentWording === null ||
+    categoryCorrect === null ||
+    notTrivialOrTemporary === null
+  ) {
+    return undefined;
+  }
+  return {
+    grounded,
+    correct,
+    clear,
+    useful,
+    naturalStudentWording,
+    categoryCorrect,
+    notTrivialOrTemporary,
+  };
+}
+
 function parseValidation(value: unknown): SeedValidationInfo | undefined {
   if (!value || typeof value !== 'object') {
     return undefined;
   }
 
   const record = value as Record<string, unknown>;
-  const { grounded, correct, clear, useful, score, reason } = record;
-
-  if (
-    typeof grounded !== 'boolean' ||
-    typeof correct !== 'boolean' ||
-    typeof clear !== 'boolean' ||
-    typeof useful !== 'boolean' ||
-    typeof score !== 'number' ||
-    !Number.isFinite(score) ||
-    typeof reason !== 'string' ||
-    reason.trim() === ''
-  ) {
+  const score = readFiniteScore(record.score);
+  const reason = readNonEmptyString(record.reason);
+  if (score === null || reason === null) {
     return undefined;
   }
 
-  return {
-    grounded,
-    correct,
-    clear,
-    useful,
+  const components = parseValidationComponents(record.components);
+  const unsupportedClaims = parseUnsupportedClaims(record.unsupportedClaims);
+
+  // Legacy boolean-only records (pre-rubric).
+  const legacyBooleans =
+    typeof record.grounded === 'boolean' &&
+    typeof record.correct === 'boolean' &&
+    typeof record.clear === 'boolean' &&
+    typeof record.useful === 'boolean';
+
+  if (!components && !legacyBooleans) {
+    // Accept numeric top-level components without nested components object.
+    const topLevelComponents = parseValidationComponents(record);
+    if (!topLevelComponents) {
+      return undefined;
+    }
+    return {
+      score,
+      reason,
+      components: topLevelComponents,
+      ...(unsupportedClaims ? { unsupportedClaims } : {}),
+      grounded: topLevelComponents.grounded,
+      correct: topLevelComponents.correct,
+      clear: topLevelComponents.clear,
+      useful: topLevelComponents.useful,
+    };
+  }
+
+  const validation: SeedValidationInfo = {
     score,
-    reason: reason.trim(),
+    reason,
   };
+
+  if (components) {
+    validation.components = components;
+  }
+  if (unsupportedClaims && unsupportedClaims.length > 0) {
+    validation.unsupportedClaims = unsupportedClaims;
+  } else if (unsupportedClaims) {
+    validation.unsupportedClaims = [];
+  }
+
+  if (legacyBooleans) {
+    validation.grounded = record.grounded as boolean;
+    validation.correct = record.correct as boolean;
+    validation.clear = record.clear as boolean;
+    validation.useful = record.useful as boolean;
+  } else if (components) {
+    validation.grounded = components.grounded;
+    validation.correct = components.correct;
+    validation.clear = components.clear;
+    validation.useful = components.useful;
+  }
+
+  return validation;
 }
 
 function parseSourceChunkIds(value: unknown): string[] | undefined {
@@ -236,6 +330,11 @@ export function normalizeSeedExample(
   const status = readNonEmptyString(record.status);
   if (status) {
     seed.status = status;
+  }
+
+  const questionType = readNonEmptyString(record.questionType);
+  if (questionType) {
+    seed.questionType = questionType;
   }
 
   if (sourceChunkIds) {
