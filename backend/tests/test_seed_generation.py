@@ -148,7 +148,7 @@ class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_generate_seeds_from_stored_chunk(self) -> None:
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(
                 return_value={
                     "answer": _valid_seeds_payload(3),
@@ -222,7 +222,7 @@ class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_malformed_json_raises_502(self) -> None:
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(
                 return_value={
                     "answer": "not-json-at-all",
@@ -251,7 +251,7 @@ class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
             }
         )
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(
                 return_value={
                     "answer": payload,
@@ -271,7 +271,7 @@ class SeedGenerationServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ollama_unavailable_propagates_503(self) -> None:
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(
                 side_effect=HTTPException(
                     status_code=503,
@@ -391,7 +391,7 @@ class SeedGenerationEndpointTests(unittest.TestCase):
 
     def test_endpoint_success_uses_stored_chunk(self) -> None:
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(
                 return_value={
                     "answer": _valid_seeds_payload(3),
@@ -448,7 +448,7 @@ class SeedGenerationEndpointTests(unittest.TestCase):
     def test_endpoint_rejects_chunk_text_field(self) -> None:
         """Swagger/request schema no longer accepts client-supplied chunkText."""
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(
                 return_value={
                     "answer": _valid_seeds_payload(3),
@@ -473,7 +473,7 @@ class SeedGenerationEndpointTests(unittest.TestCase):
 
     def test_endpoint_malformed_json(self) -> None:
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(
                 return_value={
                     "answer": "{not valid json",
@@ -500,7 +500,7 @@ class SeedGenerationEndpointTests(unittest.TestCase):
             }
         )
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(
                 return_value={
                     "answer": payload,
@@ -518,7 +518,7 @@ class SeedGenerationEndpointTests(unittest.TestCase):
 
     def test_endpoint_ollama_failure(self) -> None:
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(
                 side_effect=HTTPException(
                     status_code=503,
@@ -649,7 +649,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
 
         mock_generate = self._unique_seed_side_effect()
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=mock_generate,
         ):
             result = await generate_starter_seeds_for_course(
@@ -707,7 +707,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
 
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=_starter_ollama_side_effect(generate_side_effect=_dup_generate),
         ):
             result = await generate_starter_seeds_for_course(
@@ -736,7 +736,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
 
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=_starter_ollama_side_effect(
                 generate_side_effect=_single_generate,
                 validation_payload=_passing_validation_payload(0.92),
@@ -776,7 +776,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 1),
             patch(
-                "app.seed_generation.generate_ollama_completion",
+                "app.seed_generation.generate_starter_ollama_completion",
                 new=_starter_ollama_side_effect(
                     generate_side_effect=_single_generate,
                     validation_payload=_rejecting_validation_payload(),
@@ -813,7 +813,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 1),
             patch(
-                "app.seed_generation.generate_ollama_completion",
+                "app.seed_generation.generate_starter_ollama_completion",
                 new=_starter_ollama_side_effect(
                     generate_side_effect=_single_generate,
                     validation_payload="{not valid validator json",
@@ -878,7 +878,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 10),
             patch(
-                "app.seed_generation.generate_ollama_completion",
+                "app.seed_generation.generate_starter_ollama_completion",
                 new=AsyncMock(side_effect=_fake_generate),
             ),
         ):
@@ -919,7 +919,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             return await _single_generate(prompt, **kwargs)
 
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=AsyncMock(side_effect=_failing_validate),
         ):
             with self.assertRaises(HTTPException) as ctx:
@@ -935,7 +935,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "app.seed_generation.generate_ollama_completion",
+                "app.seed_generation.generate_starter_ollama_completion",
                 new=self._unique_seed_side_effect(),
             ),
             patch(
@@ -959,7 +959,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "app.seed_generation.generate_ollama_completion",
+                "app.seed_generation.generate_starter_ollama_completion",
                 new=self._unique_seed_side_effect(),
             ),
             patch(
@@ -1043,7 +1043,7 @@ class StarterSeedEndpointTests(unittest.TestCase):
             return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
 
         with patch(
-            "app.seed_generation.generate_ollama_completion",
+            "app.seed_generation.generate_starter_ollama_completion",
             new=_starter_ollama_side_effect(generate_side_effect=_fake_generate),
         ):
             response = self.client.post(
@@ -1101,7 +1101,7 @@ class StarterSeedEndpointTests(unittest.TestCase):
 
         with (
             patch(
-                "app.seed_generation.generate_ollama_completion",
+                "app.seed_generation.generate_starter_ollama_completion",
                 new=_starter_ollama_side_effect(generate_side_effect=_fake_generate),
             ),
             patch(
@@ -1133,7 +1133,7 @@ class StarterSeedEndpointTests(unittest.TestCase):
 
         with (
             patch(
-                "app.seed_generation.generate_ollama_completion",
+                "app.seed_generation.generate_starter_ollama_completion",
                 new=_starter_ollama_side_effect(generate_side_effect=_fake_generate),
             ),
             patch(
@@ -1175,7 +1175,7 @@ class StarterSeedEndpointTests(unittest.TestCase):
 
         with (
             patch(
-                "app.seed_generation.generate_ollama_completion",
+                "app.seed_generation.generate_starter_ollama_completion",
                 new=_starter_ollama_side_effect(generate_side_effect=_fake_generate),
             ),
             patch(

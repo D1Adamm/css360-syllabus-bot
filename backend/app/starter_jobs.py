@@ -7,6 +7,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from fastapi import HTTPException
+
 from app.course_id import assert_valid_course_id
 from app.firebase_metadata import (
     best_effort_patch_starter_seed_generation,
@@ -183,6 +185,10 @@ async def run_auto_starter_seed_generation(course_id: str) -> None:
             "Automatic starter seed generation failed for course %s",
             safe_course_id,
         )
+        if isinstance(exc, HTTPException):
+            error_text = str(exc.detail)
+        else:
+            error_text = str(exc)
         await best_effort_patch_starter_seed_generation(
             safe_course_id,
             {
@@ -191,7 +197,7 @@ async def run_auto_starter_seed_generation(course_id: str) -> None:
                 "finalCount": 0,
                 "savedCount": 0,
                 "failedToSaveCount": 0,
-                "error": str(exc)[:500],
+                "error": error_text[:500],
                 "startedAt": started_at,
                 "completedAt": _utc_now(),
             },

@@ -15,7 +15,11 @@ from app.firebase_seeds import (
     build_chunk_section_lookup,
     persist_accepted_seeds,
 )
-from app.ollama import embed_ollama_texts, generate_ollama_completion
+from app.ollama import (
+    embed_ollama_texts,
+    generate_starter_ollama_completion,
+    is_ollama_timeout_error,
+)
 from app.seed_balance import (
     SCENARIO_LIKE_TYPES,
     compute_scenario_minimum,
@@ -482,7 +486,7 @@ async def _generate_candidates_for_topic(
         prefer_scenario_like=prefer_scenario_like,
         requested_question_types=requested_question_types,
     )
-    generation = await generate_ollama_completion(
+    generation = await generate_starter_ollama_completion(
         prompt,
         model=SEED_GENERATION_MODEL,
         response_format="json",
@@ -523,7 +527,7 @@ async def _generate_candidates_for_chunk(
     require_exact_count: bool,
 ) -> tuple[list[dict[str, Any]], str]:
     prompt = _build_seed_prompt(chunk_id, chunk_text, count)
-    generation = await generate_ollama_completion(
+    generation = await generate_starter_ollama_completion(
         prompt,
         model=SEED_GENERATION_MODEL,
         response_format="json",
@@ -564,7 +568,7 @@ async def _validate_candidate(
         question_type=question_type,
         chunk_text=chunk_text,
     )
-    generation = await generate_ollama_completion(
+    generation = await generate_starter_ollama_completion(
         prompt,
         model=SEED_GENERATION_MODEL,
         response_format="json",
@@ -688,6 +692,7 @@ async def generate_starter_seeds_for_course(
     candidates_rejected_balancing = 0
     duplicates_removed = 0
     semantic_duplicates_removed = 0
+    timeout_failures = 0
     model_used = SEED_GENERATION_MODEL
     max_total_calls = get_starter_max_total_ollama_calls()
 
@@ -706,7 +711,7 @@ async def generate_starter_seeds_for_course(
             merge_calls += 1
         elif "You plan course-specific syllabus starter-seed topics." in prompt:
             planning_calls += 1
-        return await generate_ollama_completion(prompt, **kwargs)
+        return await generate_starter_ollama_completion(prompt, **kwargs)
 
     try:
         plan = await plan_syllabus_topics(
@@ -801,6 +806,9 @@ async def generate_starter_seeds_for_course(
                     requested_question_types=requested_question_types,
                 )
             except HTTPException as exc:
+                if is_ollama_timeout_error(exc):
+                    timeout_failures += 1
+                    continue
                 if exc.status_code == 503:
                     raise
                 continue
@@ -878,6 +886,12 @@ async def generate_starter_seeds_for_course(
                         chunk_text="\n\n".join(topic_chunk_texts),
                     )
                 except HTTPException as exc:
+                    if is_ollama_timeout_error(exc):
+                        timeout_failures += 1
+                        candidates_validated += 1
+                        candidates_rejected += 1
+                        candidates_rejected_validation += 1
+                        continue
                     if exc.status_code == 503:
                         raise
                     candidates_validated += 1
@@ -946,9 +960,19 @@ async def generate_starter_seeds_for_course(
             "candidatesRejectedBalancing": candidates_rejected_balancing,
             "scheduleCount": count_schedule_like(seeds),
             "scenarioOrClarificationMinimum": compute_scenario_minimum(target_count),
+            "timeoutFailures": timeout_failures,
             "finalCount": len(seeds),
         },
     }
+
+    if len(seeds) == 0 and timeout_failures > 0:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Starter seed generation timed out after retries. "
+                "The syllabus and RAG index remain available."
+            ),
+        )
 
     if save:
         try:

@@ -305,6 +305,7 @@ class StarterSeedProgress(BaseModel):
         alias="scenarioOrClarificationMinimum",
         default=0,
     )
+    timeout_failures: int = Field(alias="timeoutFailures", default=0)
     final_count: int = Field(alias="finalCount")
 
 

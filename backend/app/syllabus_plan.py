@@ -8,7 +8,10 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from app.ollama import generate_ollama_completion
+from app.ollama import (
+    generate_starter_ollama_completion,
+    is_ollama_timeout_error,
+)
 
 SEED_GENERATION_MODEL = "qwen3:4b"
 
@@ -408,6 +411,67 @@ def build_section_title_fallback_plan(
     return {"topics": topics}
 
 
+async def _plan_batch_topics(
+    *,
+    batch: list[dict[str, str]],
+    target_count: int,
+    completion_fn,
+) -> list[dict[str, Any]]:
+    prompt = _build_planner_prompt(batch, target_count=target_count)
+    generation = await completion_fn(
+        prompt,
+        model=SEED_GENERATION_MODEL,
+        response_format="json",
+        think=False,
+    )
+    raw_topics = _parse_topics_payload(generation["answer"])
+    topics: list[dict[str, Any]] = []
+    for index, raw_topic in enumerate(raw_topics):
+        normalized = _normalize_topic(raw_topic, index=index)
+        if normalized is not None:
+            topics.append(normalized)
+    return topics
+
+
+async def _plan_batch_with_timeout_recovery(
+    *,
+    batch: list[dict[str, str]],
+    target_count: int,
+    completion_fn,
+) -> list[dict[str, Any]]:
+    """Plan one digest batch; on repeated timeout, split into smaller batches."""
+    try:
+        return await _plan_batch_topics(
+            batch=batch,
+            target_count=target_count,
+            completion_fn=completion_fn,
+        )
+    except HTTPException as exc:
+        if not is_ollama_timeout_error(exc):
+            raise
+        if len(batch) <= 1:
+            return []
+
+        mid = max(1, len(batch) // 2)
+        recovered: list[dict[str, Any]] = []
+        for sub_batch in (batch[:mid], batch[mid:]):
+            if not sub_batch:
+                continue
+            try:
+                recovered.extend(
+                    await _plan_batch_topics(
+                        batch=sub_batch,
+                        target_count=target_count,
+                        completion_fn=completion_fn,
+                    )
+                )
+            except HTTPException as sub_exc:
+                if is_ollama_timeout_error(sub_exc):
+                    continue
+                raise
+        return recovered
+
+
 async def plan_syllabus_topics(
     *,
     raw_chunks: list[Any],
@@ -416,25 +480,27 @@ async def plan_syllabus_topics(
     completion_fn=None,
 ) -> dict[str, Any]:
     if completion_fn is None:
-        completion_fn = generate_ollama_completion
+        completion_fn = generate_starter_ollama_completion
     digests = build_chunk_digests(raw_chunks)
     if not digests:
         return {"topics": []}
 
     topic_candidates: list[dict[str, Any]] = []
     for batch in batch_chunk_digests(digests, batch_size=batch_size):
-        prompt = _build_planner_prompt(batch, target_count=target_count)
-        generation = await completion_fn(
-            prompt,
-            model=SEED_GENERATION_MODEL,
-            response_format="json",
-            think=False,
-        )
-        raw_topics = _parse_topics_payload(generation["answer"])
-        for index, raw_topic in enumerate(raw_topics):
-            normalized = _normalize_topic(raw_topic, index=index + len(topic_candidates))
-            if normalized is not None:
-                topic_candidates.append(normalized)
+        try:
+            batch_topics = await _plan_batch_with_timeout_recovery(
+                batch=batch,
+                target_count=target_count,
+                completion_fn=completion_fn,
+            )
+        except HTTPException as exc:
+            # Non-timeout planner failures fall back to section titles.
+            if exc.status_code == 503 and not is_ollama_timeout_error(exc):
+                raise
+            batch_topics = []
+        for index, topic in enumerate(batch_topics):
+            topic["topicId"] = f"topic-{len(topic_candidates) + index + 1:02d}"
+            topic_candidates.append(topic)
 
     merged_candidates = merge_topics_by_overlap(deterministic_merge_topics(topic_candidates))
     if not merged_candidates:

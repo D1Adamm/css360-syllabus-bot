@@ -186,7 +186,7 @@ class SyllabusPlanTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch(
-            "app.syllabus_plan.generate_ollama_completion",
+            "app.syllabus_plan.generate_starter_ollama_completion",
             new=AsyncMock(
                 side_effect=[
                     {"answer": first_batch, "model": "qwen3:4b"},
@@ -213,7 +213,7 @@ class SyllabusPlanTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         with patch(
-            "app.syllabus_plan.generate_ollama_completion",
+            "app.syllabus_plan.generate_starter_ollama_completion",
             new=AsyncMock(
                 side_effect=[
                     {"answer": json.dumps({"topics": []}), "model": "qwen3:4b"},

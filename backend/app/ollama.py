@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 import httpx
@@ -6,7 +7,38 @@ from fastapi import HTTPException
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
+DEFAULT_STARTER_OLLAMA_TIMEOUT_SECONDS = 300.0
+DEFAULT_STARTER_OLLAMA_RETRY_DELAY_SECONDS = 1.5
 DEFAULT_EMBED_MODEL = os.getenv("STARTER_EMBED_MODEL", "nomic-embed-text")
+
+
+def get_starter_ollama_timeout_seconds() -> float:
+    raw = os.getenv("STARTER_OLLAMA_TIMEOUT_SECONDS")
+    if raw is None:
+        return DEFAULT_STARTER_OLLAMA_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_STARTER_OLLAMA_TIMEOUT_SECONDS
+    return max(1.0, value)
+
+
+def get_starter_ollama_retry_delay_seconds() -> float:
+    raw = os.getenv("STARTER_OLLAMA_RETRY_DELAY_SECONDS")
+    if raw is None:
+        return DEFAULT_STARTER_OLLAMA_RETRY_DELAY_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_STARTER_OLLAMA_RETRY_DELAY_SECONDS
+    return max(0.0, value)
+
+
+def is_ollama_timeout_error(exc: BaseException) -> bool:
+    if isinstance(exc, HTTPException):
+        detail = str(exc.detail).lower()
+        return exc.status_code == 503 and "timed out" in detail
+    return False
 
 
 async def generate_ollama_completion(
@@ -15,6 +47,7 @@ async def generate_ollama_completion(
     model: str | None = None,
     response_format: str | None = None,
     think: bool | None = None,
+    timeout: float | None = None,
 ) -> dict[str, str]:
     """Generate a completion from Ollama.
 
@@ -23,8 +56,10 @@ async def generate_ollama_completion(
     Pass response_format="json" to request structured JSON from Ollama.
     Pass think=False for models like qwen3 that otherwise put output in `thinking`
     and leave `response` empty.
+    Pass timeout= to override OLLAMA_TIMEOUT_SECONDS for long-running starter calls.
     """
     selected_model = model or OLLAMA_MODEL
+    request_timeout = OLLAMA_TIMEOUT_SECONDS if timeout is None else float(timeout)
     payload: dict[str, object] = {
         "model": selected_model,
         "prompt": prompt,
@@ -36,7 +71,7 @@ async def generate_ollama_completion(
         payload["think"] = think
 
     try:
-        async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=request_timeout) as client:
             response = await client.post(
                 f"{OLLAMA_BASE_URL}/api/generate",
                 json=payload,
@@ -76,6 +111,38 @@ async def generate_ollama_completion(
         "answer": answer,
         "model": data.get("model", selected_model),
     }
+
+
+async def generate_starter_ollama_completion(
+    prompt: str,
+    *,
+    model: str | None = None,
+    response_format: str | None = None,
+    think: bool | None = None,
+) -> dict[str, str]:
+    """Starter-pipeline completion with a longer timeout and one timeout retry."""
+    timeout = get_starter_ollama_timeout_seconds()
+    try:
+        return await generate_ollama_completion(
+            prompt,
+            model=model,
+            response_format=response_format,
+            think=think,
+            timeout=timeout,
+        )
+    except HTTPException as exc:
+        if not is_ollama_timeout_error(exc):
+            raise
+        delay = get_starter_ollama_retry_delay_seconds()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        return await generate_ollama_completion(
+            prompt,
+            model=model,
+            response_format=response_format,
+            think=think,
+            timeout=timeout,
+        )
 
 
 async def generate_base_model_response(question: str) -> dict[str, str]:
