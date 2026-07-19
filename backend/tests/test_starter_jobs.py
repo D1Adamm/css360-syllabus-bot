@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.starter_jobs import (
     clear_active_starter_jobs_for_tests,
+    is_auto_starter_seed_generation_enabled,
     run_auto_starter_seed_generation,
     try_queue_starter_seed_generation,
 )
@@ -31,8 +33,16 @@ SAMPLE_SYLLABUS_TEXT = (
 class StarterJobQueueTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         clear_active_starter_jobs_for_tests()
+        # Existing tests assume auto-generation is enabled; .env may disable it.
+        self._auto_env = patch.dict(
+            os.environ,
+            {"AUTO_STARTER_SEED_GENERATION": "true"},
+            clear=False,
+        )
+        self._auto_env.start()
 
     def tearDown(self) -> None:
+        self._auto_env.stop()
         clear_active_starter_jobs_for_tests()
 
     async def test_queue_sets_queued_status_and_active_guard(self) -> None:
@@ -78,6 +88,31 @@ class StarterJobQueueTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(second["queued"])
         self.assertEqual(second["reason"], "job_already_active")
         mock_patch_again.assert_not_called()
+
+    async def test_auto_starter_env_false_disables_queue(self) -> None:
+        with (
+            patch.dict(
+                "os.environ",
+                {"AUTO_STARTER_SEED_GENERATION": "false"},
+                clear=False,
+            ),
+            patch(
+                "app.starter_jobs.get_starter_auto_generate_count",
+                return_value=50,
+            ),
+            patch(
+                "app.starter_jobs.best_effort_patch_starter_seed_generation",
+                new=AsyncMock(return_value=True),
+            ) as mock_patch,
+        ):
+            self.assertFalse(is_auto_starter_seed_generation_enabled())
+            result = await try_queue_starter_seed_generation("css-360-test-disabled")
+
+        self.assertFalse(result["queued"])
+        self.assertEqual(result["status"], "not_started")
+        self.assertEqual(result["reason"], "auto_generate_disabled")
+        self.assertEqual(result["targetCount"], 0)
+        mock_patch.assert_not_called()
 
     async def test_queue_blocked_by_durable_generating_status(self) -> None:
         with (
@@ -213,6 +248,12 @@ class StarterJobQueueTests(unittest.IsolatedAsyncioTestCase):
 class StarterJobUploadIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         clear_active_starter_jobs_for_tests()
+        self._auto_env = patch.dict(
+            os.environ,
+            {"AUTO_STARTER_SEED_GENERATION": "true"},
+            clear=False,
+        )
+        self._auto_env.start()
         self._temp_dir = tempfile.TemporaryDirectory()
         root = Path(self._temp_dir.name)
         self.storage = LocalCourseArtifactStorage(
@@ -234,6 +275,7 @@ class StarterJobUploadIntegrationTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._embed_patch.stop()
         self._storage_patch.stop()
+        self._auto_env.stop()
         self._temp_dir.cleanup()
         clear_active_starter_jobs_for_tests()
 

@@ -1,0 +1,634 @@
+{
+  "courses": [
+    {
+      "courseId": "css-350-winter-2026-drlb",
+      "chunkCount": 92,
+      "paths": {
+        "indexPath": "/Users/madamk/css360-syllabus-bot/backend/data/indexes/css-350-winter-2026-drlb.json",
+        "indexExists": true,
+        "factsCachePath": "/Users/madamk/css360-syllabus-bot/backend/data/indexes/css-350-winter-2026-drlb.facts.json",
+        "factsCacheExists": true,
+        "firebaseSeedExamplesPath": "courses/css-350-winter-2026-drlb/seedExamples"
+      },
+      "inventory": {
+        "factCount": 80,
+        "cached": false,
+        "countsByScope": {
+          "course_wide": 66,
+          "assignment_specific": 14
+        },
+        "countsByKind": {
+          "attendance": 5,
+          "accommodation": 4,
+          "grading": 5,
+          "late_work": 3,
+          "academic_integrity": 1,
+          "assignment_specific": 7,
+          "deadline": 17,
+          "tools": 5,
+          "policy": 5,
+          "office_hours": 4,
+          "safety": 1,
+          "communication": 4,
+          "team_project": 5,
+          "exam": 1,
+          "schedule": 2,
+          "requirement": 2,
+          "resource": 7,
+          "contact": 2
+        },
+        "categoryHits": {
+          "attendance": 6,
+          "late_work_extensions": 23,
+          "grading": 9,
+          "instructor_contact_help": 29,
+          "other": 11,
+          "assignments": 21,
+          "accommodations": 2,
+          "exams_quizzes": 9,
+          "submission": 5,
+          "team_project": 13,
+          "tools_software": 2
+        },
+        "topFacts": [
+          {
+            "factId": "fact-01",
+            "kind": "attendance",
+            "scope": "course_wide",
+            "statement": "Students must file a class absence form via Canvas if they must miss class, be late, or leave early, to avoid penalties on in-class activities grade.",
+            "usefulnessScore": 0.89
+          },
+          {
+            "factId": "fact-02",
+            "kind": "accommodation",
+            "scope": "course_wide",
+            "statement": "Accommodations must be requested within the first two weeks of this course using the Religious Accommodations Request form.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-03",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "Instructors map 97.0% to a 4.0 and 60.0% to a 0.7 on the 4.0 grading scale with even spacing in between.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-04",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "Late Policy Note assignment due dates are on Fridays.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-05",
+            "kind": "academic_integrity",
+            "scope": "course_wide",
+            "statement": "The first incident of plagiarism will result in the student receiving a zero on the plagiarized assignment.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-06",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "The Reflection assignment is weighted at 5% of the total grade.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-07",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "Students may request one 48-hour extension per quarter for one task from tasks 1-6 via Canvas.",
+            "usefulnessScore": 0.855
+          },
+          {
+            "factId": "fact-08",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "In-class activities, including case discussions, quizzes, exit tickets, and feedback in task 8, account for 50% of the total grade.",
+            "usefulnessScore": 0.825
+          },
+          {
+            "factId": "fact-09",
+            "kind": "accommodation",
+            "scope": "course_wide",
+            "statement": "Disability Resources for Students (DRS) coordinates reasonable accommodations for students with disabilities and/or temporary health conditions through an inter",
+            "usefulnessScore": 0.82
+          },
+          {
+            "factId": "fact-10",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "No extensions are possible for the Demo and Feedback assignments, Task 9 (final version), and the Reflection assignment.",
+            "usefulnessScore": 0.82
+          },
+          {
+            "factId": "fact-11",
+            "kind": "attendance",
+            "scope": "course_wide",
+            "statement": "Students who must miss class, be late, or leave early on weeks when they are assigned to be the manager should swap duties with a team member.",
+            "usefulnessScore": 0.82
+          },
+          {
+            "factId": "fact-12",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "To receive a 2.0 for the course, students need a 74.6% in the class.",
+            "usefulnessScore": 0.81
+          }
+        ],
+        "qualityFlags": [
+          "1 facts look like may\u2192must escalation in statement"
+        ]
+      },
+      "allocation": {
+        "allocatedSlots": 50,
+        "allocatedFactCount": 50,
+        "byScope": {
+          "unknown": 50
+        },
+        "byKind": {
+          "unknown": 50
+        },
+        "bySeriesTop": {},
+        "multiSlotFacts": [],
+        "suspicious": []
+      },
+      "smoke": {
+        "factInventoryCached": true,
+        "factExtractionCalls": 0,
+        "generationCalls": 11,
+        "validationCalls": 5,
+        "ollamaCalls": 16,
+        "candidatesGenerated": 11,
+        "candidatesAccepted": 5,
+        "candidatesRejected": 6,
+        "backfillAttempts": 6,
+        "finalCount": 5,
+        "elapsedMs": 51997,
+        "status": "ready",
+        "generationBatchCalls": 0,
+        "validationBatchCalls": 0,
+        "exampleSeeds": [
+          {
+            "factId": "fact-01",
+            "question": "If I miss class, must be late, or leave early, do I need to file a form to avoid penalties?",
+            "answer": "Yes, students must file a class absence form via Canvas if they must miss class, be late, or leave early, to avoid penalties on in-class activities grade.",
+            "category": "attendance",
+            "evidenceQuote": "Not filing this form ('no call, no show') will impact your in-class activities grade. Advance notice lets you avoid a penalty, but it does n"
+          },
+          {
+            "factId": "fact-02",
+            "question": "When do I need to request accommodations for religious reasons?",
+            "answer": "Within the first two weeks of this course using the Religious Accommodations Request form.",
+            "category": "accommodation",
+            "evidenceQuote": "Accommodations must be requested within the first two weeks of this course using the Religious Accommodations Request form."
+          },
+          {
+            "factId": "fact-05",
+            "question": "What happens if I plagiarize once?",
+            "answer": "The student\u2019s receiving a zero on the plagiarized assignment.",
+            "category": "academic integrity",
+            "evidenceQuote": "The first incident of plagiarism will result in the student\u2019s receiving a zero on the plagiarized assignment."
+          },
+          {
+            "factId": "fact-09",
+            "question": "How do I get reasonable accommodations if I have a disability or temporary health condition?",
+            "answer": "DRS offers resources and coordinates reasonable accommodations for students with disabilities and/or temporary health conditions. Reasonable accommodations are established through ",
+            "category": "accommodation",
+            "evidenceQuote": "DRS offers resources and coordinates reasonable accommodations for students with disabilities and/or temporary health conditions. Reasonable"
+          },
+          {
+            "factId": "fact-11",
+            "question": "What should I do if I must miss class, be late, or leave early on weeks when I'm assigned to be the manager?",
+            "answer": "You should arrange to swap duties with a team member.",
+            "category": "attendance",
+            "evidenceQuote": "In addition, if you must miss class, must be late, or must leave early on weeks when you are assigned to be the manager, you should arrange "
+          }
+        ]
+      },
+      "isolationIssues": [
+        "Possible CSS 360 late-work phrase leaked into css-350-winter-2026-drlb: '48-hour extension per quarter'",
+        "Possible CSS 360 late-work phrase leaked into css-350-winter-2026-drlb: 'one 48-hour extension'"
+      ]
+    },
+    {
+      "courseId": "css-360-winter-2026-a7rp",
+      "chunkCount": 92,
+      "paths": {
+        "indexPath": "/Users/madamk/css360-syllabus-bot/backend/data/indexes/css-360-winter-2026-a7rp.json",
+        "indexExists": true,
+        "factsCachePath": "/Users/madamk/css360-syllabus-bot/backend/data/indexes/css-360-winter-2026-a7rp.facts.json",
+        "factsCacheExists": true,
+        "firebaseSeedExamplesPath": "courses/css-360-winter-2026-a7rp/seedExamples"
+      },
+      "inventory": {
+        "factCount": 66,
+        "cached": true,
+        "countsByScope": {
+          "course_wide": 47,
+          "assignment_specific": 11,
+          "resource": 8
+        },
+        "countsByKind": {
+          "contact": 2,
+          "attendance": 9,
+          "late_work": 3,
+          "policy": 10,
+          "grading": 6,
+          "deadline": 7,
+          "assignment": 1,
+          "deliverable": 2,
+          "safety": 1,
+          "tools": 3,
+          "accommodation": 4,
+          "office_hours": 3,
+          "communication": 1,
+          "requirement": 2,
+          "reading_material": 1,
+          "resource": 10,
+          "other": 1
+        },
+        "categoryHits": {
+          "grading": 9,
+          "instructor_contact_help": 16,
+          "attendance": 9,
+          "late_work_extensions": 11,
+          "assignments": 13,
+          "submission": 4,
+          "team_project": 4,
+          "other": 17,
+          "tools_software": 7,
+          "exams_quizzes": 2,
+          "accommodations": 3
+        },
+        "topFacts": [
+          {
+            "factId": "fact-01",
+            "kind": "contact",
+            "scope": "course_wide",
+            "statement": "All grade-related discussion must happen via Canvas",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-02",
+            "kind": "attendance",
+            "scope": "course_wide",
+            "statement": "Course absence form: Students must inform instructor at least one hour before class if absent",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-03",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "Students may request one 48-hour extension per quarter for Bot Project 1-7 assignments via Canvas.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-04",
+            "kind": "policy",
+            "scope": "course_wide",
+            "statement": "The first incident of plagiarism in this course will result in a zero on the plagiarized assignment.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-05",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "No extension is possible for the Demo and Feedback assignments.",
+            "usefulnessScore": 0.825
+          },
+          {
+            "factId": "fact-06",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "No extension is possible for the Reflection assignment because it sits at the very end of the quarter and grades must be submitted on time.",
+            "usefulnessScore": 0.825
+          },
+          {
+            "factId": "fact-07",
+            "kind": "attendance",
+            "scope": "course_wide",
+            "statement": "Students cannot make up missing standup meetings with their group.",
+            "usefulnessScore": 0.825
+          },
+          {
+            "factId": "fact-08",
+            "kind": "attendance",
+            "scope": "course_wide",
+            "statement": "Students must file a class absence form if they must miss class, be late, or leave early, otherwise it will impact their in-class activities grade.",
+            "usefulnessScore": 0.825
+          },
+          {
+            "factId": "fact-09",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "In-class activities, including case discussion, are weighted at 50% of the course grade.",
+            "usefulnessScore": 0.79
+          },
+          {
+            "factId": "fact-10",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "Presentation (Pre-made Demo and Feedback) is weighted at 5% of the course grade.",
+            "usefulnessScore": 0.79
+          },
+          {
+            "factId": "fact-11",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "Reflection is weighted at 5% of the course grade.",
+            "usefulnessScore": 0.79
+          },
+          {
+            "factId": "fact-12",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "Sprint 1 is weighted at 10% of the course grade.",
+            "usefulnessScore": 0.79
+          }
+        ],
+        "qualityFlags": [
+          "2 facts look like may\u2192must escalation in statement"
+        ]
+      },
+      "allocation": {
+        "allocatedSlots": 50,
+        "allocatedFactCount": 50,
+        "byScope": {
+          "unknown": 50
+        },
+        "byKind": {
+          "unknown": 50
+        },
+        "bySeriesTop": {},
+        "multiSlotFacts": [],
+        "suspicious": []
+      },
+      "smoke": {
+        "factInventoryCached": true,
+        "factExtractionCalls": 0,
+        "generationCalls": 7,
+        "validationCalls": 5,
+        "ollamaCalls": 12,
+        "candidatesGenerated": 7,
+        "candidatesAccepted": 5,
+        "candidatesRejected": 2,
+        "backfillAttempts": 2,
+        "finalCount": 5,
+        "elapsedMs": 37104,
+        "status": "ready",
+        "generationBatchCalls": 0,
+        "validationBatchCalls": 0,
+        "exampleSeeds": [
+          {
+            "factId": "fact-02",
+            "question": "Do I need to tell the instructor if I'm absent from class?",
+            "answer": "Yes, you must inform the instructor at least one hour before class if absent.",
+            "category": "attendance",
+            "evidenceQuote": "If you need to miss class for any reason, please fill out the course absence form so that I know you are not coming and do not include you i"
+          },
+          {
+            "factId": "fact-01",
+            "question": "Where should I discuss grade-related issues?",
+            "answer": "Via Canvas",
+            "category": "contact",
+            "evidenceQuote": "Note: all grade-related discussion must happen via Canvas"
+          },
+          {
+            "factId": "fact-04",
+            "question": "What happens if I commit plagiarism for the first time in this course?",
+            "answer": "The student\u2019s receiving a zero on the plagiarized assignment.",
+            "category": "policy",
+            "evidenceQuote": "The first incident of plagiarism will result in the student\u2019s receiving a zero on the plagiarized assignment."
+          },
+          {
+            "factId": "fact-05",
+            "question": "Can I get an extension for the Demo and Feedback assignments?",
+            "answer": "No extension is possible for the Demo and Feedback assignments.",
+            "category": "late work",
+            "evidenceQuote": "No extension is possible for the Demo and Feedback assignments as those involve coordinating the entire class community and have very tight "
+          },
+          {
+            "factId": "fact-06",
+            "question": "Can I get an extension for the Reflection assignment?",
+            "answer": "No, because it sits at the very end of the quarter and I must submit grades on time.",
+            "category": "late work",
+            "evidenceQuote": "No extension is possible for the Reflection assignment because it sits at the very end of the quarter and I must submit grades on time."
+          }
+        ]
+      },
+      "isolationIssues": []
+    },
+    {
+      "courseId": "css-490-spring-2026-cgvl",
+      "chunkCount": 75,
+      "paths": {
+        "indexPath": "/Users/madamk/css360-syllabus-bot/backend/data/indexes/css-490-spring-2026-cgvl.json",
+        "indexExists": true,
+        "factsCachePath": "/Users/madamk/css360-syllabus-bot/backend/data/indexes/css-490-spring-2026-cgvl.facts.json",
+        "factsCacheExists": true,
+        "firebaseSeedExamplesPath": "courses/css-490-spring-2026-cgvl/seedExamples"
+      },
+      "inventory": {
+        "factCount": 73,
+        "cached": false,
+        "countsByScope": {
+          "course_wide": 55,
+          "assignment_specific": 18
+        },
+        "countsByKind": {
+          "late_work": 4,
+          "policy": 5,
+          "attendance": 4,
+          "grading": 3,
+          "assignment": 1,
+          "deadline": 13,
+          "tools": 7,
+          "requirement": 6,
+          "team_project": 6,
+          "communication": 3,
+          "accommodation": 3,
+          "contact": 4,
+          "office_hours": 2,
+          "academic_integrity": 1,
+          "help": 2,
+          "schedule": 2,
+          "assignment_specific": 1,
+          "extra_credit": 1,
+          "resource": 5
+        },
+        "categoryHits": {
+          "late_work_extensions": 21,
+          "assignments": 21,
+          "instructor_contact_help": 25,
+          "submission": 4,
+          "attendance": 6,
+          "grading": 6,
+          "tools_software": 8,
+          "other": 13,
+          "team_project": 7,
+          "exams_quizzes": 2,
+          "accommodations": 2
+        },
+        "topFacts": [
+          {
+            "factId": "fact-01",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "Students may request one 48-hour extension for Tasks 1-6 and 8-10, but not for Tasks 7, 11, and 12.",
+            "usefulnessScore": 0.89
+          },
+          {
+            "factId": "fact-02",
+            "kind": "policy",
+            "scope": "course_wide",
+            "statement": "Academic dishonesty includes cheating on assignments, plagiarism (misrepresenting work by another author as your own, paraphrasing or quoting sources without ac",
+            "usefulnessScore": 0.885
+          },
+          {
+            "factId": "fact-03",
+            "kind": "policy",
+            "scope": "assignment_specific",
+            "statement": "AI tools are forbidden for Reflection on the Project -- Task 12 and using AI tools for this assignment will result in penalties.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-04",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "No extensions are possible for the Presentation and Peer Review assignments or the Reflection assignment.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-05",
+            "kind": "policy",
+            "scope": "course_wide",
+            "statement": "The first incident of plagiarism will result in the student\u2019s receiving a zero on the plagiarized assignment.",
+            "usefulnessScore": 0.86
+          },
+          {
+            "factId": "fact-06",
+            "kind": "attendance",
+            "scope": "course_wide",
+            "statement": "Missing class requires filing the class absence form to alert the instructor; not filing this form will impact the in-class activities grade.",
+            "usefulnessScore": 0.825
+          },
+          {
+            "factId": "fact-07",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "Turning in an assignment after an in-class discussion increases the late penalty to 50%.",
+            "usefulnessScore": 0.825
+          },
+          {
+            "factId": "fact-08",
+            "kind": "late_work",
+            "scope": "course_wide",
+            "statement": "The default late penalty for assignments is 20% per 48-hour period, but some assignments may have their own late penalties.",
+            "usefulnessScore": 0.82
+          },
+          {
+            "factId": "fact-09",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "An overall 97.0% maps to a 4.0 and a 60.0% maps to a 0.7 on the course grading scale.",
+            "usefulnessScore": 0.79
+          },
+          {
+            "factId": "fact-10",
+            "kind": "assignment",
+            "scope": "assignment_specific",
+            "statement": "Reflection on the Project -- Task 12 requires a 1200-1500 word essay with correct citation formatting, specific evidence from the course, and no use of AI tools",
+            "usefulnessScore": 0.755
+          },
+          {
+            "factId": "fact-11",
+            "kind": "grading",
+            "scope": "course_wide",
+            "statement": "To receive a 2.0 for the course, students need a 74.6% in the class.",
+            "usefulnessScore": 0.705
+          },
+          {
+            "factId": "fact-12",
+            "kind": "deadline",
+            "scope": "course_wide",
+            "statement": "All assignments are due at 11:59pm Pacific time on the day they are listed as due, unless otherwise noted.",
+            "usefulnessScore": 0.695
+          }
+        ],
+        "qualityFlags": [
+          "4 facts look like may\u2192must escalation in statement"
+        ]
+      },
+      "allocation": {
+        "allocatedSlots": 50,
+        "allocatedFactCount": 50,
+        "byScope": {
+          "unknown": 50
+        },
+        "byKind": {
+          "unknown": 50
+        },
+        "bySeriesTop": {},
+        "multiSlotFacts": [],
+        "suspicious": []
+      },
+      "smoke": {
+        "factInventoryCached": true,
+        "factExtractionCalls": 0,
+        "generationCalls": 8,
+        "validationCalls": 5,
+        "ollamaCalls": 13,
+        "candidatesGenerated": 8,
+        "candidatesAccepted": 5,
+        "candidatesRejected": 3,
+        "backfillAttempts": 3,
+        "finalCount": 5,
+        "elapsedMs": 41481,
+        "status": "ready",
+        "generationBatchCalls": 0,
+        "validationBatchCalls": 0,
+        "exampleSeeds": [
+          {
+            "factId": "fact-02",
+            "question": "Is using AI tools without proper citation considered academic dishonesty?",
+            "answer": "Yes, using information from AI tools without proper citation is a form of plagiarism and thus academic dishonesty.",
+            "category": "policy",
+            "evidenceQuote": "Academic Dishonesty This includes: cheating on assignments, plagiarizing (misrepresenting work by another author as your own, paraphrasing o"
+          },
+          {
+            "factId": "fact-06",
+            "question": "What do I need to do if I miss class?",
+            "answer": "File the class absence form to alert the instructor",
+            "category": "attendance",
+            "evidenceQuote": "If you must miss class or be late, file the class absence form to alert me. Not filing this form ('no call, no show') will impact your in-cl"
+          },
+          {
+            "factId": "fact-24",
+            "question": "Do I have to finish readings and lectures before class?",
+            "answer": "Yes, you must finish all readings and watch all lectures outside of class meetings before the associated class sessions.",
+            "category": "requirement",
+            "evidenceQuote": "I expect you to finish all readings and watch all lectures outside of our class meeting times before the class sessions on which they are as"
+          },
+          {
+            "factId": "fact-08",
+            "question": "What is the default late penalty for assignments?",
+            "answer": "20% per 48-hour period",
+            "category": "late work",
+            "evidenceQuote": "The default lateness penalty is 20% per 48-hr period, however some assignments may have their own rubric for any lateness."
+          },
+          {
+            "factId": "fact-07",
+            "question": "What happens to the late penalty if I turn in an assignment after the in-class discussion?",
+            "answer": "It increases the penalty to 50%.",
+            "category": "late work",
+            "evidenceQuote": "when the assignment is slated for in-class discussion, a specialized late assignment policy applies; turning in the assignment after an in-c"
+          }
+        ]
+      },
+      "isolationIssues": [
+        "Possible CSS 360 late-work phrase leaked into css-490-spring-2026-cgvl: 'one 48-hour extension'"
+      ]
+    }
+  ]
+}

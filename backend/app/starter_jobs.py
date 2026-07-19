@@ -25,6 +25,29 @@ ACTIVE_STARTER_STATUSES = frozenset({"queued", "generating"})
 _active_starter_jobs: set[str] = set()
 
 
+def _env_flag_enabled(name: str, *, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def is_auto_starter_seed_generation_enabled() -> bool:
+    """Whether syllabus upload should auto-queue starter seed generation.
+
+    Controlled by AUTO_STARTER_SEED_GENERATION (default true for backward
+    compatibility). Set AUTO_STARTER_SEED_GENERATION=false to index syllabi
+    without starting a long background seed job. Manual
+    POST /seeds/generate-starter still works.
+    """
+    return _env_flag_enabled("AUTO_STARTER_SEED_GENERATION", default=True)
+
+
 def get_starter_auto_generate_count() -> int:
     raw = os.getenv("STARTER_AUTO_GENERATE_COUNT")
     if raw is None:
@@ -79,13 +102,14 @@ async def try_queue_starter_seed_generation(course_id: str) -> dict[str, Any]:
     except ValueError:
         return {"queued": False, "status": "not_started", "reason": "invalid_course_id"}
 
+    auto_enabled = is_auto_starter_seed_generation_enabled()
     target_count = get_starter_auto_generate_count()
-    if target_count <= 0:
+    if not auto_enabled or target_count <= 0:
         return {
             "queued": False,
             "status": "not_started",
             "reason": "auto_generate_disabled",
-            "targetCount": 0,
+            "targetCount": 0 if not auto_enabled else target_count,
         }
 
     if safe_course_id in _active_starter_jobs:
@@ -136,7 +160,7 @@ async def run_auto_starter_seed_generation(course_id: str) -> None:
         return
 
     target_count = get_starter_auto_generate_count()
-    if target_count <= 0:
+    if not is_auto_starter_seed_generation_enabled() or target_count <= 0:
         _active_starter_jobs.discard(safe_course_id)
         return
 
