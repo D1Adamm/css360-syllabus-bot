@@ -18,6 +18,13 @@ from app.schemas import (
     BaseModelGenerateResponse,
     CourseChunkMetadata,
     CourseChunksResponse,
+    FactAllocationCappedFact,
+    FactAllocationItem,
+    FactAllocationRankingItem,
+    FactAllocationRequest,
+    FactAllocationResponse,
+    FactAllocationSkippedFact,
+    FactAllocationSummary,
     FactInventoryItem,
     FactInventoryResponse,
     GeneratedSeedExample,
@@ -34,6 +41,7 @@ from app.schemas import (
     SyllabusTextResponse,
     SyllabusUploadResponse,
 )
+from app.seed_allocation import allocate_slots
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
 from app.syllabus_facts import build_fact_inventory
 from app.starter_jobs import (
@@ -361,4 +369,81 @@ async def get_course_fact_inventory(course_id: str) -> FactInventoryResponse:
         countsByKind=inventory["countsByKind"],
         countsBySeries=inventory.get("countsBySeries", {}),
         facts=[FactInventoryItem(**fact) for fact in inventory["facts"]],
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/facts/allocation",
+    response_model=FactAllocationResponse,
+)
+async def get_course_fact_allocation(
+    course_id: str,
+    body: FactAllocationRequest | None = None,
+) -> FactAllocationResponse:
+    """Build fact inventory and allocate question slots (Phase 3 inspection).
+
+    Allocation-only: this DOES NOT generate starter seeds, does not persist
+    seeds, and is not wired into the live starter-generation pipeline.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    request = body or FactAllocationRequest()
+    target_count = request.target_count
+
+    storage = get_course_artifact_storage()
+    index_data = storage.load_index(safe_course_id)
+    if index_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Course syllabus index was not found.",
+        )
+
+    raw_chunks = index_data.get("chunks", [])
+    if not isinstance(raw_chunks, list) or not raw_chunks:
+        raise HTTPException(
+            status_code=404,
+            detail=f'No syllabus chunks found for course "{safe_course_id}".',
+        )
+
+    inventory = await build_fact_inventory(raw_chunks=raw_chunks)
+    allocation = allocate_slots(
+        inventory["facts"],
+        target_count=target_count,
+    )
+    summary = allocation["summary"]
+
+    return FactAllocationResponse(
+        courseId=safe_course_id,
+        model=inventory["model"],
+        factCount=inventory["factCount"],
+        droppedCount=inventory["droppedCount"],
+        duplicatesRemoved=inventory.get("duplicatesRemoved", 0),
+        fallbackUsed=inventory["fallbackUsed"],
+        facts=[FactInventoryItem(**fact) for fact in inventory["facts"]],
+        allocations=[
+            FactAllocationItem(**item) for item in allocation["allocations"]
+        ],
+        summary=FactAllocationSummary(
+            targetCount=summary["targetCount"],
+            allocatedSlots=summary["allocatedSlots"],
+            byScope=summary["byScope"],
+            byKind=summary["byKind"],
+            bySeries=summary["bySeries"],
+            skippedFacts=[
+                FactAllocationSkippedFact(**item)
+                for item in summary["skippedFacts"]
+            ],
+            cappedFacts=[
+                FactAllocationCappedFact(**item) for item in summary["cappedFacts"]
+            ],
+            caps=summary["caps"],
+            courseWideAllocated=summary["courseWideAllocated"],
+            courseWideReserve=summary["courseWideReserve"],
+        ),
+        ranking=[
+            FactAllocationRankingItem(**item) for item in allocation["ranking"]
+        ],
     )

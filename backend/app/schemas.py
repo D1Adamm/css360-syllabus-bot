@@ -1,4 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
 
 
 class BaseModelGenerateRequest(BaseModel):
@@ -370,4 +371,95 @@ class FactInventoryResponse(BaseModel):
         alias="countsBySeries", default_factory=dict
     )
     facts: list[FactInventoryItem]
+
+
+class FactAllocationRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    target_count: int = Field(alias="targetCount", default=50, ge=1, le=200)
+
+
+class FactAllocationItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    fact_id: str = Field(alias="factId")
+    slot_count: int = Field(alias="slotCount", ge=0)
+    desired_slots: int = Field(alias="desiredSlots", ge=0)
+    ranking_score: float = Field(alias="rankingScore", ge=0.0, le=1.0)
+    suggested_styles: list[str] = Field(alias="suggestedStyles", default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+    cap_reasons: list[str] = Field(alias="capReasons", default_factory=list)
+
+
+class FactAllocationSkippedFact(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    fact_id: str = Field(alias="factId")
+    desired_slots: int = Field(alias="desiredSlots", ge=0)
+    ranking_score: float = Field(alias="rankingScore", ge=0.0, le=1.0)
+    reasons: list[str] = Field(default_factory=list)
+
+
+class FactAllocationCappedFact(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    fact_id: str = Field(alias="factId")
+    desired_slots: int = Field(alias="desiredSlots", ge=0)
+    slot_count: int = Field(alias="slotCount", ge=0)
+    cap_reasons: list[str] = Field(alias="capReasons", default_factory=list)
+
+
+class FactAllocationSummary(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    target_count: int = Field(alias="targetCount")
+    allocated_slots: int = Field(alias="allocatedSlots")
+    by_scope: dict[str, int] = Field(alias="byScope", default_factory=dict)
+    by_kind: dict[str, int] = Field(alias="byKind", default_factory=dict)
+    by_series: dict[str, int] = Field(alias="bySeries", default_factory=dict)
+    skipped_facts: list[FactAllocationSkippedFact] = Field(
+        alias="skippedFacts", default_factory=list
+    )
+    capped_facts: list[FactAllocationCappedFact] = Field(
+        alias="cappedFacts", default_factory=list
+    )
+    caps: dict[str, Any] = Field(default_factory=dict)
+    course_wide_allocated: int = Field(alias="courseWideAllocated", default=0)
+    course_wide_reserve: int = Field(alias="courseWideReserve", default=0)
+
+
+class FactAllocationRankingItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    fact_id: str = Field(alias="factId")
+    ranking_score: float = Field(alias="rankingScore", ge=0.0, le=1.0)
+    desired_slots: int = Field(alias="desiredSlots", ge=0)
+    slot_count: int = Field(alias="slotCount", ge=0)
+    importance: str | None = None
+    usefulness_score: float | None = Field(alias="usefulnessScore", default=None)
+    student_ask_likelihood: float | None = Field(
+        alias="studentAskLikelihood", default=None
+    )
+    complexity: int | None = None
+    kind: str | None = None
+    scope: str | None = None
+    series_key: str | None = Field(alias="seriesKey", default=None)
+    source_chunk_ids: list[str] = Field(alias="sourceChunkIds", default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+    cap_reasons: list[str] = Field(alias="capReasons", default_factory=list)
+
+
+class FactAllocationResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    model: str
+    fact_count: int = Field(alias="factCount")
+    dropped_count: int = Field(alias="droppedCount", default=0)
+    duplicates_removed: int = Field(alias="duplicatesRemoved", default=0)
+    fallback_used: bool = Field(alias="fallbackUsed", default=False)
+    facts: list[FactInventoryItem]
+    allocations: list[FactAllocationItem]
+    summary: FactAllocationSummary
+    ranking: list[FactAllocationRankingItem] = Field(default_factory=list)
 
