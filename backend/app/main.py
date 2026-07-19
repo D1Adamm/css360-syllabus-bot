@@ -18,6 +18,7 @@ from app.schemas import (
     BaseModelGenerateResponse,
     CourseChunkMetadata,
     CourseChunksResponse,
+    CourseSeedListResponse,
     FactAllocationCappedFact,
     FactAllocationItem,
     FactAllocationRankingItem,
@@ -33,8 +34,15 @@ from app.schemas import (
     RagGenerateResponse,
     RagGenerateSource,
     RagRetrieveResult,
+    SeedExportApprovedRequest,
+    SeedExportApprovedResponse,
     SeedGenerateRequest,
     SeedGenerateResponse,
+    SeedQualityCheckRequest,
+    SeedQualityCheckResponse,
+    SeedReviewRecord,
+    SeedReviewRequest,
+    SeedReviewResponse,
     StarterSeedGenerateRequest,
     StarterSeedGenerateResponse,
     StarterSeedPersistence,
@@ -42,6 +50,16 @@ from app.schemas import (
     SyllabusTextResponse,
     SyllabusUploadResponse,
 )
+from app.firebase_seeds import (
+    FirebaseConfigurationError,
+    course_seed_example_path,
+    course_seed_examples_path,
+    fetch_course_seed_examples,
+    patch_course_seed_example,
+)
+from app.seed_dataset_quality import inspect_seed_dataset
+from app.seed_export import export_approved_seeds
+from app.seed_review import REVIEW_STATUSES, apply_seed_review, resolve_review_status
 from app.seed_allocation import allocate_slots
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
 from app.fact_inventory_cache import load_or_build_fact_inventory
@@ -324,6 +342,7 @@ async def generate_course_starter_seeds(
         seeds=[GeneratedSeedExample(**seed) for seed in result["seeds"]],
         progress=StarterSeedProgress(**result["progress"]),
         persistence=persistence,
+        localSnapshotPath=result.get("localSnapshotPath"),
     )
 
 
@@ -463,3 +482,154 @@ async def get_course_fact_allocation(
             FactAllocationRankingItem(**item) for item in allocation["ranking"]
         ],
     )
+
+
+def _seed_records_from_firebase_payload(payload: dict) -> list[dict]:
+    records: list[dict] = []
+    for seed_id, raw in payload.items():
+        if not isinstance(raw, dict):
+            continue
+        record = dict(raw)
+        record.setdefault("id", seed_id)
+        records.append(record)
+    return records
+
+
+@app.get(
+    "/api/courses/{course_id}/seeds",
+    response_model=CourseSeedListResponse,
+)
+async def list_course_seeds(course_id: str) -> CourseSeedListResponse:
+    """List Firebase seedExamples for review (course-scoped path only)."""
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        payload = await fetch_course_seed_examples(safe_course_id)
+    except FirebaseConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    seeds = _seed_records_from_firebase_payload(payload)
+    return CourseSeedListResponse(
+        courseId=safe_course_id,
+        count=len(seeds),
+        firebasePath=course_seed_examples_path(safe_course_id),
+        seeds=[SeedReviewRecord(**seed) for seed in seeds],
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/seeds/{seed_id}/review",
+    response_model=SeedReviewResponse,
+)
+async def review_course_seed(
+    course_id: str,
+    seed_id: str,
+    body: SeedReviewRequest,
+) -> SeedReviewResponse:
+    """Approve, reject, or edit one seed. Edits preserve grounding provenance."""
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    status = body.review_status.strip().lower()
+    if status not in REVIEW_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"reviewStatus must be one of {sorted(REVIEW_STATUSES)}.",
+        )
+
+    try:
+        payload = await fetch_course_seed_examples(safe_course_id)
+    except FirebaseConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    existing = payload.get(seed_id)
+    if not isinstance(existing, dict):
+        raise HTTPException(status_code=404, detail=f'Seed "{seed_id}" was not found.')
+
+    try:
+        updated = apply_seed_review(
+            {**existing, "id": seed_id},
+            review_status=status,
+            question=body.question,
+            answer=body.answer,
+            review_notes=body.review_notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    stored = await patch_course_seed_example(safe_course_id, seed_id, updated)
+    return SeedReviewResponse(
+        courseId=safe_course_id,
+        seedId=seed_id,
+        seed=SeedReviewRecord(**stored),
+        firebasePath=course_seed_example_path(safe_course_id, seed_id),
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/seeds/quality-check",
+    response_model=SeedQualityCheckResponse,
+)
+async def quality_check_course_seeds(
+    course_id: str,
+    body: SeedQualityCheckRequest | None = None,
+) -> SeedQualityCheckResponse:
+    """Inspect course seedExamples for coverage and quality flags."""
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    request = body or SeedQualityCheckRequest()
+    try:
+        payload = await fetch_course_seed_examples(safe_course_id)
+    except FirebaseConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    seeds = _seed_records_from_firebase_payload(payload)
+    if request.review_statuses:
+        allowed = {
+            item.strip().lower()
+            for item in request.review_statuses
+            if isinstance(item, str) and item.strip()
+        }
+        seeds = [
+            seed for seed in seeds if resolve_review_status(seed) in allowed
+        ]
+
+    report = inspect_seed_dataset(seeds)
+    return SeedQualityCheckResponse(
+        courseId=safe_course_id,
+        firebasePath=course_seed_examples_path(safe_course_id),
+        report=report,
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/seeds/export-approved",
+    response_model=SeedExportApprovedResponse,
+)
+async def export_approved_course_seeds(
+    course_id: str,
+    body: SeedExportApprovedRequest | None = None,
+) -> SeedExportApprovedResponse:
+    """Export approved-only JSONL + metadata under data/exports/{courseId}/."""
+    del body  # reserved; approved-only is always enforced
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        payload = await fetch_course_seed_examples(safe_course_id)
+    except FirebaseConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    seeds = _seed_records_from_firebase_payload(payload)
+    summary = export_approved_seeds(course_id=safe_course_id, seeds=seeds)
+    return SeedExportApprovedResponse(courseId=safe_course_id, summary=summary)

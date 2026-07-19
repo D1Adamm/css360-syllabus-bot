@@ -179,6 +179,7 @@ class GeneratedSeedExample(BaseModel):
     evidence_quote: str | None = Field(default=None, alias="evidenceQuote")
     origin: str
     status: str
+    review_status: str | None = Field(default=None, alias="reviewStatus")
     validation: "SeedValidationResult | None" = None
 
 
@@ -365,6 +366,93 @@ class StarterSeedGenerateResponse(BaseModel):
     seeds: list[GeneratedSeedExample]
     progress: StarterSeedProgress
     persistence: StarterSeedPersistence | None = None
+    local_snapshot_path: str | None = Field(default=None, alias="localSnapshotPath")
+
+
+class SeedReviewRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    review_status: str = Field(
+        alias="reviewStatus",
+        description="generated | approved | rejected | edited",
+    )
+    question: str | None = None
+    answer: str | None = None
+    review_notes: str | None = Field(default=None, alias="reviewNotes")
+
+
+class SeedReviewRecord(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    id: str | None = None
+    question: str | None = None
+    answer: str | None = None
+    instruction: str | None = None
+    response: str | None = None
+    fact_id: str | None = Field(default=None, alias="factId")
+    evidence_quote: str | None = Field(default=None, alias="evidenceQuote")
+    source_chunk_ids: list[str] | None = Field(default=None, alias="sourceChunkIds")
+    origin: str | None = None
+    status: str | None = None
+    review_status: str | None = Field(default=None, alias="reviewStatus")
+    review_notes: str | None = Field(default=None, alias="reviewNotes")
+    original_question: str | None = Field(default=None, alias="originalQuestion")
+    original_answer: str | None = Field(default=None, alias="originalAnswer")
+    validation: SeedValidationResult | None = None
+
+
+class SeedReviewResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    seed_id: str = Field(alias="seedId")
+    seed: SeedReviewRecord
+    firebase_path: str = Field(alias="firebasePath")
+
+
+class CourseSeedListResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    count: int
+    firebase_path: str = Field(alias="firebasePath")
+    seeds: list[SeedReviewRecord]
+
+
+class SeedQualityCheckRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    review_statuses: list[str] | None = Field(
+        default=None,
+        alias="reviewStatuses",
+        description="Optional filter; default inspects all fetched seeds.",
+    )
+
+
+class SeedQualityCheckResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    firebase_path: str = Field(alias="firebasePath")
+    report: dict
+
+
+class SeedExportApprovedRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    # Reserved for future filters; approved-only is always enforced.
+    include_edited_approved: bool = Field(
+        default=True,
+        alias="includeEditedApproved",
+        description="Approved seeds that were previously edited are included.",
+    )
+
+
+class SeedExportApprovedResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    summary: dict
 
 
 class FactInventoryRequest(BaseModel):

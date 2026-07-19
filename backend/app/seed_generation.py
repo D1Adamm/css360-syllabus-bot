@@ -16,6 +16,7 @@ from app.firebase_seeds import (
     build_chunk_section_lookup,
     persist_accepted_seeds,
 )
+from app.seed_export import write_generation_snapshot
 from app.ollama import (
     embed_ollama_texts,
     generate_starter_ollama_completion,
@@ -287,6 +288,7 @@ def _normalize_seed(
         "topicSummary": topic_summary or "",
         "origin": "ai_generated",
         "status": "generated",
+        "reviewStatus": "generated",
     }
 
 
@@ -1476,5 +1478,14 @@ async def generate_starter_seeds_for_course(
 
     if persistence is not None:
         result["persistence"] = persistence
+
+    # Local artifact for review/export (does not replace Firebase course path).
+    if seeds:
+        snapshot_path = write_generation_snapshot(
+            course_id=safe_course_id,
+            seeds=seeds,
+            progress=result["progress"],
+        )
+        result["localSnapshotPath"] = str(snapshot_path)
 
     return result

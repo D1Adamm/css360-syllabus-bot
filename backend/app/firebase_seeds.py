@@ -113,7 +113,9 @@ def build_firebase_seed_record(
         "difficulty": "Medium",
         "directlyAnswered": True,
         "origin": "ai_generated",
+        # Legacy generation badge + Phase 8 review field (not human-approved yet).
         "status": "generated",
+        "reviewStatus": "generated",
         "normalizedQuestionKey": normalized_key,
         "createdAt": timestamp,
         "validation": normalized_validation,
@@ -301,3 +303,46 @@ async def persist_accepted_seeds(
         "alreadyExistingCount": already_existing_count,
         "failedToSaveCount": failed_to_save_count,
     }
+
+
+async def patch_course_seed_example(
+    course_id: str,
+    seed_id: str,
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Overwrite one seed example at courses/{courseId}/seedExamples/{seedId}."""
+    safe_course_id = assert_valid_course_id(course_id)
+    cleaned_id = str(seed_id).strip()
+    if not cleaned_id:
+        raise HTTPException(status_code=422, detail="seedId must not be empty.")
+
+    stored = {**record, "id": cleaned_id}
+    url = _request_url(course_seed_example_path(safe_course_id, cleaned_id))
+    try:
+        async with httpx.AsyncClient(timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS) as client:
+            response = await client.put(url, json=stored)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Firebase request timed out while updating a seed example.",
+        ) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Firebase is unavailable while updating seed examples.",
+        ) from exc
+
+    if response.status_code == 401:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Firebase rejected the request (401). Provide FIREBASE_AUTH_TOKEN "
+                "if database rules require authentication."
+            ),
+        )
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Firebase update failed with HTTP {response.status_code}.",
+        )
+    return stored

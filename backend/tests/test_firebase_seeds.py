@@ -49,6 +49,7 @@ class FirebaseSeedHelperTests(unittest.TestCase):
         self.assertTrue(record["directlyAnswered"])
         self.assertEqual(record["origin"], "ai_generated")
         self.assertEqual(record["status"], "generated")
+        self.assertEqual(record["reviewStatus"], "generated")
         self.assertEqual(record["createdAt"], "2026-07-16T12:00:00+00:00")
         self.assertEqual(
             record["normalizedQuestionKey"],

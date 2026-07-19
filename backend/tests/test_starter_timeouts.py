@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -251,8 +252,15 @@ class GenerationTimeoutTests(unittest.IsolatedAsyncioTestCase):
 class StarterJobTimeoutFailureTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         clear_active_starter_jobs_for_tests()
+        self._auto_env = patch.dict(
+            os.environ,
+            {"AUTO_STARTER_SEED_GENERATION": "true"},
+            clear=False,
+        )
+        self._auto_env.start()
 
     def tearDown(self) -> None:
+        self._auto_env.stop()
         clear_active_starter_jobs_for_tests()
 
     async def test_job_status_becomes_failed_instead_of_staying_generating(self) -> None:
