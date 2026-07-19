@@ -24,6 +24,12 @@ from app.ollama import (
 from app.fact_inventory_cache import load_or_build_fact_inventory
 from app.seed_allocation import allocate_slots
 from app.seed_balance import compute_scenario_minimum, count_schedule_like
+from app.seed_batching import (
+    build_batch_fact_seed_prompt,
+    build_batch_validation_prompt,
+    parse_batch_seed_payload,
+    parse_batch_validation_payload,
+)
 from app.seed_dedupe import normalize_question_for_dedupe
 from app.seed_prevalidation import prevalidate_candidate
 from app.seed_similarity import AcceptedEmbeddingCache, find_semantic_duplicate_question
@@ -611,15 +617,17 @@ async def _generate_candidates_for_fact(
     chunk_texts: list[str],
     count: int,
     suggested_styles: list[str] | None = None,
+    completion_fn=None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Generate seed candidates grounded in one allocated fact."""
+    run_completion = completion_fn or generate_starter_ollama_completion
     prompt = _build_fact_seed_prompt(
         fact=fact,
         chunk_texts=chunk_texts,
         count=count,
         suggested_styles=suggested_styles,
     )
-    generation = await generate_starter_ollama_completion(
+    generation = await run_completion(
         prompt,
         model=SEED_GENERATION_MODEL,
         response_format="json",
@@ -627,6 +635,31 @@ async def _generate_candidates_for_fact(
     )
     raw_seeds = _parse_seed_payload(generation["answer"])
     seeds: list[dict[str, Any]] = []
+    for index, raw_seed in enumerate(raw_seeds[:count]):
+        if not isinstance(raw_seed, dict):
+            continue
+        normalized = _normalize_fact_seed(
+            raw_seed=raw_seed,
+            fact=fact,
+            index=index,
+            suggested_styles=suggested_styles,
+            count=count,
+        )
+        if normalized is not None:
+            seeds.append(normalized)
+
+    model = generation.get("model", SEED_GENERATION_MODEL)
+    return seeds, model
+
+
+def _normalize_fact_seed(
+    *,
+    raw_seed: dict[str, Any],
+    fact: dict[str, Any],
+    index: int,
+    suggested_styles: list[str] | None,
+    count: int,
+) -> dict[str, Any] | None:
     fact_chunk_ids = [
         str(item).strip()
         for item in (fact.get("sourceChunkIds") or [])
@@ -637,27 +670,230 @@ async def _generate_candidates_for_fact(
         suggested_styles, slot_count=count
     )
     category = _category_for_fact(fact)
-    for index, raw_seed in enumerate(raw_seeds[:count]):
-        normalized = _try_normalize_seed(
-            raw_seed,
-            chunk_id=fallback_chunk_id,
-            index=index,
-            default_category=category,
-            default_source_chunk_ids=fact_chunk_ids or [fallback_chunk_id],
-            default_question_type=default_question_types[
-                min(index, len(default_question_types) - 1)
-            ],
-            topic_summary=str(fact.get("statement") or "").strip(),
-        )
-        if normalized is not None:
-            # Prefer authoritative fact grounding metadata over model guesses.
-            normalized["sourceChunkIds"] = list(fact_chunk_ids or [fallback_chunk_id])
-            normalized["factId"] = str(fact.get("factId") or "")
-            normalized["evidenceQuote"] = str(fact.get("evidenceQuote") or "")
-            seeds.append(normalized)
+    normalized = _try_normalize_seed(
+        raw_seed,
+        chunk_id=fallback_chunk_id,
+        index=index,
+        default_category=category,
+        default_source_chunk_ids=fact_chunk_ids or [fallback_chunk_id],
+        default_question_type=default_question_types[
+            min(index, len(default_question_types) - 1)
+        ],
+        topic_summary=str(fact.get("statement") or "").strip(),
+    )
+    if normalized is None:
+        return None
+    normalized["sourceChunkIds"] = list(fact_chunk_ids or [fallback_chunk_id])
+    normalized["factId"] = str(fact.get("factId") or "")
+    normalized["evidenceQuote"] = str(fact.get("evidenceQuote") or "")
+    return normalized
 
-    model = generation.get("model", SEED_GENERATION_MODEL)
-    return seeds, model
+
+async def _generate_candidates_for_facts_batch(
+    *,
+    items: list[dict[str, Any]],
+    completion_fn=None,
+) -> tuple[dict[str, list[dict[str, Any]]], str, dict[str, int]]:
+    """Unused by live starter generation (Phase 6 disabled). Kept for unit tests."""
+    run_completion = completion_fn or generate_starter_ollama_completion
+    metrics = {
+        "generation_calls": 0,
+        "generation_batch_calls": 0,
+        "timeout_failures": 0,
+        "max_generation_batch_size": 0,
+    }
+    model_used = SEED_GENERATION_MODEL
+    results: dict[str, list[dict[str, Any]]] = {
+        str(item["fact"].get("factId") or ""): [] for item in items
+    }
+
+    async def _run(batch: list[dict[str, Any]]) -> None:
+        nonlocal model_used
+        if not batch:
+            return
+        metrics["max_generation_batch_size"] = max(
+            metrics["max_generation_batch_size"], len(batch)
+        )
+        if len(batch) == 1:
+            item = batch[0]
+            fact = item["fact"]
+            fact_id = str(fact.get("factId") or "")
+            metrics["generation_calls"] += 1
+            try:
+                seeds, model = await _generate_candidates_for_fact(
+                    fact=fact,
+                    chunk_texts=item.get("chunk_texts") or [],
+                    count=1,
+                    suggested_styles=list(item.get("suggested_styles") or []),
+                    completion_fn=run_completion,
+                )
+            except HTTPException as exc:
+                if is_ollama_timeout_error(exc):
+                    metrics["timeout_failures"] += 1
+                    return
+                if exc.status_code == 503:
+                    raise
+                return
+            model_used = model
+            results[fact_id] = seeds
+            return
+
+        metrics["generation_calls"] += 1
+        metrics["generation_batch_calls"] += 1
+        prompt = build_batch_fact_seed_prompt(items=batch)
+        try:
+            generation = await run_completion(
+                prompt,
+                model=SEED_GENERATION_MODEL,
+                response_format="json",
+                think=False,
+            )
+        except HTTPException as exc:
+            if exc.status_code == 503 and not is_ollama_timeout_error(exc):
+                raise
+            if is_ollama_timeout_error(exc):
+                metrics["timeout_failures"] += 1
+            # Split and retry smaller groups.
+            mid = max(1, len(batch) // 2)
+            await _run(batch[:mid])
+            await _run(batch[mid:])
+            return
+
+        model_used = generation.get("model", SEED_GENERATION_MODEL)
+        expected_ids = [str(item["fact"].get("factId") or "") for item in batch]
+        try:
+            raw_seeds = parse_batch_seed_payload(
+                generation["answer"],
+                expected_fact_ids=expected_ids,
+            )
+        except Exception:
+            raw_seeds = []
+
+        if not raw_seeds:
+            mid = max(1, len(batch) // 2)
+            await _run(batch[:mid])
+            await _run(batch[mid:])
+            return
+
+        seeds_by_fact = {str(seed.get("factId") or ""): seed for seed in raw_seeds}
+        missing = [
+            item
+            for item in batch
+            if str(item["fact"].get("factId") or "") not in seeds_by_fact
+        ]
+        for item in batch:
+            fact = item["fact"]
+            fact_id = str(fact.get("factId") or "")
+            raw_seed = seeds_by_fact.get(fact_id)
+            if raw_seed is None:
+                continue
+            normalized = _normalize_fact_seed(
+                raw_seed=raw_seed,
+                fact=fact,
+                index=0,
+                suggested_styles=list(item.get("suggested_styles") or []),
+                count=1,
+            )
+            if normalized is not None:
+                results[fact_id] = [normalized]
+
+        # Only re-split for facts that produced nothing, not the whole batch.
+        if missing and len(missing) < len(batch):
+            await _run(missing)
+        elif missing:
+            mid = max(1, len(missing) // 2)
+            await _run(missing[:mid])
+            await _run(missing[mid:])
+
+    await _run(items)
+    return results, model_used, metrics
+
+
+async def _validate_candidates_batch(
+    *,
+    candidates: list[dict[str, Any]],
+    completion_fn=None,
+) -> tuple[dict[str, dict[str, Any] | None], dict[str, int]]:
+    """Unused by live starter generation (Phase 6 disabled). Kept for unit tests."""
+    run_completion = completion_fn or generate_starter_ollama_completion
+    metrics = {
+        "validation_calls": 0,
+        "validation_batch_calls": 0,
+        "timeout_failures": 0,
+        "max_validation_batch_size": 0,
+    }
+    results: dict[str, dict[str, Any] | None] = {
+        str(item.get("candidateId") or ""): None for item in candidates
+    }
+
+    async def _run(batch: list[dict[str, Any]]) -> None:
+        if not batch:
+            return
+        metrics["max_validation_batch_size"] = max(
+            metrics["max_validation_batch_size"], len(batch)
+        )
+        expected_ids = [str(item.get("candidateId") or "") for item in batch]
+
+        if len(batch) == 1:
+            item = batch[0]
+            candidate_id = expected_ids[0]
+            metrics["validation_calls"] += 1
+            try:
+                validation = await _validate_candidate(
+                    question=str(item.get("question") or ""),
+                    answer=str(item.get("answer") or ""),
+                    topic_name=str(item.get("topic_name") or "General"),
+                    question_type=str(item.get("question_type") or "direct"),
+                    chunk_text=str(item.get("chunk_text") or ""),
+                    completion_fn=run_completion,
+                )
+            except HTTPException as exc:
+                if is_ollama_timeout_error(exc):
+                    metrics["timeout_failures"] += 1
+                    results[candidate_id] = None
+                    return
+                if exc.status_code == 503:
+                    raise
+                results[candidate_id] = None
+                return
+            results[candidate_id] = validation
+            return
+
+        metrics["validation_calls"] += 1
+        metrics["validation_batch_calls"] += 1
+        prompt = build_batch_validation_prompt(candidates=batch)
+        try:
+            generation = await run_completion(
+                prompt,
+                model=SEED_GENERATION_MODEL,
+                response_format="json",
+                think=False,
+            )
+        except HTTPException as exc:
+            if exc.status_code == 503 and not is_ollama_timeout_error(exc):
+                raise
+            if is_ollama_timeout_error(exc):
+                metrics["timeout_failures"] += 1
+            mid = max(1, len(batch) // 2)
+            await _run(batch[:mid])
+            await _run(batch[mid:])
+            return
+
+        mapped = parse_batch_validation_payload(
+            generation["answer"],
+            expected_candidate_ids=expected_ids,
+        )
+        if mapped is None:
+            mid = max(1, len(batch) // 2)
+            await _run(batch[:mid])
+            await _run(batch[mid:])
+            return
+
+        for candidate_id, value in mapped.items():
+            results[candidate_id] = value
+
+    await _run(candidates)
+    return results, metrics
 
 
 async def _generate_candidates_for_topic(
@@ -749,7 +985,9 @@ async def _validate_candidate(
     topic_name: str,
     question_type: str,
     chunk_text: str,
+    completion_fn=None,
 ) -> dict[str, Any] | None:
+    run_completion = completion_fn or generate_starter_ollama_completion
     prompt = build_validation_prompt(
         question=question,
         answer=answer,
@@ -757,7 +995,7 @@ async def _validate_candidate(
         question_type=question_type,
         chunk_text=chunk_text,
     )
-    generation = await generate_starter_ollama_completion(
+    generation = await run_completion(
         prompt,
         model=SEED_GENERATION_MODEL,
         response_format="json",
@@ -821,11 +1059,13 @@ async def generate_starter_seeds_for_course(
 ) -> dict[str, Any]:
     """Generate up to target_count starter seeds via fact inventory + allocation.
 
-    Live path (Phase 4 / 4.5):
+    Live path (Phase 4 / 4.5 / 5):
       chunks → cached-or-fresh fact inventory → breadth-first allocation
-      → fact-scoped Q/A with rejection backfill
-      → programmatic checks → exact/semantic dedupe → LLM validation → accept
+      → sequential fact-scoped Q/A with rejection backfill
+      → programmatic checks → exact/semantic dedupe → pre-validation
+      → LLM validation → accept
 
+    Phase 6 batching helpers exist but are not used on this live path.
     Chunks are evidence only. Does not use topic planning. When save=True,
     persists accepted validated seeds to Firebase. Does not trigger course creation.
     """
@@ -1194,7 +1434,12 @@ async def generate_starter_seeds_for_course(
             "backfillAttempts": backfill_attempts,
             "backfillAccepted": backfill_accepted,
             "generationCalls": generation_calls,
+            # Phase 6 batching disabled on the live path; retained as zeroed metrics.
+            "generationBatchCalls": 0,
+            "maxGenerationBatchSize": 0,
             "validationCalls": validation_calls,
+            "validationBatchCalls": 0,
+            "maxValidationBatchSize": 0,
             "ollamaCalls": ollama_calls,
             "embeddingCalls": embedding_calls,
             "candidatesGenerated": candidates_generated,

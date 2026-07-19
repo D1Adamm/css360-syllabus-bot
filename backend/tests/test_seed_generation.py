@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,6 +64,25 @@ def _starter_ollama_side_effect(
 
     async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
         if VALIDATION_PROMPT_MARKER in prompt:
+            # Batch validation prompts list multiple "### Candidate id:" blocks.
+            candidate_ids = re.findall(
+                r"### Candidate id:\s*(\S+)",
+                prompt,
+            )
+            if len(candidate_ids) > 1:
+                try:
+                    single = json.loads(validation_answer)
+                except json.JSONDecodeError:
+                    single = json.loads(_passing_validation_payload())
+                results = []
+                for candidate_id in candidate_ids:
+                    item = dict(single)
+                    item["candidateId"] = candidate_id
+                    results.append(item)
+                return {
+                    "answer": json.dumps({"results": results}),
+                    "model": SEED_GENERATION_MODEL,
+                }
             return {
                 "answer": validation_answer,
                 "model": SEED_GENERATION_MODEL,
@@ -846,6 +866,27 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
                 "procedure",
                 "comparison",
             ]
+            fact_ids = re.findall(r"factId:\s*(\S+)", prompt)
+            if len(fact_ids) > 1:
+                seeds = []
+                for index, fact_id in enumerate(fact_ids):
+                    seeds.append(
+                        {
+                            "factId": fact_id,
+                            "question": f"Unique question {n}-{index}?",
+                            "answer": f"Answer {n}-{index} with enough detail.",
+                            "category": categories[
+                                (index + n) % len(categories)
+                            ],
+                            "questionType": question_types[
+                                (index + n) % len(question_types)
+                            ],
+                        }
+                    )
+                return {
+                    "answer": json.dumps({"seeds": seeds}),
+                    "model": SEED_GENERATION_MODEL,
+                }
             payload = {
                 "seeds": [
                     {
@@ -1182,8 +1223,35 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
             call_count["n"] += 1
             if VALIDATION_PROMPT_MARKER in prompt:
+                candidate_ids = re.findall(r"### Candidate id:\s*(\S+)", prompt)
+                if len(candidate_ids) > 1:
+                    single = json.loads(_rejecting_validation_payload())
+                    results = []
+                    for candidate_id in candidate_ids:
+                        item = dict(single)
+                        item["candidateId"] = candidate_id
+                        results.append(item)
+                    return {
+                        "answer": json.dumps({"results": results}),
+                        "model": SEED_GENERATION_MODEL,
+                    }
                 return {
                     "answer": _rejecting_validation_payload(),
+                    "model": SEED_GENERATION_MODEL,
+                }
+            fact_ids = re.findall(r"factId:\s*(\S+)", prompt)
+            if len(fact_ids) > 1:
+                seeds = [
+                    {
+                        "factId": fact_id,
+                        "question": f"Question {call_count['n']}-{index}?",
+                        "answer": "A sufficiently detailed answer here.",
+                        "category": "general",
+                    }
+                    for index, fact_id in enumerate(fact_ids)
+                ]
+                return {
+                    "answer": json.dumps({"seeds": seeds}),
                     "model": SEED_GENERATION_MODEL,
                 }
             payload = {
