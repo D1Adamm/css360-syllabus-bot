@@ -17,6 +17,7 @@ from app.seed_generation import (
     SEED_GENERATION_MODEL,
     VALIDATION_PROMPT_MARKER,
     generate_seeds_from_chunk,
+    resolve_starter_run_status,
 )
 from app.storage import LocalCourseArtifactStorage
 
@@ -558,6 +559,61 @@ class StarterSeedSelectionTests(unittest.TestCase):
         self.assertEqual(left, right)
 
 
+class StarterRunStatusTests(unittest.TestCase):
+    def test_save_false_ready_when_target_met(self) -> None:
+        self.assertEqual(
+            resolve_starter_run_status(
+                target_count=50,
+                final_count=50,
+                saved_count=0,
+                save=False,
+            ),
+            "ready",
+        )
+
+    def test_save_false_partial_when_under_target(self) -> None:
+        self.assertEqual(
+            resolve_starter_run_status(
+                target_count=50,
+                final_count=12,
+                saved_count=0,
+                save=False,
+            ),
+            "partial",
+        )
+
+    def test_save_false_failed_when_empty(self) -> None:
+        self.assertEqual(
+            resolve_starter_run_status(
+                target_count=50,
+                final_count=0,
+                saved_count=0,
+                save=False,
+            ),
+            "failed",
+        )
+
+    def test_save_true_requires_saved_count_for_ready(self) -> None:
+        self.assertEqual(
+            resolve_starter_run_status(
+                target_count=50,
+                final_count=50,
+                saved_count=40,
+                save=True,
+            ),
+            "partial",
+        )
+        self.assertEqual(
+            resolve_starter_run_status(
+                target_count=50,
+                final_count=50,
+                saved_count=50,
+                save=True,
+            ),
+            "ready",
+        )
+
+
 class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
@@ -680,6 +736,11 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             + result["progress"]["generationCalls"]
             + result["progress"]["validationCalls"],
         )
+        self.assertGreaterEqual(result["progress"]["elapsedMs"], 0)
+        self.assertEqual(result["progress"]["savedCount"], 0)
+        self.assertIn(result["progress"]["status"], {"ready", "partial", "failed"})
+        if result["progress"]["finalCount"] >= 6:
+            self.assertEqual(result["progress"]["status"], "ready")
         self.assertGreaterEqual(result["seeds"][0]["validation"]["score"], 0.8)
         self.assertIn("components", result["seeds"][0]["validation"])
         self.assertIn("unsupportedClaims", result["seeds"][0]["validation"])
@@ -1065,6 +1126,12 @@ class StarterSeedEndpointTests(unittest.TestCase):
         self.assertIn("ollamaCalls", body["progress"])
         self.assertIn("candidatesValidated", body["progress"])
         self.assertIn("candidatesAccepted", body["progress"])
+        self.assertIn("elapsedMs", body["progress"])
+        self.assertIn("savedCount", body["progress"])
+        self.assertIn("status", body["progress"])
+        self.assertEqual(body["progress"]["savedCount"], 0)
+        self.assertEqual(body["progress"]["status"], "ready")
+        self.assertGreaterEqual(body["progress"]["elapsedMs"], 0)
         self.assertEqual(body["seeds"][0]["origin"], "ai_generated")
         self.assertEqual(body["seeds"][0]["status"], "generated")
         self.assertGreaterEqual(body["seeds"][0]["validation"]["score"], 0.8)

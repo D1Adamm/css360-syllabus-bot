@@ -307,6 +307,20 @@ class StarterSeedProgress(BaseModel):
     )
     timeout_failures: int = Field(alias="timeoutFailures", default=0)
     final_count: int = Field(alias="finalCount")
+    saved_count: int = Field(
+        alias="savedCount",
+        default=0,
+        description="Seeds saved to Firebase for this run (0 when save=false).",
+    )
+    elapsed_ms: int = Field(
+        alias="elapsedMs",
+        default=0,
+        description="Wall-clock runtime of starter generation in milliseconds.",
+    )
+    status: str = Field(
+        default="partial",
+        description="Baseline outcome for this run: ready, partial, or failed.",
+    )
 
 
 class StarterSeedGenerateResponse(BaseModel):
@@ -318,4 +332,42 @@ class StarterSeedGenerateResponse(BaseModel):
     seeds: list[GeneratedSeedExample]
     progress: StarterSeedProgress
     persistence: StarterSeedPersistence | None = None
+
+
+class FactInventoryItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    fact_id: str = Field(alias="factId")
+    statement: str
+    importance: str
+    importance_score: float = Field(alias="importanceScore", ge=0.0, le=1.0)
+    student_ask_likelihood: float = Field(
+        alias="studentAskLikelihood", ge=0.0, le=1.0
+    )
+    complexity: int = Field(ge=1)
+    usefulness_score: float = Field(alias="usefulnessScore", ge=0.0, le=1.0)
+    source_chunk_ids: list[str] = Field(alias="sourceChunkIds")
+    evidence_quote: str = Field(alias="evidenceQuote")
+    kind: str
+    scope: str
+    series_key: str | None = Field(alias="seriesKey", default=None)
+    assignment_group: str | None = Field(alias="assignmentGroup", default=None)
+    series_ordinal: int | None = Field(alias="seriesOrdinal", default=None)
+
+
+class FactInventoryResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    model: str
+    fact_count: int = Field(alias="factCount")
+    dropped_count: int = Field(alias="droppedCount", default=0)
+    duplicates_removed: int = Field(alias="duplicatesRemoved", default=0)
+    fallback_used: bool = Field(alias="fallbackUsed", default=False)
+    counts_by_scope: dict[str, int] = Field(alias="countsByScope", default_factory=dict)
+    counts_by_kind: dict[str, int] = Field(alias="countsByKind", default_factory=dict)
+    counts_by_series: dict[str, int] = Field(
+        alias="countsBySeries", default_factory=dict
+    )
+    facts: list[FactInventoryItem]
 

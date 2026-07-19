@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from typing import Any
 
 from fastapi import HTTPException
@@ -29,7 +30,7 @@ from app.seed_balance import (
     would_violate_balancing,
 )
 from app.seed_dedupe import normalize_question_for_dedupe
-from app.seed_similarity import find_semantic_duplicate_question
+from app.seed_similarity import AcceptedEmbeddingCache, find_semantic_duplicate_question
 from app.storage import CourseArtifactStorage, get_course_artifact_storage
 from app.syllabus_plan import (
     build_section_title_fallback_plan,
@@ -77,6 +78,27 @@ def get_starter_max_total_ollama_calls() -> int:
     except ValueError:
         return DEFAULT_STARTER_MAX_TOTAL_OLLAMA_CALLS
     return max(1, value)
+
+
+def resolve_starter_run_status(
+    *,
+    target_count: int,
+    final_count: int,
+    saved_count: int = 0,
+    save: bool = False,
+) -> str:
+    """Classify a starter run as ready, partial, or failed for baseline reporting.
+
+    When save=False, status is based on generated final_count vs target_count only.
+    When save=True, both generation and persistence must reach the target for ready.
+    """
+    if target_count <= 0:
+        return "ready"
+    if final_count >= target_count and (not save or saved_count >= target_count):
+        return "ready"
+    if final_count > 0 or saved_count > 0:
+        return "partial"
+    return "failed"
 
 
 def _build_seed_prompt(chunk_id: str, chunk_text: str, count: int) -> str:
@@ -648,6 +670,8 @@ async def generate_starter_seeds_for_course(
             ),
         )
 
+    started_at = time.perf_counter()
+
     artifact_storage = storage or get_course_artifact_storage()
     index_data = _load_course_index(safe_course_id, artifact_storage)
     raw_chunks = index_data.get("chunks", [])
@@ -675,6 +699,7 @@ async def generate_starter_seeds_for_course(
     seeds: list[dict[str, Any]] = []
     seen_questions: set[str] = set()
     accepted_questions: list[str] = []
+    embedding_cache = AcceptedEmbeddingCache()
     chunks_processed = 0
     generation_calls = 0
     validation_calls = 0
@@ -840,8 +865,10 @@ async def generate_starter_seeds_for_course(
                             candidate_question=candidate["question"],
                             accepted_questions=accepted_questions,
                             embed_fn=embed_ollama_texts,
+                            cache=embedding_cache,
                         )
                     except HTTPException:
+                        embedding_cache.last_candidate_embedding = None
                         semantic_duplicate = None
                     if semantic_duplicate is not None:
                         semantic_duplicates_removed += 1
@@ -920,6 +947,7 @@ async def generate_starter_seeds_for_course(
 
                 seen_questions.add(normalized_question)
                 accepted_questions.append(candidate["question"])
+                embedding_cache.remember_last_candidate()
                 candidates_accepted += 1
                 seeds.append(
                     {
@@ -928,6 +956,29 @@ async def generate_starter_seeds_for_course(
                         "validation": validation,
                     }
                 )
+
+    saved_count = 0
+    persistence: dict[str, Any] | None = None
+    if save:
+        try:
+            chunk_sections = build_chunk_section_lookup(raw_chunks)
+            persistence = await persist_accepted_seeds(
+                course_id=safe_course_id,
+                seeds=seeds,
+                chunk_sections=chunk_sections,
+            )
+            saved_count = int(persistence.get("savedCount", 0))
+        except FirebaseConfigurationError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    elapsed_ms = max(0, int(round((time.perf_counter() - started_at) * 1000)))
+    final_count = len(seeds)
+    run_status = resolve_starter_run_status(
+        target_count=target_count,
+        final_count=final_count,
+        saved_count=saved_count,
+        save=save,
+    )
 
     result: dict[str, Any] = {
         "courseId": safe_course_id,
@@ -961,11 +1012,14 @@ async def generate_starter_seeds_for_course(
             "scheduleCount": count_schedule_like(seeds),
             "scenarioOrClarificationMinimum": compute_scenario_minimum(target_count),
             "timeoutFailures": timeout_failures,
-            "finalCount": len(seeds),
+            "finalCount": final_count,
+            "savedCount": saved_count,
+            "elapsedMs": elapsed_ms,
+            "status": run_status,
         },
     }
 
-    if len(seeds) == 0 and timeout_failures > 0:
+    if final_count == 0 and timeout_failures > 0:
         raise HTTPException(
             status_code=503,
             detail=(
@@ -974,15 +1028,7 @@ async def generate_starter_seeds_for_course(
             ),
         )
 
-    if save:
-        try:
-            chunk_sections = build_chunk_section_lookup(raw_chunks)
-            result["persistence"] = await persist_accepted_seeds(
-                course_id=safe_course_id,
-                seeds=seeds,
-                chunk_sections=chunk_sections,
-            )
-        except FirebaseConfigurationError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if persistence is not None:
+        result["persistence"] = persistence
 
     return result

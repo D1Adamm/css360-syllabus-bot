@@ -18,6 +18,8 @@ from app.schemas import (
     BaseModelGenerateResponse,
     CourseChunkMetadata,
     CourseChunksResponse,
+    FactInventoryItem,
+    FactInventoryResponse,
     GeneratedSeedExample,
     RagGenerateRequest,
     RagGenerateResponse,
@@ -33,6 +35,7 @@ from app.schemas import (
     SyllabusUploadResponse,
 )
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
+from app.syllabus_facts import build_fact_inventory
 from app.starter_jobs import (
     run_auto_starter_seed_generation,
     try_queue_starter_seed_generation,
@@ -311,4 +314,51 @@ async def generate_course_starter_seeds(
         seeds=[GeneratedSeedExample(**seed) for seed in result["seeds"]],
         progress=StarterSeedProgress(**result["progress"]),
         persistence=persistence,
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/facts/inventory",
+    response_model=FactInventoryResponse,
+)
+async def get_course_fact_inventory(course_id: str) -> FactInventoryResponse:
+    """Build an inspectable global fact inventory for a course syllabus.
+
+    Extraction-only: this DOES NOT generate starter seeds and is not wired into
+    the live starter-generation pipeline. Falls back to deterministic heuristic
+    extraction when the LLM is unavailable or returns no verifiable facts.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    storage = get_course_artifact_storage()
+    index_data = storage.load_index(safe_course_id)
+    if index_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Course syllabus index was not found.",
+        )
+
+    raw_chunks = index_data.get("chunks", [])
+    if not isinstance(raw_chunks, list) or not raw_chunks:
+        raise HTTPException(
+            status_code=404,
+            detail=f'No syllabus chunks found for course "{safe_course_id}".',
+        )
+
+    inventory = await build_fact_inventory(raw_chunks=raw_chunks)
+
+    return FactInventoryResponse(
+        courseId=safe_course_id,
+        model=inventory["model"],
+        factCount=inventory["factCount"],
+        droppedCount=inventory["droppedCount"],
+        duplicatesRemoved=inventory.get("duplicatesRemoved", 0),
+        fallbackUsed=inventory["fallbackUsed"],
+        countsByScope=inventory["countsByScope"],
+        countsByKind=inventory["countsByKind"],
+        countsBySeries=inventory.get("countsBySeries", {}),
+        facts=[FactInventoryItem(**fact) for fact in inventory["facts"]],
     )
