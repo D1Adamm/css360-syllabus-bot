@@ -76,6 +76,113 @@ def _starter_ollama_side_effect(
     return AsyncMock(side_effect=_fake_generate)
 
 
+async def _orthogonal_embed(texts, *, model=None):
+    """Deterministic per-text embeddings so single-item cache embeds stay distinct."""
+    # Fixed vocabulary axis: hash each text into a unique unit vector dimension.
+    # Using content (not batch index) keeps cache backfill + candidate embeds comparable.
+    vocabulary: list[str] = []
+    for text in texts:
+        key = str(text)
+        if key not in vocabulary:
+            vocabulary.append(key)
+    # Grow a stable axis set for this call; include prior keys via hash buckets.
+    dim = max(16, len(vocabulary) + 4)
+    embeddings: list[list[float]] = []
+    for text in texts:
+        vector = [0.0] * dim
+        # Stable non-colliding-ish bucket from text content.
+        bucket = sum(ord(ch) for ch in str(text)) % dim
+        vector[bucket] = 1.0
+        # Disambiguate near-collisions with a second sparse bit from length.
+        vector[(bucket + len(str(text)) + 1) % dim] = 0.5
+        embeddings.append(vector)
+    return {"embeddings": embeddings, "model": model or "test-embed"}
+
+
+def _mock_fact(
+    fact_id: str,
+    *,
+    statement: str,
+    evidence_quote: str | None = None,
+    source_chunk_ids: list[str] | None = None,
+    importance: str = "high",
+    importance_score: float = 0.9,
+    ask: float = 0.85,
+    complexity: int = 1,
+    usefulness: float = 0.85,
+    kind: str = "policy",
+    scope: str = "course_wide",
+) -> dict:
+    quote = evidence_quote or statement
+    return {
+        "factId": fact_id,
+        "statement": statement,
+        "importance": importance,
+        "importanceScore": importance_score,
+        "studentAskLikelihood": ask,
+        "complexity": complexity,
+        "usefulnessScore": usefulness,
+        "sourceChunkIds": source_chunk_ids or ["chunk-001"],
+        "evidenceQuote": quote,
+        "kind": kind,
+        "scope": scope,
+        "seriesKey": None,
+        "assignmentGroup": None,
+        "seriesOrdinal": None,
+    }
+
+
+def _mock_inventory(facts: list[dict]) -> dict:
+    return {
+        "model": SEED_GENERATION_MODEL,
+        "facts": facts,
+        "factCount": len(facts),
+        "droppedCount": 0,
+        "duplicatesRemoved": 0,
+        "fallbackUsed": False,
+        "cached": False,
+        "countsByScope": {},
+        "countsByKind": {},
+        "countsBySeries": {},
+    }
+
+
+def _facts_from_index_chunks(chunks: list[dict], *, limit: int | None = None) -> list[dict]:
+    kinds = [
+        "late_work",
+        "attendance",
+        "grading",
+        "contact",
+        "communication",
+        "requirement",
+        "policy",
+        "office_hours",
+        "accommodation",
+        "exam",
+        "tools",
+        "team_project",
+    ]
+    facts: list[dict] = []
+    for index, chunk in enumerate(chunks, start=1):
+        text = str(chunk.get("text") or "").strip()
+        if len(text) < 80:
+            continue
+        statement = text[:160].strip()
+        facts.append(
+            _mock_fact(
+                f"fact-{index:02d}",
+                statement=statement,
+                evidence_quote=statement[:120],
+                source_chunk_ids=[str(chunk["chunkId"])],
+                complexity=2 if index == 1 else 1,
+                kind=kinds[(index - 1) % len(kinds)],
+            )
+        )
+        if limit is not None and len(facts) >= limit:
+            break
+    return facts
+
+
 def _valid_seeds_payload(count: int = 3) -> str:
     seeds = [
         {
@@ -642,9 +749,71 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             2,
             _chunk("chunk-short", "Short", "too short", order=99),
         )
+        self.chunks = chunks
         self.storage.save_index(self.course_id, _index(self.course_id, chunks))
+        self.facts = _facts_from_index_chunks(chunks)
+        self._inventory_patch = patch(
+            "app.seed_generation.load_or_build_fact_inventory",
+            new=AsyncMock(return_value=_mock_inventory(self.facts)),
+        )
+        self._inventory_patch.start()
+        # Give tests a predictable slot map: one slot per fact, up to plenty of capacity.
+        self._allocation_patch = patch(
+            "app.seed_generation.allocate_slots",
+            side_effect=self._allocate_one_each,
+        )
+        self._allocation_patch.start()
+        self._embed_patch = patch(
+            "app.seed_generation.embed_ollama_texts",
+            new=_orthogonal_embed,
+        )
+        self._embed_patch.start()
+        self._plan_spy = patch(
+            "app.syllabus_plan.plan_syllabus_topics",
+            new=AsyncMock(side_effect=AssertionError("topic planner must not be called")),
+        )
+        self._plan_spy.start()
+
+    def _allocate_one_each(self, facts, *, target_count=50):
+        allocations = []
+        remaining = target_count
+        for fact in facts:
+            slots = 1 if remaining > 0 else 0
+            if slots:
+                remaining -= 1
+            allocations.append(
+                {
+                    "factId": fact["factId"],
+                    "slotCount": slots,
+                    "desiredSlots": 1,
+                    "rankingScore": float(fact.get("usefulnessScore") or 0.5),
+                    "suggestedStyles": ["factual"],
+                    "reasons": ["test_allocation"],
+                }
+            )
+        allocated = sum(item["slotCount"] for item in allocations)
+        return {
+            "allocations": allocations,
+            "summary": {
+                "targetCount": target_count,
+                "allocatedSlots": allocated,
+                "byScope": {},
+                "byKind": {},
+                "bySeries": {},
+                "skippedFacts": [],
+                "cappedFacts": [],
+                "caps": {},
+                "courseWideAllocated": allocated,
+                "courseWideReserve": 0,
+            },
+            "ranking": [],
+        }
 
     def tearDown(self) -> None:
+        self._plan_spy.stop()
+        self._embed_patch.stop()
+        self._allocation_patch.stop()
+        self._inventory_patch.stop()
         self._temp_dir.cleanup()
 
     def _unique_seed_side_effect(self) -> AsyncMock:
@@ -719,7 +888,10 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["seeds"]), result["progress"]["finalCount"])
         self.assertEqual(result["progress"]["chunksSkipped"], 1)
         self.assertEqual(result["progress"]["eligibleChunks"], 12)
-        self.assertGreaterEqual(result["progress"]["chunksProcessed"], result["progress"]["finalCount"])
+        self.assertEqual(result["progress"]["planningCalls"], 0)
+        self.assertEqual(result["progress"]["mergeCalls"], 0)
+        self.assertGreaterEqual(result["progress"]["factCount"], 1)
+        self.assertGreaterEqual(result["progress"]["allocatedSlots"], result["progress"]["finalCount"])
         self.assertEqual(
             result["progress"]["candidatesAccepted"],
             result["progress"]["finalCount"],
@@ -731,8 +903,7 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(result["progress"]["ollamaCalls"], result["progress"]["generationCalls"])
         self.assertEqual(
             result["progress"]["ollamaCalls"],
-            result["progress"]["planningCalls"]
-            + result["progress"]["mergeCalls"]
+            result["progress"]["factExtractionCalls"]
             + result["progress"]["generationCalls"]
             + result["progress"]["validationCalls"],
         )
@@ -744,8 +915,114 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(result["seeds"][0]["validation"]["score"], 0.8)
         self.assertIn("components", result["seeds"][0]["validation"])
         self.assertIn("unsupportedClaims", result["seeds"][0]["validation"])
+        self.assertTrue(result["seeds"][0].get("factId"))
+        self.assertTrue(result["seeds"][0].get("evidenceQuote"))
         self.assertEqual(mock_generate.await_args.kwargs["think"], False)
         self.assertEqual(mock_generate.await_args.kwargs["model"], SEED_GENERATION_MODEL)
+
+    async def test_starter_does_not_call_topic_planner(self) -> None:
+        from app.seed_generation import generate_starter_seeds_for_course
+        from app.syllabus_plan import plan_syllabus_topics
+
+        with patch(
+            "app.seed_generation.generate_starter_ollama_completion",
+            new=self._unique_seed_side_effect(),
+        ):
+            await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=2,
+                storage=self.storage,
+            )
+
+        plan_syllabus_topics.assert_not_called()
+
+    async def test_starter_only_generates_for_allocated_slots(self) -> None:
+        from app.seed_allocation import allocate_slots
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        facts = [
+            _mock_fact(
+                "fact-keep",
+                statement="Students may use one 48-hour extension per quarter.",
+                evidence_quote="one 48-hour extension per quarter",
+                source_chunk_ids=["chunk-001"],
+                complexity=3,
+                usefulness=0.9,
+                kind="late_work",
+            ),
+            _mock_fact(
+                "fact-skip",
+                statement="The campus pantry is an optional food resource.",
+                evidence_quote="optional food resource",
+                source_chunk_ids=["chunk-002"],
+                importance="low",
+                importance_score=0.3,
+                ask=0.2,
+                usefulness=0.2,
+                kind="resource",
+                scope="resource",
+            ),
+        ]
+        self._inventory_patch.stop()
+        self._inventory_patch = patch(
+            "app.seed_generation.load_or_build_fact_inventory",
+            new=AsyncMock(return_value=_mock_inventory(facts)),
+        )
+        self._inventory_patch.start()
+        # Use the real allocator so 0-slot resource facts are skipped.
+        self._allocation_patch.stop()
+        self._allocation_patch = patch(
+            "app.seed_generation.allocate_slots",
+            side_effect=allocate_slots,
+        )
+        self._allocation_patch.start()
+
+        requested_counts: list[int] = []
+        fact_ids_seen: list[str] = []
+
+        async def _track_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            if "Fact id: fact-skip" in prompt:
+                raise AssertionError("0-slot fact must not generate")
+            if "Fact id: fact-keep" in prompt:
+                fact_ids_seen.append("fact-keep")
+            # Count requested examples from prompt wording.
+            if "Generate exactly 1 student" in prompt or "exactly one strong" in prompt.lower():
+                requested_counts.append(1)
+            elif "Generate exactly 2 student" in prompt or "exactly 2 materially" in prompt:
+                requested_counts.append(2)
+            elif "Generate exactly 3 student" in prompt or "exactly 3 materially" in prompt:
+                requested_counts.append(3)
+            payload = {
+                "seeds": [
+                    {
+                        "question": f"Late work question {len(requested_counts)}-{index}?",
+                        "answer": "Use the one 48-hour extension when allowed.",
+                        "category": "late work",
+                        "questionType": "direct",
+                    }
+                    for index in range(1, (requested_counts[-1] if requested_counts else 1) + 1)
+                ]
+            }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        with patch(
+            "app.seed_generation.generate_starter_ollama_completion",
+            new=_starter_ollama_side_effect(generate_side_effect=_track_generate),
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=5,
+                storage=self.storage,
+            )
+
+        self.assertIn("fact-keep", fact_ids_seen)
+        self.assertGreaterEqual(sum(requested_counts), 1)
+        self.assertLessEqual(sum(requested_counts), 5)
+        self.assertLessEqual(result["progress"]["finalCount"], 5)
+        for seed in result["seeds"]:
+            self.assertEqual(seed["factId"], "fact-keep")
+            self.assertEqual(seed["sourceChunkIds"], ["chunk-001"])
+            self.assertIn("48-hour", seed["evidenceQuote"])
 
     async def test_starter_deduplicates_normalized_questions(self) -> None:
         from app.seed_generation import generate_starter_seeds_for_course
@@ -788,9 +1065,11 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             payload = {
                 "seeds": [
                     {
-                        "question": "What is the attendance policy?",
-                        "answer": "Attendance is required for all lectures.",
-                        "category": "attendance",
+                        "question": "What does this syllabus section cover?",
+                        "answer": (
+                            "This section covers syllabus policies and assignments."
+                        ),
+                        "category": "policy",
                     }
                 ]
             }
@@ -819,7 +1098,6 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["seeds"][0]["validation"]["unsupportedClaims"], [])
 
     async def test_starter_validation_rejects_candidate(self) -> None:
-        from app import seed_generation
         from app.seed_generation import generate_starter_seeds_for_course
 
         async def _single_generate(prompt: str, **kwargs: object) -> dict[str, str]:
@@ -834,14 +1112,11 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             }
             return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
 
-        with (
-            patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 1),
-            patch(
-                "app.seed_generation.generate_starter_ollama_completion",
-                new=_starter_ollama_side_effect(
-                    generate_side_effect=_single_generate,
-                    validation_payload=_rejecting_validation_payload(),
-                ),
+        with patch(
+            "app.seed_generation.generate_starter_ollama_completion",
+            new=_starter_ollama_side_effect(
+                generate_side_effect=_single_generate,
+                validation_payload=_rejecting_validation_payload(),
             ),
         ):
             result = await generate_starter_seeds_for_course(
@@ -856,7 +1131,6 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(result["progress"]["candidatesValidated"], 1)
 
     async def test_starter_malformed_validator_response_rejects_candidate(self) -> None:
-        from app import seed_generation
         from app.seed_generation import generate_starter_seeds_for_course
 
         async def _single_generate(prompt: str, **kwargs: object) -> dict[str, str]:
@@ -871,14 +1145,11 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             }
             return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
 
-        with (
-            patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 1),
-            patch(
-                "app.seed_generation.generate_starter_ollama_completion",
-                new=_starter_ollama_side_effect(
-                    generate_side_effect=_single_generate,
-                    validation_payload="{not valid validator json",
-                ),
+        with patch(
+            "app.seed_generation.generate_starter_ollama_completion",
+            new=_starter_ollama_side_effect(
+                generate_side_effect=_single_generate,
+                validation_payload="{not valid validator json",
             ),
         ):
             result = await generate_starter_seeds_for_course(
@@ -935,9 +1206,8 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 seed_generation,
                 "get_starter_max_total_ollama_calls",
-                return_value=3,
+                return_value=2,
             ),
-            patch.object(seed_generation, "MAX_STARTER_SELECTED_CHUNKS", 10),
             patch(
                 "app.seed_generation.generate_starter_ollama_completion",
                 new=AsyncMock(side_effect=_fake_generate),
@@ -949,8 +1219,9 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
                 storage=self.storage,
             )
 
-        self.assertEqual(call_count["n"], 3)
-        self.assertEqual(result["progress"]["ollamaCalls"], 3)
+        # Inventory is mocked (0 extraction calls). Cap allows 1 gen + 1 val.
+        self.assertEqual(call_count["n"], 2)
+        self.assertEqual(result["progress"]["ollamaCalls"], 2)
         self.assertEqual(result["progress"]["generationCalls"], 1)
         self.assertEqual(result["progress"]["validationCalls"], 1)
         self.assertEqual(result["progress"]["finalCount"], 0)
@@ -1045,6 +1316,9 @@ class StarterSeedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["persistence"]["savedCount"], 2)
         mock_persist.assert_awaited_once()
         self.assertEqual(mock_persist.await_args.kwargs["course_id"], self.course_id)
+        persisted_seeds = mock_persist.await_args.kwargs["seeds"]
+        self.assertTrue(persisted_seeds[0].get("factId"))
+        self.assertTrue(persisted_seeds[0].get("sourceChunkIds"))
 
 
 class StarterSeedEndpointTests(unittest.TestCase):
@@ -1074,8 +1348,63 @@ class StarterSeedEndpointTests(unittest.TestCase):
             for index in range(1, 9)
         ]
         self.storage.save_index(self.course_id, _index(self.course_id, chunks))
+        facts = _facts_from_index_chunks(chunks)
+        self._inventory_patch = patch(
+            "app.seed_generation.load_or_build_fact_inventory",
+            new=AsyncMock(return_value=_mock_inventory(facts)),
+        )
+        self._inventory_patch.start()
+
+        def _allocate_one_each(facts_list, *, target_count=50):
+            allocations = []
+            remaining = target_count
+            for fact in facts_list:
+                slots = 1 if remaining > 0 else 0
+                if slots:
+                    remaining -= 1
+                allocations.append(
+                    {
+                        "factId": fact["factId"],
+                        "slotCount": slots,
+                        "desiredSlots": 1,
+                        "rankingScore": 0.8,
+                        "suggestedStyles": ["factual"],
+                        "reasons": ["test_allocation"],
+                    }
+                )
+            allocated = sum(item["slotCount"] for item in allocations)
+            return {
+                "allocations": allocations,
+                "summary": {
+                    "targetCount": target_count,
+                    "allocatedSlots": allocated,
+                    "byScope": {},
+                    "byKind": {},
+                    "bySeries": {},
+                    "skippedFacts": [],
+                    "cappedFacts": [],
+                    "caps": {},
+                    "courseWideAllocated": allocated,
+                    "courseWideReserve": 0,
+                },
+                "ranking": [],
+            }
+
+        self._allocation_patch = patch(
+            "app.seed_generation.allocate_slots",
+            side_effect=_allocate_one_each,
+        )
+        self._allocation_patch.start()
+        self._embed_patch = patch(
+            "app.seed_generation.embed_ollama_texts",
+            new=_orthogonal_embed,
+        )
+        self._embed_patch.start()
 
     def tearDown(self) -> None:
+        self._embed_patch.stop()
+        self._allocation_patch.stop()
+        self._inventory_patch.stop()
         self._storage_patch.stop()
         self._temp_dir.cleanup()
 
@@ -1121,6 +1450,10 @@ class StarterSeedEndpointTests(unittest.TestCase):
         self.assertIn("eligibleChunks", body["progress"])
         self.assertIn("selectedChunks", body["progress"])
         self.assertIn("chunksProcessed", body["progress"])
+        self.assertIn("factCount", body["progress"])
+        self.assertIn("allocatedSlots", body["progress"])
+        self.assertIn("allocatedFactCount", body["progress"])
+        self.assertIn("factExtractionCalls", body["progress"])
         self.assertIn("generationCalls", body["progress"])
         self.assertIn("validationCalls", body["progress"])
         self.assertIn("ollamaCalls", body["progress"])
@@ -1131,10 +1464,13 @@ class StarterSeedEndpointTests(unittest.TestCase):
         self.assertIn("status", body["progress"])
         self.assertEqual(body["progress"]["savedCount"], 0)
         self.assertEqual(body["progress"]["status"], "ready")
+        self.assertEqual(body["progress"]["planningCalls"], 0)
         self.assertGreaterEqual(body["progress"]["elapsedMs"], 0)
         self.assertEqual(body["seeds"][0]["origin"], "ai_generated")
         self.assertEqual(body["seeds"][0]["status"], "generated")
         self.assertGreaterEqual(body["seeds"][0]["validation"]["score"], 0.8)
+        self.assertTrue(body["seeds"][0].get("factId"))
+        self.assertTrue(body["seeds"][0].get("sourceChunkIds"))
 
     def test_endpoint_missing_course(self) -> None:
         response = self.client.post(

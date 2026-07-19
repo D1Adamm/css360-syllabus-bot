@@ -117,6 +117,17 @@ def build_firebase_seed_record(
         "normalizedQuestionKey": normalized_key,
         "createdAt": timestamp,
         "validation": normalized_validation,
+        "factId": (
+            str(seed["factId"]).strip()
+            if isinstance(seed.get("factId"), str) and str(seed.get("factId")).strip()
+            else None
+        ),
+        "evidenceQuote": (
+            str(seed["evidenceQuote"]).strip()
+            if isinstance(seed.get("evidenceQuote"), str)
+            and str(seed.get("evidenceQuote")).strip()
+            else None
+        ),
     }
 
 

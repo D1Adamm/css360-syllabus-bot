@@ -54,6 +54,26 @@ class FirebaseSeedHelperTests(unittest.TestCase):
             record["normalizedQuestionKey"],
             normalize_question_for_dedupe("When are office hours?"),
         )
+        self.assertIsNone(record["factId"])
+        self.assertIsNone(record["evidenceQuote"])
+
+    def test_build_firebase_seed_record_preserves_fact_metadata(self) -> None:
+        record = build_firebase_seed_record(
+            {
+                "question": "Can I use an extension?",
+                "answer": "One 48-hour extension is allowed.",
+                "category": "late work",
+                "sourceChunkIds": ["chunk-056"],
+                "factId": "fact-02",
+                "evidenceQuote": "one 48-hour extension per quarter",
+            },
+            source_section="Late Policy",
+            created_at="2026-07-16T12:00:00+00:00",
+        )
+        self.assertEqual(record["factId"], "fact-02")
+        self.assertEqual(record["evidenceQuote"], "one 48-hour extension per quarter")
+        self.assertEqual(record["instruction"], record["question"])
+        self.assertEqual(record["response"], record["answer"])
 
     def test_collect_normalized_question_keys_reads_question_and_instruction(self) -> None:
         keys = collect_normalized_question_keys(

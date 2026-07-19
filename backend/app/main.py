@@ -26,6 +26,7 @@ from app.schemas import (
     FactAllocationSkippedFact,
     FactAllocationSummary,
     FactInventoryItem,
+    FactInventoryRequest,
     FactInventoryResponse,
     GeneratedSeedExample,
     RagGenerateRequest,
@@ -43,7 +44,7 @@ from app.schemas import (
 )
 from app.seed_allocation import allocate_slots
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
-from app.syllabus_facts import build_fact_inventory
+from app.fact_inventory_cache import load_or_build_fact_inventory
 from app.starter_jobs import (
     run_auto_starter_seed_generation,
     try_queue_starter_seed_generation,
@@ -309,6 +310,7 @@ async def generate_course_starter_seeds(
         course_id=safe_course_id,
         target_count=request.target_count,
         save=request.save,
+        force_refresh=request.force_refresh,
     )
 
     persistence = None
@@ -329,18 +331,21 @@ async def generate_course_starter_seeds(
     "/api/courses/{course_id}/facts/inventory",
     response_model=FactInventoryResponse,
 )
-async def get_course_fact_inventory(course_id: str) -> FactInventoryResponse:
-    """Build an inspectable global fact inventory for a course syllabus.
+async def get_course_fact_inventory(
+    course_id: str,
+    body: FactInventoryRequest | None = None,
+) -> FactInventoryResponse:
+    """Build or reuse an inspectable global fact inventory for a course syllabus.
 
-    Extraction-only: this DOES NOT generate starter seeds and is not wired into
-    the live starter-generation pipeline. Falls back to deterministic heuristic
-    extraction when the LLM is unavailable or returns no verifiable facts.
+    Extraction-only: this DOES NOT generate starter seeds. Shares the same
+    per-course cache as starter generation. Pass forceRefresh to rebuild.
     """
     try:
         safe_course_id = assert_valid_course_id(course_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    request = body or FactInventoryRequest()
     storage = get_course_artifact_storage()
     index_data = storage.load_index(safe_course_id)
     if index_data is None:
@@ -356,7 +361,12 @@ async def get_course_fact_inventory(course_id: str) -> FactInventoryResponse:
             detail=f'No syllabus chunks found for course "{safe_course_id}".',
         )
 
-    inventory = await build_fact_inventory(raw_chunks=raw_chunks)
+    inventory = await load_or_build_fact_inventory(
+        course_id=safe_course_id,
+        raw_chunks=raw_chunks,
+        storage=storage,
+        force_refresh=request.force_refresh,
+    )
 
     return FactInventoryResponse(
         courseId=safe_course_id,
@@ -365,6 +375,7 @@ async def get_course_fact_inventory(course_id: str) -> FactInventoryResponse:
         droppedCount=inventory["droppedCount"],
         duplicatesRemoved=inventory.get("duplicatesRemoved", 0),
         fallbackUsed=inventory["fallbackUsed"],
+        cached=bool(inventory.get("cached")),
         countsByScope=inventory["countsByScope"],
         countsByKind=inventory["countsByKind"],
         countsBySeries=inventory.get("countsBySeries", {}),
@@ -380,7 +391,7 @@ async def get_course_fact_allocation(
     course_id: str,
     body: FactAllocationRequest | None = None,
 ) -> FactAllocationResponse:
-    """Build fact inventory and allocate question slots (Phase 3 inspection).
+    """Build/reuse fact inventory and allocate question slots (inspection).
 
     Allocation-only: this DOES NOT generate starter seeds, does not persist
     seeds, and is not wired into the live starter-generation pipeline.
@@ -408,7 +419,12 @@ async def get_course_fact_allocation(
             detail=f'No syllabus chunks found for course "{safe_course_id}".',
         )
 
-    inventory = await build_fact_inventory(raw_chunks=raw_chunks)
+    inventory = await load_or_build_fact_inventory(
+        course_id=safe_course_id,
+        raw_chunks=raw_chunks,
+        storage=storage,
+        force_refresh=request.force_refresh,
+    )
     allocation = allocate_slots(
         inventory["facts"],
         target_count=target_count,

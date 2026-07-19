@@ -82,6 +82,24 @@ class CourseArtifactStorage(ABC):
     def remove_index(self, course_id: str) -> None:
         raise NotImplementedError
 
+    @abstractmethod
+    def fact_inventory_path(self, course_id: str) -> Path:
+        raise NotImplementedError
+
+    @abstractmethod
+    def save_fact_inventory(
+        self, course_id: str, inventory_data: dict[str, Any]
+    ) -> Path:
+        raise NotImplementedError
+
+    @abstractmethod
+    def load_fact_inventory(self, course_id: str) -> dict[str, Any] | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def remove_fact_inventory(self, course_id: str) -> None:
+        raise NotImplementedError
+
 
 class LocalCourseArtifactStorage(CourseArtifactStorage):
     def __init__(
@@ -195,6 +213,8 @@ class LocalCourseArtifactStorage(CourseArtifactStorage):
             temp_name = handle.name
 
         os.replace(temp_name, destination)
+        # Replacing the syllabus index invalidates any cached fact inventory.
+        self.remove_fact_inventory(course_id)
         return destination
 
     def load_index(self, course_id: str) -> dict[str, Any] | None:
@@ -208,6 +228,44 @@ class LocalCourseArtifactStorage(CourseArtifactStorage):
 
     def remove_index(self, course_id: str) -> None:
         path = self.index_path(course_id)
+        if path.exists():
+            path.unlink()
+        self.remove_fact_inventory(course_id)
+
+    def fact_inventory_path(self, course_id: str) -> Path:
+        safe_course_id = assert_valid_course_id(course_id)
+        return self.index_dir / f"{safe_course_id}.facts.json"
+
+    def save_fact_inventory(
+        self, course_id: str, inventory_data: dict[str, Any]
+    ) -> Path:
+        destination = self.fact_inventory_path(course_id)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=destination.parent,
+            prefix=f".{destination.stem}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            json.dump(inventory_data, handle, ensure_ascii=False)
+            temp_name = handle.name
+        os.replace(temp_name, destination)
+        return destination
+
+    def load_fact_inventory(self, course_id: str) -> dict[str, Any] | None:
+        path = self.fact_inventory_path(course_id)
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def remove_fact_inventory(self, course_id: str) -> None:
+        path = self.fact_inventory_path(course_id)
         if path.exists():
             path.unlink()
 

@@ -195,22 +195,39 @@ class GenerationTimeoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_repeated_generation_timeout_raises_concise_failure(self) -> None:
         from app.seed_generation import generate_starter_seeds_for_course
 
+        facts = [
+            {
+                "factId": "fact-01",
+                "statement": "Late work may be submitted within 24 hours for half credit.",
+                "importance": "high",
+                "importanceScore": 0.9,
+                "studentAskLikelihood": 0.9,
+                "complexity": 1,
+                "usefulnessScore": 0.86,
+                "sourceChunkIds": ["chunk-001"],
+                "evidenceQuote": "Late work may be submitted within 24 hours for half credit.",
+                "kind": "late_work",
+                "scope": "course_wide",
+                "seriesKey": None,
+                "assignmentGroup": None,
+                "seriesOrdinal": None,
+            }
+        ]
+
         with (
             patch(
-                "app.seed_generation.plan_syllabus_topics",
+                "app.seed_generation.load_or_build_fact_inventory",
                 new=AsyncMock(
                     return_value={
-                        "topics": [
-                            {
-                                "topicId": "topic-01",
-                                "name": "Late Policy",
-                                "importance": "high",
-                                "sourceChunkIds": ["chunk-001"],
-                                "suggestedExampleCount": 2,
-                                "summary": "Late work",
-                                "scheduleHeavy": False,
-                            }
-                        ]
+                        "model": "qwen3:4b",
+                        "facts": facts,
+                        "factCount": 1,
+                        "droppedCount": 0,
+                        "duplicatesRemoved": 0,
+                        "fallbackUsed": False,
+                        "countsByScope": {},
+                        "countsByKind": {},
+                        "countsBySeries": {},
                     }
                 ),
             ),

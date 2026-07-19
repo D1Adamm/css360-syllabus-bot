@@ -175,6 +175,8 @@ class GeneratedSeedExample(BaseModel):
     category: str
     question_type: str | None = Field(default=None, alias="questionType")
     source_chunk_ids: list[str] = Field(alias="sourceChunkIds")
+    fact_id: str | None = Field(default=None, alias="factId")
+    evidence_quote: str | None = Field(default=None, alias="evidenceQuote")
     origin: str
     status: str
     validation: "SeedValidationResult | None" = None
@@ -258,6 +260,13 @@ class StarterSeedGenerateRequest(BaseModel):
             "Defaults to false (generate-only)."
         ),
     )
+    force_refresh: bool = Field(
+        default=False,
+        alias="forceRefresh",
+        description=(
+            "When true, rebuild the fact inventory instead of reusing a valid cache."
+        ),
+    )
 
 
 class StarterSeedPersistence(BaseModel):
@@ -278,6 +287,13 @@ class StarterSeedProgress(BaseModel):
     chunks_skipped: int = Field(alias="chunksSkipped")
     planning_calls: int = Field(alias="planningCalls", default=0)
     merge_calls: int = Field(alias="mergeCalls", default=0)
+    fact_extraction_calls: int = Field(alias="factExtractionCalls", default=0)
+    fact_inventory_cached: bool = Field(alias="factInventoryCached", default=False)
+    fact_count: int = Field(alias="factCount", default=0)
+    allocated_fact_count: int = Field(alias="allocatedFactCount", default=0)
+    allocated_slots: int = Field(alias="allocatedSlots", default=0)
+    backfill_attempts: int = Field(alias="backfillAttempts", default=0)
+    backfill_accepted: int = Field(alias="backfillAccepted", default=0)
     generation_calls: int = Field(alias="generationCalls")
     validation_calls: int = Field(alias="validationCalls")
     ollama_calls: int = Field(alias="ollamaCalls")
@@ -299,6 +315,18 @@ class StarterSeedProgress(BaseModel):
     )
     candidates_rejected_balancing: int = Field(
         alias="candidatesRejectedBalancing",
+        default=0,
+    )
+    candidates_rejected_pre_validation: int = Field(
+        alias="candidatesRejectedPreValidation",
+        default=0,
+    )
+    candidates_rejected_qualifier_mismatch: int = Field(
+        alias="candidatesRejectedQualifierMismatch",
+        default=0,
+    )
+    candidates_rejected_modal_escalation: int = Field(
+        alias="candidatesRejectedModalEscalation",
         default=0,
     )
     schedule_count: int = Field(alias="scheduleCount", default=0)
@@ -335,6 +363,16 @@ class StarterSeedGenerateResponse(BaseModel):
     persistence: StarterSeedPersistence | None = None
 
 
+class FactInventoryRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    force_refresh: bool = Field(
+        default=False,
+        alias="forceRefresh",
+        description="When true, rebuild the fact inventory instead of using cache.",
+    )
+
+
 class FactInventoryItem(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -365,6 +403,7 @@ class FactInventoryResponse(BaseModel):
     dropped_count: int = Field(alias="droppedCount", default=0)
     duplicates_removed: int = Field(alias="duplicatesRemoved", default=0)
     fallback_used: bool = Field(alias="fallbackUsed", default=False)
+    cached: bool = Field(default=False)
     counts_by_scope: dict[str, int] = Field(alias="countsByScope", default_factory=dict)
     counts_by_kind: dict[str, int] = Field(alias="countsByKind", default_factory=dict)
     counts_by_series: dict[str, int] = Field(
@@ -377,6 +416,11 @@ class FactAllocationRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     target_count: int = Field(alias="targetCount", default=50, ge=1, le=200)
+    force_refresh: bool = Field(
+        default=False,
+        alias="forceRefresh",
+        description="When true, rebuild the fact inventory instead of using cache.",
+    )
 
 
 class FactAllocationItem(BaseModel):

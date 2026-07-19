@@ -21,22 +21,14 @@ from app.ollama import (
     generate_starter_ollama_completion,
     is_ollama_timeout_error,
 )
-from app.seed_balance import (
-    SCENARIO_LIKE_TYPES,
-    compute_scenario_minimum,
-    count_schedule_like,
-    count_topics,
-    should_prefer_scenario_or_clarification,
-    would_violate_balancing,
-)
+from app.fact_inventory_cache import load_or_build_fact_inventory
+from app.seed_allocation import allocate_slots
+from app.seed_balance import compute_scenario_minimum, count_schedule_like
 from app.seed_dedupe import normalize_question_for_dedupe
+from app.seed_prevalidation import prevalidate_candidate
 from app.seed_similarity import AcceptedEmbeddingCache, find_semantic_duplicate_question
 from app.storage import CourseArtifactStorage, get_course_artifact_storage
-from app.syllabus_plan import (
-    build_section_title_fallback_plan,
-    merge_topics_by_overlap,
-    plan_syllabus_topics,
-)
+from app.syllabus_facts import FACT_EXTRACTION_PROMPT_MARKER
 from app.seed_validation import (
     VALIDATION_PROMPT_MARKER,
     build_validation_prompt,
@@ -61,6 +53,19 @@ MIN_ANSWER_CHARS = 8
 MAX_ANSWER_CHARS = 600
 STARTER_SEED_CANDIDATES_PER_TOPIC_CALL = 4
 QUESTION_TYPES = ("direct", "scenario", "clarification", "procedure", "comparison")
+FACT_SEED_GENERATION_PROMPT_MARKER = (
+    "You generate training seed examples for ONE syllabus fact."
+)
+
+# Map allocator style hints to generation questionType values.
+_STYLE_TO_QUESTION_TYPE = {
+    "factual": "direct",
+    "policy": "direct",
+    "scenario": "scenario",
+    "exception": "scenario",
+    "clarification": "clarification",
+    "procedural": "procedure",
+}
 
 _JSON_FENCE_RE = re.compile(
     r"```(?:json)?\s*(.*?)\s*```",
@@ -493,6 +498,168 @@ Source chunk text:
 """
 
 
+def _category_for_fact(fact: dict[str, Any]) -> str:
+    kind = str(fact.get("kind") or "").strip()
+    if kind and kind != "other":
+        return kind.replace("_", " ")
+    scope = str(fact.get("scope") or "").strip()
+    if scope and scope != "other":
+        return scope.replace("_", " ")
+    return "general"
+
+
+def _question_types_for_styles(styles: list[str] | None, *, slot_count: int) -> list[str]:
+    """Translate allocator style hints into questionType values."""
+    mapped: list[str] = []
+    for style in styles or []:
+        question_type = _STYLE_TO_QUESTION_TYPE.get(str(style).strip().lower())
+        if question_type and question_type not in mapped:
+            mapped.append(question_type)
+    if not mapped:
+        mapped = ["direct"]
+        if slot_count >= 2:
+            mapped.append("scenario")
+        if slot_count >= 3:
+            mapped.append("clarification")
+    return mapped[: max(1, slot_count)]
+
+
+def _build_fact_seed_prompt(
+    *,
+    fact: dict[str, Any],
+    chunk_texts: list[str],
+    count: int,
+    suggested_styles: list[str] | None = None,
+) -> str:
+    fact_id = str(fact.get("factId") or "").strip()
+    statement = str(fact.get("statement") or "").strip()
+    evidence_quote = str(fact.get("evidenceQuote") or "").strip()
+    source_chunk_ids = ", ".join(
+        str(item).strip()
+        for item in (fact.get("sourceChunkIds") or [])
+        if str(item).strip()
+    )
+    category = _category_for_fact(fact)
+    question_types = _question_types_for_styles(suggested_styles, slot_count=count)
+    allowed_types = ", ".join(question_types)
+
+    if count <= 1:
+        diversity_rule = (
+            "Generate exactly ONE strong, natural student question and answer "
+            "for this fact."
+        )
+    else:
+        diversity_rule = (
+            f"Generate exactly {count} materially different useful student questions "
+            "for this fact (not paraphrases). Vary wording and angle using the "
+            f"allowed question types ({allowed_types}) when that helps, but never "
+            "invent details beyond the evidence."
+        )
+
+    chunk_block = "\n\n".join(chunk_texts)
+    return f"""{FACT_SEED_GENERATION_PROMPT_MARKER}
+
+Generate exactly {count} student question/answer example(s) for this ONE syllabus fact.
+
+Grounding rules (strict):
+- The question must be fully answerable from ONLY the fact statement, evidence quote,
+  and source chunk text below.
+- The answer must stay within that evidence. Do not broaden, generalize, or add
+  syllabus knowledge that is not present.
+- Preserve qualifiers, limits, exceptions, and conditions exactly
+  (e.g. "one", "per quarter", "except", "unless", "may", "optional").
+- Do NOT convert permission into obligation:
+  - "may" / "can" / "allowed" must NOT become "must" / "required"
+- Do NOT convert recommendations into requirements
+  ("suggested" / "recommended" must NOT become "required").
+- Do NOT turn response-time / nudge guidance into a guarantee that the instructor
+  will reply within a fixed time.
+- Do NOT invent consequences, penalties, grades, or outcomes not in the evidence.
+- Prefer the wording of the evidence for numbers, deadlines, and exceptions.
+- Use natural student wording for the question; keep the answer concise and faithful.
+- Category must stay: {category}
+- Allowed questionType values: {allowed_types}
+- {diversity_rule}
+- Return ONLY valid JSON (no markdown, no commentary).
+
+Required JSON shape:
+{{
+  "seeds": [
+    {{
+      "question": "string",
+      "answer": "string",
+      "category": "{category}",
+      "questionType": "direct|scenario|clarification|procedure|comparison",
+      "sourceChunkIds": ["chunk-001"]
+    }}
+  ]
+}}
+
+Fact id: {fact_id}
+Fact statement: {statement}
+Evidence quote: {evidence_quote}
+Source chunk ids: {source_chunk_ids}
+
+Source chunk text:
+{chunk_block}
+"""
+
+
+async def _generate_candidates_for_fact(
+    *,
+    fact: dict[str, Any],
+    chunk_texts: list[str],
+    count: int,
+    suggested_styles: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """Generate seed candidates grounded in one allocated fact."""
+    prompt = _build_fact_seed_prompt(
+        fact=fact,
+        chunk_texts=chunk_texts,
+        count=count,
+        suggested_styles=suggested_styles,
+    )
+    generation = await generate_starter_ollama_completion(
+        prompt,
+        model=SEED_GENERATION_MODEL,
+        response_format="json",
+        think=False,
+    )
+    raw_seeds = _parse_seed_payload(generation["answer"])
+    seeds: list[dict[str, Any]] = []
+    fact_chunk_ids = [
+        str(item).strip()
+        for item in (fact.get("sourceChunkIds") or [])
+        if str(item).strip()
+    ]
+    fallback_chunk_id = fact_chunk_ids[0] if fact_chunk_ids else "fact"
+    default_question_types = _question_types_for_styles(
+        suggested_styles, slot_count=count
+    )
+    category = _category_for_fact(fact)
+    for index, raw_seed in enumerate(raw_seeds[:count]):
+        normalized = _try_normalize_seed(
+            raw_seed,
+            chunk_id=fallback_chunk_id,
+            index=index,
+            default_category=category,
+            default_source_chunk_ids=fact_chunk_ids or [fallback_chunk_id],
+            default_question_type=default_question_types[
+                min(index, len(default_question_types) - 1)
+            ],
+            topic_summary=str(fact.get("statement") or "").strip(),
+        )
+        if normalized is not None:
+            # Prefer authoritative fact grounding metadata over model guesses.
+            normalized["sourceChunkIds"] = list(fact_chunk_ids or [fallback_chunk_id])
+            normalized["factId"] = str(fact.get("factId") or "")
+            normalized["evidenceQuote"] = str(fact.get("evidenceQuote") or "")
+            seeds.append(normalized)
+
+    model = generation.get("model", SEED_GENERATION_MODEL)
+    return seeds, model
+
+
 async def _generate_candidates_for_topic(
     *,
     topic: dict[str, Any],
@@ -649,13 +816,18 @@ async def generate_starter_seeds_for_course(
     course_id: str,
     target_count: int = DEFAULT_STARTER_TARGET_COUNT,
     save: bool = False,
+    force_refresh: bool = False,
     storage: CourseArtifactStorage | None = None,
 ) -> dict[str, Any]:
-    """Generate up to target_count starter seeds across a course syllabus.
+    """Generate up to target_count starter seeds via fact inventory + allocation.
 
-    Processes an evenly spaced subset of eligible chunks (not only the opening
-    sections). When save=True, persists accepted validated seeds to Firebase.
-    Does not trigger course creation.
+    Live path (Phase 4 / 4.5):
+      chunks → cached-or-fresh fact inventory → breadth-first allocation
+      → fact-scoped Q/A with rejection backfill
+      → programmatic checks → exact/semantic dedupe → LLM validation → accept
+
+    Chunks are evidence only. Does not use topic planning. When save=True,
+    persists accepted validated seeds to Firebase. Does not trigger course creation.
     """
     try:
         safe_course_id = assert_valid_course_id(course_id)
@@ -703,8 +875,9 @@ async def generate_starter_seeds_for_course(
     chunks_processed = 0
     generation_calls = 0
     validation_calls = 0
-    planning_calls = 0
-    merge_calls = 0
+    planning_calls = 0  # Unused on fact pipeline; kept for schema compatibility.
+    merge_calls = 0  # Unused on fact pipeline; kept for schema compatibility.
+    fact_extraction_calls = 0
     ollama_calls = 0
     embedding_calls = 0
     candidates_generated = 0
@@ -715,247 +888,268 @@ async def generate_starter_seeds_for_course(
     candidates_rejected_validation = 0
     candidates_rejected_unsupported = 0
     candidates_rejected_balancing = 0
+    candidates_rejected_prevalidation = 0
+    candidates_rejected_qualifier_mismatch = 0
+    candidates_rejected_modal_escalation = 0
     duplicates_removed = 0
     semantic_duplicates_removed = 0
     timeout_failures = 0
+    backfill_attempts = 0
+    backfill_accepted = 0
     model_used = SEED_GENERATION_MODEL
     max_total_calls = get_starter_max_total_ollama_calls()
-
-    class _BudgetExhausted(Exception):
-        pass
 
     def _budget_remaining() -> bool:
         return ollama_calls < max_total_calls
 
     async def _counted_completion(prompt: str, **kwargs: Any) -> dict[str, str]:
-        nonlocal ollama_calls, planning_calls, merge_calls
-        if not _budget_remaining():
-            raise _BudgetExhausted()
+        nonlocal ollama_calls, fact_extraction_calls
         ollama_calls += 1
-        if "You merge syllabus starter-seed topics." in prompt:
-            merge_calls += 1
-        elif "You plan course-specific syllabus starter-seed topics." in prompt:
-            planning_calls += 1
+        if FACT_EXTRACTION_PROMPT_MARKER in prompt:
+            fact_extraction_calls += 1
         return await generate_starter_ollama_completion(prompt, **kwargs)
 
-    try:
-        plan = await plan_syllabus_topics(
-            raw_chunks=raw_chunks,
-            target_count=target_count,
-            completion_fn=_counted_completion,
-        )
-    except _BudgetExhausted:
-        plan = build_section_title_fallback_plan(raw_chunks, target_count=target_count)
-    except HTTPException as exc:
-        if exc.status_code == 503:
-            raise
-        plan = build_section_title_fallback_plan(raw_chunks, target_count=target_count)
+    async def _counted_embed(texts: list[str], **kwargs: Any) -> dict[str, Any]:
+        nonlocal embedding_calls
+        embedding_calls += 1
+        return await embed_ollama_texts(texts, **kwargs)
 
-    topics = list(plan.get("topics", []))
-    if not topics:
-        topics = build_section_title_fallback_plan(raw_chunks, target_count=target_count)["topics"]
-    else:
-        fallback_topics = build_section_title_fallback_plan(
-            raw_chunks,
-            target_count=target_count,
-        )["topics"]
-        covered_chunk_ids = {
-            str(chunk_id).strip()
-            for topic in topics
-            for chunk_id in topic.get("sourceChunkIds", [])
-            if str(chunk_id).strip()
+    inventory = await load_or_build_fact_inventory(
+        course_id=safe_course_id,
+        raw_chunks=raw_chunks,
+        storage=artifact_storage,
+        force_refresh=force_refresh,
+        completion_fn=_counted_completion,
+        embed_fn=_counted_embed,
+    )
+    fact_inventory_cached = bool(inventory.get("cached"))
+    facts = list(inventory.get("facts") or [])
+    fact_count = int(inventory.get("factCount") or len(facts))
+    if inventory.get("model"):
+        model_used = str(inventory["model"])
+
+    allocation = allocate_slots(facts, target_count=target_count)
+    facts_by_id = {str(fact.get("factId") or ""): fact for fact in facts}
+
+    # Unit opportunities: one generation attempt per allocated slot.
+    opportunities: list[tuple[dict[str, Any], dict[str, Any], bool]] = []
+    primary_fact_ids: set[str] = set()
+    for alloc in allocation.get("allocations", []):
+        slot_count = int(alloc.get("slotCount") or 0)
+        if slot_count <= 0:
+            continue
+        fact = facts_by_id.get(str(alloc.get("factId") or ""))
+        if fact is None:
+            continue
+        primary_fact_ids.add(str(fact.get("factId") or ""))
+        for _ in range(slot_count):
+            opportunities.append((fact, alloc, False))
+
+    # Backfill pool: next-best eligible facts that received 0 slots.
+    for alloc in allocation.get("allocations", []):
+        if int(alloc.get("slotCount") or 0) > 0:
+            continue
+        if int(alloc.get("desiredSlots") or 0) <= 0:
+            continue
+        fact_id = str(alloc.get("factId") or "")
+        if fact_id in primary_fact_ids:
+            continue
+        fact = facts_by_id.get(fact_id)
+        if fact is None:
+            continue
+        backfill_alloc = {
+            **alloc,
+            "slotCount": 1,
+            "suggestedStyles": list(alloc.get("suggestedStyles") or ["factual"]),
         }
-        supplemental_topics = [
-            topic
-            for topic in fallback_topics
-            if any(
-                str(chunk_id).strip() not in covered_chunk_ids
-                for chunk_id in topic.get("sourceChunkIds", [])
-            )
+        opportunities.append((fact, backfill_alloc, True))
+
+    allocated_fact_count = len(primary_fact_ids)
+    allocated_slots = int(allocation.get("summary", {}).get("allocatedSlots") or 0)
+    selected_chunk_ids = {
+        str(chunk_id).strip()
+        for fact_id in primary_fact_ids
+        for chunk_id in (facts_by_id.get(fact_id, {}).get("sourceChunkIds") or [])
+        if str(chunk_id).strip()
+    }
+
+    failed_facts: set[str] = set()
+
+    for fact, alloc, is_backfill in opportunities:
+        if len(seeds) >= target_count or not _budget_remaining():
+            break
+
+        fact_id = str(fact.get("factId") or "")
+        if fact_id in failed_facts:
+            continue
+
+        if is_backfill:
+            backfill_attempts += 1
+
+        fact_chunk_ids = [
+            str(item).strip()
+            for item in (fact.get("sourceChunkIds") or [])
+            if str(item).strip()
         ]
-        if supplemental_topics:
-            topics = merge_topics_by_overlap([*topics, *supplemental_topics])
+        fact_chunk_texts: list[str] = []
+        for chunk_id in fact_chunk_ids:
+            raw_chunk = chunk_lookup.get(chunk_id)
+            text = raw_chunk.get("text") if isinstance(raw_chunk, dict) else None
+            if isinstance(text, str) and text.strip():
+                fact_chunk_texts.append(text.strip())
+        if not fact_chunk_texts:
+            continue
 
-    importance_rank = {"high": 0, "medium": 1, "low": 2}
-    topics.sort(key=lambda item: (importance_rank.get(str(item.get("importance")), 3), item["name"]))
+        chunks_processed += len(fact_chunk_texts)
+        ollama_calls += 1
+        generation_calls += 1
+        accepted_before = len(seeds)
+        try:
+            candidates, model_used = await _generate_candidates_for_fact(
+                fact=fact,
+                chunk_texts=fact_chunk_texts,
+                count=1,
+                suggested_styles=list(alloc.get("suggestedStyles") or []),
+            )
+        except HTTPException as exc:
+            failed_facts.add(fact_id)
+            if is_ollama_timeout_error(exc):
+                timeout_failures += 1
+                continue
+            if exc.status_code == 503:
+                raise
+            continue
 
-    for pass_index in range(2):
-        for topic in topics:
-            if len(seeds) >= target_count or not _budget_remaining():
+        candidates_generated += len(candidates)
+        if not candidates:
+            failed_facts.add(fact_id)
+            continue
+
+        for candidate in candidates:
+            if len(seeds) >= target_count:
                 break
 
-            topic_chunk_ids = [
-                str(item).strip() for item in topic.get("sourceChunkIds", []) if str(item).strip()
-            ]
-            topic_chunk_texts = []
-            for chunk_id in topic_chunk_ids:
-                raw_chunk = chunk_lookup.get(chunk_id)
-                text = raw_chunk.get("text") if isinstance(raw_chunk, dict) else None
-                if isinstance(text, str) and text.strip():
-                    topic_chunk_texts.append(text.strip())
-            if not topic_chunk_texts:
+            if not passes_programmatic_candidate_checks(candidate):
+                candidates_rejected += 1
+                candidates_rejected_invalid += 1
                 continue
 
-            topic_counts = count_topics(seeds)
-            remaining_slots = target_count - len(seeds)
-            topic_name = str(topic.get("name", "General")).strip() or "General"
-            topic_count = topic_counts[topic_name]
-            suggested_count = int(topic.get("suggestedExampleCount", 1))
-            topic_target = suggested_count if pass_index == 0 else min(2, suggested_count + 1)
-            topic_call_target = min(
-                STARTER_SEED_CANDIDATES_PER_TOPIC_CALL,
-                remaining_slots,
-                max(1, topic_target - topic_count),
-            )
-            if topic_call_target <= 0:
+            normalized_question = normalize_question_for_dedupe(candidate["question"])
+            if not normalized_question:
+                duplicates_removed += 1
+                candidates_rejected += 1
+                continue
+            if normalized_question in seen_questions:
+                duplicates_removed += 1
+                candidates_rejected += 1
                 continue
 
-            prefer_scenario_like = should_prefer_scenario_or_clarification(
-                accepted_seeds=seeds,
-                remaining_slots=remaining_slots,
-                target_count=target_count,
-            )
-            requested_question_types = (
-                ["scenario", "clarification"] if prefer_scenario_like else None
-            )
-
-            chunks_processed += len(topic_chunk_texts)
-            ollama_calls += 1
-            generation_calls += 1
-            try:
-                candidates, model_used = await _generate_candidates_for_topic(
-                    topic=topic,
-                    chunk_texts=topic_chunk_texts,
-                    count=topic_call_target,
-                    prefer_scenario_like=prefer_scenario_like,
-                    requested_question_types=requested_question_types,
-                )
-            except HTTPException as exc:
-                if is_ollama_timeout_error(exc):
-                    timeout_failures += 1
-                    continue
-                if exc.status_code == 503:
-                    raise
-                continue
-
-            candidates_generated += len(candidates)
-            for candidate in candidates:
-                if len(seeds) >= target_count:
-                    break
-
-                if not passes_programmatic_candidate_checks(candidate):
-                    candidates_rejected += 1
-                    candidates_rejected_invalid += 1
-                    continue
-
-                normalized_question = normalize_question_for_dedupe(candidate["question"])
-                if not normalized_question:
-                    duplicates_removed += 1
-                    candidates_rejected += 1
-                    continue
-                if normalized_question in seen_questions:
-                    duplicates_removed += 1
-                    candidates_rejected += 1
-                    continue
-
-                if accepted_questions:
-                    embedding_calls += 1
-                    try:
-                        semantic_duplicate = await find_semantic_duplicate_question(
-                            candidate_question=candidate["question"],
-                            accepted_questions=accepted_questions,
-                            embed_fn=embed_ollama_texts,
-                            cache=embedding_cache,
-                        )
-                    except HTTPException:
-                        embedding_cache.last_candidate_embedding = None
-                        semantic_duplicate = None
-                    if semantic_duplicate is not None:
-                        semantic_duplicates_removed += 1
-                        candidates_rejected += 1
-                        continue
-
-                if (
-                    str(candidate.get("questionType", "")).strip().lower()
-                    not in SCENARIO_LIKE_TYPES
-                    and should_prefer_scenario_or_clarification(
-                        accepted_seeds=seeds,
-                        remaining_slots=target_count - len(seeds),
-                        target_count=target_count,
-                    )
-                ):
-                    candidates_rejected += 1
-                    candidates_rejected_balancing += 1
-                    continue
-
-                balancing_failure = would_violate_balancing(
-                    candidate=candidate,
-                    accepted_seeds=seeds,
-                    target_count=target_count,
-                    planner_topics=topics,
-                )
-                if balancing_failure is not None:
-                    candidates_rejected += 1
-                    candidates_rejected_balancing += 1
-                    continue
-
-                if not _budget_remaining():
-                    break
-
-                ollama_calls += 1
-                validation_calls += 1
+            if accepted_questions:
+                embedding_calls += 1
                 try:
-                    validation = await _validate_candidate(
-                        question=candidate["question"],
-                        answer=candidate["answer"],
-                        topic_name=str(candidate.get("category", "General")),
-                        question_type=str(candidate.get("questionType", "direct")),
-                        chunk_text="\n\n".join(topic_chunk_texts),
+                    semantic_duplicate = await find_semantic_duplicate_question(
+                        candidate_question=candidate["question"],
+                        accepted_questions=accepted_questions,
+                        embed_fn=embed_ollama_texts,
+                        cache=embedding_cache,
                     )
-                except HTTPException as exc:
-                    if is_ollama_timeout_error(exc):
-                        timeout_failures += 1
-                        candidates_validated += 1
-                        candidates_rejected += 1
-                        candidates_rejected_validation += 1
-                        continue
-                    if exc.status_code == 503:
-                        raise
-                    candidates_validated += 1
+                except HTTPException:
+                    embedding_cache.last_candidate_embedding = None
+                    semantic_duplicate = None
+                if semantic_duplicate is not None:
+                    semantic_duplicates_removed += 1
                     candidates_rejected += 1
-                    candidates_rejected_validation += 1
                     continue
 
-                candidates_validated += 1
-                if validation is None:
-                    candidates_rejected += 1
-                    candidates_rejected_validation += 1
-                    continue
-                validation = calibrate_validation_result(
-                    result=validation,
+            # Deterministic grounding/escalation checks before LLM validation.
+            prevalidation = prevalidate_candidate(
+                candidate=candidate,
+                fact=fact,
+                source_text="\n\n".join(fact_chunk_texts),
+            )
+            if prevalidation is not None:
+                candidates_rejected += 1
+                candidates_rejected_prevalidation += 1
+                category = prevalidation.get("category")
+                if category == "modal_escalation":
+                    candidates_rejected_modal_escalation += 1
+                elif category == "qualifier_mismatch":
+                    candidates_rejected_qualifier_mismatch += 1
+                continue
+
+            if not _budget_remaining():
+                break
+
+            ollama_calls += 1
+            validation_calls += 1
+            try:
+                validation = await _validate_candidate(
                     question=candidate["question"],
                     answer=candidate["answer"],
                     topic_name=str(candidate.get("category", "General")),
                     question_type=str(candidate.get("questionType", "direct")),
+                    chunk_text="\n\n".join(fact_chunk_texts),
                 )
-                if not validation_result_accepts(validation):
+            except HTTPException as exc:
+                if is_ollama_timeout_error(exc):
+                    timeout_failures += 1
+                    candidates_validated += 1
                     candidates_rejected += 1
                     candidates_rejected_validation += 1
-                    if validation.get("unsupportedClaims"):
-                        candidates_rejected_unsupported += 1
                     continue
+                if exc.status_code == 503:
+                    raise
+                candidates_validated += 1
+                candidates_rejected += 1
+                candidates_rejected_validation += 1
+                continue
 
-                seen_questions.add(normalized_question)
-                accepted_questions.append(candidate["question"])
-                embedding_cache.remember_last_candidate()
-                candidates_accepted += 1
-                seeds.append(
-                    {
-                        **candidate,
-                        "topicId": topic.get("topicId"),
-                        "validation": validation,
-                    }
-                )
+            candidates_validated += 1
+            if validation is None:
+                candidates_rejected += 1
+                candidates_rejected_validation += 1
+                continue
+            validation = calibrate_validation_result(
+                result=validation,
+                question=candidate["question"],
+                answer=candidate["answer"],
+                topic_name=str(candidate.get("category", "General")),
+                question_type=str(candidate.get("questionType", "direct")),
+            )
+            if not validation_result_accepts(validation):
+                candidates_rejected += 1
+                candidates_rejected_validation += 1
+                if validation.get("unsupportedClaims"):
+                    candidates_rejected_unsupported += 1
+                continue
+
+            seen_questions.add(normalized_question)
+            accepted_questions.append(candidate["question"])
+            embedding_cache.remember_last_candidate()
+            candidates_accepted += 1
+            if is_backfill:
+                backfill_accepted += 1
+            seeds.append(
+                {
+                    **candidate,
+                    "factId": str(
+                        candidate.get("factId") or fact.get("factId") or ""
+                    ),
+                    "evidenceQuote": str(
+                        candidate.get("evidenceQuote")
+                        or fact.get("evidenceQuote")
+                        or ""
+                    ),
+                    "sourceChunkIds": list(
+                        candidate.get("sourceChunkIds") or fact_chunk_ids
+                    ),
+                    "validation": validation,
+                }
+            )
+
+        if len(seeds) == accepted_before:
+            # No accept from this attempt — do not keep regenerating this fact.
+            failed_facts.add(fact_id)
 
     saved_count = 0
     persistence: dict[str, Any] | None = None
@@ -985,16 +1179,20 @@ async def generate_starter_seeds_for_course(
         "model": model_used,
         "targetCount": target_count,
         "seeds": seeds,
-        "topicPlan": {"topics": topics},
         "progress": {
             "eligibleChunks": len(eligible),
-            "selectedChunks": len(
-                {chunk_id for topic in topics for chunk_id in topic.get("sourceChunkIds", [])}
-            ),
+            "selectedChunks": len(selected_chunk_ids),
             "chunksProcessed": chunks_processed,
             "chunksSkipped": chunks_skipped,
             "planningCalls": planning_calls,
             "mergeCalls": merge_calls,
+            "factExtractionCalls": fact_extraction_calls,
+            "factInventoryCached": fact_inventory_cached,
+            "factCount": fact_count,
+            "allocatedFactCount": allocated_fact_count,
+            "allocatedSlots": allocated_slots,
+            "backfillAttempts": backfill_attempts,
+            "backfillAccepted": backfill_accepted,
             "generationCalls": generation_calls,
             "validationCalls": validation_calls,
             "ollamaCalls": ollama_calls,
@@ -1009,6 +1207,9 @@ async def generate_starter_seeds_for_course(
             "candidatesRejectedValidation": candidates_rejected_validation,
             "candidatesRejectedUnsupportedClaims": candidates_rejected_unsupported,
             "candidatesRejectedBalancing": candidates_rejected_balancing,
+            "candidatesRejectedPreValidation": candidates_rejected_prevalidation,
+            "candidatesRejectedQualifierMismatch": candidates_rejected_qualifier_mismatch,
+            "candidatesRejectedModalEscalation": candidates_rejected_modal_escalation,
             "scheduleCount": count_schedule_like(seeds),
             "scenarioOrClarificationMinimum": compute_scenario_minimum(target_count),
             "timeoutFailures": timeout_failures,

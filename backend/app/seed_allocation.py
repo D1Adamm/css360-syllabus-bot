@@ -287,6 +287,7 @@ def _cap_blockers(
     series_counts: Counter[str],
     chunk_counts: Counter[str],
     is_additional_slot: bool,
+    enforce_scope_caps: bool = True,
 ) -> list[str]:
     """Return human-readable cap reasons that currently block another slot.
 
@@ -295,6 +296,10 @@ def _cap_blockers(
     slots on an already-admitted fact are limited by desiredSlots,
     MAX_SLOTS_PER_FACT, targetCount, and source-chunk volume (so one chunk
     cannot dominate via many multi-slot facts).
+
+    During the breadth-first pass, scope caps may be relaxed (``enforce_scope_caps``
+    False) so small targets can still cover many distinct high-value facts when
+    they share course_wide scope.
     """
     blockers: list[str] = []
     chunk = _primary_source_chunk(fact)
@@ -310,9 +315,10 @@ def _cap_blockers(
     kind = str(fact.get("kind") or "other")
     series = _series_key(fact)
 
-    scope_cap = caps["perScope"].get(scope, caps["perScope"]["other"])
-    if scope_counts[scope] >= scope_cap:
-        blockers.append(f"scope_cap:{scope}")
+    if enforce_scope_caps:
+        scope_cap = caps["perScope"].get(scope, caps["perScope"]["other"])
+        if scope_counts[scope] >= scope_cap:
+            blockers.append(f"scope_cap:{scope}")
 
     kind_cap = caps["perKind"]
     if kind == "deadline":
@@ -368,12 +374,21 @@ def allocate_slots(
     course_wide_allocated = 0
     reserve = caps["courseWideReserve"]
 
-    def _effective_score(item: dict[str, Any]) -> float | None:
+    def _effective_score(
+        item: dict[str, Any],
+        *,
+        first_slot_only: bool,
+    ) -> float | None:
         if item["slotCount"] >= item["desiredSlots"]:
             return None
         if item["slotCount"] >= MAX_SLOTS_PER_FACT:
             return None
         if item["desiredSlots"] <= 0:
+            return None
+        if first_slot_only and item["slotCount"] > 0:
+            return None
+        if not first_slot_only and item["slotCount"] == 0:
+            # Depth pass only adds slots to facts that already have breadth coverage.
             return None
 
         blockers = _cap_blockers(
@@ -384,6 +399,9 @@ def allocate_slots(
             series_counts=series_counts,
             chunk_counts=chunk_counts,
             is_additional_slot=item["slotCount"] > 0,
+            # Breadth pass relaxes scope caps so small targets can still cover
+            # many distinct course_wide policies when that is where the value is.
+            enforce_scope_caps=not first_slot_only,
         )
         if blockers:
             # Remember why this fact is currently blocked (last observed).
@@ -431,41 +449,45 @@ def allocate_slots(
             if multi_reason not in item["allocReasons"]:
                 item["allocReasons"].append(multi_reason)
 
-    # Greedy slot-by-slot fill (deterministic).
-    while allocated_total < target:
-        best: dict[str, Any] | None = None
-        best_score = float("-inf")
-        for item in candidates:
-            score = _effective_score(item)
-            if score is None:
-                continue
-            # Tie-break: higher ranking, then lower factId (already sorted,
-            # but re-check for stability when scores equal after factors).
-            if score > best_score or (
-                score == best_score
-                and best is not None
-                and (
-                    item["rankingScore"] > best["rankingScore"]
-                    or (
-                        item["rankingScore"] == best["rankingScore"]
-                        and item["factId"] < best["factId"]
+    def _fill_pass(*, first_slot_only: bool, pass_reason: str) -> None:
+        nonlocal allocated_total
+        while allocated_total < target:
+            best: dict[str, Any] | None = None
+            best_score = float("-inf")
+            for item in candidates:
+                score = _effective_score(item, first_slot_only=first_slot_only)
+                if score is None:
+                    continue
+                if score > best_score or (
+                    score == best_score
+                    and best is not None
+                    and (
+                        item["rankingScore"] > best["rankingScore"]
+                        or (
+                            item["rankingScore"] == best["rankingScore"]
+                            and item["factId"] < best["factId"]
+                        )
                     )
-                )
+                ):
+                    best = item
+                    best_score = score
+
+            if best is None:
+                break
+
+            reason = pass_reason
+            if (
+                str(best["fact"].get("scope") or "") == "course_wide"
+                and course_wide_allocated < reserve
+                and best["slotCount"] == 0
             ):
-                best = item
-                best_score = score
+                reason = "course_wide_reservation_priority"
+            _commit_slot(best, reason)
 
-        if best is None:
-            break
-
-        reason = "allocated_by_ranking"
-        if (
-            str(best["fact"].get("scope") or "") == "course_wide"
-            and course_wide_allocated < reserve
-            and best["slotCount"] == 0
-        ):
-            reason = "course_wide_reservation_priority"
-        _commit_slot(best, reason)
+    # Pass 1: breadth — one slot each to the best distinct eligible facts.
+    _fill_pass(first_slot_only=True, pass_reason="breadth_first_slot")
+    # Pass 2: depth — additional slots only after breadth, where complexity justifies.
+    _fill_pass(first_slot_only=False, pass_reason="depth_additional_slot")
 
     # Build inspectable outputs.
     allocations: list[dict[str, Any]] = []
