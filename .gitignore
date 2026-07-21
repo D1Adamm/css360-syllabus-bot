@@ -10,9 +10,15 @@ lerna-debug.log*
 node_modules
 dist
 .venv
-__pycache__
+training/.venv
+**/venv/
+**/__pycache__/
 *.pyc
 .env
+*.env.local
+HF_TOKEN
+.hf_token
+*.pem
 backend/data/syllabus_index.json
 backend/data/indexes/
 backend/course_data/
@@ -24,6 +30,25 @@ data/splits/*
 !data/splits/.gitkeep
 dist-ssr
 *.local
+
+# QLoRA / Hugging Face / Slurm artifacts (never commit)
+training/logs/
+training/outputs/
+**/training_outputs/
+**/hf_cache/
+**/.cache/huggingface/
+**/checkpoints/
+**/adapter/
+**/adapters/
+**/lora/
+**/*-checkpoint-*/
+*.bin
+*.safetensors
+*.gguf
+*.pt
+*.pth
+*.ckpt
+*.onnx
 
 # Editor directories and files
 .vscode/*

@@ -1,0 +1,14 @@
+# QLoRA training stack for Tillicum (install PyTorch CUDA wheels separately if needed).
+# Compatible pins for Llama 3.2 3B Instruct + PEFT/bitsandbytes/TRL.
+
+torch==2.5.1
+transformers==4.47.1
+datasets==3.2.0
+accelerate==1.2.1
+peft==0.14.0
+bitsandbytes==0.45.0
+trl==0.13.0
+safetensors==0.4.5
+sentencepiece==0.2.0
+protobuf==5.29.2
+huggingface-hub==0.27.0
