@@ -22,11 +22,16 @@ mkdir -p training/logs
 mkdir -p "/gpfs/projects/simswe/${USER}/hf_cache"
 mkdir -p "/gpfs/projects/simswe/${USER}/training_outputs/css-360-qlora"
 
-export HF_HOME="/gpfs/projects/simswe/${USER}/hf_cache"
+export HF_HOME="/gpfs/projects/simswe/${USER}/huggingface"
 export HF_HUB_CACHE="${HF_HOME}/hub"
-export TRANSFORMERS_CACHE="${HF_HOME}/transformers"
+export HF_TOKEN_PATH="${HF_HOME}/token"
 export TRAIN_GPU_COUNT="${SLURM_GPUS_ON_NODE:-1}"
 export SLURM_JOB_ID="${SLURM_JOB_ID:-}"
+
+test -s "$HF_TOKEN_PATH" || {
+  echo "Missing Hugging Face token at $HF_TOKEN_PATH" >&2
+  exit 1
+}
 
 echo "=== Job info ==="
 echo "Job ID: ${SLURM_JOB_ID:-unknown}"
