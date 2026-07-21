@@ -13,6 +13,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { ResultsPage } from './pages/ResultsPage';
 import { SeedBuilderPage } from './pages/SeedBuilderPage';
 import { SeedDatasetPage } from './pages/SeedDatasetPage';
+import { ReviewSeedsPage } from './pages/ReviewSeedsPage';
 import { SyllabusPage } from './pages/SyllabusPage';
 
 export function AppRoutes() {
@@ -29,6 +30,7 @@ export function AppRoutes() {
         <Route path="/seeds" element={<LegacyCourseRedirect segment="seeds" />} />
         <Route path="/seed-builder" element={<LegacyCourseRedirect segment="seeds" />} />
         <Route path="/dataset" element={<LegacyCourseRedirect segment="dataset" />} />
+        <Route path="/review" element={<LegacyCourseRedirect segment="review" />} />
         <Route path="/compare" element={<LegacyCourseRedirect segment="compare" />} />
         <Route path="/evaluate" element={<LegacyCourseRedirect segment="evaluate" />} />
         <Route path="/results" element={<LegacyCourseRedirect segment="results" />} />
@@ -38,6 +40,7 @@ export function AppRoutes() {
           <Route path="home" element={<HomePage />} />
           <Route path="syllabus" element={<SyllabusPage />} />
           <Route path="seeds" element={<SeedBuilderPage />} />
+          <Route path="review" element={<ReviewSeedsPage />} />
           <Route path="dataset" element={<SeedDatasetPage />} />
           <Route path="compare" element={<ComparisonPage />} />
           <Route path="evaluate" element={<EvaluationPage />} />

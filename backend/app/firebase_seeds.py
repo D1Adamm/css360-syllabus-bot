@@ -150,6 +150,60 @@ def collect_normalized_question_keys(existing_seeds: dict[str, Any] | None) -> s
     return keys
 
 
+def summarize_existing_seed_examples(
+    existing_seeds: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Summarize Firebase seedExamples for top-up planning and dedupe preload."""
+    count = 0
+    questions: list[str] = []
+    seen_keys: set[str] = set()
+    fact_ids: set[str] = set()
+
+    if not existing_seeds:
+        return {
+            "existingCount": 0,
+            "questions": questions,
+            "seenQuestionKeys": seen_keys,
+            "factIds": fact_ids,
+        }
+
+    for raw_seed in existing_seeds.values():
+        if not isinstance(raw_seed, dict):
+            continue
+        count += 1
+        question = raw_seed.get("question") or raw_seed.get("instruction")
+        if isinstance(question, str) and question.strip():
+            cleaned = question.strip()
+            questions.append(cleaned)
+            seen_keys.add(normalize_question_for_dedupe(cleaned))
+        stored_key = raw_seed.get("normalizedQuestionKey")
+        if isinstance(stored_key, str) and stored_key.strip():
+            seen_keys.add(stored_key.strip())
+        fact_id = raw_seed.get("factId")
+        if isinstance(fact_id, str) and fact_id.strip():
+            fact_ids.add(fact_id.strip())
+
+    return {
+        "existingCount": count,
+        "questions": questions,
+        "seenQuestionKeys": seen_keys,
+        "factIds": fact_ids,
+    }
+
+
+def compute_top_up_gap(*, existing_count: int, target_count: int) -> dict[str, int | bool]:
+    """Return how many new seeds are needed to reach target_count."""
+    safe_existing = max(0, int(existing_count))
+    safe_target = max(0, int(target_count))
+    missing = max(0, safe_target - safe_existing)
+    return {
+        "existingCount": safe_existing,
+        "targetCount": safe_target,
+        "missingCount": missing,
+        "alreadyComplete": missing == 0,
+    }
+
+
 async def fetch_course_seed_examples(course_id: str) -> dict[str, Any]:
     assert_valid_course_id(course_id)
     url = _request_url(course_seed_examples_path(course_id))

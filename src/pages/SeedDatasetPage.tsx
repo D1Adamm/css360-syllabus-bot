@@ -16,6 +16,8 @@ import {
   ALL_CATEGORIES,
   ALL_DIFFICULTIES,
   type AnswerTypeFilter,
+  REVIEW_STATUS_FILTERS,
+  type ReviewStatusFilter,
   calculateStatistics,
   filterSeeds,
   getUniqueCategories,
@@ -29,6 +31,7 @@ export function SeedDatasetPage() {
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [selectedDifficulty, setSelectedDifficulty] = useState(ALL_DIFFICULTIES);
   const [selectedAnswerType, setSelectedAnswerType] = useState<AnswerTypeFilter>(ALL_ANSWER_TYPES);
+  const [reviewStatus, setReviewStatus] = useState<ReviewStatusFilter>('approved');
   const [sortBy, setSortBy] = useState<SortOption>('id-asc');
 
   const categories = useMemo(() => getUniqueCategories(seeds), [seeds]);
@@ -41,9 +44,18 @@ export function SeedDatasetPage() {
         category: selectedCategory,
         difficulty: selectedDifficulty,
         answerType: selectedAnswerType,
+        reviewStatus,
         sortBy,
       }),
-    [seeds, searchQuery, selectedCategory, selectedDifficulty, selectedAnswerType, sortBy],
+    [
+      seeds,
+      searchQuery,
+      selectedCategory,
+      selectedDifficulty,
+      selectedAnswerType,
+      reviewStatus,
+      sortBy,
+    ],
   );
 
   const handleDeleteSeed = useCallback(
@@ -58,6 +70,7 @@ export function SeedDatasetPage() {
     setSelectedCategory(ALL_CATEGORIES);
     setSelectedDifficulty(ALL_DIFFICULTIES);
     setSelectedAnswerType(ALL_ANSWER_TYPES);
+    setReviewStatus('approved');
     setSortBy('id-asc');
   }
 
@@ -72,7 +85,7 @@ export function SeedDatasetPage() {
         <p>
           <strong>Course-specific dataset:</strong> examples shown here come only from Firebase{' '}
           <code>courses/{courseId}/seedExamples</code>. Different courses do not share seed
-          examples.
+          examples. The list defaults to Approved (fine-tuning-ready) examples.
         </p>
       </aside>
 
@@ -97,6 +110,29 @@ export function SeedDatasetPage() {
         <>
           <DatasetStats stats={stats} />
 
+          <div
+            className="review-filters"
+            role="tablist"
+            aria-label="Filter by review status"
+          >
+            {REVIEW_STATUS_FILTERS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={reviewStatus === item.id}
+                className={
+                  reviewStatus === item.id
+                    ? 'review-filters__button review-filters__button--active'
+                    : 'review-filters__button'
+                }
+                onClick={() => setReviewStatus(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
           <SeedFilters
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
@@ -120,8 +156,9 @@ export function SeedDatasetPage() {
             <section className="dataset-empty" aria-live="polite">
               <h2 className="dataset-empty__title">No matching seed examples</h2>
               <p className="dataset-empty__text">
-                Try a different search term or filter combination. You can also clear all
-                filters to browse the full dataset.
+                {reviewStatus === 'approved' && stats.approvedCount === 0
+                  ? 'No approved seeds yet for this course. Approve seeds on the Review page, or switch filters to browse stored examples.'
+                  : 'Try a different search term or filter combination. You can also clear all filters to browse approved examples.'}
               </p>
               <button type="button" className="dataset-empty__button" onClick={clearFilters}>
                 Clear filters

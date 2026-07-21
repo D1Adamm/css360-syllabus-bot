@@ -217,3 +217,143 @@ export async function uploadCourseSyllabus(
 
   return (await response.json()) as SyllabusUploadResponse;
 }
+
+export type SeedReviewStatus = 'generated' | 'approved' | 'rejected' | 'edited';
+
+export interface CourseSeedReviewRecord {
+  id?: string | null;
+  question?: string | null;
+  answer?: string | null;
+  instruction?: string | null;
+  response?: string | null;
+  category?: string | null;
+  sourceSection?: string | null;
+  factId?: string | null;
+  evidenceQuote?: string | null;
+  sourceChunkIds?: string[] | null;
+  origin?: string | null;
+  status?: string | null;
+  reviewStatus?: string | null;
+  reviewNotes?: string | null;
+  originalQuestion?: string | null;
+  originalAnswer?: string | null;
+  /** True when the seed was human-edited; survives later approval. */
+  wasEdited?: boolean | null;
+  validation?: {
+    score: number;
+    reason: string;
+    unsupportedClaims?: string[];
+    components?: Record<string, number>;
+  } | null;
+}
+
+export interface CourseSeedListResponse {
+  courseId: string;
+  count: number;
+  firebasePath: string;
+  seeds: CourseSeedReviewRecord[];
+}
+
+export interface SeedReviewResponse {
+  courseId: string;
+  seedId: string;
+  seed: CourseSeedReviewRecord;
+  firebasePath: string;
+}
+
+export interface SeedExportApprovedResponse {
+  courseId: string;
+  summary: {
+    approvedCount?: number;
+    exportedCount?: number;
+    validatedCount?: number;
+    validationPassed?: boolean;
+    exportPath?: string;
+    skippedCount?: number;
+    existingCount?: number;
+    files?: Record<string, string>;
+    firebasePath?: string;
+    [key: string]: unknown;
+  };
+}
+
+export interface ApprovedExportStatusResponse {
+  courseId: string;
+  exists: boolean;
+  exportPath: string;
+  exampleCount: number;
+  sourceFile: string;
+}
+
+export interface PrepareTrainingSplitResponse {
+  courseId: string;
+  summary: {
+    trainExamples?: number;
+    validationExamples?: number;
+    totalExamples?: number;
+    splitSeed?: number;
+    manifest?: Record<string, unknown>;
+    files?: Record<string, string>;
+    [key: string]: unknown;
+  };
+}
+
+export async function listCourseSeeds(
+  courseId: string,
+): Promise<CourseSeedListResponse> {
+  return getJson<CourseSeedListResponse>(
+    `/api/courses/${courseId}/seeds`,
+    'The backend could not load seed examples for this course.',
+    'Could not reach the backend to load seeds. Make sure the FastAPI server is running.',
+  );
+}
+
+export async function reviewCourseSeed(
+  courseId: string,
+  seedId: string,
+  body: {
+    reviewStatus: SeedReviewStatus;
+    question?: string;
+    answer?: string;
+    reviewNotes?: string;
+  },
+): Promise<SeedReviewResponse> {
+  return postJson<SeedReviewResponse>(
+    `/api/courses/${courseId}/seeds/${encodeURIComponent(seedId)}/review`,
+    body,
+    'The backend could not update the seed review status.',
+    'Could not reach the backend to review this seed. Make sure the FastAPI server is running.',
+  );
+}
+
+export async function exportApprovedCourseSeeds(
+  courseId: string,
+): Promise<SeedExportApprovedResponse> {
+  return postJson<SeedExportApprovedResponse>(
+    `/api/courses/${courseId}/seeds/export-approved`,
+    {},
+    'The backend could not export approved seeds.',
+    'Could not reach the backend to export approved seeds. Make sure the FastAPI server is running.',
+  );
+}
+
+export async function getApprovedExportStatus(
+  courseId: string,
+): Promise<ApprovedExportStatusResponse> {
+  return getJson<ApprovedExportStatusResponse>(
+    `/api/courses/${courseId}/seeds/approved-export-status`,
+    'The backend could not check the approved export status.',
+    'Could not reach the backend to check approved export status. Make sure the FastAPI server is running.',
+  );
+}
+
+export async function prepareTrainingSplit(
+  courseId: string,
+): Promise<PrepareTrainingSplitResponse> {
+  return postJson<PrepareTrainingSplitResponse>(
+    `/api/courses/${courseId}/seeds/prepare-training-split`,
+    {},
+    'The backend could not prepare the training split.',
+    'Could not reach the backend to prepare the training split. Make sure the FastAPI server is running.',
+  );
+}

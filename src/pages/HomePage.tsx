@@ -27,6 +27,9 @@ export function HomePage() {
         </p>
         <div className="hero__actions">
           <ButtonLink to={coursePagePath(courseId, 'seeds')}>Seed Data Builder</ButtonLink>
+          <ButtonLink to={coursePagePath(courseId, 'review')} variant="secondary">
+            Review Seeds
+          </ButtonLink>
           <ButtonLink to={coursePagePath(courseId, 'compare')} variant="secondary">
             Model Comparison
           </ButtonLink>

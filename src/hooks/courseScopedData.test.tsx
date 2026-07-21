@@ -165,7 +165,7 @@ describe('course-scoped seed and evaluation data', () => {
     );
     expect(
       document.body.textContent,
-    ).toMatch(/No seed examples for this course yet/);
+    ).toMatch(/No manually created examples yet/);
   });
 
   it('Dataset page uses the same course-specific seed path', async () => {

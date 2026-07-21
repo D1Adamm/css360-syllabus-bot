@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -23,10 +23,18 @@ vi.mock('../lib/seedExamplesDb', () => ({
   updateSeedExample: vi.fn(),
 }));
 
-function makeSeed(courseLabel: string, id: string): SeedExample {
+function makeSeed(
+  courseLabel: string,
+  id: string,
+  options: {
+    reviewStatus?: SeedExample['reviewStatus'];
+    instruction?: string;
+  } = {},
+): SeedExample {
+  const reviewStatus = options.reviewStatus ?? 'approved';
   return {
     id,
-    instruction: `When does ${courseLabel} meet?`,
+    instruction: options.instruction ?? `When does ${courseLabel} meet?`,
     response: `${courseLabel} meets on a course-specific schedule described in its syllabus.`,
     category: 'Course Basics',
     sourceSection: `${courseLabel} Meetings`,
@@ -34,6 +42,8 @@ function makeSeed(courseLabel: string, id: string): SeedExample {
     directlyAnswered: true,
     origin: 'user',
     createdAt: '2026-07-01T00:00:00.000Z',
+    reviewStatus,
+    status: reviewStatus,
   };
 }
 
@@ -139,5 +149,69 @@ describe('SeedDatasetPage course separation', () => {
     // Phrase commonly present in the legacy CSS 360 prototype seed export.
     expect(screen.queryByText(/UW1 room 302/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/prototype examples/i)).not.toBeInTheDocument();
+  });
+
+  it('defaults to approved seeds and summarizes review status counts', async () => {
+    subscribeToSeedExamplesMock.mockImplementation(
+      (_courseId: string, onData: (seeds: SeedExample[]) => void) => {
+        onData([
+          makeSeed('CSS 360', 'approved-1', {
+            reviewStatus: 'approved',
+            instruction: 'Approved: when does CSS 360 meet?',
+          }),
+          makeSeed('CSS 360', 'generated-1', {
+            reviewStatus: 'generated',
+            instruction: 'Generated: what is the late work policy?',
+          }),
+          makeSeed('CSS 360', 'rejected-1', {
+            reviewStatus: 'rejected',
+            instruction: 'Rejected: can I skip standups?',
+          }),
+          makeSeed('CSS 360', 'edited-1', {
+            reviewStatus: 'edited',
+            instruction: 'Edited: how does grading work?',
+          }),
+        ]);
+        return () => undefined;
+      },
+    );
+
+    renderDataset('css-360-winter-2026-a7rp');
+
+    expect(await screen.findByText('Review status summary')).toBeInTheDocument();
+    const stats = document.querySelector('.dataset-stats__grid');
+    expect(stats).not.toBeNull();
+    const cards = Array.from(stats!.querySelectorAll('.dataset-stats__card')).map((card) => ({
+      label: card.querySelector('.dataset-stats__label')?.textContent,
+      value: card.querySelector('.dataset-stats__value')?.textContent,
+    }));
+    expect(cards).toEqual([
+      { label: 'Total stored', value: '4' },
+      { label: 'Approved', value: '1' },
+      { label: 'Rejected', value: '1' },
+      { label: 'Generated', value: '1' },
+      { label: 'Edited', value: '1' },
+    ]);
+
+    expect(screen.getByRole('tab', { name: 'Approved' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByText(/Approved: when does CSS 360 meet\?/)).toBeInTheDocument();
+    expect(screen.queryByText(/Generated: what is the late work policy\?/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Rejected: can I skip standups\?/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Edited: how does grading work\?/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Generated' }));
+    expect(screen.getByText(/Generated: what is the late work policy\?/)).toBeInTheDocument();
+    expect(screen.queryByText(/Approved: when does CSS 360 meet\?/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'All' }));
+    expect(screen.getByText(/Showing 4 of 4 seed examples/)).toBeInTheDocument();
+    expect(screen.getByText(/Edited: how does grading work\?/)).toBeInTheDocument();
+
+    const categoryFilter = screen.getByLabelText('Category');
+    expect(categoryFilter.tagName).toBe('SELECT');
+    expect(categoryFilter).toHaveValue('All categories');
   });
 });

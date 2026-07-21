@@ -2,6 +2,9 @@ export type SeedDifficulty = 'Easy' | 'Medium' | 'Hard';
 
 export type SeedOrigin = 'prototype' | 'user' | 'ai_generated';
 
+/** Phase 8 human review status (validated AI seeds start as generated). */
+export type SeedReviewStatus = 'generated' | 'approved' | 'rejected' | 'edited';
+
 export type ModelKey =
   | 'base'
   | 'rag'
@@ -45,6 +48,15 @@ export interface SeedExample {
   questionType?: string;
   sourceChunkIds?: string[];
   validation?: SeedValidationInfo;
+  /** Phase 8 review field; falls back to status when absent. */
+  reviewStatus?: SeedReviewStatus | string;
+  reviewNotes?: string;
+  factId?: string | null;
+  evidenceQuote?: string | null;
+  originalQuestion?: string | null;
+  originalAnswer?: string | null;
+  /** True when the seed was human-edited; survives later approval. */
+  wasEdited?: boolean;
 }
 
 export interface ComparisonResponse {

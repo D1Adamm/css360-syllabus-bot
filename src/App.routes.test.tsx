@@ -33,6 +33,22 @@ vi.mock('./lib/api', () => ({
     text: 'Mock syllabus text for route tests.',
     characterCount: 34,
   })),
+  listCourseSeeds: vi.fn(async () => ({
+    courseId: 'css360-default',
+    count: 0,
+    firebasePath: 'courses/css360-default/seedExamples',
+    seeds: [],
+  })),
+  reviewCourseSeed: vi.fn(),
+  exportApprovedCourseSeeds: vi.fn(),
+  getApprovedExportStatus: vi.fn(async () => ({
+    courseId: 'css360-default',
+    exists: false,
+    exportPath: 'data/exports/css360-default/approved-finetune.jsonl',
+    exampleCount: 0,
+    sourceFile: 'approved-finetune.jsonl',
+  })),
+  prepareTrainingSplit: vi.fn(),
 }));
 
 const subscribeToCoursesMock = vi.hoisted(() =>

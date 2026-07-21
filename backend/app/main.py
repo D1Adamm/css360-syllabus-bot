@@ -30,6 +30,9 @@ from app.schemas import (
     FactInventoryRequest,
     FactInventoryResponse,
     GeneratedSeedExample,
+    ApprovedExportStatusResponse,
+    PrepareTrainingSplitRequest,
+    PrepareTrainingSplitResponse,
     RagGenerateRequest,
     RagGenerateResponse,
     RagGenerateSource,
@@ -47,6 +50,7 @@ from app.schemas import (
     StarterSeedGenerateResponse,
     StarterSeedPersistence,
     StarterSeedProgress,
+    StarterSeedTopUpRequest,
     SyllabusTextResponse,
     SyllabusUploadResponse,
 )
@@ -58,7 +62,13 @@ from app.firebase_seeds import (
     patch_course_seed_example,
 )
 from app.seed_dataset_quality import inspect_seed_dataset
-from app.seed_export import export_approved_seeds
+from app.seed_export import FinetuneJsonlValidationError, export_approved_seeds
+from app.seed_split import (
+    DEFAULT_SPLIT_SEED,
+    TrainingSplitError,
+    approved_export_status,
+    prepare_training_split,
+)
 from app.seed_review import REVIEW_STATUSES, apply_seed_review, resolve_review_status
 from app.seed_allocation import allocate_slots
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
@@ -329,6 +339,50 @@ async def generate_course_starter_seeds(
         target_count=request.target_count,
         save=request.save,
         force_refresh=request.force_refresh,
+        top_up=request.top_up,
+    )
+
+    persistence = None
+    if result.get("persistence") is not None:
+        persistence = StarterSeedPersistence(**result["persistence"])
+
+    return StarterSeedGenerateResponse(
+        courseId=result["courseId"],
+        model=result["model"],
+        targetCount=result["targetCount"],
+        seeds=[GeneratedSeedExample(**seed) for seed in result["seeds"]],
+        progress=StarterSeedProgress(**result["progress"]),
+        persistence=persistence,
+        localSnapshotPath=result.get("localSnapshotPath"),
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/seeds/top-up",
+    response_model=StarterSeedGenerateResponse,
+)
+async def top_up_course_starter_seeds(
+    course_id: str,
+    request: StarterSeedTopUpRequest | None = None,
+) -> StarterSeedGenerateResponse:
+    """Fill the gap to targetCount without regenerating existing Firebase seeds.
+
+    Reads courses/{courseId}/seedExamples, computes missingCount, generates only
+    that many new accepted seeds, dedupes against existing questions, and saves
+    only the new ones when save=true (default).
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    body = request or StarterSeedTopUpRequest()
+    result = await generate_starter_seeds_for_course(
+        course_id=safe_course_id,
+        target_count=body.target_count,
+        save=body.save,
+        force_refresh=body.force_refresh,
+        top_up=True,
     )
 
     persistence = None
@@ -631,5 +685,57 @@ async def export_approved_course_seeds(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     seeds = _seed_records_from_firebase_payload(payload)
-    summary = export_approved_seeds(course_id=safe_course_id, seeds=seeds)
+    try:
+        summary = export_approved_seeds(course_id=safe_course_id, seeds=seeds)
+    except FinetuneJsonlValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return SeedExportApprovedResponse(courseId=safe_course_id, summary=summary)
+
+
+@app.get(
+    "/api/courses/{course_id}/seeds/approved-export-status",
+    response_model=ApprovedExportStatusResponse,
+)
+async def get_approved_export_status(course_id: str) -> ApprovedExportStatusResponse:
+    """Report whether approved-finetune.jsonl exists for this course."""
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    status = approved_export_status(safe_course_id)
+    return ApprovedExportStatusResponse(
+        courseId=status["courseId"],
+        exists=status["exists"],
+        exportPath=status["exportPath"],
+        exampleCount=status["exampleCount"],
+        sourceFile=status["sourceFile"],
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/seeds/prepare-training-split",
+    response_model=PrepareTrainingSplitResponse,
+)
+async def prepare_course_training_split(
+    course_id: str,
+    body: PrepareTrainingSplitRequest | None = None,
+) -> PrepareTrainingSplitResponse:
+    """Create deterministic train/validation split from approved-finetune.jsonl."""
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    split_seed = DEFAULT_SPLIT_SEED
+    if body is not None and body.split_seed is not None:
+        split_seed = int(body.split_seed)
+
+    try:
+        summary = prepare_training_split(
+            safe_course_id,
+            split_seed=split_seed,
+        )
+    except TrainingSplitError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PrepareTrainingSplitResponse(courseId=safe_course_id, summary=summary)

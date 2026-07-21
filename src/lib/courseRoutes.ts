@@ -4,6 +4,7 @@ export const COURSE_PAGE_SEGMENTS = [
   'home',
   'syllabus',
   'seeds',
+  'review',
   'dataset',
   'compare',
   'evaluate',

@@ -2,6 +2,7 @@ import type {
   SeedDifficulty,
   SeedExample,
   SeedOrigin,
+  SeedReviewStatus,
   SeedValidationInfo,
 } from '../types';
 
@@ -26,8 +27,18 @@ export const SEED_CATEGORIES = [
 export const ALL_CATEGORIES = 'All categories';
 export const ALL_DIFFICULTIES = 'All difficulties';
 export const ALL_ANSWER_TYPES = 'All';
+export const ALL_REVIEW_STATUSES = 'all';
 
 export type AnswerTypeFilter = typeof ALL_ANSWER_TYPES | 'Directly answered' | 'Not directly answered';
+export type ReviewStatusFilter = typeof ALL_REVIEW_STATUSES | SeedReviewStatus;
+
+export const REVIEW_STATUS_FILTERS: { id: ReviewStatusFilter; label: string }[] = [
+  { id: 'approved', label: 'Approved' },
+  { id: 'generated', label: 'Generated' },
+  { id: 'rejected', label: 'Rejected' },
+  { id: 'edited', label: 'Edited' },
+  { id: 'all', label: 'All' },
+];
 
 export type SortOption =
   | 'id-asc'
@@ -332,6 +343,30 @@ export function normalizeSeedExample(
     seed.status = status;
   }
 
+  const reviewStatus = readNonEmptyString(record.reviewStatus);
+  if (reviewStatus) {
+    seed.reviewStatus = reviewStatus;
+  }
+
+  const reviewNotes = readNonEmptyString(record.reviewNotes);
+  if (reviewNotes) {
+    seed.reviewNotes = reviewNotes;
+  }
+
+  const originalQuestion = readNonEmptyString(record.originalQuestion);
+  if (originalQuestion) {
+    seed.originalQuestion = originalQuestion;
+  }
+
+  const originalAnswer = readNonEmptyString(record.originalAnswer);
+  if (originalAnswer) {
+    seed.originalAnswer = originalAnswer;
+  }
+
+  if (record.wasEdited === true) {
+    seed.wasEdited = true;
+  }
+
   const questionType = readNonEmptyString(record.questionType);
   if (questionType) {
     seed.questionType = questionType;
@@ -443,6 +478,10 @@ export function sortSeeds(seeds: SeedExample[], sortBy: SortOption): SeedExample
 
 export interface DatasetStatistics {
   totalExamples: number;
+  approvedCount: number;
+  rejectedCount: number;
+  generatedCount: number;
+  editedCount: number;
   totalCategories: number;
   easyCount: number;
   mediumCount: number;
@@ -451,11 +490,49 @@ export interface DatasetStatistics {
   notDirectlyAnsweredCount: number;
 }
 
+export function resolveSeedReviewStatus(seed: SeedExample): SeedReviewStatus | string {
+  const raw = String(seed.reviewStatus || seed.status || 'generated')
+    .trim()
+    .toLowerCase();
+  if (
+    raw === 'generated' ||
+    raw === 'approved' ||
+    raw === 'rejected' ||
+    raw === 'edited'
+  ) {
+    return raw;
+  }
+  return 'generated';
+}
+
+export function countByReviewStatus(seeds: SeedExample[]): Record<SeedReviewStatus, number> {
+  const counts: Record<SeedReviewStatus, number> = {
+    generated: 0,
+    approved: 0,
+    rejected: 0,
+    edited: 0,
+  };
+  for (const seed of seeds) {
+    const status = resolveSeedReviewStatus(seed);
+    if (status in counts) {
+      counts[status as SeedReviewStatus] += 1;
+    } else {
+      counts.generated += 1;
+    }
+  }
+  return counts;
+}
+
 export function calculateStatistics(seeds: SeedExample[]): DatasetStatistics {
   const categories = new Set(seeds.map((seed) => seed.category));
+  const byReview = countByReviewStatus(seeds);
 
   return {
     totalExamples: seeds.length,
+    approvedCount: byReview.approved,
+    rejectedCount: byReview.rejected,
+    generatedCount: byReview.generated,
+    editedCount: byReview.edited,
     totalCategories: categories.size,
     easyCount: seeds.filter((seed) => seed.difficulty === 'Easy').length,
     mediumCount: seeds.filter((seed) => seed.difficulty === 'Medium').length,
@@ -477,10 +554,12 @@ export function filterSeeds(
     category: string;
     difficulty: string;
     answerType: AnswerTypeFilter;
+    reviewStatus?: ReviewStatusFilter;
     sortBy: SortOption;
   },
 ): SeedExample[] {
   const normalizedQuery = normalizeSearchText(options.searchQuery);
+  const reviewFilter = options.reviewStatus ?? ALL_REVIEW_STATUSES;
 
   const filtered = seeds.filter((seed) => {
     const matchesSearch = seedMatchesSearch(seed, normalizedQuery);
@@ -492,8 +571,17 @@ export function filterSeeds(
       options.answerType === ALL_ANSWER_TYPES ||
       (options.answerType === 'Directly answered' && seed.directlyAnswered) ||
       (options.answerType === 'Not directly answered' && !seed.directlyAnswered);
+    const matchesReview =
+      reviewFilter === ALL_REVIEW_STATUSES ||
+      resolveSeedReviewStatus(seed) === reviewFilter;
 
-    return matchesSearch && matchesCategory && matchesDifficulty && matchesAnswerType;
+    return (
+      matchesSearch &&
+      matchesCategory &&
+      matchesDifficulty &&
+      matchesAnswerType &&
+      matchesReview
+    );
   });
 
   return sortSeeds(filtered, options.sortBy);

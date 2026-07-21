@@ -77,42 +77,26 @@ export function SeedFilters({
         />
       </div>
 
-      <div className="seed-filters__group">
-        <span className="seed-filters__label" id="seed-category-filter-label">
-          Category
-        </span>
-        <div
-          className="seed-filters__controls"
-          role="group"
-          aria-labelledby="seed-category-filter-label"
-        >
-          <button
-            type="button"
-            className={`seed-filters__button${
-              selectedCategory === ALL_CATEGORIES ? ' seed-filters__button--active' : ''
-            }`}
-            aria-pressed={selectedCategory === ALL_CATEGORIES}
-            onClick={() => onCategoryChange(ALL_CATEGORIES)}
-          >
-            {ALL_CATEGORIES}
-          </button>
-          {categories.map((category) => (
-            <button
-              key={category}
-              type="button"
-              className={`seed-filters__button${
-                selectedCategory === category ? ' seed-filters__button--active' : ''
-              }`}
-              aria-pressed={selectedCategory === category}
-              onClick={() => onCategoryChange(category)}
-            >
-              {category}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div className="seed-filters__row">
+        <div className="seed-filters__field">
+          <label htmlFor="seed-category-filter" className="seed-filters__label">
+            Category
+          </label>
+          <select
+            id="seed-category-filter"
+            className="seed-filters__select"
+            value={selectedCategory}
+            onChange={(event) => onCategoryChange(event.target.value)}
+          >
+            <option value={ALL_CATEGORIES}>{ALL_CATEGORIES}</option>
+            {categories.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="seed-filters__field">
           <label htmlFor="seed-difficulty-filter" className="seed-filters__label">
             Difficulty

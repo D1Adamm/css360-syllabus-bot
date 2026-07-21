@@ -268,6 +268,40 @@ class StarterSeedGenerateRequest(BaseModel):
             "When true, rebuild the fact inventory instead of reusing a valid cache."
         ),
     )
+    top_up: bool = Field(
+        default=False,
+        alias="topUp",
+        description=(
+            "When true, read existing Firebase seeds first and generate only "
+            "enough new seeds to reach targetCount. Existing seeds are preserved."
+        ),
+    )
+
+
+class StarterSeedTopUpRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    target_count: int = Field(
+        default=50,
+        alias="targetCount",
+        ge=1,
+        le=50,
+        description="Desired total saved seeds after top-up (default 50).",
+    )
+    save: bool = Field(
+        default=True,
+        description=(
+            "When true (default), persist only newly accepted seeds to Firebase. "
+            "Existing seeds are never deleted."
+        ),
+    )
+    force_refresh: bool = Field(
+        default=False,
+        alias="forceRefresh",
+        description=(
+            "When true, rebuild the fact inventory instead of reusing a valid cache."
+        ),
+    )
 
 
 class StarterSeedPersistence(BaseModel):
@@ -355,6 +389,29 @@ class StarterSeedProgress(BaseModel):
         default="partial",
         description="Baseline outcome for this run: ready, partial, or failed.",
     )
+    top_up: bool = Field(
+        default=False,
+        alias="topUp",
+        description="True when this run was a top-up against existing Firebase seeds.",
+    )
+    existing_count: int = Field(
+        default=0,
+        alias="existingCount",
+        description="Seeds already present in Firebase before this run (top-up).",
+    )
+    missing_count: int = Field(
+        default=0,
+        alias="missingCount",
+        description="Seeds still needed to reach targetCount at start of top-up.",
+    )
+    total_count: int = Field(
+        default=0,
+        alias="totalCount",
+        description=(
+            "Projected course total after this run "
+            "(existing + newly saved/accepted). Equals finalCount when not top-up."
+        ),
+    )
 
 
 class StarterSeedGenerateResponse(BaseModel):
@@ -398,6 +455,11 @@ class SeedReviewRecord(BaseModel):
     review_notes: str | None = Field(default=None, alias="reviewNotes")
     original_question: str | None = Field(default=None, alias="originalQuestion")
     original_answer: str | None = Field(default=None, alias="originalAnswer")
+    was_edited: bool | None = Field(
+        default=None,
+        alias="wasEdited",
+        description="True when the seed was human-edited; survives later approval.",
+    )
     validation: SeedValidationResult | None = None
 
 
@@ -449,6 +511,33 @@ class SeedExportApprovedRequest(BaseModel):
 
 
 class SeedExportApprovedResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    summary: dict
+
+
+class ApprovedExportStatusResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    exists: bool
+    export_path: str = Field(alias="exportPath")
+    example_count: int = Field(alias="exampleCount")
+    source_file: str = Field(alias="sourceFile")
+
+
+class PrepareTrainingSplitRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    split_seed: int | None = Field(
+        default=None,
+        alias="splitSeed",
+        description="Optional override; default is the fixed project seed 360.",
+    )
+
+
+class PrepareTrainingSplitResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     course_id: str = Field(alias="courseId")

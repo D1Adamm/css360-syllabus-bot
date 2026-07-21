@@ -18,12 +18,12 @@ function makeSeed(origin: SeedOrigin, id = `${origin}-1`): SeedExample {
   };
 }
 
-describe('UserSeedList delete permissions', () => {
+describe('UserSeedList manual-only list', () => {
   afterEach(() => {
     cleanup();
   });
 
-  it('shows Delete example for user seeds only', () => {
+  it('shows only user seeds and titles the list as Your seed examples', () => {
     const seeds = [
       makeSeed('user', 'user-1'),
       makeSeed('ai_generated', 'ai-1'),
@@ -34,13 +34,14 @@ describe('UserSeedList delete permissions', () => {
       <UserSeedList seeds={seeds} onDelete={vi.fn()} onDeleteAll={vi.fn()} />,
     );
 
+    expect(screen.getByRole('heading', { name: /Your seed examples \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByText('user question?')).toBeInTheDocument();
+    expect(screen.queryByText('ai_generated question?')).not.toBeInTheDocument();
+    expect(screen.queryByText('prototype question?')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Delete example' })).toHaveLength(1);
-    expect(screen.getByText('user question?').closest('article')).toContainElement(
-      screen.getByRole('button', { name: 'Delete example' }),
-    );
   });
 
-  it('hides Delete example for ai_generated seeds', () => {
+  it('hides AI-generated seeds from the Build Seeds list', () => {
     render(
       <UserSeedList
         seeds={[makeSeed('ai_generated')]}
@@ -49,10 +50,15 @@ describe('UserSeedList delete permissions', () => {
       />,
     );
 
+    expect(screen.getByRole('heading', { name: /Your seed examples \(0\)/ })).toBeInTheDocument();
+    expect(screen.queryByText('ai_generated question?')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete example' })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/AI-generated and reviewed seeds appear on Review Seeds and Dataset/),
+    ).toBeInTheDocument();
   });
 
-  it('hides Delete example for prototype seeds', () => {
+  it('hides prototype seeds from the Build Seeds list', () => {
     render(
       <UserSeedList
         seeds={[makeSeed('prototype')]}
@@ -61,7 +67,8 @@ describe('UserSeedList delete permissions', () => {
       />,
     );
 
-    expect(screen.queryByRole('button', { name: 'Delete example' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Your seed examples \(0\)/ })).toBeInTheDocument();
+    expect(screen.queryByText('prototype question?')).not.toBeInTheDocument();
   });
 
   it('Delete all my examples only appears when user seeds exist and still calls user-only handler', async () => {

@@ -27,6 +27,19 @@ def is_approved_for_export(record: dict[str, Any]) -> bool:
     return resolve_review_status(record) == "approved"
 
 
+def seed_was_edited(record: dict[str, Any]) -> bool:
+    """True when the seed has been human-edited (including after later approval)."""
+    if record.get("wasEdited") is True:
+        return True
+    if resolve_review_status(record) == "edited":
+        return True
+    if str(record.get("originalQuestion") or "").strip():
+        return True
+    if str(record.get("originalAnswer") or "").strip():
+        return True
+    return False
+
+
 def _current_question(record: dict[str, Any]) -> str:
     return str(record.get("question") or record.get("instruction") or "").strip()
 
@@ -53,6 +66,8 @@ def apply_seed_review(
       instruction/response mirrors) if not already present.
     - Text edits force reviewStatus to ``edited`` unless the caller is approving
       or rejecting the edited text in the same request (approved/rejected stick).
+    - Approving an edited seed sets reviewStatus=approved and keeps wasEdited=true
+      plus originalQuestion/originalAnswer.
     """
     status = str(review_status or "").strip().lower()
     if status not in REVIEW_STATUSES:
@@ -63,6 +78,7 @@ def apply_seed_review(
     updated = dict(record)
     current_question = _current_question(updated)
     current_answer = _current_answer(updated)
+    already_edited = seed_was_edited(updated)
 
     next_question = (
         str(question).strip() if question is not None else current_question
@@ -88,10 +104,16 @@ def apply_seed_review(
         # Editing moves the seed into edited unless explicitly approved/rejected.
         if status == "generated":
             status = "edited"
+        already_edited = True
+
+    if status == "edited":
+        already_edited = True
 
     updated["reviewStatus"] = status
     # Keep legacy status in sync for existing UI badges.
     updated["status"] = status
+    if already_edited:
+        updated["wasEdited"] = True
     if review_notes is not None:
         updated["reviewNotes"] = str(review_notes).strip()
     updated["reviewedAt"] = reviewed_at or datetime.now(timezone.utc).isoformat()
@@ -107,6 +129,11 @@ def apply_seed_review(
         "normalizedQuestionKey",
         "createdAt",
         "id",
+        "originalQuestion",
+        "originalAnswer",
+        "originalInstruction",
+        "originalResponse",
+        "wasEdited",
     ):
         if key in record and key not in updated:
             updated[key] = record[key]

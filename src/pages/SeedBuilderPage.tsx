@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { SeedForm } from '../components/SeedForm';
 import { UserSeedList } from '../components/UserSeedList';
@@ -7,7 +7,7 @@ import type { SeedExample } from '../types';
 
 export function SeedBuilderPage() {
   const {
-    seeds: userSeeds,
+    seeds,
     loading,
     error,
     saving,
@@ -17,6 +17,11 @@ export function SeedBuilderPage() {
     deleteAllSeeds,
     clearSaveError,
   } = useSeedExamples();
+
+  const manualSeeds = useMemo(
+    () => seeds.filter((seed) => seed.origin === 'user'),
+    [seeds],
+  );
 
   const handleAddSeed = useCallback(
     async (seed: SeedExample) => {
@@ -43,23 +48,23 @@ export function SeedBuilderPage() {
     <>
       <PageHeader
         title="Seed Data Builder"
-        description="Create question-and-answer examples based on the syllabus. In a full course workflow, students would use this page to build training examples for fine-tuning experiments."
+        description="Manually create question-and-answer examples for this course. AI-generated starter seeds are reviewed and browsed on Review Seeds and Dataset."
       />
 
       <aside className="seed-builder-notice" aria-label="Course storage notice">
         <p>
-          <strong>Examples are stored under this course in Firebase Realtime Database.</strong>
+          <strong>Manual examples are stored under this course in Firebase Realtime Database.</strong>
         </p>
         <p>
           Seeds save to <code>courses/{'{courseId}'}/seedExamples</code> for the active course
-          only. They are not shared with other courses and are not automatically used to train a
-          model. Review and export them from the Seed Dataset page.
+          only. This page lists your manually created examples. Use Review Seeds and Dataset for
+          AI-generated and reviewed seeds.
         </p>
       </aside>
 
       {error && (
         <p className="seed-builder-status seed-builder-status--error" role="alert">
-          Could not load shared seed examples: {error}
+          Could not load seed examples: {error}
         </p>
       )}
 
@@ -73,7 +78,7 @@ export function SeedBuilderPage() {
         <div className="seed-builder-layout__form">
           <h2 className="seed-builder-layout__section-title">Create a new example</h2>
           <SeedForm
-            userSeeds={userSeeds}
+            userSeeds={manualSeeds}
             onAddSeed={handleAddSeed}
             isSaving={saving}
             isLoading={loading}
@@ -83,11 +88,11 @@ export function SeedBuilderPage() {
         <div className="seed-builder-layout__list">
           {loading ? (
             <p className="seed-builder-status" role="status" aria-live="polite">
-              Loading shared seed examples…
+              Loading your seed examples…
             </p>
           ) : (
             <UserSeedList
-              seeds={userSeeds}
+              seeds={manualSeeds}
               onDelete={handleDeleteSeed}
               onDeleteAll={handleDeleteAll}
             />

@@ -8,6 +8,7 @@ from app.seed_review import (
     apply_seed_review,
     is_approved_for_export,
     resolve_review_status,
+    seed_was_edited,
 )
 
 
@@ -44,6 +45,7 @@ class SeedReviewTests(unittest.TestCase):
         )
         self.assertEqual(updated["reviewStatus"], "edited")
         self.assertEqual(updated["status"], "edited")
+        self.assertTrue(updated["wasEdited"])
         self.assertEqual(updated["originalQuestion"], "May I submit late?")
         self.assertEqual(
             updated["originalAnswer"],
@@ -71,8 +73,31 @@ class SeedReviewTests(unittest.TestCase):
         updated = apply_seed_review(record, review_status="approved")
         self.assertEqual(updated["reviewStatus"], "approved")
         self.assertNotIn("originalQuestion", updated)
+        self.assertNotIn("wasEdited", updated)
+        self.assertFalse(seed_was_edited(updated))
         self.assertTrue(is_approved_for_export(updated))
         self.assertFalse(is_approved_for_export(record))
+
+    def test_approve_edited_seed_keeps_was_edited_and_originals(self) -> None:
+        record = {
+            "question": "Can I turn work in late?",
+            "answer": "You may submit late work within 24 hours.",
+            "reviewStatus": "edited",
+            "wasEdited": True,
+            "originalQuestion": "May I submit late?",
+            "originalAnswer": "Late work may be submitted within 24 hours.",
+            "factId": "fact-02",
+        }
+        updated = apply_seed_review(record, review_status="approved")
+        self.assertEqual(updated["reviewStatus"], "approved")
+        self.assertTrue(updated["wasEdited"])
+        self.assertEqual(updated["originalQuestion"], "May I submit late?")
+        self.assertEqual(
+            updated["originalAnswer"],
+            "Late work may be submitted within 24 hours.",
+        )
+        self.assertTrue(seed_was_edited(updated))
+        self.assertTrue(is_approved_for_export(updated))
 
     def test_text_change_with_generated_status_becomes_edited(self) -> None:
         record = {"question": "Old?", "answer": "Old answer here."}
@@ -83,6 +108,7 @@ class SeedReviewTests(unittest.TestCase):
             answer="New answer here.",
         )
         self.assertEqual(updated["reviewStatus"], "edited")
+        self.assertTrue(updated["wasEdited"])
 
     def test_invalid_status_raises(self) -> None:
         with self.assertRaises(ValueError):

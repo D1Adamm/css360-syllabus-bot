@@ -9,8 +9,10 @@ from pathlib import Path
 
 from app.firebase_seeds import course_seed_examples_path
 from app.seed_export import (
+    FinetuneJsonlValidationError,
     export_approved_seeds,
     finetune_record,
+    validate_finetune_jsonl,
     write_generation_snapshot,
 )
 
@@ -52,6 +54,9 @@ class SeedExportTests(unittest.TestCase):
                 export_root=root,
             )
             self.assertEqual(summary["approvedCount"], 1)
+            self.assertEqual(summary["exportedCount"], 1)
+            self.assertEqual(summary["validatedCount"], 1)
+            self.assertTrue(summary["validationPassed"])
             self.assertEqual(summary["skippedCount"], 2)
             self.assertEqual(
                 summary["firebasePath"],
@@ -65,6 +70,7 @@ class SeedExportTests(unittest.TestCase):
             )
 
             finetune_path = Path(summary["files"]["finetuneJsonl"])
+            self.assertEqual(summary["exportPath"], str(finetune_path))
             metadata_path = Path(summary["files"]["metadataJson"])
             lines = [
                 line
@@ -81,6 +87,88 @@ class SeedExportTests(unittest.TestCase):
             self.assertEqual(metadata[0]["factId"], "fact-1")
             self.assertEqual(metadata[0]["reviewStatus"], "approved")
             self.assertEqual(metadata[0]["evidenceQuote"], "quote")
+
+    def test_valid_export_passes_jsonl_validation(self) -> None:
+        seeds = [
+            {
+                "id": "a",
+                "question": "Approved Q?",
+                "answer": "Approved A with detail.",
+                "reviewStatus": "approved",
+            },
+            {
+                "id": "b",
+                "question": "Also approved?",
+                "answer": "Also approved answer.",
+                "reviewStatus": "approved",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = export_approved_seeds(
+                course_id="css-360-winter-2026-a7rp",
+                seeds=seeds,
+                export_root=Path(tmp),
+            )
+            self.assertTrue(summary["validationPassed"])
+            self.assertEqual(summary["exportedCount"], 2)
+            self.assertEqual(summary["validatedCount"], 2)
+            validated = validate_finetune_jsonl(
+                Path(summary["exportPath"]),
+                expected_count=2,
+            )
+            self.assertEqual(validated, 2)
+
+    def test_malformed_jsonl_record_fails_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "approved-finetune.jsonl"
+            path.write_text(
+                '{"instruction": "Q?", "response": "A."}\n{not-json\n',
+                encoding="utf-8",
+            )
+            with self.assertRaises(FinetuneJsonlValidationError) as ctx:
+                validate_finetune_jsonl(path, expected_count=2)
+            self.assertEqual(ctx.exception.line_number, 2)
+            self.assertEqual(ctx.exception.reason, "malformed JSON")
+            self.assertIn("line 2", str(ctx.exception))
+
+    def test_blank_instruction_fails_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "approved-finetune.jsonl"
+            path.write_text(
+                json.dumps({"instruction": "   ", "response": "Answer here."}) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(FinetuneJsonlValidationError) as ctx:
+                validate_finetune_jsonl(path, expected_count=1)
+            self.assertEqual(ctx.exception.line_number, 1)
+            self.assertEqual(ctx.exception.reason, "blank instruction")
+            self.assertIn("blank instruction", str(ctx.exception))
+
+    def test_blank_response_fails_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "approved-finetune.jsonl"
+            path.write_text(
+                json.dumps({"instruction": "Question?", "response": ""}) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(FinetuneJsonlValidationError) as ctx:
+                validate_finetune_jsonl(path, expected_count=1)
+            self.assertEqual(ctx.exception.line_number, 1)
+            self.assertEqual(ctx.exception.reason, "blank response")
+            self.assertIn("blank response", str(ctx.exception))
+
+    def test_exported_count_mismatch_fails_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "approved-finetune.jsonl"
+            path.write_text(
+                json.dumps({"instruction": "Only one?", "response": "Only one answer."})
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(FinetuneJsonlValidationError) as ctx:
+                validate_finetune_jsonl(path, expected_count=2)
+            self.assertEqual(ctx.exception.reason, "exported count mismatch")
+            self.assertIn("expected 2 records but found 1", str(ctx.exception))
 
     def test_finetune_record_uses_dual_name_fields(self) -> None:
         row = finetune_record(

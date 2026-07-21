@@ -1077,6 +1077,12 @@ img {
   color: var(--color-text-muted);
 }
 
+.dataset-stats__note {
+  margin: var(--spacing-sm) 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
 .seed-filters {
   display: flex;
   flex-direction: column;
@@ -2847,6 +2853,225 @@ img {
   font-size: 1rem;
   font-weight: 600;
   margin-bottom: var(--spacing-sm);
+}
+
+/* Seed review page */
+
+.review-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.review-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  font-size: 0.9375rem;
+  color: var(--color-text-muted);
+}
+
+.review-counts strong {
+  color: var(--color-text);
+}
+
+.review-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.review-toolbar__button,
+.review-seed-card__button {
+  appearance: none;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: 6px;
+  padding: 0.45rem 0.85rem;
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.review-toolbar__button:hover:not(:disabled),
+.review-seed-card__button:hover:not(:disabled) {
+  border-color: var(--color-text-muted);
+}
+
+.review-toolbar__button:disabled,
+.review-seed-card__button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.review-toolbar__button--primary,
+.review-seed-card__button--primary,
+.review-seed-card__button--approve {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #fff;
+}
+
+.review-seed-card__button--reject {
+  background: #9f1239;
+  border-color: #9f1239;
+  color: #fff;
+}
+
+.review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+}
+
+.review-filters__button {
+  appearance: none;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.review-filters__button--active {
+  background: var(--color-text);
+  border-color: var(--color-text);
+  color: var(--color-surface);
+}
+
+.review-seed-list {
+  display: grid;
+  gap: var(--spacing-md);
+}
+
+.review-seed-card {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.review-seed-card__top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.review-seed-card__number {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.2rem 0.55rem;
+}
+
+.review-seed-card__labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.review-seed-card__category,
+.review-seed-card__status,
+.review-seed-card__score,
+.review-seed-card__origin {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.review-seed-card__status--generated {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.review-seed-card__status--approved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.review-seed-card__status--rejected {
+  background: #ffe4e6;
+  color: #9f1239;
+}
+
+.review-seed-card__status--edited {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.review-seed-card__question {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.review-seed-card__answer {
+  margin: 0;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+}
+
+.review-seed-card__meta {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-sm);
+}
+
+.review-seed-card__meta p {
+  margin: 0 0 0.35rem;
+}
+
+.review-seed-card__meta-label {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.review-seed-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.review-seed-card__edit-form {
+  display: grid;
+  gap: var(--spacing-sm);
+}
+
+.review-seed-card__field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.review-seed-card__field textarea,
+.review-seed-card__field input {
+  font: inherit;
+  font-weight: 400;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 /* Accessibility utility */

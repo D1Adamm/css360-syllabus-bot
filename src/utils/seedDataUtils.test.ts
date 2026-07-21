@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  calculateStatistics,
+  filterSeeds,
   getSeedOriginLabel,
   isSeedExample,
   normalizeSeedExample,
+  resolveSeedReviewStatus,
 } from './seedDataUtils';
+import type { SeedExample } from '../types';
 
 describe('normalizeSeedExample', () => {
   it('parses AI-generated records with dual field names', () => {
@@ -160,5 +164,113 @@ describe('normalizeSeedExample', () => {
         origin: 'ai_generated',
       }),
     ).toBeNull();
+  });
+
+  it('preserves reviewStatus and edit provenance fields', () => {
+    const seed = normalizeSeedExample(
+      {
+        question: 'Edited question?',
+        answer: 'Edited answer with enough detail.',
+        category: 'Late Work',
+        origin: 'ai_generated',
+        reviewStatus: 'approved',
+        status: 'approved',
+        wasEdited: true,
+        originalQuestion: 'Original question?',
+        originalAnswer: 'Original answer.',
+        reviewNotes: 'Wording tweak',
+      },
+      'seed-reviewed',
+    );
+
+    expect(seed?.reviewStatus).toBe('approved');
+    expect(seed?.wasEdited).toBe(true);
+    expect(seed?.originalQuestion).toBe('Original question?');
+    expect(seed?.originalAnswer).toBe('Original answer.');
+    expect(seed?.reviewNotes).toBe('Wording tweak');
+  });
+});
+
+describe('dataset review status helpers', () => {
+  const seeds: SeedExample[] = [
+    {
+      id: 'a',
+      instruction: 'Approved Q?',
+      response: 'Approved A.',
+      category: 'Grading',
+      sourceSection: 'Grading',
+      difficulty: 'Easy',
+      directlyAnswered: true,
+      origin: 'ai_generated',
+      reviewStatus: 'approved',
+    },
+    {
+      id: 'b',
+      instruction: 'Generated Q?',
+      response: 'Generated A.',
+      category: 'Grading',
+      sourceSection: 'Grading',
+      difficulty: 'Easy',
+      directlyAnswered: true,
+      origin: 'ai_generated',
+      reviewStatus: 'generated',
+    },
+    {
+      id: 'c',
+      instruction: 'Rejected Q?',
+      response: 'Rejected A.',
+      category: 'Late Work',
+      sourceSection: 'Late Work',
+      difficulty: 'Medium',
+      directlyAnswered: true,
+      origin: 'ai_generated',
+      status: 'rejected',
+    },
+  ];
+
+  it('resolves reviewStatus with status fallback', () => {
+    expect(resolveSeedReviewStatus(seeds[0])).toBe('approved');
+    expect(resolveSeedReviewStatus(seeds[2])).toBe('rejected');
+    expect(
+      resolveSeedReviewStatus({
+        ...seeds[0],
+        reviewStatus: undefined,
+        status: undefined,
+      }),
+    ).toBe('generated');
+  });
+
+  it('counts review statuses for dataset summary', () => {
+    const stats = calculateStatistics(seeds);
+    expect(stats.totalExamples).toBe(3);
+    expect(stats.approvedCount).toBe(1);
+    expect(stats.generatedCount).toBe(1);
+    expect(stats.rejectedCount).toBe(1);
+    expect(stats.editedCount).toBe(0);
+  });
+
+  it('defaults filterSeeds reviewStatus to all when omitted', () => {
+    expect(
+      filterSeeds(seeds, {
+        searchQuery: '',
+        category: 'All categories',
+        difficulty: 'All difficulties',
+        answerType: 'All',
+        sortBy: 'id-asc',
+      }),
+    ).toHaveLength(3);
+  });
+
+  it('filters to approved only when requested', () => {
+    const filtered = filterSeeds(seeds, {
+      searchQuery: '',
+      category: 'All categories',
+      difficulty: 'All difficulties',
+      answerType: 'All',
+      reviewStatus: 'approved',
+      sortBy: 'id-asc',
+    });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].id).toBe('a');
   });
 });

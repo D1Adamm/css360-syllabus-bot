@@ -6,19 +6,17 @@ interface DatasetStatsProps {
 
 export function DatasetStats({ stats }: DatasetStatsProps) {
   const items = [
-    { label: 'Total examples', value: stats.totalExamples },
-    { label: 'Categories', value: stats.totalCategories },
-    { label: 'Easy', value: stats.easyCount },
-    { label: 'Medium', value: stats.mediumCount },
-    { label: 'Hard', value: stats.hardCount },
-    { label: 'Directly answered', value: stats.directlyAnsweredCount },
-    { label: 'Requires clarification', value: stats.notDirectlyAnsweredCount },
+    { label: 'Total stored', value: stats.totalExamples },
+    { label: 'Approved', value: stats.approvedCount },
+    { label: 'Rejected', value: stats.rejectedCount },
+    { label: 'Generated', value: stats.generatedCount },
+    { label: 'Edited', value: stats.editedCount },
   ];
 
   return (
     <section className="dataset-stats" aria-labelledby="dataset-stats-title">
       <h2 id="dataset-stats-title" className="dataset-stats__title">
-        Dataset statistics
+        Review status summary
       </h2>
       <ul className="dataset-stats__grid">
         {items.map((item) => (
@@ -28,6 +26,10 @@ export function DatasetStats({ stats }: DatasetStatsProps) {
           </li>
         ))}
       </ul>
+      <p className="dataset-stats__note">
+        Approved examples are fine-tuning-ready. Rejected and generated seeds stay stored
+        and are excluded from the default Approved view.
+      </p>
     </section>
   );
 }

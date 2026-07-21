@@ -14,7 +14,10 @@ from app.course_id import assert_valid_course_id
 from app.firebase_seeds import (
     FirebaseConfigurationError,
     build_chunk_section_lookup,
+    compute_top_up_gap,
+    fetch_course_seed_examples,
     persist_accepted_seeds,
+    summarize_existing_seed_examples,
 )
 from app.seed_export import write_generation_snapshot
 from app.ollama import (
@@ -1057,6 +1060,7 @@ async def generate_starter_seeds_for_course(
     target_count: int = DEFAULT_STARTER_TARGET_COUNT,
     save: bool = False,
     force_refresh: bool = False,
+    top_up: bool = False,
     storage: CourseArtifactStorage | None = None,
 ) -> dict[str, Any]:
     """Generate up to target_count starter seeds via fact inventory + allocation.
@@ -1066,6 +1070,13 @@ async def generate_starter_seeds_for_course(
       → sequential fact-scoped Q/A with rejection backfill
       → programmatic checks → exact/semantic dedupe → pre-validation
       → LLM validation → accept
+
+    When top_up=True:
+      - read existing Firebase seedExamples first
+      - generate only the missing count (targetCount - existing)
+      - dedupe against existing questions
+      - prefer facts not already represented
+      - save only newly accepted seeds (existing preserved)
 
     Phase 6 batching helpers exist but are not used on this live path.
     Chunks are evidence only. Does not use topic planning. When save=True,
@@ -1085,6 +1096,89 @@ async def generate_starter_seeds_for_course(
         )
 
     started_at = time.perf_counter()
+
+    existing_count = 0
+    missing_count = target_count
+    existing_fact_ids: set[str] = set()
+    seen_questions: set[str] = set()
+    accepted_questions: list[str] = []
+
+    if top_up:
+        try:
+            existing_payload = await fetch_course_seed_examples(safe_course_id)
+        except FirebaseConfigurationError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        summary = summarize_existing_seed_examples(existing_payload)
+        existing_count = int(summary["existingCount"])
+        gap = compute_top_up_gap(
+            existing_count=existing_count, target_count=target_count
+        )
+        missing_count = int(gap["missingCount"])
+        existing_fact_ids = set(summary["factIds"])
+        seen_questions = set(summary["seenQuestionKeys"])
+        accepted_questions = list(summary["questions"])
+
+        if missing_count <= 0:
+            elapsed_ms = max(
+                0, int(round((time.perf_counter() - started_at) * 1000))
+            )
+            return {
+                "courseId": safe_course_id,
+                "model": SEED_GENERATION_MODEL,
+                "targetCount": target_count,
+                "seeds": [],
+                "progress": {
+                    "eligibleChunks": 0,
+                    "selectedChunks": 0,
+                    "chunksProcessed": 0,
+                    "chunksSkipped": 0,
+                    "planningCalls": 0,
+                    "mergeCalls": 0,
+                    "factExtractionCalls": 0,
+                    "factInventoryCached": True,
+                    "factCount": 0,
+                    "allocatedFactCount": 0,
+                    "allocatedSlots": 0,
+                    "backfillAttempts": 0,
+                    "backfillAccepted": 0,
+                    "generationCalls": 0,
+                    "generationBatchCalls": 0,
+                    "maxGenerationBatchSize": 0,
+                    "validationCalls": 0,
+                    "validationBatchCalls": 0,
+                    "maxValidationBatchSize": 0,
+                    "ollamaCalls": 0,
+                    "embeddingCalls": 0,
+                    "candidatesGenerated": 0,
+                    "candidatesValidated": 0,
+                    "candidatesAccepted": 0,
+                    "candidatesRejected": 0,
+                    "duplicatesRemoved": 0,
+                    "semanticDuplicatesRemoved": 0,
+                    "candidatesRejectedInvalid": 0,
+                    "candidatesRejectedValidation": 0,
+                    "candidatesRejectedUnsupportedClaims": 0,
+                    "candidatesRejectedBalancing": 0,
+                    "candidatesRejectedPreValidation": 0,
+                    "candidatesRejectedQualifierMismatch": 0,
+                    "candidatesRejectedModalEscalation": 0,
+                    "scheduleCount": 0,
+                    "scenarioOrClarificationMinimum": compute_scenario_minimum(
+                        target_count
+                    ),
+                    "timeoutFailures": 0,
+                    "finalCount": 0,
+                    "savedCount": 0,
+                    "elapsedMs": elapsed_ms,
+                    "status": "ready",
+                    "topUp": True,
+                    "existingCount": existing_count,
+                    "missingCount": 0,
+                    "totalCount": existing_count,
+                },
+            }
+
+    generation_limit = missing_count if top_up else target_count
 
     artifact_storage = storage or get_course_artifact_storage()
     index_data = _load_course_index(safe_course_id, artifact_storage)
@@ -1111,8 +1205,6 @@ async def generate_starter_seeds_for_course(
     }
 
     seeds: list[dict[str, Any]] = []
-    seen_questions: set[str] = set()
-    accepted_questions: list[str] = []
     embedding_cache = AcceptedEmbeddingCache()
     chunks_processed = 0
     generation_calls = 0
@@ -1170,8 +1262,28 @@ async def generate_starter_seeds_for_course(
     if inventory.get("model"):
         model_used = str(inventory["model"])
 
-    allocation = allocate_slots(facts, target_count=target_count)
+    # Top-up allocates only for the missing gap and prefers uncovered facts.
+    if top_up and existing_fact_ids:
+        uncovered = [
+            fact
+            for fact in facts
+            if str(fact.get("factId") or "").strip() not in existing_fact_ids
+        ]
+        covered = [
+            fact
+            for fact in facts
+            if str(fact.get("factId") or "").strip() in existing_fact_ids
+        ]
+        allocation_facts = uncovered if uncovered else facts
+        backfill_extra_facts = covered if uncovered else []
+    else:
+        allocation_facts = facts
+        backfill_extra_facts = []
+
+    allocation = allocate_slots(allocation_facts, target_count=generation_limit)
     facts_by_id = {str(fact.get("factId") or ""): fact for fact in facts}
+    for fact in backfill_extra_facts:
+        facts_by_id.setdefault(str(fact.get("factId") or ""), fact)
 
     # Unit opportunities: one generation attempt per allocated slot.
     opportunities: list[tuple[dict[str, Any], dict[str, Any], bool]] = []
@@ -1206,6 +1318,25 @@ async def generate_starter_seeds_for_course(
         }
         opportunities.append((fact, backfill_alloc, True))
 
+    # Extra backfill from previously covered facts (top-up only).
+    if top_up and backfill_extra_facts:
+        for fact in backfill_extra_facts:
+            fact_id = str(fact.get("factId") or "")
+            if not fact_id or fact_id in primary_fact_ids:
+                continue
+            opportunities.append(
+                (
+                    fact,
+                    {
+                        "factId": fact_id,
+                        "slotCount": 1,
+                        "desiredSlots": 1,
+                        "suggestedStyles": ["factual"],
+                    },
+                    True,
+                )
+            )
+
     allocated_fact_count = len(primary_fact_ids)
     allocated_slots = int(allocation.get("summary", {}).get("allocatedSlots") or 0)
     selected_chunk_ids = {
@@ -1218,7 +1349,7 @@ async def generate_starter_seeds_for_course(
     failed_facts: set[str] = set()
 
     for fact, alloc, is_backfill in opportunities:
-        if len(seeds) >= target_count or not _budget_remaining():
+        if len(seeds) >= generation_limit or not _budget_remaining():
             break
 
         fact_id = str(fact.get("factId") or "")
@@ -1268,7 +1399,7 @@ async def generate_starter_seeds_for_course(
             continue
 
         for candidate in candidates:
-            if len(seeds) >= target_count:
+            if len(seeds) >= generation_limit:
                 break
 
             if not passes_programmatic_candidate_checks(candidate):
@@ -1409,10 +1540,16 @@ async def generate_starter_seeds_for_course(
 
     elapsed_ms = max(0, int(round((time.perf_counter() - started_at) * 1000)))
     final_count = len(seeds)
+    total_count = existing_count + (saved_count if save else final_count)
+    # Top-up readiness compares projected/total course size against targetCount.
+    status_final_count = total_count if top_up else final_count
+    status_saved_count = (
+        (existing_count + saved_count) if top_up and save else saved_count
+    )
     run_status = resolve_starter_run_status(
         target_count=target_count,
-        final_count=final_count,
-        saved_count=saved_count,
+        final_count=status_final_count,
+        saved_count=status_saved_count,
         save=save,
     )
 
@@ -1464,10 +1601,16 @@ async def generate_starter_seeds_for_course(
             "savedCount": saved_count,
             "elapsedMs": elapsed_ms,
             "status": run_status,
+            "topUp": top_up,
+            "existingCount": existing_count,
+            "missingCount": missing_count if top_up else 0,
+            "totalCount": total_count if top_up else final_count,
         },
     }
 
-    if final_count == 0 and timeout_failures > 0:
+    if final_count == 0 and timeout_failures > 0 and not (
+        top_up and existing_count > 0
+    ):
         raise HTTPException(
             status_code=503,
             detail=(

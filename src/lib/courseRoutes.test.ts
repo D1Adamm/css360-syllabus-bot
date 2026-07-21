@@ -13,6 +13,9 @@ describe('coursePagePath', () => {
       '/course/css360-default/compare',
     );
     expect(coursePagePath('other-course', 'seeds')).toBe('/course/other-course/seeds');
+    expect(coursePagePath('css-360-winter-2026-a7rp', 'review')).toBe(
+      '/course/css-360-winter-2026-a7rp/review',
+    );
   });
 
   it('preserves query strings', () => {

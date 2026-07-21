@@ -29,6 +29,7 @@ function buildNavItems(courseId: string | null): NavItem[] {
     courseLink('home', 'Home', true),
     courseLink('syllabus', 'Syllabus'),
     courseLink('seeds', 'Build Seeds'),
+    courseLink('review', 'Review Seeds'),
     courseLink('dataset', 'Dataset'),
     courseLink('compare', 'Compare'),
     courseLink('evaluate', 'Evaluate'),
