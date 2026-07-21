@@ -4,7 +4,7 @@ import type { MatchResult } from './comparisonUtils';
 export type ComparisonMode = 'predefined' | 'custom-matched' | 'custom-unmatched';
 
 export const SIMULATED_UNAVAILABLE_MESSAGE =
-  'No simulated fine-tuned response is available for this custom question.';
+  'No simulated Fine-Tuned + RAG response is available for this custom question.';
 
 export function getComparisonModeFromCustomSubmit(
   match: MatchResult | null,

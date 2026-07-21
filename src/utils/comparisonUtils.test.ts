@@ -73,6 +73,6 @@ describe('comparison page state', () => {
     expect(
       allCardsReferToSameActiveQuestion('custom-unmatched', customQuestion, simulatedRecord),
     ).toBe(true);
-    expect(SIMULATED_UNAVAILABLE_MESSAGE).toContain('No simulated fine-tuned response');
+    expect(SIMULATED_UNAVAILABLE_MESSAGE).toContain('No simulated Fine-Tuned + RAG response');
   });
 });

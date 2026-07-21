@@ -45,7 +45,7 @@ export function CustomQuestionMatcher({
       onMatch(match.recordId, match.matchedQuestion);
       setNotice({
         type: 'match',
-        message: `Matched to predefined question: "${match.matchedQuestion}". All four cards now refer to the same question. The Base Model and RAG answers are live; Fine-Tuned and Fine-Tuned + RAG remain simulated.`,
+        message: `Matched to predefined question: "${match.matchedQuestion}". All four cards now refer to the same question. Base Model, RAG, and Fine-Tuned answers are live; Fine-Tuned + RAG remains simulated.`,
       });
       return;
     }
@@ -54,7 +54,7 @@ export function CustomQuestionMatcher({
     setNotice({
       type: 'no-match',
       message:
-        'Custom question mode: the Base Model and RAG answers below are live for your question. No simulated fine-tuned response is available because this question does not closely match a predefined example.',
+        'Custom question mode: Base Model, RAG, and Fine-Tuned answers below are live for your question. No simulated Fine-Tuned + RAG response is available because this question does not closely match a predefined example.',
     });
   }
 
@@ -66,7 +66,7 @@ export function CustomQuestionMatcher({
 
       <form className="custom-question-matcher__form" onSubmit={handleSubmit}>
         <label htmlFor="custom-question-input" className="custom-question-matcher__label">
-          Enter a question to send to the Base Model and RAG
+          Enter a question to send to the live models
         </label>
         <div className="custom-question-matcher__controls">
           <input

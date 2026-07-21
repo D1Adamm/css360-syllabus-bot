@@ -7,7 +7,7 @@ import { CustomQuestionMatcher } from '../components/CustomQuestionMatcher';
 import { ModelResponseCard } from '../components/ModelResponseCard';
 import { PageHeader } from '../components/PageHeader';
 import { useCourseId } from '../context/CourseContext';
-import { ApiError, generateBaseModel, generateRag } from '../lib/api';
+import { ApiError, generateBaseModel, generateFineTuned, generateRag } from '../lib/api';
 import { coursePagePath } from '../lib/courseRoutes';
 import type { ComparisonRecord, ComparisonResponse } from '../types';
 import {
@@ -58,6 +58,12 @@ const DEFAULT_RAG_RESPONSE: ComparisonResponse = {
   simulated: false,
 };
 
+const DEFAULT_FINE_TUNED_RESPONSE: ComparisonResponse = {
+  text: '',
+  grounding: 'Medium',
+  simulated: false,
+};
+
 type LiveModelState =
   | { status: 'idle' }
   | { status: 'loading'; question: string }
@@ -86,6 +92,9 @@ export function ComparisonPage() {
   const [matchedRecordId, setMatchedRecordId] = useState<string | null>(null);
   const [baseModelState, setBaseModelState] = useState<LiveModelState>({ status: 'idle' });
   const [ragModelState, setRagModelState] = useState<RagModelState>({ status: 'idle' });
+  const [fineTunedModelState, setFineTunedModelState] = useState<LiveModelState>({
+    status: 'idle',
+  });
   const [customMatcherResetKey, setCustomMatcherResetKey] = useState(0);
 
   const selectedRecord = useMemo(
@@ -173,12 +182,51 @@ export function ComparisonPage() {
     }
   }, [courseId]);
 
+  const loadFineTunedModelResponse = useCallback(async (question: string) => {
+    const trimmedQuestion = question.trim();
+
+    if (!trimmedQuestion) {
+      return;
+    }
+
+    setFineTunedModelState({ status: 'loading', question: trimmedQuestion });
+
+    try {
+      const result = await generateFineTuned(courseId, trimmedQuestion);
+
+      setFineTunedModelState({
+        status: 'success',
+        question: trimmedQuestion,
+        response: {
+          text: result.answer,
+          grounding: 'Medium',
+          simulated: false,
+        },
+      });
+    } catch (error) {
+      setFineTunedModelState({
+        status: 'error',
+        question: trimmedQuestion,
+        message: getApiErrorMessage(
+          error,
+          'The Fine-Tuned Model response could not be loaded.',
+        ),
+      });
+    }
+  }, [courseId]);
+
   useEffect(() => {
     void Promise.all([
       loadBaseModelResponse(activeQuestion),
       loadRagModelResponse(activeQuestion),
+      loadFineTunedModelResponse(activeQuestion),
     ]);
-  }, [activeQuestion, loadBaseModelResponse, loadRagModelResponse]);
+  }, [
+    activeQuestion,
+    loadBaseModelResponse,
+    loadFineTunedModelResponse,
+    loadRagModelResponse,
+  ]);
 
   if (!selectedRecord) {
     return null;
@@ -187,18 +235,26 @@ export function ComparisonPage() {
   const evaluateHref = `${coursePagePath(courseId, 'evaluate')}?comparison=${simulatedRecord?.id ?? selectedRecord.id}`;
   const isBaseModelLoading = baseModelState.status === 'loading';
   const isRagModelLoading = ragModelState.status === 'loading';
-  const isLiveRequestInFlight = isBaseModelLoading || isRagModelLoading;
+  const isFineTunedModelLoading = fineTunedModelState.status === 'loading';
+  const isLiveRequestInFlight =
+    isBaseModelLoading || isRagModelLoading || isFineTunedModelLoading;
   const baseModelError = baseModelState.status === 'error' ? baseModelState.message : null;
   const ragModelError = ragModelState.status === 'error' ? ragModelState.message : null;
+  const fineTunedModelError =
+    fineTunedModelState.status === 'error' ? fineTunedModelState.message : null;
   const baseModelResponse =
     baseModelState.status === 'success' ? baseModelState.response : DEFAULT_BASE_RESPONSE;
   const ragModelResponse =
     ragModelState.status === 'success' ? ragModelState.response : DEFAULT_RAG_RESPONSE;
+  const fineTunedModelResponse =
+    fineTunedModelState.status === 'success'
+      ? fineTunedModelState.response
+      : DEFAULT_FINE_TUNED_RESPONSE;
   const ragSources = ragModelState.status === 'success' ? ragModelState.sources : [];
   const showSimulatedUnavailable = comparisonMode === 'custom-unmatched';
   const explanationNotes =
     comparisonMode === 'custom-unmatched'
-      ? 'Fine-Tuned and Fine-Tuned + RAG simulated responses are only available for predefined questions or custom questions that closely match a predefined example.'
+      ? 'Fine-Tuned + RAG simulated responses are only available for predefined questions or custom questions that closely match a predefined example.'
       : (simulatedRecord?.notes ?? selectedRecord.notes);
 
   return (
@@ -210,8 +266,9 @@ export function ComparisonPage() {
 
       <aside className="comparison-notice" aria-label="Simulation notice">
         <p>
-          <strong>Hybrid prototype:</strong> the Base Model and RAG responses are live from the
-          local FastAPI backend. Fine-Tuned and Fine-Tuned + RAG responses remain simulated.
+          <strong>Hybrid prototype:</strong> Base Model, RAG, and Fine-Tuned responses are live
+          from the FastAPI backend (Fine-Tuned requires{' '}
+          <code>FINETUNED_SERVICE_URL</code>). Fine-Tuned + RAG remains simulated.
         </p>
       </aside>
 
@@ -275,6 +332,19 @@ export function ComparisonPage() {
                 isLoading={isRagModelLoading}
                 error={ragModelError}
                 sources={ragSources}
+              />
+            );
+          }
+
+          if (card.key === 'fineTuned') {
+            return (
+              <ModelResponseCard
+                key={card.key}
+                modelName={card.modelName}
+                accessDescription={card.accessDescription}
+                response={fineTunedModelResponse}
+                isLoading={isFineTunedModelLoading}
+                error={fineTunedModelError}
               />
             );
           }

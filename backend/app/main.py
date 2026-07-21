@@ -12,10 +12,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
 from app.course_rag import generate_course_rag_answer
+from app.finetuned_client import (
+    check_finetuned_service_health,
+    generate_finetuned_response,
+)
 from app.ollama import generate_base_model_response
 from app.schemas import (
     BaseModelGenerateRequest,
     BaseModelGenerateResponse,
+    FineTunedGenerateRequest,
+    FineTunedGenerateResponse,
+    FineTunedHealthResponse,
     CourseChunkMetadata,
     CourseChunksResponse,
     CourseSeedListResponse,
@@ -129,6 +136,44 @@ async def generate_base_model(
         model=result["model"],
         responseType=result["response_type"],
         courseId=safe_course_id,
+    )
+
+
+@app.get("/fine-tuned/health", response_model=FineTunedHealthResponse)
+async def fine_tuned_health() -> FineTunedHealthResponse:
+    result = await check_finetuned_service_health()
+    return FineTunedHealthResponse(
+        status=result["status"],
+        model=result.get("model"),
+        adapterLoaded=result.get("adapterLoaded"),
+        hostname=result.get("hostname"),
+        port=result.get("port"),
+        serviceUrl=result.get("serviceUrl"),
+    )
+
+
+@app.post("/fine-tuned/generate", response_model=FineTunedGenerateResponse)
+async def generate_fine_tuned(
+    request: FineTunedGenerateRequest,
+) -> FineTunedGenerateResponse:
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=422, detail="Question must not be empty.")
+
+    try:
+        safe_course_id = assert_valid_course_id(request.course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # courseId is validated for route isolation; the remote service is course-agnostic.
+    result = await generate_finetuned_response(question)
+    return FineTunedGenerateResponse(
+        answer=result["answer"],
+        model=result["model"],
+        responseType=result["response_type"],
+        courseId=safe_course_id,
+        adapterLoaded=result["adapter_loaded"],
+        generationSeconds=result["generation_seconds"],
     )
 
 

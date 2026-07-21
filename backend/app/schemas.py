@@ -23,6 +23,44 @@ class BaseModelGenerateResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class FineTunedGenerateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(
+        ...,
+        alias="courseId",
+        min_length=1,
+        description="Course id from the active course route",
+    )
+    question: str = Field(
+        ...,
+        min_length=1,
+        description="Student question to send to the fine-tuned model",
+    )
+
+
+class FineTunedGenerateResponse(BaseModel):
+    answer: str
+    model: str
+    response_type: str = Field(alias="responseType")
+    course_id: str | None = Field(default=None, alias="courseId")
+    adapter_loaded: bool = Field(alias="adapterLoaded")
+    generation_seconds: float | None = Field(default=None, alias="generationSeconds")
+
+    model_config = {"populate_by_name": True}
+
+
+class FineTunedHealthResponse(BaseModel):
+    status: str
+    model: str | None = None
+    adapter_loaded: bool | None = Field(default=None, alias="adapterLoaded")
+    hostname: str | None = None
+    port: int | None = None
+    service_url: str | None = Field(default=None, alias="serviceUrl")
+
+    model_config = {"populate_by_name": True}
+
+
 class RagRetrieveRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Student question for syllabus retrieval")
     top_k: int = Field(

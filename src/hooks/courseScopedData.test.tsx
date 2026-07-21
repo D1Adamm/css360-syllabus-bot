@@ -74,6 +74,7 @@ vi.mock('../lib/evaluationsDb', async () => {
 vi.mock('../lib/api', () => ({
   ApiError: class ApiError extends Error {},
   generateBaseModel: vi.fn(),
+  generateFineTuned: vi.fn(),
   generateRag: vi.fn(),
 }));
 

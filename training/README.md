@@ -171,5 +171,31 @@ sacct -j JOB_ID --format=JobID,State,Elapsed,AllocTRES,Start,End
 
 ```bash
 cd training
-python -m unittest test_train_qlora_helpers.py -v
+python -m unittest test_train_qlora_helpers.py test_compare_inference_helpers.py -v
 ```
+
+## Compare base vs fine-tuned (after full training)
+
+```bash
+sbatch training/compare.slurm
+```
+
+Outputs land under:
+
+```text
+/gpfs/projects/simswe/$USER/training_outputs/css-360-comparison/
+```
+
+Files written:
+
+- `comparison_results.json`
+- `comparison_results.jsonl`
+- `comparison_summary.json`
+
+## Fine-tuned inference service (GPU, not wired to app yet)
+
+```bash
+sbatch training/inference_service/serve.slurm
+```
+
+See `training/inference_service/README.md` for curl examples against `/health` and `/generate`.

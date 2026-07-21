@@ -84,9 +84,9 @@ export function HomePage() {
         <p className="scope-notice__text">
           This application is a classroom research prototype. Navigation, syllabus exploration,
           seed data creation, local evaluation, and results aggregation are implemented. Base
-          Model and RAG answers on the Model Comparison page are live from the local FastAPI
-          backend. Fine-Tuned and Fine-Tuned + RAG responses remain simulated, and training
-          pipelines are not part of the current build.
+          Model, RAG, and Fine-Tuned answers on the Model Comparison page are live from the FastAPI
+          backend (Fine-Tuned requires a reachable inference service URL). Fine-Tuned + RAG
+          responses remain simulated.
         </p>
       </section>
     </>

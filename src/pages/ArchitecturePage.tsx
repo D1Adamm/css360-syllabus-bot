@@ -57,9 +57,10 @@ export function ArchitecturePage() {
         </h2>
         <p className="architecture-section__text">
           A FastAPI backend handles syllabus upload/extraction, chunking, embeddings with{' '}
-          <code>nomic-embed-text</code>, course-specific RAG retrieval, and Base Model generation with
-          Ollama <code>llama3.2:3b</code>. Fine-Tuned and Fine-Tuned + RAG comparison cards remain
-          simulated from static prototype data.
+          <code>nomic-embed-text</code>, course-specific RAG retrieval, Base Model generation with
+          Ollama <code>llama3.2:3b</code>, and Fine-Tuned generation via{' '}
+          <code>FINETUNED_SERVICE_URL</code>. Fine-Tuned + RAG comparison cards remain simulated
+          from static prototype data.
         </p>
       </section>
 

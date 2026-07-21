@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { CourseProvider } from '../context/CourseContext';
-import { generateBaseModel, generateRag } from '../lib/api';
+import { generateBaseModel, generateFineTuned, generateRag } from '../lib/api';
 import { ComparisonPage } from './ComparisonPage';
 
 vi.mock('../lib/api', () => ({
@@ -18,21 +18,32 @@ vi.mock('../lib/api', () => ({
     }
   },
   generateBaseModel: vi.fn(),
+  generateFineTuned: vi.fn(),
   generateRag: vi.fn(),
 }));
 
 const generateBaseModelMock = vi.mocked(generateBaseModel);
+const generateFineTunedMock = vi.mocked(generateFineTuned);
 const generateRagMock = vi.mocked(generateRag);
 
 describe('ComparisonPage course-specific live requests', () => {
   beforeEach(() => {
     generateBaseModelMock.mockReset();
+    generateFineTunedMock.mockReset();
     generateRagMock.mockReset();
     generateBaseModelMock.mockResolvedValue({
       answer: 'Base answer',
       model: 'llama3.2:3b',
       responseType: 'base',
       courseId: 'css-430-summer-2026-ibce',
+    });
+    generateFineTunedMock.mockResolvedValue({
+      answer: 'Fine-tuned answer',
+      model: 'meta-llama/Llama-3.2-3B-Instruct',
+      responseType: 'fineTuned',
+      courseId: 'css-430-summer-2026-ibce',
+      adapterLoaded: true,
+      generationSeconds: 0.8,
     });
     generateRagMock.mockResolvedValue({
       courseId: 'css-430-summer-2026-ibce',
@@ -55,7 +66,7 @@ describe('ComparisonPage course-specific live requests', () => {
     cleanup();
   });
 
-  it('sends the route courseId to Base and RAG live requests', async () => {
+  it('sends the route courseId to Base, RAG, and Fine-Tuned live requests', async () => {
     const courseId = 'css-430-summer-2026-ibce';
 
     render(
@@ -76,9 +87,11 @@ describe('ComparisonPage course-specific live requests', () => {
     await waitFor(() => {
       expect(generateBaseModelMock).toHaveBeenCalled();
       expect(generateRagMock).toHaveBeenCalled();
+      expect(generateFineTunedMock).toHaveBeenCalled();
     });
 
     expect(generateBaseModelMock.mock.calls[0]?.[0]).toBe(courseId);
     expect(generateRagMock.mock.calls[0]?.[0]).toBe(courseId);
+    expect(generateFineTunedMock.mock.calls[0]?.[0]).toBe(courseId);
   });
 });
