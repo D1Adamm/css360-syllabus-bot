@@ -1,0 +1,49 @@
+{
+  "questions": [
+    {
+      "id": "attendance-1",
+      "topic": "attendance",
+      "question": "If I arrive ten minutes late to a CSS 360 class session, do I still need to document that somehow?"
+    },
+    {
+      "id": "late-work-1",
+      "topic": "late work",
+      "question": "What is the late submission policy if my Bot Project deliverable is a few hours past the stated deadline?"
+    },
+    {
+      "id": "communication-1",
+      "topic": "communication",
+      "question": "Where should I post a private question about my personal grade concerns for CSS 360?"
+    },
+    {
+      "id": "ai-policy-1",
+      "topic": "AI policy",
+      "question": "Am I allowed to paste large sections of the syllabus into ChatGPT and ask it to rewrite my reflection assignment?"
+    },
+    {
+      "id": "project-expectations-1",
+      "topic": "project expectations",
+      "question": "For the team bot work, what does a successful sprint review look like from the instructor's perspective?"
+    },
+    {
+      "id": "course-logistics-1",
+      "topic": "course logistics",
+      "question": "Is CSS 360 primarily in-person, and where can I find the official meeting room information?"
+    },
+    {
+      "id": "standup-participation-1",
+      "topic": "standups",
+      "question": "If I am not scrum master this week, how should I prepare before standup so I can participate effectively?"
+    },
+    {
+      "id": "grading-clarity-1",
+      "topic": "grading",
+      "question": "How are in-class participation and project milestones combined when determining whether I am on track in CSS 360?"
+    },
+    {
+      "id": "out-of-scope-1",
+      "topic": "unsupported / out-of-scope",
+      "question": "Can you tell me the final exam date and grading curve for CSS 490 Spring 2024 at another campus?"
+    }
+  ]
+}
