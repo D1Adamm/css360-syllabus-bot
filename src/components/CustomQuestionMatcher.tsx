@@ -45,7 +45,7 @@ export function CustomQuestionMatcher({
       onMatch(match.recordId, match.matchedQuestion);
       setNotice({
         type: 'match',
-        message: `Matched to predefined question: "${match.matchedQuestion}". All four cards now refer to the same question. Base Model, RAG, and Fine-Tuned answers are live; Fine-Tuned + RAG remains simulated.`,
+        message: `Matched to predefined question: "${match.matchedQuestion}". All four cards now refer to the same question. Base Model, RAG, Fine-Tuned, and Fine-Tuned + RAG answers are live.`,
       });
       return;
     }
@@ -54,7 +54,7 @@ export function CustomQuestionMatcher({
     setNotice({
       type: 'no-match',
       message:
-        'Custom question mode: Base Model, RAG, and Fine-Tuned answers below are live for your question. No simulated Fine-Tuned + RAG response is available because this question does not closely match a predefined example.',
+        'Custom question mode: Base Model, RAG, Fine-Tuned, and Fine-Tuned + RAG answers below are live for your question.',
     });
   }
 

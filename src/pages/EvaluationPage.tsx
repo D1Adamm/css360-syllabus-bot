@@ -265,9 +265,8 @@ export function EvaluationPage() {
           and shared across browsers and devices.
         </p>
         <p>
-          <strong>Response sources:</strong> On the Model Comparison page, Base Model, RAG, and
-          Fine-Tuned answers are live. Fine-Tuned + RAG responses shown here remain simulated
-          prototype outputs.
+          <strong>Response sources:</strong> On the Model Comparison page, Base Model, RAG,
+          Fine-Tuned, and Fine-Tuned + RAG answers are live from the backend.
         </p>
       </aside>
 

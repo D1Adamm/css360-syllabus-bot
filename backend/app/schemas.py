@@ -146,6 +146,42 @@ class RagGenerateResponse(BaseModel):
     response_type: str = Field(default="rag", alias="responseType")
 
 
+class FineTunedRagGenerateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(
+        ...,
+        alias="courseId",
+        min_length=1,
+        description="Course id whose syllabus index should be used for retrieval",
+    )
+    question: str = Field(
+        ...,
+        min_length=1,
+        description="Student question for Fine-Tuned + RAG answer generation",
+    )
+    top_k: int = Field(
+        default=3,
+        alias="topK",
+        ge=1,
+        le=20,
+        description="Number of syllabus chunks to retrieve for context",
+    )
+
+
+class FineTunedRagGenerateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    answer: str
+    model: str
+    sources: list[RagGenerateSource]
+    retrieved_chunks: list[RagRetrieveResult] = Field(alias="retrievedChunks")
+    response_type: str = Field(default="fineTunedRag", alias="responseType")
+    adapter_loaded: bool = Field(alias="adapterLoaded")
+    generation_seconds: float | None = Field(default=None, alias="generationSeconds")
+
+
 class SyllabusUploadResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

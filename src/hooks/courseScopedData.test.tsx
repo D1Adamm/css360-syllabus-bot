@@ -75,6 +75,7 @@ vi.mock('../lib/api', () => ({
   ApiError: class ApiError extends Error {},
   generateBaseModel: vi.fn(),
   generateFineTuned: vi.fn(),
+  generateFineTunedRag: vi.fn(),
   generateRag: vi.fn(),
 }));
 

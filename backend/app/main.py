@@ -16,6 +16,7 @@ from app.finetuned_client import (
     check_finetuned_service_health,
     generate_finetuned_response,
 )
+from app.finetuned_rag import generate_course_finetuned_rag_answer
 from app.ollama import generate_base_model_response
 from app.schemas import (
     BaseModelGenerateRequest,
@@ -23,6 +24,8 @@ from app.schemas import (
     FineTunedGenerateRequest,
     FineTunedGenerateResponse,
     FineTunedHealthResponse,
+    FineTunedRagGenerateRequest,
+    FineTunedRagGenerateResponse,
     CourseChunkMetadata,
     CourseChunksResponse,
     CourseSeedListResponse,
@@ -198,6 +201,34 @@ async def generate_rag_response(request: RagGenerateRequest) -> RagGenerateRespo
             RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
         ],
         responseType=result["responseType"],
+    )
+
+
+@app.post("/fine-tuned-rag/generate", response_model=FineTunedRagGenerateResponse)
+async def generate_fine_tuned_rag(
+    request: FineTunedRagGenerateRequest,
+) -> FineTunedRagGenerateResponse:
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=422, detail="Question must not be empty.")
+
+    result = await generate_course_finetuned_rag_answer(
+        course_id=request.course_id,
+        question=question,
+        top_k=request.top_k,
+    )
+
+    return FineTunedRagGenerateResponse(
+        courseId=result["courseId"],
+        answer=result["answer"],
+        model=result["model"],
+        sources=[RagGenerateSource(**source) for source in result["sources"]],
+        retrievedChunks=[
+            RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
+        ],
+        responseType=result["responseType"],
+        adapterLoaded=result["adapterLoaded"],
+        generationSeconds=result["generationSeconds"],
     )
 
 

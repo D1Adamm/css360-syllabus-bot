@@ -28,6 +28,7 @@ vi.mock('./lib/api', () => ({
   ApiError: class ApiError extends Error {},
   generateBaseModel: vi.fn(),
   generateFineTuned: vi.fn(),
+  generateFineTunedRag: vi.fn(),
   generateRag: vi.fn(),
   fetchCourseSyllabusText: vi.fn(async () => ({
     courseId: 'css360-default',

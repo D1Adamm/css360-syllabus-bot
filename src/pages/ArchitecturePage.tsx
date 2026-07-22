@@ -5,7 +5,7 @@ export function ArchitecturePage() {
     <>
       <PageHeader
         title="Architecture"
-        description="Understand how the Syllabus Model Lab multi-course prototype is structured and what is live versus simulated."
+        description="Understand how the Syllabus Model Lab multi-course prototype is structured and which model paths are live."
       />
 
       <section className="architecture-section" aria-labelledby="arch-frontend-title">
@@ -58,9 +58,9 @@ export function ArchitecturePage() {
         <p className="architecture-section__text">
           A FastAPI backend handles syllabus upload/extraction, chunking, embeddings with{' '}
           <code>nomic-embed-text</code>, course-specific RAG retrieval, Base Model generation with
-          Ollama <code>llama3.2:3b</code>, and Fine-Tuned generation via{' '}
-          <code>FINETUNED_SERVICE_URL</code>. Fine-Tuned + RAG comparison cards remain simulated
-          from static prototype data.
+          Ollama <code>llama3.2:3b</code>, Fine-Tuned generation via{' '}
+          <code>FINETUNED_SERVICE_URL</code>, and Fine-Tuned + RAG by combining course retrieval
+          with that same fine-tuned service.
         </p>
       </section>
 
@@ -76,7 +76,7 @@ export function ArchitecturePage() {
           <div className="architecture-flow__step">Course-scoped seed examples in Firebase</div>
           <div className="architecture-flow__arrow" aria-hidden="true">↓</div>
           <div className="architecture-flow__step">
-            Live Base / course RAG + simulated Fine-Tuned cards
+            Live Base / RAG / Fine-Tuned / Fine-Tuned + RAG comparison
           </div>
           <div className="architecture-flow__arrow" aria-hidden="true">↓</div>
           <div className="architecture-flow__step">Course-scoped evaluations in Firebase</div>
@@ -91,8 +91,8 @@ export function ArchitecturePage() {
         </h2>
         <p className="architecture-section__text">
           Phase 1 keeps syllabus artifacts on local disk. A later phase can move artifact storage to
-          GCP or a VM, add instructor authentication, and replace simulated fine-tuned responses with
-          trained models. Root-level legacy Firebase collections (<code>seedExamples</code>,{' '}
+          GCP or a VM, add instructor authentication, and automate Tillicum inference job lifecycle.
+          Root-level legacy Firebase collections (<code>seedExamples</code>,{' '}
           <code>evaluations</code>) may still exist in the database and can be deleted manually after
           confirming they are unused.
         </p>

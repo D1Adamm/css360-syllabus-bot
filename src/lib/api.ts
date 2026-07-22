@@ -14,6 +14,17 @@ export interface FineTunedGenerateResponse {
   generationSeconds?: number | null;
 }
 
+export interface FineTunedRagGenerateResponse {
+  courseId: string;
+  answer: string;
+  model: string;
+  sources: RagGenerateSource[];
+  retrievedChunks: RagRetrieveResult[];
+  responseType: 'fineTunedRag';
+  adapterLoaded: boolean;
+  generationSeconds?: number | null;
+}
+
 export interface RagGenerateSource {
   chunkId: string;
   sectionTitle: string;
@@ -151,6 +162,19 @@ export async function generateFineTuned(
     { courseId, question },
     'The backend could not generate a fine-tuned model response.',
     'Could not reach the backend. Make sure the FastAPI server is running and FINETUNED_SERVICE_URL is set.',
+  );
+}
+
+export async function generateFineTunedRag(
+  courseId: string,
+  question: string,
+  topK = 3,
+): Promise<FineTunedRagGenerateResponse> {
+  return postJson<FineTunedRagGenerateResponse>(
+    '/fine-tuned-rag/generate',
+    { courseId, question, topK },
+    'The backend could not generate a Fine-Tuned + RAG response.',
+    'Could not reach the backend. Make sure the FastAPI server is running, the course syllabus is indexed, and FINETUNED_SERVICE_URL is set.',
   );
 }
 

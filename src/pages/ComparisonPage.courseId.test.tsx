@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { CourseProvider } from '../context/CourseContext';
-import { generateBaseModel, generateFineTuned, generateRag } from '../lib/api';
+import { generateBaseModel, generateFineTuned, generateFineTunedRag, generateRag } from '../lib/api';
 import { ComparisonPage } from './ComparisonPage';
 
 vi.mock('../lib/api', () => ({
@@ -19,17 +19,20 @@ vi.mock('../lib/api', () => ({
   },
   generateBaseModel: vi.fn(),
   generateFineTuned: vi.fn(),
+  generateFineTunedRag: vi.fn(),
   generateRag: vi.fn(),
 }));
 
 const generateBaseModelMock = vi.mocked(generateBaseModel);
 const generateFineTunedMock = vi.mocked(generateFineTuned);
+const generateFineTunedRagMock = vi.mocked(generateFineTunedRag);
 const generateRagMock = vi.mocked(generateRag);
 
 describe('ComparisonPage course-specific live requests', () => {
   beforeEach(() => {
     generateBaseModelMock.mockReset();
     generateFineTunedMock.mockReset();
+    generateFineTunedRagMock.mockReset();
     generateRagMock.mockReset();
     generateBaseModelMock.mockResolvedValue({
       answer: 'Base answer',
@@ -44,6 +47,23 @@ describe('ComparisonPage course-specific live requests', () => {
       courseId: 'css-430-summer-2026-ibce',
       adapterLoaded: true,
       generationSeconds: 0.8,
+    });
+    generateFineTunedRagMock.mockResolvedValue({
+      courseId: 'css-430-summer-2026-ibce',
+      answer: 'Fine-tuned RAG answer',
+      model: 'meta-llama/Llama-3.2-3B-Instruct',
+      responseType: 'fineTunedRag',
+      adapterLoaded: true,
+      generationSeconds: 1.0,
+      sources: [
+        {
+          chunkId: 'css430-late-1',
+          sectionTitle: 'CSS 430 Late Policy',
+          text: 'Late policy excerpt',
+          score: 0.91,
+        },
+      ],
+      retrievedChunks: [],
     });
     generateRagMock.mockResolvedValue({
       courseId: 'css-430-summer-2026-ibce',
@@ -66,7 +86,7 @@ describe('ComparisonPage course-specific live requests', () => {
     cleanup();
   });
 
-  it('sends the route courseId to Base, RAG, and Fine-Tuned live requests', async () => {
+  it('sends the route courseId to all four live model requests', async () => {
     const courseId = 'css-430-summer-2026-ibce';
 
     render(
@@ -88,10 +108,12 @@ describe('ComparisonPage course-specific live requests', () => {
       expect(generateBaseModelMock).toHaveBeenCalled();
       expect(generateRagMock).toHaveBeenCalled();
       expect(generateFineTunedMock).toHaveBeenCalled();
+      expect(generateFineTunedRagMock).toHaveBeenCalled();
     });
 
     expect(generateBaseModelMock.mock.calls[0]?.[0]).toBe(courseId);
     expect(generateRagMock.mock.calls[0]?.[0]).toBe(courseId);
     expect(generateFineTunedMock.mock.calls[0]?.[0]).toBe(courseId);
+    expect(generateFineTunedRagMock.mock.calls[0]?.[0]).toBe(courseId);
   });
 });

@@ -7,12 +7,17 @@ import { CustomQuestionMatcher } from '../components/CustomQuestionMatcher';
 import { ModelResponseCard } from '../components/ModelResponseCard';
 import { PageHeader } from '../components/PageHeader';
 import { useCourseId } from '../context/CourseContext';
-import { ApiError, generateBaseModel, generateFineTuned, generateRag } from '../lib/api';
+import {
+  ApiError,
+  generateBaseModel,
+  generateFineTuned,
+  generateFineTunedRag,
+  generateRag,
+} from '../lib/api';
 import { coursePagePath } from '../lib/courseRoutes';
 import type { ComparisonRecord, ComparisonResponse } from '../types';
 import {
   type ComparisonMode,
-  SIMULATED_UNAVAILABLE_MESSAGE,
   resolveSimulatedRecord,
 } from '../utils/comparisonPageState';
 
@@ -23,28 +28,24 @@ const MODEL_CARDS = [
     key: 'base',
     modelName: 'Base Model',
     accessDescription: 'No syllabus context and no student-created fine-tuning examples.',
-    responseKey: 'baseResponse' as const,
   },
   {
     key: 'rag',
     modelName: 'RAG',
     accessDescription: 'Receives relevant syllabus passages at answer time.',
-    responseKey: 'ragResponse' as const,
   },
   {
     key: 'fineTuned',
     modelName: 'Fine-Tuned Model',
     accessDescription: 'Uses response behavior learned from prototype seed examples.',
-    responseKey: 'fineTunedResponse' as const,
   },
   {
     key: 'fineTunedRag',
     modelName: 'Fine-Tuned + RAG',
     accessDescription:
       'Uses both learned response behavior and retrieved syllabus context.',
-    responseKey: 'fineTunedRagResponse' as const,
   },
-];
+] as const;
 
 const DEFAULT_BASE_RESPONSE: ComparisonResponse = {
   text: '',
@@ -64,13 +65,19 @@ const DEFAULT_FINE_TUNED_RESPONSE: ComparisonResponse = {
   simulated: false,
 };
 
+const DEFAULT_FINE_TUNED_RAG_RESPONSE: ComparisonResponse = {
+  text: '',
+  grounding: 'High',
+  simulated: false,
+};
+
 type LiveModelState =
   | { status: 'idle' }
   | { status: 'loading'; question: string }
   | { status: 'success'; question: string; response: ComparisonResponse }
   | { status: 'error'; question: string; message: string };
 
-type RagModelState =
+type GroundedModelState =
   | { status: 'idle' }
   | { status: 'loading'; question: string }
   | { status: 'success'; question: string; response: ComparisonResponse; sources: string[] }
@@ -91,8 +98,11 @@ export function ComparisonPage() {
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('predefined');
   const [matchedRecordId, setMatchedRecordId] = useState<string | null>(null);
   const [baseModelState, setBaseModelState] = useState<LiveModelState>({ status: 'idle' });
-  const [ragModelState, setRagModelState] = useState<RagModelState>({ status: 'idle' });
+  const [ragModelState, setRagModelState] = useState<GroundedModelState>({ status: 'idle' });
   const [fineTunedModelState, setFineTunedModelState] = useState<LiveModelState>({
+    status: 'idle',
+  });
+  const [fineTunedRagModelState, setFineTunedRagModelState] = useState<GroundedModelState>({
     status: 'idle',
   });
   const [customMatcherResetKey, setCustomMatcherResetKey] = useState(0);
@@ -110,7 +120,7 @@ export function ComparisonPage() {
     [matchedRecordId],
   );
 
-  const simulatedRecord = useMemo(() => {
+  const notesRecord = useMemo(() => {
     if (!selectedRecord) {
       return null;
     }
@@ -215,16 +225,52 @@ export function ComparisonPage() {
     }
   }, [courseId]);
 
+  const loadFineTunedRagModelResponse = useCallback(async (question: string) => {
+    const trimmedQuestion = question.trim();
+
+    if (!trimmedQuestion) {
+      return;
+    }
+
+    setFineTunedRagModelState({ status: 'loading', question: trimmedQuestion });
+
+    try {
+      const result = await generateFineTunedRag(courseId, trimmedQuestion);
+
+      setFineTunedRagModelState({
+        status: 'success',
+        question: trimmedQuestion,
+        response: {
+          text: result.answer,
+          grounding: 'High',
+          simulated: false,
+        },
+        sources: result.sources.map((source) => source.sectionTitle),
+      });
+    } catch (error) {
+      setFineTunedRagModelState({
+        status: 'error',
+        question: trimmedQuestion,
+        message: getApiErrorMessage(
+          error,
+          'The Fine-Tuned + RAG response could not be loaded.',
+        ),
+      });
+    }
+  }, [courseId]);
+
   useEffect(() => {
     void Promise.all([
       loadBaseModelResponse(activeQuestion),
       loadRagModelResponse(activeQuestion),
       loadFineTunedModelResponse(activeQuestion),
+      loadFineTunedRagModelResponse(activeQuestion),
     ]);
   }, [
     activeQuestion,
     loadBaseModelResponse,
     loadFineTunedModelResponse,
+    loadFineTunedRagModelResponse,
     loadRagModelResponse,
   ]);
 
@@ -232,16 +278,22 @@ export function ComparisonPage() {
     return null;
   }
 
-  const evaluateHref = `${coursePagePath(courseId, 'evaluate')}?comparison=${simulatedRecord?.id ?? selectedRecord.id}`;
+  const evaluateHref = `${coursePagePath(courseId, 'evaluate')}?comparison=${notesRecord?.id ?? selectedRecord.id}`;
   const isBaseModelLoading = baseModelState.status === 'loading';
   const isRagModelLoading = ragModelState.status === 'loading';
   const isFineTunedModelLoading = fineTunedModelState.status === 'loading';
+  const isFineTunedRagModelLoading = fineTunedRagModelState.status === 'loading';
   const isLiveRequestInFlight =
-    isBaseModelLoading || isRagModelLoading || isFineTunedModelLoading;
+    isBaseModelLoading ||
+    isRagModelLoading ||
+    isFineTunedModelLoading ||
+    isFineTunedRagModelLoading;
   const baseModelError = baseModelState.status === 'error' ? baseModelState.message : null;
   const ragModelError = ragModelState.status === 'error' ? ragModelState.message : null;
   const fineTunedModelError =
     fineTunedModelState.status === 'error' ? fineTunedModelState.message : null;
+  const fineTunedRagModelError =
+    fineTunedRagModelState.status === 'error' ? fineTunedRagModelState.message : null;
   const baseModelResponse =
     baseModelState.status === 'success' ? baseModelState.response : DEFAULT_BASE_RESPONSE;
   const ragModelResponse =
@@ -250,12 +302,17 @@ export function ComparisonPage() {
     fineTunedModelState.status === 'success'
       ? fineTunedModelState.response
       : DEFAULT_FINE_TUNED_RESPONSE;
+  const fineTunedRagModelResponse =
+    fineTunedRagModelState.status === 'success'
+      ? fineTunedRagModelState.response
+      : DEFAULT_FINE_TUNED_RAG_RESPONSE;
   const ragSources = ragModelState.status === 'success' ? ragModelState.sources : [];
-  const showSimulatedUnavailable = comparisonMode === 'custom-unmatched';
+  const fineTunedRagSources =
+    fineTunedRagModelState.status === 'success' ? fineTunedRagModelState.sources : [];
   const explanationNotes =
     comparisonMode === 'custom-unmatched'
-      ? 'Fine-Tuned + RAG simulated responses are only available for predefined questions or custom questions that closely match a predefined example.'
-      : (simulatedRecord?.notes ?? selectedRecord.notes);
+      ? 'All four live models answered your custom question. Evaluation notes below still refer to the closest predefined comparison example when available.'
+      : (notesRecord?.notes ?? selectedRecord.notes);
 
   return (
     <>
@@ -264,11 +321,11 @@ export function ComparisonPage() {
         description="Compare how different model approaches may answer the same syllabus question. Each configuration has different access to syllabus content and seed-example training data."
       />
 
-      <aside className="comparison-notice" aria-label="Simulation notice">
+      <aside className="comparison-notice" aria-label="Live model notice">
         <p>
-          <strong>Hybrid prototype:</strong> Base Model, RAG, and Fine-Tuned responses are live
-          from the FastAPI backend (Fine-Tuned requires{' '}
-          <code>FINETUNED_SERVICE_URL</code>). Fine-Tuned + RAG remains simulated.
+          <strong>Live comparison:</strong> Base Model, RAG, Fine-Tuned, and Fine-Tuned + RAG
+          responses come from the FastAPI backend. Fine-Tuned paths require{' '}
+          <code>FINETUNED_SERVICE_URL</code>; RAG paths require a course syllabus index.
         </p>
       </aside>
 
@@ -349,30 +406,15 @@ export function ComparisonPage() {
             );
           }
 
-          if (!simulatedRecord) {
-            return (
-              <ModelResponseCard
-                key={card.key}
-                modelName={card.modelName}
-                accessDescription={card.accessDescription}
-                response={{
-                  text: '',
-                  grounding: 'High',
-                  simulated: true,
-                }}
-                unavailableMessage={
-                  showSimulatedUnavailable ? SIMULATED_UNAVAILABLE_MESSAGE : null
-                }
-              />
-            );
-          }
-
           return (
             <ModelResponseCard
               key={card.key}
               modelName={card.modelName}
               accessDescription={card.accessDescription}
-              response={simulatedRecord[card.responseKey]}
+              response={fineTunedRagModelResponse}
+              isLoading={isFineTunedRagModelLoading}
+              error={fineTunedRagModelError}
+              sources={fineTunedRagSources}
             />
           );
         })}
