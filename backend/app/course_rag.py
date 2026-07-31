@@ -58,12 +58,19 @@ def _normalize_course_chunk(chunk: dict[str, Any]) -> dict[str, Any] | None:
     if not all(isinstance(value, (int, float)) for value in embedding):
         return None
 
-    return {
+    normalized: dict[str, Any] = {
         "chunk_id": chunk_id,
         "section": section_title,
         "text": text,
         "embedding": [float(value) for value in embedding],
     }
+    document_title = chunk.get("documentTitle") or chunk.get("document_title")
+    if isinstance(document_title, str) and document_title.strip():
+        normalized["document_title"] = document_title.strip()
+    heading_path = chunk.get("headingPath") or chunk.get("heading_path")
+    if isinstance(heading_path, list):
+        normalized["heading_path"] = [str(part) for part in heading_path if str(part).strip()]
+    return normalized
 
 
 def _score_chunks_against_embedding(

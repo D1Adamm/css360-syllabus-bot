@@ -214,6 +214,10 @@ class CourseChunkMetadata(BaseModel):
     section_title: str = Field(alias="sectionTitle")
     text: str
     order: int
+    document_title: str | None = Field(default=None, alias="documentTitle")
+    heading_path: list[str] | None = Field(default=None, alias="headingPath")
+    start_offset: int | None = Field(default=None, alias="startOffset")
+    end_offset: int | None = Field(default=None, alias="endOffset")
 
 
 class CourseChunksResponse(BaseModel):
@@ -222,6 +226,8 @@ class CourseChunksResponse(BaseModel):
     course_id: str = Field(alias="courseId")
     chunk_count: int = Field(alias="chunkCount")
     chunks: list[CourseChunkMetadata]
+    index_version: int | None = Field(default=None, alias="indexVersion")
+    document_title: str | None = Field(default=None, alias="documentTitle")
 
 
 class SeedGenerateRequest(BaseModel):

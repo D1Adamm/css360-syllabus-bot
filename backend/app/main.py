@@ -349,6 +349,10 @@ def get_course_chunks(course_id: str) -> CourseChunksResponse:
             sectionTitle=chunk["sectionTitle"],
             text=chunk["text"],
             order=chunk["order"],
+            documentTitle=chunk.get("documentTitle"),
+            headingPath=chunk.get("headingPath"),
+            startOffset=chunk.get("startOffset"),
+            endOffset=chunk.get("endOffset"),
         )
         for chunk in index_data.get("chunks", [])
     ]
@@ -357,6 +361,8 @@ def get_course_chunks(course_id: str) -> CourseChunksResponse:
         courseId=safe_course_id,
         chunkCount=len(chunks),
         chunks=chunks,
+        indexVersion=index_data.get("indexVersion"),
+        documentTitle=index_data.get("documentTitle"),
     )
 
 

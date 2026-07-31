@@ -128,10 +128,12 @@ class CourseIndexEndpointTests(unittest.TestCase):
         self.assertIn("createdAt", index)
         self.assertEqual(index["chunkCount"], len(index["chunks"]))
         first = index["chunks"][0]
-        self.assertEqual(
-            set(first.keys()),
-            {"chunkId", "sectionTitle", "text", "order", "embedding"},
-        )
+        self.assertEqual(index.get("indexVersion"), 2)
+        self.assertIn("documentTitle", index)
+        required = {"chunkId", "sectionTitle", "text", "order", "embedding"}
+        self.assertTrue(required.issubset(set(first.keys())))
+        self.assertIn("documentTitle", first)
+        self.assertIn("headingPath", first)
 
     def test_get_chunks_endpoint_omits_embeddings(self) -> None:
         upload = self._upload("course-chunks")
