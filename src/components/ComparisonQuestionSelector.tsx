@@ -3,13 +3,19 @@ import type { ComparisonRecord } from '../types';
 interface ComparisonQuestionSelectorProps {
   records: ComparisonRecord[];
   selectedId: string;
+  isRunning?: boolean;
+  isRunDisabled?: boolean;
   onSelect: (id: string) => void;
+  onRunComparison?: () => void;
 }
 
 export function ComparisonQuestionSelector({
   records,
   selectedId,
+  isRunning = false,
+  isRunDisabled = false,
   onSelect,
+  onRunComparison,
 }: ComparisonQuestionSelectorProps) {
   const selected = records.find((record) => record.id === selectedId) ?? records[0];
 
@@ -34,6 +40,20 @@ export function ComparisonQuestionSelector({
           </option>
         ))}
       </select>
+
+      {onRunComparison && (
+        <div className="comparison-selector__actions">
+          <button
+            type="button"
+            className="comparison-selector__run"
+            onClick={onRunComparison}
+            disabled={isRunDisabled}
+            aria-busy={isRunning}
+          >
+            {isRunDisabled ? 'Running comparison…' : 'Run comparison'}
+          </button>
+        </div>
+      )}
 
       {selected && (
         <dl className="comparison-selector__meta">

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -103,6 +103,10 @@ describe('ComparisonPage course-specific live requests', () => {
         </Routes>
       </MemoryRouter>,
     );
+
+    expect(generateBaseModelMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run comparison' }));
 
     await waitFor(() => {
       expect(generateBaseModelMock).toHaveBeenCalled();

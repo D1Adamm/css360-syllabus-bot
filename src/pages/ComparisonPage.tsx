@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import comparisonData from '../data/comparisonData.json';
 import { ComparisonExplanation } from '../components/ComparisonExplanation';
@@ -94,7 +94,7 @@ function getApiErrorMessage(error: unknown, fallbackMessage: string): string {
 export function ComparisonPage() {
   const courseId = useCourseId();
   const [selectedId, setSelectedId] = useState(records[0]?.id ?? '');
-  const [activeQuestion, setActiveQuestion] = useState(records[0]?.question ?? '');
+  const [activeQuestion, setActiveQuestion] = useState('');
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('predefined');
   const [matchedRecordId, setMatchedRecordId] = useState<string | null>(null);
   const [baseModelState, setBaseModelState] = useState<LiveModelState>({ status: 'idle' });
@@ -106,6 +106,7 @@ export function ComparisonPage() {
     status: 'idle',
   });
   const [customMatcherResetKey, setCustomMatcherResetKey] = useState(0);
+  const requestIdRef = useRef(0);
 
   const selectedRecord = useMemo(
     () => records.find((record) => record.id === selectedId) ?? records[0],
@@ -128,151 +129,154 @@ export function ComparisonPage() {
     return resolveSimulatedRecord(comparisonMode, selectedRecord, matchedRecord);
   }, [comparisonMode, matchedRecord, selectedRecord]);
 
-  const loadBaseModelResponse = useCallback(async (question: string) => {
-    const trimmedQuestion = question.trim();
+  const runComparison = useCallback(
+    async (question: string) => {
+      const trimmedQuestion = question.trim();
 
-    if (!trimmedQuestion) {
-      return;
-    }
+      if (!trimmedQuestion) {
+        return;
+      }
 
-    setBaseModelState({ status: 'loading', question: trimmedQuestion });
+      const requestId = ++requestIdRef.current;
+      setActiveQuestion(trimmedQuestion);
+      setBaseModelState({ status: 'loading', question: trimmedQuestion });
+      setRagModelState({ status: 'loading', question: trimmedQuestion });
+      setFineTunedModelState({ status: 'loading', question: trimmedQuestion });
+      setFineTunedRagModelState({ status: 'loading', question: trimmedQuestion });
 
-    try {
-      const result = await generateBaseModel(courseId, trimmedQuestion);
+      const isCurrentRequest = () => requestId === requestIdRef.current;
 
-      setBaseModelState({
-        status: 'success',
-        question: trimmedQuestion,
-        response: {
-          text: result.answer,
-          grounding: 'Low',
-          simulated: false,
-        },
-      });
-    } catch (error) {
-      setBaseModelState({
-        status: 'error',
-        question: trimmedQuestion,
-        message: getApiErrorMessage(
-          error,
-          'The Base Model response could not be loaded.',
-        ),
-      });
-    }
-  }, [courseId]);
+      const loadBase = async () => {
+        try {
+          const result = await generateBaseModel(courseId, trimmedQuestion);
+          if (!isCurrentRequest()) {
+            return;
+          }
 
-  const loadRagModelResponse = useCallback(async (question: string) => {
-    const trimmedQuestion = question.trim();
+          setBaseModelState({
+            status: 'success',
+            question: trimmedQuestion,
+            response: {
+              text: result.answer,
+              grounding: 'Low',
+              simulated: false,
+            },
+          });
+        } catch (error) {
+          if (!isCurrentRequest()) {
+            return;
+          }
 
-    if (!trimmedQuestion) {
-      return;
-    }
+          setBaseModelState({
+            status: 'error',
+            question: trimmedQuestion,
+            message: getApiErrorMessage(
+              error,
+              'The Base Model response could not be loaded.',
+            ),
+          });
+        }
+      };
 
-    setRagModelState({ status: 'loading', question: trimmedQuestion });
+      const loadRag = async () => {
+        try {
+          const result = await generateRag(courseId, trimmedQuestion);
+          if (!isCurrentRequest()) {
+            return;
+          }
 
-    try {
-      const result = await generateRag(courseId, trimmedQuestion);
+          setRagModelState({
+            status: 'success',
+            question: trimmedQuestion,
+            response: {
+              text: result.answer,
+              grounding: 'High',
+              simulated: false,
+            },
+            sources: result.sources.map((source) => source.sectionTitle),
+          });
+        } catch (error) {
+          if (!isCurrentRequest()) {
+            return;
+          }
 
-      setRagModelState({
-        status: 'success',
-        question: trimmedQuestion,
-        response: {
-          text: result.answer,
-          grounding: 'High',
-          simulated: false,
-        },
-        sources: result.sources.map((source) => source.sectionTitle),
-      });
-    } catch (error) {
-      setRagModelState({
-        status: 'error',
-        question: trimmedQuestion,
-        message: getApiErrorMessage(error, 'The RAG response could not be loaded.'),
-      });
-    }
-  }, [courseId]);
+          setRagModelState({
+            status: 'error',
+            question: trimmedQuestion,
+            message: getApiErrorMessage(error, 'The RAG response could not be loaded.'),
+          });
+        }
+      };
 
-  const loadFineTunedModelResponse = useCallback(async (question: string) => {
-    const trimmedQuestion = question.trim();
+      const loadFineTuned = async () => {
+        try {
+          const result = await generateFineTuned(courseId, trimmedQuestion);
+          if (!isCurrentRequest()) {
+            return;
+          }
 
-    if (!trimmedQuestion) {
-      return;
-    }
+          setFineTunedModelState({
+            status: 'success',
+            question: trimmedQuestion,
+            response: {
+              text: result.answer,
+              grounding: 'Medium',
+              simulated: false,
+            },
+          });
+        } catch (error) {
+          if (!isCurrentRequest()) {
+            return;
+          }
 
-    setFineTunedModelState({ status: 'loading', question: trimmedQuestion });
+          setFineTunedModelState({
+            status: 'error',
+            question: trimmedQuestion,
+            message: getApiErrorMessage(
+              error,
+              'The Fine-Tuned Model response could not be loaded.',
+            ),
+          });
+        }
+      };
 
-    try {
-      const result = await generateFineTuned(courseId, trimmedQuestion);
+      const loadFineTunedRag = async () => {
+        try {
+          const result = await generateFineTunedRag(courseId, trimmedQuestion);
+          if (!isCurrentRequest()) {
+            return;
+          }
 
-      setFineTunedModelState({
-        status: 'success',
-        question: trimmedQuestion,
-        response: {
-          text: result.answer,
-          grounding: 'Medium',
-          simulated: false,
-        },
-      });
-    } catch (error) {
-      setFineTunedModelState({
-        status: 'error',
-        question: trimmedQuestion,
-        message: getApiErrorMessage(
-          error,
-          'The Fine-Tuned Model response could not be loaded.',
-        ),
-      });
-    }
-  }, [courseId]);
+          setFineTunedRagModelState({
+            status: 'success',
+            question: trimmedQuestion,
+            response: {
+              text: result.answer,
+              grounding: 'High',
+              simulated: false,
+            },
+            sources: result.sources.map((source) => source.sectionTitle),
+          });
+        } catch (error) {
+          if (!isCurrentRequest()) {
+            return;
+          }
 
-  const loadFineTunedRagModelResponse = useCallback(async (question: string) => {
-    const trimmedQuestion = question.trim();
+          setFineTunedRagModelState({
+            status: 'error',
+            question: trimmedQuestion,
+            message: getApiErrorMessage(
+              error,
+              'The Fine-Tuned + RAG response could not be loaded.',
+            ),
+          });
+        }
+      };
 
-    if (!trimmedQuestion) {
-      return;
-    }
-
-    setFineTunedRagModelState({ status: 'loading', question: trimmedQuestion });
-
-    try {
-      const result = await generateFineTunedRag(courseId, trimmedQuestion);
-
-      setFineTunedRagModelState({
-        status: 'success',
-        question: trimmedQuestion,
-        response: {
-          text: result.answer,
-          grounding: 'High',
-          simulated: false,
-        },
-        sources: result.sources.map((source) => source.sectionTitle),
-      });
-    } catch (error) {
-      setFineTunedRagModelState({
-        status: 'error',
-        question: trimmedQuestion,
-        message: getApiErrorMessage(
-          error,
-          'The Fine-Tuned + RAG response could not be loaded.',
-        ),
-      });
-    }
-  }, [courseId]);
-
-  useEffect(() => {
-    void Promise.all([
-      loadBaseModelResponse(activeQuestion),
-      loadRagModelResponse(activeQuestion),
-      loadFineTunedModelResponse(activeQuestion),
-      loadFineTunedRagModelResponse(activeQuestion),
-    ]);
-  }, [
-    activeQuestion,
-    loadBaseModelResponse,
-    loadFineTunedModelResponse,
-    loadFineTunedRagModelResponse,
-    loadRagModelResponse,
-  ]);
+      await Promise.all([loadBase(), loadRag(), loadFineTuned(), loadFineTunedRag()]);
+    },
+    [courseId],
+  );
 
   if (!selectedRecord) {
     return null;
@@ -288,6 +292,8 @@ export function ComparisonPage() {
     isRagModelLoading ||
     isFineTunedModelLoading ||
     isFineTunedRagModelLoading;
+  const isRunComparisonDisabled =
+    isLiveRequestInFlight && selectedRecord.question === activeQuestion;
   const baseModelError = baseModelState.status === 'error' ? baseModelState.message : null;
   const ragModelError = ragModelState.status === 'error' ? ragModelState.message : null;
   const fineTunedModelError =
@@ -329,22 +335,27 @@ export function ComparisonPage() {
         </p>
       </aside>
 
-      <p className="comparison-active-question" role="status">
-        <strong>Active question:</strong> {activeQuestion}
+      <p
+        className="comparison-active-question"
+        role="status"
+        aria-label="Active question"
+      >
+        <strong>Active question:</strong> {activeQuestion || 'None yet'}
       </p>
 
       <ComparisonQuestionSelector
         records={records}
         selectedId={selectedRecord.id}
+        isRunning={isLiveRequestInFlight}
+        isRunDisabled={isRunComparisonDisabled}
         onSelect={(id) => {
           setSelectedId(id);
-          const record = records.find((item) => item.id === id);
-          if (record) {
-            setActiveQuestion(record.question);
-          }
           setComparisonMode('predefined');
           setMatchedRecordId(null);
           setCustomMatcherResetKey((current) => current + 1);
+        }}
+        onRunComparison={() => {
+          void runComparison(selectedRecord.question);
         }}
       />
 
@@ -361,7 +372,9 @@ export function ComparisonPage() {
           setComparisonMode('custom-unmatched');
           setMatchedRecordId(null);
         }}
-        onQuestionSubmit={setActiveQuestion}
+        onQuestionSubmit={(question) => {
+          void runComparison(question);
+        }}
       />
 
       <section className="comparison-grid" aria-label="Model responses">
