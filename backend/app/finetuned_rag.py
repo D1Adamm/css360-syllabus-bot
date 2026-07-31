@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from app.course_id import assert_valid_course_id
 from app.course_rag import retrieve_course_syllabus_chunks
 from app.finetuned_client import generate_finetuned_response
-from app.rag import DEFAULT_TOP_K
+from app.retrieval_diversity import DEFAULT_TOP_K
 from app.storage import CourseArtifactStorage
 
 

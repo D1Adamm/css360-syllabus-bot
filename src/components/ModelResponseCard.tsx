@@ -61,8 +61,8 @@ export function ModelResponseCard({
         <div className="model-response-card__sources">
           <p className="model-response-card__sources-label">Syllabus sources</p>
           <ul className="model-response-card__sources-list">
-            {sources.map((source) => (
-              <li key={source}>{source}</li>
+            {sources.map((source, index) => (
+              <li key={`${index}-${source}`}>{source}</li>
             ))}
           </ul>
         </div>

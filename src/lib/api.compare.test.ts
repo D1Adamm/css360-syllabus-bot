@@ -65,7 +65,7 @@ describe('compare live API client courseId', () => {
     expect(JSON.parse(String(options.body))).toEqual({
       courseId: 'css-430-summer-2026-ibce',
       question: 'Can I submit late work?',
-      topK: 3,
+      topK: 5,
     });
   });
 
@@ -131,7 +131,7 @@ describe('compare live API client courseId', () => {
     expect(JSON.parse(String(options.body))).toEqual({
       courseId: 'css-430-summer-2026-ibce',
       question: 'Can I submit late work?',
-      topK: 3,
+      topK: 5,
     });
   });
 });

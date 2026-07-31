@@ -9,11 +9,15 @@ from fastapi import HTTPException
 from app.course_id import assert_valid_course_id
 from app.ollama import generate_ollama_completion
 from app.rag import (
-    DEFAULT_TOP_K,
     OLLAMA_EMBEDDING_MODEL,
     build_rag_prompt,
     compute_cosine_similarity,
     get_embedding,
+)
+from app.retrieval_diversity import (
+    CANDIDATE_POOL_SIZE,
+    DEFAULT_TOP_K,
+    select_diverse_course_chunks,
 )
 from app.storage import CourseArtifactStorage, get_course_artifact_storage
 
@@ -56,7 +60,7 @@ async def retrieve_course_syllabus_chunks(
     top_k: int = DEFAULT_TOP_K,
     storage: CourseArtifactStorage | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Load one course index and retrieve top-K chunks for the question."""
+    """Load one course index and retrieve a diverse top-K chunk set."""
     safe_course_id = _validate_course_id(course_id)
     artifact_storage = storage or get_course_artifact_storage()
     index_data = artifact_storage.load_index(safe_course_id)
@@ -101,7 +105,11 @@ async def retrieve_course_syllabus_chunks(
         )
 
     scored_chunks.sort(key=lambda item: item["score"], reverse=True)
-    selected = scored_chunks[: max(1, top_k)]
+    selected = select_diverse_course_chunks(
+        scored_chunks,
+        top_k=max(1, top_k),
+        candidate_pool_size=CANDIDATE_POOL_SIZE,
+    )
     embedding_model = index_data.get("embeddingModel") or OLLAMA_EMBEDDING_MODEL
     return str(embedding_model), selected
 

@@ -258,6 +258,124 @@ class CourseSpecificRagTests(unittest.TestCase):
         for chunk in body["retrievedChunks"]:
             self.assertTrue(chunk["chunkId"].startswith("css430-"))
 
+    def test_multi_part_question_returns_chunks_from_multiple_sections(self) -> None:
+        multi_id = "css-450-multi-section"
+        self.storage.save_index(
+            multi_id,
+            _index(
+                multi_id,
+                [
+                    _chunk(
+                        "grade-1",
+                        "Grade Questions",
+                        "Grade questions must be discussed privately.",
+                        [1.0, 0.0, 0.0, 0.0],
+                        order=0,
+                    ),
+                    _chunk(
+                        "contact-1",
+                        "Contact",
+                        "Use email or Discord for course communication.",
+                        [0.85, 0.15, 0.0, 0.0],
+                        order=1,
+                    ),
+                    _chunk(
+                        "late-1",
+                        "Late Policy",
+                        "Late work loses credit unless an extension is approved.",
+                        [0.8, 0.0, 0.2, 0.0],
+                        order=2,
+                    ),
+                    _chunk(
+                        "makeup-1",
+                        "Impact of Missing Class",
+                        "Missed in-class work generally cannot be made up.",
+                        [0.75, 0.0, 0.0, 0.25],
+                        order=3,
+                    ),
+                    _chunk(
+                        "ai-1",
+                        "Use of AI Tools",
+                        "AI tools require citation when used on assignments.",
+                        [0.1, 0.0, 0.0, 0.0],
+                        order=4,
+                    ),
+                ],
+            ),
+        )
+
+        with patch(
+            "app.course_rag.get_embedding",
+            new=AsyncMock(return_value=[1.0, 0.0, 0.0, 0.0]),
+        ):
+            response = self.client.post(
+                "/rag/generate",
+                json={
+                    "courseId": multi_id,
+                    "question": (
+                        "How should I discuss grades, which communication channels "
+                        "can I use, what is the late and extension policy, and can I "
+                        "make up missed work?"
+                    ),
+                    "topK": 4,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        sources = response.json()["sources"]
+        sections = {source["sectionTitle"] for source in sources}
+        self.assertGreaterEqual(len(sections), 3)
+        self.assertTrue({"Grade Questions", "Contact", "Late Policy"} & sections)
+
+    def test_near_duplicate_chunks_are_filtered_in_retrieval(self) -> None:
+        dup_id = "css-450-dup-chunks"
+        shared = (
+            "Late submissions lose ten percent per day and may not be accepted "
+            "after three days without an approved extension request from the instructor."
+        )
+        self.storage.save_index(
+            dup_id,
+            _index(
+                dup_id,
+                [
+                    _chunk("dup-1", "Late Policy", shared, [1.0, 0.0], order=0),
+                    _chunk(
+                        "dup-2",
+                        "Late Policy",
+                        shared.replace("instructor", "faculty"),
+                        [0.99, 0.01],
+                        order=1,
+                    ),
+                    _chunk(
+                        "makeup-1",
+                        "Makeup Policy",
+                        "Makeup exams require documentation before the original exam.",
+                        [0.7, 0.3],
+                        order=2,
+                    ),
+                ],
+            ),
+        )
+
+        with patch(
+            "app.course_rag.get_embedding",
+            new=AsyncMock(return_value=[1.0, 0.0]),
+        ):
+            response = self.client.post(
+                "/rag/generate",
+                json={
+                    "courseId": dup_id,
+                    "question": "What is the late policy and makeup rule?",
+                    "topK": 3,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        chunk_ids = [source["chunkId"] for source in response.json()["sources"]]
+        self.assertIn("dup-1", chunk_ids)
+        self.assertNotIn("dup-2", chunk_ids)
+        self.assertIn("makeup-1", chunk_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

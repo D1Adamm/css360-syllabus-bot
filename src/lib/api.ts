@@ -168,7 +168,7 @@ export async function generateFineTuned(
 export async function generateFineTunedRag(
   courseId: string,
   question: string,
-  topK = 3,
+  topK = 5,
 ): Promise<FineTunedRagGenerateResponse> {
   return postJson<FineTunedRagGenerateResponse>(
     '/fine-tuned-rag/generate',
@@ -181,7 +181,7 @@ export async function generateFineTunedRag(
 export async function generateRag(
   courseId: string,
   question: string,
-  topK = 3,
+  topK = 5,
 ): Promise<RagGenerateResponse> {
   return postJson<RagGenerateResponse>(
     '/rag/generate',

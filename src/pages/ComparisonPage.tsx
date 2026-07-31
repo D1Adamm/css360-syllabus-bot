@@ -20,6 +20,7 @@ import {
   type ComparisonMode,
   resolveSimulatedRecord,
 } from '../utils/comparisonPageState';
+import { formatRagSourceLabels } from '../utils/ragSourceLabels';
 
 const records = comparisonData as ComparisonRecord[];
 
@@ -198,7 +199,7 @@ export function ComparisonPage() {
               grounding: 'High',
               simulated: false,
             },
-            sources: result.sources.map((source) => source.sectionTitle),
+            sources: formatRagSourceLabels(result.sources),
           });
         } catch (error) {
           if (!isCurrentRequest()) {
@@ -260,7 +261,7 @@ export function ComparisonPage() {
               grounding: 'High',
               simulated: false,
             },
-            sources: result.sources.map((source) => source.sectionTitle),
+            sources: formatRagSourceLabels(result.sources),
           });
         } catch (error) {
           if (!isCurrentRequest()) {
