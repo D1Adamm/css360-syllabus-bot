@@ -235,78 +235,11 @@ describe('ComparisonPage manual comparison runs', () => {
     });
   });
 
-  it('ignores a stale comparison response after a newer comparison is submitted', async () => {
-    const firstBase = createDeferred<{
-      answer: string;
-      model: string;
-      responseType: 'base';
-      courseId: string;
-    }>();
-    const secondBase = createDeferred<{
-      answer: string;
-      model: string;
-      responseType: 'base';
-      courseId: string;
-    }>();
-
-    generateBaseModelMock
-      .mockReturnValueOnce(firstBase.promise)
-      .mockReturnValueOnce(secondBase.promise);
-    generateRagMock
-      .mockResolvedValueOnce({
-        courseId: COURSE_ID,
-        answer: 'Old RAG answer',
-        model: 'llama3.2:3b',
-        responseType: 'rag',
-        sources: [],
-        retrievedChunks: [],
-      })
-      .mockResolvedValueOnce({
-        courseId: COURSE_ID,
-        answer: 'New RAG answer',
-        model: 'llama3.2:3b',
-        responseType: 'rag',
-        sources: [],
-        retrievedChunks: [],
-      });
-    generateFineTunedMock
-      .mockResolvedValueOnce({
-        answer: 'Old fine-tuned answer',
-        model: 'meta-llama/Llama-3.2-3B-Instruct',
-        responseType: 'fineTuned',
-        courseId: COURSE_ID,
-        adapterLoaded: true,
-        generationSeconds: 0.8,
-      })
-      .mockResolvedValueOnce({
-        answer: 'New fine-tuned answer',
-        model: 'meta-llama/Llama-3.2-3B-Instruct',
-        responseType: 'fineTuned',
-        courseId: COURSE_ID,
-        adapterLoaded: true,
-        generationSeconds: 0.8,
-      });
-    generateFineTunedRagMock
-      .mockResolvedValueOnce({
-        courseId: COURSE_ID,
-        answer: 'Old fine-tuned RAG answer',
-        model: 'meta-llama/Llama-3.2-3B-Instruct',
-        responseType: 'fineTunedRag',
-        adapterLoaded: true,
-        generationSeconds: 1.0,
-        sources: [],
-        retrievedChunks: [],
-      })
-      .mockResolvedValueOnce({
-        courseId: COURSE_ID,
-        answer: 'New fine-tuned RAG answer',
-        model: 'meta-llama/Llama-3.2-3B-Instruct',
-        responseType: 'fineTunedRag',
-        adapterLoaded: true,
-        generationSeconds: 1.0,
-        sources: [],
-        retrievedChunks: [],
-      });
+  it('blocks a second predefined submission while a comparison is running', async () => {
+    generateBaseModelMock.mockReturnValue(new Promise(() => {}));
+    generateRagMock.mockReturnValue(new Promise(() => {}));
+    generateFineTunedMock.mockReturnValue(new Promise(() => {}));
+    generateFineTunedRagMock.mockReturnValue(new Promise(() => {}));
 
     renderComparisonPage();
 
@@ -314,52 +247,163 @@ describe('ComparisonPage manual comparison runs', () => {
 
     await waitFor(() => {
       expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
-      expect(getActiveQuestionStatus()).toHaveTextContent(
-        `Active question: ${FIRST_QUESTION}`,
-      );
+      expect(screen.getByRole('button', { name: 'Running comparison…' })).toBeDisabled();
     });
 
     fireEvent.change(screen.getByLabelText('Predefined syllabus questions'), {
       target: { value: records[1]?.id },
     });
 
-    const runButton = screen.getByRole('button', { name: 'Run comparison' });
-    expect(runButton).not.toBeDisabled();
+    const runButton = screen.getByRole('button', { name: 'Running comparison…' });
+    expect(runButton).toBeDisabled();
     fireEvent.click(runButton);
 
-    await waitFor(() => {
-      expect(generateBaseModelMock).toHaveBeenCalledTimes(2);
-      expect(getActiveQuestionStatus()).toHaveTextContent(
-        `Active question: ${SECOND_QUESTION}`,
-      );
-    });
-
-    secondBase.resolve({
-      answer: 'New base answer',
-      model: 'llama3.2:3b',
-      responseType: 'base',
-      courseId: COURSE_ID,
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText('New base answer')).toBeInTheDocument();
-    });
-
-    firstBase.resolve({
-      answer: 'Old base answer',
-      model: 'llama3.2:3b',
-      responseType: 'base',
-      courseId: COURSE_ID,
-    });
-
-    await waitFor(() => {
-      expect(generateBaseModelMock).toHaveBeenCalledTimes(2);
-    });
-
-    expect(screen.getByText('New base answer')).toBeInTheDocument();
-    expect(screen.queryByText('Old base answer')).not.toBeInTheDocument();
+    expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
+    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, FIRST_QUESTION);
     expect(getActiveQuestionStatus()).toHaveTextContent(
-      `Active question: ${SECOND_QUESTION}`,
+      `Active question: ${FIRST_QUESTION}`,
     );
+  });
+
+  it('blocks a custom submission while a predefined comparison is running', async () => {
+    generateBaseModelMock.mockReturnValue(new Promise(() => {}));
+    generateRagMock.mockReturnValue(new Promise(() => {}));
+    generateFineTunedMock.mockReturnValue(new Promise(() => {}));
+    generateFineTunedRagMock.mockReturnValue(new Promise(() => {}));
+
+    renderComparisonPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run comparison' }));
+
+    await waitFor(() => {
+      expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Generating...' })).toBeDisabled();
+    });
+
+    fireEvent.change(screen.getByLabelText('Enter a question to send to the live models'), {
+      target: { value: 'What is the passing grade for this course?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Generating...' }));
+
+    expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
+    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, FIRST_QUESTION);
+  });
+
+  it('blocks a predefined submission while a custom comparison is running', async () => {
+    generateBaseModelMock.mockReturnValue(new Promise(() => {}));
+    generateRagMock.mockReturnValue(new Promise(() => {}));
+    generateFineTunedMock.mockReturnValue(new Promise(() => {}));
+    generateFineTunedRagMock.mockReturnValue(new Promise(() => {}));
+
+    renderComparisonPage();
+
+    const customQuestion = 'What is the passing grade for this course?';
+    fireEvent.change(screen.getByLabelText('Enter a question to send to the live models'), {
+      target: { value: customQuestion },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Ask question' }));
+
+    await waitFor(() => {
+      expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Running comparison…' })).toBeDisabled();
+    });
+
+    fireEvent.change(screen.getByLabelText('Predefined syllabus questions'), {
+      target: { value: records[1]?.id },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Running comparison…' }));
+
+    expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
+    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, customQuestion);
+    expect(getActiveQuestionStatus()).toHaveTextContent(
+      `Active question: ${customQuestion}`,
+    );
+  });
+
+  it('re-enables both submission buttons after the active comparison settles', async () => {
+    const deferredBase = createDeferred<{
+      answer: string;
+      model: string;
+      responseType: 'base';
+      courseId: string;
+    }>();
+    const deferredRag = createDeferred<{
+      courseId: string;
+      answer: string;
+      model: string;
+      responseType: 'rag';
+      sources: never[];
+      retrievedChunks: never[];
+    }>();
+    const deferredFineTuned = createDeferred<{
+      answer: string;
+      model: string;
+      responseType: 'fineTuned';
+      courseId: string;
+      adapterLoaded: boolean;
+      generationSeconds: number;
+    }>();
+    const deferredFineTunedRag = createDeferred<{
+      courseId: string;
+      answer: string;
+      model: string;
+      responseType: 'fineTunedRag';
+      adapterLoaded: boolean;
+      generationSeconds: number;
+      sources: never[];
+      retrievedChunks: never[];
+    }>();
+
+    generateBaseModelMock.mockReturnValue(deferredBase.promise);
+    generateRagMock.mockReturnValue(deferredRag.promise);
+    generateFineTunedMock.mockReturnValue(deferredFineTuned.promise);
+    generateFineTunedRagMock.mockReturnValue(deferredFineTunedRag.promise);
+
+    renderComparisonPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run comparison' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Running comparison…' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Generating...' })).toBeDisabled();
+    });
+
+    deferredBase.resolve({
+      answer: 'Base answer',
+      model: 'llama3.2:3b',
+      responseType: 'base',
+      courseId: COURSE_ID,
+    });
+    deferredRag.resolve({
+      courseId: COURSE_ID,
+      answer: 'RAG answer',
+      model: 'llama3.2:3b',
+      responseType: 'rag',
+      sources: [],
+      retrievedChunks: [],
+    });
+    deferredFineTuned.resolve({
+      answer: 'Fine-tuned answer',
+      model: 'meta-llama/Llama-3.2-3B-Instruct',
+      responseType: 'fineTuned',
+      courseId: COURSE_ID,
+      adapterLoaded: true,
+      generationSeconds: 0.8,
+    });
+    deferredFineTunedRag.resolve({
+      courseId: COURSE_ID,
+      answer: 'Fine-tuned RAG answer',
+      model: 'meta-llama/Llama-3.2-3B-Instruct',
+      responseType: 'fineTunedRag',
+      adapterLoaded: true,
+      generationSeconds: 1.0,
+      sources: [],
+      retrievedChunks: [],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Run comparison' })).not.toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Ask question' })).not.toBeDisabled();
+    });
   });
 });

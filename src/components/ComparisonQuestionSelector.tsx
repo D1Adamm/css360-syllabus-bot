@@ -47,10 +47,10 @@ export function ComparisonQuestionSelector({
             type="button"
             className="comparison-selector__run"
             onClick={onRunComparison}
-            disabled={isRunDisabled}
+            disabled={isRunDisabled || isRunning}
             aria-busy={isRunning}
           >
-            {isRunDisabled ? 'Running comparison…' : 'Run comparison'}
+            {isRunning || isRunDisabled ? 'Running comparison…' : 'Run comparison'}
           </button>
         </div>
       )}

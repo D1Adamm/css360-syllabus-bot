@@ -106,7 +106,9 @@ export function ComparisonPage() {
     status: 'idle',
   });
   const [customMatcherResetKey, setCustomMatcherResetKey] = useState(0);
+  const [isComparisonRunning, setIsComparisonRunning] = useState(false);
   const requestIdRef = useRef(0);
+  const isComparisonRunningRef = useRef(false);
 
   const selectedRecord = useMemo(
     () => records.find((record) => record.id === selectedId) ?? records[0],
@@ -133,9 +135,12 @@ export function ComparisonPage() {
     async (question: string) => {
       const trimmedQuestion = question.trim();
 
-      if (!trimmedQuestion) {
+      if (!trimmedQuestion || isComparisonRunningRef.current) {
         return;
       }
+
+      isComparisonRunningRef.current = true;
+      setIsComparisonRunning(true);
 
       const requestId = ++requestIdRef.current;
       setActiveQuestion(trimmedQuestion);
@@ -273,7 +278,14 @@ export function ComparisonPage() {
         }
       };
 
-      await Promise.all([loadBase(), loadRag(), loadFineTuned(), loadFineTunedRag()]);
+      try {
+        await Promise.all([loadBase(), loadRag(), loadFineTuned(), loadFineTunedRag()]);
+      } finally {
+        if (isCurrentRequest()) {
+          isComparisonRunningRef.current = false;
+          setIsComparisonRunning(false);
+        }
+      }
     },
     [courseId],
   );
@@ -287,13 +299,6 @@ export function ComparisonPage() {
   const isRagModelLoading = ragModelState.status === 'loading';
   const isFineTunedModelLoading = fineTunedModelState.status === 'loading';
   const isFineTunedRagModelLoading = fineTunedRagModelState.status === 'loading';
-  const isLiveRequestInFlight =
-    isBaseModelLoading ||
-    isRagModelLoading ||
-    isFineTunedModelLoading ||
-    isFineTunedRagModelLoading;
-  const isRunComparisonDisabled =
-    isLiveRequestInFlight && selectedRecord.question === activeQuestion;
   const baseModelError = baseModelState.status === 'error' ? baseModelState.message : null;
   const ragModelError = ragModelState.status === 'error' ? ragModelState.message : null;
   const fineTunedModelError =
@@ -346,8 +351,8 @@ export function ComparisonPage() {
       <ComparisonQuestionSelector
         records={records}
         selectedId={selectedRecord.id}
-        isRunning={isLiveRequestInFlight}
-        isRunDisabled={isRunComparisonDisabled}
+        isRunning={isComparisonRunning}
+        isRunDisabled={isComparisonRunning}
         onSelect={(id) => {
           setSelectedId(id);
           setComparisonMode('predefined');
@@ -361,7 +366,7 @@ export function ComparisonPage() {
 
       <CustomQuestionMatcher
         records={records}
-        isSubmitting={isLiveRequestInFlight}
+        isSubmitting={isComparisonRunning}
         resetKey={customMatcherResetKey}
         onMatch={(recordId) => {
           setComparisonMode('custom-matched');
