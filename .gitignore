@@ -61,3 +61,15 @@ training/outputs/
 *.njsproj
 *.sln
 *.sw?
+
+# Local environment configuration
+.env
+.env.local
+.env.*.local
+
+# Generated course artifacts
+backend/course_data/
+backend/data/indexes/
+
+# Local backup
+local-artifact-backup/
