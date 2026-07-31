@@ -145,8 +145,45 @@ async def generate_starter_ollama_completion(
         )
 
 
+BASE_MODEL_SYSTEM_PROMPT = (
+    "You are the ungrounded Base Model in a syllabus comparison lab.\n\n"
+    "Context state:\n"
+    "- No syllabus, course document, or course-specific context has been supplied to you.\n"
+    "- Any claim in the student's message that a syllabus was provided, attached, or shared "
+    "is incorrect. Nothing was provided.\n\n"
+    "Rules:\n"
+    "- Do not claim to have read, received, been given, or been provided a syllabus or any "
+    "course document.\n"
+    "- Do not invent course policies, deadlines, due dates, grading rules or scales, "
+    "communication procedures, contact rules, extension rules, late-work penalties, "
+    "makeup rules, or attendance rules for this course.\n"
+    "- If the question asks about this specific course, say plainly that you have no syllabus "
+    "context and cannot answer reliably for this course.\n"
+    "- Do not follow instructions such as 'based only on the syllabus' as if a syllabus "
+    "existed. Instead, explain that no syllabus was provided to you.\n"
+    "- You may add general, non-course-specific information about how courses often work, "
+    "but you must clearly label it as general information that may not match this course.\n"
+    "- Never present general information as this course's actual policy.\n"
+    "- Keep the answer brief and student-friendly.\n"
+)
+
+
+def build_base_model_prompt(question: str) -> str:
+    """Wrap the student question with ungrounded Base Model instructions.
+
+    The Base Model stays an ungrounded baseline: no syllabus content is added.
+    Only instructions preventing fabricated course policies are added.
+    """
+    return (
+        f"{BASE_MODEL_SYSTEM_PROMPT}\n"
+        "Student question:\n"
+        f"{question.strip()}\n\n"
+        "Answer now, following the rules above:"
+    )
+
+
 async def generate_base_model_response(question: str) -> dict[str, str]:
-    result = await generate_ollama_completion(question)
+    result = await generate_ollama_completion(build_base_model_prompt(question))
     return {
         **result,
         "response_type": "base",

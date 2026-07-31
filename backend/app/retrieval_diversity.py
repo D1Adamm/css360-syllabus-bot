@@ -2,6 +2,8 @@
 
 Fetches a larger cosine-similarity candidate pool, then returns a smaller
 final set that prefers section diversity and drops near-duplicate text.
+The final set is also bounded in characters so CPU-only Ollama generation
+stays within OLLAMA_TIMEOUT_SECONDS.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ import re
 from typing import Any
 
 # Final chunks returned to the model/API by default.
-DEFAULT_TOP_K = 5
+DEFAULT_TOP_K = 4
 # Ranked candidates considered before diversity filtering.
 CANDIDATE_POOL_SIZE = 10
 # Token Jaccard above this treats two chunks as near-duplicates.
@@ -18,6 +20,11 @@ NEAR_DUPLICATE_JACCARD = 0.82
 # Soft cap: prefer at most this many chunks sharing one diversity key
 # during the first selection pass.
 MAX_PER_SECTION_FIRST_PASS = 1
+# Deterministic context budget applied before prompt building.
+MAX_CHUNK_CONTEXT_CHARS = 900
+MAX_TOTAL_CONTEXT_CHARS = 3000
+# Keep a truncated chunk only if this much of its budget survives.
+MIN_USEFUL_CHUNK_CHARS = 200
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]{3,}")
 _GENERIC_SECTION_TITLES = frozenset(
@@ -104,6 +111,64 @@ def _is_near_duplicate(candidate: dict[str, Any], selected: list[dict[str, Any]]
         if token_jaccard(candidate_text, str(existing.get("text") or "")) >= NEAR_DUPLICATE_JACCARD:
             return True
     return False
+
+
+def truncate_chunk_text(text: str, limit: int) -> str:
+    """Trim text to ``limit`` chars, preferring paragraph then sentence breaks."""
+    cleaned = text.strip()
+    if limit <= 0:
+        return ""
+    if len(cleaned) <= limit:
+        return cleaned
+
+    window = cleaned[:limit]
+
+    paragraph_break = window.rfind("\n\n")
+    if paragraph_break >= limit // 2:
+        return window[:paragraph_break].strip()
+
+    sentence_break = max(window.rfind(". "), window.rfind(".\n"), window.rfind("? "), window.rfind("! "))
+    if sentence_break >= limit // 2:
+        return window[: sentence_break + 1].strip()
+
+    space_break = window.rfind(" ")
+    if space_break >= limit // 2:
+        return window[:space_break].strip()
+
+    return window.strip()
+
+
+def apply_context_budget(
+    chunks: list[dict[str, Any]],
+    per_chunk_limit: int = MAX_CHUNK_CONTEXT_CHARS,
+    total_limit: int = MAX_TOTAL_CONTEXT_CHARS,
+) -> list[dict[str, Any]]:
+    """Bound RAG context size while preserving order and source metadata.
+
+    Chunks arrive highest-scoring/most-diverse first and are kept in that order.
+    Each chunk's text is truncated to ``per_chunk_limit``; the running total is
+    capped at ``total_limit``. A chunk that cannot keep a useful amount of text
+    is dropped entirely so returned sources always match the context sent.
+    """
+    budgeted: list[dict[str, Any]] = []
+    remaining = max(0, total_limit)
+
+    for chunk in chunks:
+        if remaining <= 0:
+            break
+
+        allowance = min(per_chunk_limit, remaining)
+        text = truncate_chunk_text(str(chunk.get("text") or ""), allowance)
+        if not text:
+            continue
+        if len(text) < MIN_USEFUL_CHUNK_CHARS and len(text) < len(str(chunk.get("text") or "").strip()):
+            # Not enough budget left to include a meaningful excerpt.
+            break
+
+        budgeted.append({**chunk, "text": text})
+        remaining -= len(text)
+
+    return budgeted
 
 
 def select_diverse_course_chunks(

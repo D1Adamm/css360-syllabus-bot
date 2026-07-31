@@ -17,6 +17,9 @@ from app.rag import (
 from app.retrieval_diversity import (
     CANDIDATE_POOL_SIZE,
     DEFAULT_TOP_K,
+    MAX_CHUNK_CONTEXT_CHARS,
+    MAX_TOTAL_CONTEXT_CHARS,
+    apply_context_budget,
     select_diverse_course_chunks,
 )
 from app.storage import CourseArtifactStorage, get_course_artifact_storage
@@ -109,6 +112,13 @@ async def retrieve_course_syllabus_chunks(
         scored_chunks,
         top_k=max(1, top_k),
         candidate_pool_size=CANDIDATE_POOL_SIZE,
+    )
+    # Bound the context before prompt building so CPU-only generation stays
+    # inside OLLAMA_TIMEOUT_SECONDS. Sources are derived from these same chunks.
+    selected = apply_context_budget(
+        selected,
+        per_chunk_limit=MAX_CHUNK_CONTEXT_CHARS,
+        total_limit=MAX_TOTAL_CONTEXT_CHARS,
     )
     embedding_model = index_data.get("embeddingModel") or OLLAMA_EMBEDDING_MODEL
     return str(embedding_model), selected

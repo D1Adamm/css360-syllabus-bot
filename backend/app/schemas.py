@@ -64,7 +64,7 @@ class FineTunedHealthResponse(BaseModel):
 class RagRetrieveRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Student question for syllabus retrieval")
     top_k: int = Field(
-        default=5,
+        default=4,
         alias="topK",
         ge=1,
         le=20,
@@ -118,7 +118,7 @@ class RagGenerateRequest(BaseModel):
     )
     question: str = Field(..., min_length=1, description="Student question for RAG answer generation")
     top_k: int = Field(
-        default=5,
+        default=4,
         alias="topK",
         ge=1,
         le=20,
@@ -161,7 +161,7 @@ class FineTunedRagGenerateRequest(BaseModel):
         description="Student question for Fine-Tuned + RAG answer generation",
     )
     top_k: int = Field(
-        default=5,
+        default=4,
         alias="topK",
         ge=1,
         le=20,

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.retrieval_diversity import MAX_CHUNK_CONTEXT_CHARS, MAX_TOTAL_CONTEXT_CHARS
 from app.storage import LocalCourseArtifactStorage
 
 
@@ -375,6 +376,129 @@ class CourseSpecificRagTests(unittest.TestCase):
         self.assertIn("dup-1", chunk_ids)
         self.assertNotIn("dup-2", chunk_ids)
         self.assertIn("makeup-1", chunk_ids)
+
+    def _save_long_multi_section_index(self, course_id: str) -> None:
+        long_body = "Detailed policy sentence describing rules and penalties. " * 60
+        sections = [
+            ("grade-1", "Grade Questions", [1.0, 0.0, 0.0, 0.0]),
+            ("contact-1", "Contact", [0.9, 0.1, 0.0, 0.0]),
+            ("late-1", "Late Policy", [0.85, 0.0, 0.15, 0.0]),
+            ("makeup-1", "Makeup Policy", [0.8, 0.0, 0.0, 0.2]),
+            ("ai-1", "Use of AI Tools", [0.75, 0.05, 0.05, 0.15]),
+            ("office-1", "Office Hours", [0.7, 0.1, 0.1, 0.1]),
+        ]
+        self.storage.save_index(
+            course_id,
+            _index(
+                course_id,
+                [
+                    _chunk(
+                        chunk_id,
+                        section,
+                        f"{section}\n{long_body}",
+                        embedding,
+                        order=order,
+                    )
+                    for order, (chunk_id, section, embedding) in enumerate(sections)
+                ],
+            ),
+        )
+
+    def test_long_multi_part_question_is_bounded_and_diverse(self) -> None:
+        course_id = "css-460-long-context"
+        self._save_long_multi_section_index(course_id)
+
+        with patch(
+            "app.course_rag.get_embedding",
+            new=AsyncMock(return_value=[1.0, 0.0, 0.0, 0.0]),
+        ):
+            response = self.client.post(
+                "/rag/generate",
+                json={
+                    "courseId": course_id,
+                    "question": (
+                        "How are grade discussions handled, which communication channels "
+                        "should I use, what is the late policy, how do extensions work, "
+                        "and can I make up missed in-class work?"
+                    ),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        sources = body["sources"]
+
+        # Default topK is 4, so no more than four chunks reach the model.
+        self.assertLessEqual(len(sources), 4)
+        # Retrieval stays diverse across sections.
+        self.assertGreaterEqual(len({source["sectionTitle"] for source in sources}), 3)
+
+        # Total context stays bounded and each chunk is individually capped.
+        total_chars = sum(len(source["text"]) for source in sources)
+        self.assertLessEqual(total_chars, MAX_TOTAL_CONTEXT_CHARS)
+        for source in sources:
+            self.assertLessEqual(len(source["text"]), MAX_CHUNK_CONTEXT_CHARS)
+
+    def test_sources_match_chunks_actually_sent_to_the_model(self) -> None:
+        course_id = "css-460-source-match"
+        self._save_long_multi_section_index(course_id)
+
+        captured: dict[str, str] = {}
+
+        async def capture_prompt(prompt: str, **_kwargs):
+            captured["prompt"] = prompt
+            return {"answer": "Bounded RAG answer", "model": "llama3.2:3b"}
+
+        with patch(
+            "app.course_rag.get_embedding",
+            new=AsyncMock(return_value=[1.0, 0.0, 0.0, 0.0]),
+        ), patch(
+            "app.course_rag.generate_ollama_completion",
+            new=AsyncMock(side_effect=capture_prompt),
+        ):
+            response = self.client.post(
+                "/rag/generate",
+                json={
+                    "courseId": course_id,
+                    "question": "What are the grade, late, and makeup policies?",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        prompt = captured["prompt"]
+
+        # Every returned source text is present verbatim in the prompt context.
+        for source in body["sources"]:
+            self.assertIn(source["text"], prompt)
+            self.assertIn(source["sectionTitle"], prompt)
+
+        # Sources and retrievedChunks describe the same bounded set.
+        self.assertEqual(
+            [source["chunkId"] for source in body["sources"]],
+            [chunk["chunkId"] for chunk in body["retrievedChunks"]],
+        )
+        for source, chunk in zip(body["sources"], body["retrievedChunks"]):
+            self.assertEqual(source["text"], chunk["text"])
+
+    def test_single_topic_retrieval_still_returns_best_section(self) -> None:
+        with patch(
+            "app.course_rag.get_embedding",
+            new=AsyncMock(return_value=[1.0, 0.0, 0.0]),
+        ):
+            response = self.client.post(
+                "/rag/generate",
+                json={
+                    "courseId": self.css430_id,
+                    "question": "What is the late policy?",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        sources = response.json()["sources"]
+        self.assertGreaterEqual(len(sources), 1)
+        self.assertEqual(sources[0]["sectionTitle"], "CSS 430 Late Policy")
+        self.assertEqual(sources[0]["chunkId"], "css430-late-1")
 
 
 if __name__ == "__main__":
