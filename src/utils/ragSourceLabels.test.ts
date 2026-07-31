@@ -1,7 +1,11 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from 'vitest';
 import type { RagGenerateSource } from '../lib/api';
-import { formatRagSourceLabels, isGenericSectionTitle } from './ragSourceLabels';
+import {
+  cleanLabelFragment,
+  formatRagSourceLabels,
+  isGenericSectionTitle,
+} from './ragSourceLabels';
 
 function source(
   overrides: Partial<RagGenerateSource> & Pick<RagGenerateSource, 'chunkId' | 'sectionTitle' | 'text'>,
@@ -77,5 +81,56 @@ describe('ragSourceLabels', () => {
     expect(labels[0]).toContain('Late Policy');
     expect(labels[1]).toContain('Late Policy');
     expect(labels[0]).not.toBe(labels[1]);
+  });
+
+  it('does not begin labels with and/or/punctuation when a cleaner sentence exists', () => {
+    expect(cleanLabelFragment('and point it out to me when it happens.')).toBe(
+      'Point it out to me when it happens.',
+    );
+    expect(cleanLabelFragment(', or email the instructor for help.')).toBe(
+      'Email the instructor for help.',
+    );
+
+    const labels = formatRagSourceLabels([
+      source({
+        chunkId: 'chunk-010',
+        sectionTitle: 'Software Engineering (Fall 2025)',
+        text: 'and point it out to me when it happens. Students should wait one week.',
+      }),
+      source({
+        chunkId: 'chunk-011',
+        sectionTitle: 'Software Engineering (Fall 2025)',
+        text: ', or email the instructor after checking Canvas announcements carefully.',
+      }),
+    ]);
+
+    for (const label of labels) {
+      expect(label.toLowerCase().startsWith('and ')).toBe(false);
+      expect(label.toLowerCase().startsWith('or ')).toBe(false);
+      expect(/^[,\-–—.]/.test(label)).toBe(false);
+    }
+    expect(labels[0]).toMatch(/^Point it out/i);
+    expect(labels[1]).toMatch(/^Email the instructor/i);
+    expect(new Set(labels).size).toBe(2);
+  });
+
+  it('disambiguates duplicate-looking source labels', () => {
+    const labels = formatRagSourceLabels([
+      source({
+        chunkId: 'chunk-021',
+        sectionTitle: 'Software Engineering (Fall 2025)',
+        text: 'Students must contact the instructor before requesting any extension.',
+      }),
+      source({
+        chunkId: 'chunk-022',
+        sectionTitle: 'Software Engineering (Fall 2025)',
+        text: 'Students must contact the instructor before requesting any extension.',
+      }),
+    ]);
+
+    expect(labels[0]).not.toBe(labels[1]);
+    expect(labels.some((label) => label.includes('chunk-021') || label.includes('chunk-022'))).toBe(
+      true,
+    );
   });
 });

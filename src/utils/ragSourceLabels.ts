@@ -10,6 +10,9 @@ const GENERIC_SECTION_TITLES = new Set([
   'table of contents',
 ]);
 
+const LEADING_FRAGMENT_PATTERN =
+  /^(?:and|or|but|so|then|also|as|if|when|while|because|that|which|who|whom|whose|to|of|in|on|for|with|from|by|at|a|an|the|it|its|this|these|those|they|them|their)\b[\s,]*/i;
+
 function normalizeTitle(title: string): string {
   return title.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -57,35 +60,103 @@ function looksLikeHeadingLine(line: string): boolean {
   return false;
 }
 
-function firstMeaningfulLine(text: string, sectionTitle: string): string | null {
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.trim();
-    if (!line) {
-      continue;
-    }
-    if (normalizeTitle(line) === normalizeTitle(sectionTitle)) {
-      continue;
-    }
-    return line.replace(/:$/, '');
+/** Strip leading conjunctions/punctuation so labels never start mid-sentence. */
+export function cleanLabelFragment(text: string): string {
+  let cleaned = text.replace(/\s+/g, ' ').trim();
+  cleaned = cleaned.replace(/^[,;:\-–—.…]+/, '').trim();
+
+  let previous = '';
+  while (cleaned !== previous) {
+    previous = cleaned;
+    cleaned = cleaned.replace(LEADING_FRAGMENT_PATTERN, '').trim();
+    cleaned = cleaned.replace(/^[,;:\-–—.…]+/, '').trim();
   }
-  return null;
+
+  if (!cleaned) {
+    return '';
+  }
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 function shortenPreview(text: string, maxLength = 72): string {
-  const collapsed = text.replace(/\s+/g, ' ').trim();
+  const collapsed = cleanLabelFragment(text);
+  if (!collapsed) {
+    return '';
+  }
   if (collapsed.length <= maxLength) {
     return collapsed;
   }
   const sliced = collapsed.slice(0, maxLength - 1);
   const boundary = sliced.lastIndexOf(' ');
   const preview = boundary > 40 ? sliced.slice(0, boundary) : sliced;
-  return `${preview}…`;
+  return `${preview.replace(/[,;:\-–—]+$/, '')}…`;
+}
+
+function firstHeading(text: string, sectionTitle: string): string | null {
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim().replace(/:$/, '');
+    if (!line) {
+      continue;
+    }
+    if (normalizeTitle(line) === normalizeTitle(sectionTitle)) {
+      continue;
+    }
+    if (looksLikeHeadingLine(line)) {
+      return cleanLabelFragment(line);
+    }
+  }
+  return null;
+}
+
+function firstCompleteSentence(text: string, sectionTitle: string): string | null {
+  const withoutTitlePrefix = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && normalizeTitle(line) !== normalizeTitle(sectionTitle))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!withoutTitlePrefix) {
+    return null;
+  }
+
+  const match = withoutTitlePrefix.match(/^(.+?[.!?])(?:\s|$)/);
+  const sentence = cleanLabelFragment(match?.[1] ?? withoutTitlePrefix);
+  if (!sentence) {
+    return null;
+  }
+  // Reject still-fragmentary leftovers that are too short to be useful.
+  if (sentence.split(/\s+/).length < 4 && !sentence.endsWith('.')) {
+    return null;
+  }
+  return shortenPreview(sentence, 72);
+}
+
+function distinguishingSubtitle(source: RagGenerateSource, title: string): string {
+  const heading = firstHeading(source.text, title);
+  if (heading && normalizeTitle(heading) !== normalizeTitle(title)) {
+    return heading;
+  }
+
+  const sentence = firstCompleteSentence(source.text, title);
+  if (sentence && normalizeTitle(sentence) !== normalizeTitle(title)) {
+    return sentence;
+  }
+
+  return source.chunkId;
 }
 
 /**
  * Build readable syllabus source labels for the Compare page.
- * Prefer subsection headings; when titles are generic or repeated, add a
- * short text preview or chunk id so entries stay distinguishable.
+ *
+ * Prefer, in order:
+ * 1. meaningful sectionTitle
+ * 2. detected heading from the chunk
+ * 3. first complete sentence, cleaned and shortened
+ * 4. chunk ID
+ *
+ * Generic or repeated titles always get a distinguishing subtitle.
  */
 export function formatRagSourceLabels(sources: RagGenerateSource[]): string[] {
   const titleCounts = new Map<string, number>();
@@ -94,31 +165,37 @@ export function formatRagSourceLabels(sources: RagGenerateSource[]): string[] {
     titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
   }
 
-  return sources.map((source) => {
+  const labels = sources.map((source) => {
     const title = source.sectionTitle.trim() || 'Syllabus excerpt';
     const repeated = (titleCounts.get(title) ?? 0) > 1;
     const generic = isGenericSectionTitle(title);
-    const heading = firstMeaningfulLine(source.text, title);
-    const headingIsUseful =
-      Boolean(heading) &&
-      looksLikeHeadingLine(heading!) &&
-      normalizeTitle(heading!) !== normalizeTitle(title);
+    const subtitle = distinguishingSubtitle(source, title);
 
     if (!generic && !repeated) {
       return title;
     }
 
-    if (headingIsUseful && heading) {
-      return generic ? heading : `${title}: ${heading}`;
+    if (generic) {
+      return subtitle;
     }
 
-    const preview = shortenPreview(source.text);
-    if (generic) {
-      return preview || source.chunkId;
+    if (normalizeTitle(subtitle) === normalizeTitle(title)) {
+      return `${title} (${source.chunkId})`;
     }
-    if (repeated && preview) {
-      return `${title} — ${preview}`;
+    return `${title}: ${subtitle}`;
+  });
+
+  // Final pass: disambiguate any remaining duplicate labels.
+  const labelCounts = new Map<string, number>();
+  for (const label of labels) {
+    labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+  }
+
+  return labels.map((label, index) => {
+    if ((labelCounts.get(label) ?? 0) <= 1) {
+      return label;
     }
-    return `${title} (${source.chunkId})`;
+    const chunkId = sources[index]?.chunkId;
+    return chunkId ? `${label} (${chunkId})` : label;
   });
 }

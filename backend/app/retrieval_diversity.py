@@ -11,8 +11,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# Final chunks returned to the model/API by default.
+# Final chunks returned for ordinary single-topic questions.
 DEFAULT_TOP_K = 4
+# Final chunks returned for multi-facet questions (hard cap is MAX_FINAL_TOP_K).
+MULTI_FACET_TOP_K = 5
+MAX_FINAL_TOP_K = 5
 # Ranked candidates considered before diversity filtering.
 CANDIDATE_POOL_SIZE = 10
 # Token Jaccard above this treats two chunks as near-duplicates.
@@ -23,8 +26,23 @@ MAX_PER_SECTION_FIRST_PASS = 1
 # Deterministic context budget applied before prompt building.
 MAX_CHUNK_CONTEXT_CHARS = 900
 MAX_TOTAL_CONTEXT_CHARS = 3000
+MULTI_FACET_TOTAL_CONTEXT_CHARS = 4200
 # Keep a truncated chunk only if this much of its budget survives.
 MIN_USEFUL_CHUNK_CHARS = 200
+
+
+def resolve_final_top_k(requested_top_k: int, *, multi_facet: bool) -> int:
+    """Bound the final chunk count for ordinary vs multi-facet questions."""
+    requested = max(1, requested_top_k)
+    if multi_facet:
+        return min(MAX_FINAL_TOP_K, max(requested, MULTI_FACET_TOP_K))
+    return min(MAX_FINAL_TOP_K, requested)
+
+
+def resolve_total_context_limit(*, multi_facet: bool) -> int:
+    if multi_facet:
+        return MULTI_FACET_TOTAL_CONTEXT_CHARS
+    return MAX_TOTAL_CONTEXT_CHARS
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]{3,}")
 _GENERIC_SECTION_TITLES = frozenset(
@@ -217,6 +235,85 @@ def select_diverse_course_chunks(
             break
         try_add(chunk, enforce_section_cap=True)
 
+    if len(selected) < final_k:
+        for chunk in candidates:
+            if len(selected) >= final_k:
+                break
+            try_add(chunk, enforce_section_cap=False)
+
+    return selected
+
+
+def select_coverage_aware_chunks(
+    ranked_chunks: list[dict[str, Any]],
+    facets: list[str],
+    top_k: int = MULTI_FACET_TOP_K,
+    candidate_pool_size: int = CANDIDATE_POOL_SIZE,
+) -> list[dict[str, Any]]:
+    """Prefer uncovered facets, then fill by section diversity and score.
+
+    Near-duplicate filtering and section-key limits from the ordinary diversity
+    path still apply. Facet membership comes from ``matched_facets`` on each
+    chunk (set during merged retrieval), not from hardcoded policy maps.
+    """
+    if not facets:
+        return select_diverse_course_chunks(
+            ranked_chunks,
+            top_k=top_k,
+            candidate_pool_size=candidate_pool_size,
+        )
+
+    final_k = max(1, min(MAX_FINAL_TOP_K, top_k))
+    pool_size = max(final_k, candidate_pool_size)
+    candidates = ranked_chunks[:pool_size]
+    if not candidates:
+        return []
+
+    selected: list[dict[str, Any]] = []
+    selected_ids: set[str] = set()
+    section_counts: dict[str, int] = {}
+    covered_facets: set[str] = set()
+
+    def try_add(chunk: dict[str, Any], *, enforce_section_cap: bool) -> bool:
+        chunk_id = str(chunk.get("chunk_id") or "")
+        if chunk_id and chunk_id in selected_ids:
+            return False
+        if _is_near_duplicate(chunk, selected):
+            return False
+
+        key = diversity_section_key(chunk)
+        if enforce_section_cap and section_counts.get(key, 0) >= MAX_PER_SECTION_FIRST_PASS:
+            return False
+
+        selected.append(chunk)
+        if chunk_id:
+            selected_ids.add(chunk_id)
+        section_counts[key] = section_counts.get(key, 0) + 1
+        for facet in chunk.get("matched_facets") or []:
+            covered_facets.add(str(facet))
+        return True
+
+    # Pass 1: cover as many facets as possible with distinct sections.
+    for facet in facets:
+        if len(selected) >= final_k:
+            break
+        if facet in covered_facets:
+            continue
+        for chunk in candidates:
+            matched = {str(item) for item in (chunk.get("matched_facets") or [])}
+            if facet not in matched:
+                continue
+            if try_add(chunk, enforce_section_cap=True):
+                break
+
+    # Pass 2: ordinary section-diverse fill by score.
+    if len(selected) < final_k:
+        for chunk in candidates:
+            if len(selected) >= final_k:
+                break
+            try_add(chunk, enforce_section_cap=True)
+
+    # Pass 3: allow section repeats if slots remain and text is not near-duplicate.
     if len(selected) < final_k:
         for chunk in candidates:
             if len(selected) >= final_k:

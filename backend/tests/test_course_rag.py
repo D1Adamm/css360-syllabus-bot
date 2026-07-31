@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.retrieval_diversity import MAX_CHUNK_CONTEXT_CHARS, MAX_TOTAL_CONTEXT_CHARS
+from app.retrieval_diversity import (
+    MAX_CHUNK_CONTEXT_CHARS,
+    MAX_FINAL_TOP_K,
+    MAX_TOTAL_CONTEXT_CHARS,
+    MULTI_FACET_TOTAL_CONTEXT_CHARS,
+)
 from app.storage import LocalCourseArtifactStorage
 
 
@@ -428,16 +433,143 @@ class CourseSpecificRagTests(unittest.TestCase):
         body = response.json()
         sources = body["sources"]
 
-        # Default topK is 4, so no more than four chunks reach the model.
-        self.assertLessEqual(len(sources), 4)
-        # Retrieval stays diverse across sections.
+        # Multi-facet questions may use up to 5 chunks, never more.
+        self.assertLessEqual(len(sources), MAX_FINAL_TOP_K)
         self.assertGreaterEqual(len({source["sectionTitle"] for source in sources}), 3)
 
-        # Total context stays bounded and each chunk is individually capped.
         total_chars = sum(len(source["text"]) for source in sources)
-        self.assertLessEqual(total_chars, MAX_TOTAL_CONTEXT_CHARS)
+        self.assertLessEqual(total_chars, MULTI_FACET_TOTAL_CONTEXT_CHARS)
         for source in sources:
             self.assertLessEqual(len(source["text"]), MAX_CHUNK_CONTEXT_CHARS)
+
+    def test_facet_retrieval_keeps_extension_and_late_chunks(self) -> None:
+        """Grade-heavy full-query scores must not erase extension/late facet hits."""
+        course_id = "css-470-facet-coverage"
+        self.storage.save_index(
+            course_id,
+            _index(
+                course_id,
+                [
+                    _chunk(
+                        "grade-1",
+                        "Grade Questions",
+                        "Grade discussions must happen privately with the instructor.",
+                        [1.0, 0.0, 0.0, 0.0],
+                        order=0,
+                    ),
+                    _chunk(
+                        "grade-2",
+                        "Grade Questions",
+                        "Do not discuss grades in public Discord channels.",
+                        [0.99, 0.01, 0.0, 0.0],
+                        order=1,
+                    ),
+                    _chunk(
+                        "grade-3",
+                        "Grade Questions",
+                        "Wait one week before disputing any posted grade.",
+                        [0.98, 0.02, 0.0, 0.0],
+                        order=2,
+                    ),
+                    _chunk(
+                        "contact-1",
+                        "Contact",
+                        "Use email or Discord for course communication questions.",
+                        [0.2, 0.8, 0.0, 0.0],
+                        order=3,
+                    ),
+                    _chunk(
+                        "late-1",
+                        "Late Policy",
+                        "Late work loses ten percent credit for each day past the deadline.",
+                        [0.1, 0.0, 0.9, 0.0],
+                        order=4,
+                    ),
+                    _chunk(
+                        "ext-1",
+                        "Extensions",
+                        "Extensions require advance notice and instructor approval.",
+                        [0.05, 0.0, 0.1, 0.85],
+                        order=5,
+                    ),
+                    _chunk(
+                        "makeup-1",
+                        "Makeup Policy",
+                        "Missed activities and exams generally cannot be made up.",
+                        [0.05, 0.05, 0.05, 0.05],
+                        order=6,
+                    ),
+                ],
+            ),
+        )
+
+        async def facet_aware_embed(text: str) -> list[float]:
+            lowered = text.lower()
+            # Full multi-part question leans toward grade discussion.
+            if "grade discussions" in lowered and "extensions" in lowered:
+                return [1.0, 0.05, 0.05, 0.05]
+            if "grade" in lowered:
+                return [1.0, 0.0, 0.0, 0.0]
+            if "discord" in lowered or "email" in lowered or "communication" in lowered:
+                return [0.0, 1.0, 0.0, 0.0]
+            if "late" in lowered:
+                return [0.0, 0.0, 1.0, 0.0]
+            if "extension" in lowered:
+                return [0.0, 0.0, 0.0, 1.0]
+            if "missed" in lowered or "makeup" in lowered or "exam" in lowered:
+                return [0.05, 0.05, 0.05, 0.05]
+            return [0.4, 0.2, 0.2, 0.2]
+
+        with patch(
+            "app.course_rag.get_embedding",
+            new=AsyncMock(side_effect=facet_aware_embed),
+        ):
+            response = self.client.post(
+                "/rag/generate",
+                json={
+                    "courseId": course_id,
+                    "question": (
+                        "Based only on the syllabus, explain how grade discussions should happen, "
+                        "which communication channels I should use including Discord and email, "
+                        "what happens with extensions and late work, and whether missed activities "
+                        "or exams can be made up."
+                    ),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        sources = response.json()["sources"]
+        chunk_ids = {source["chunkId"] for source in sources}
+        sections = {source["sectionTitle"] for source in sources}
+
+        self.assertLessEqual(len(sources), MAX_FINAL_TOP_K)
+        self.assertIn("late-1", chunk_ids)
+        self.assertIn("ext-1", chunk_ids)
+        self.assertTrue({"Late Policy", "Extensions"} <= sections)
+        total_chars = sum(len(source["text"]) for source in sources)
+        self.assertLessEqual(total_chars, MULTI_FACET_TOTAL_CONTEXT_CHARS)
+
+    def test_ordinary_question_stays_on_simpler_path_and_budget(self) -> None:
+        with patch(
+            "app.course_rag.get_embedding",
+            new=AsyncMock(return_value=[1.0, 0.0, 0.0]),
+        ) as embed_mock:
+            response = self.client.post(
+                "/rag/generate",
+                json={
+                    "courseId": self.css430_id,
+                    "question": "What is the late policy?",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        # Ordinary path embeds the full question once (no facet loop).
+        self.assertEqual(embed_mock.await_count, 1)
+        sources = response.json()["sources"]
+        self.assertLessEqual(len(sources), 4)
+        total_chars = sum(len(source["text"]) for source in sources)
+        self.assertLessEqual(total_chars, MAX_TOTAL_CONTEXT_CHARS)
+        self.assertEqual(sources[0]["chunkId"], "css430-late-1")
 
     def test_sources_match_chunks_actually_sent_to_the_model(self) -> None:
         course_id = "css-460-source-match"

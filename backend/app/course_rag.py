@@ -18,9 +18,18 @@ from app.retrieval_diversity import (
     CANDIDATE_POOL_SIZE,
     DEFAULT_TOP_K,
     MAX_CHUNK_CONTEXT_CHARS,
-    MAX_TOTAL_CONTEXT_CHARS,
+    MAX_FINAL_TOP_K,
     apply_context_budget,
+    resolve_final_top_k,
+    resolve_total_context_limit,
+    select_coverage_aware_chunks,
     select_diverse_course_chunks,
+)
+from app.retrieval_facets import (
+    FACET_CANDIDATE_POOL,
+    assign_missing_facet_matches,
+    extract_question_facets,
+    merge_scored_candidates,
 )
 from app.storage import CourseArtifactStorage, get_course_artifact_storage
 
@@ -57,13 +66,34 @@ def _normalize_course_chunk(chunk: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _score_chunks_against_embedding(
+    normalized_chunks: list[dict[str, Any]],
+    query_embedding: list[float],
+    *,
+    matched_facet: str | None = None,
+) -> list[dict[str, Any]]:
+    scored: list[dict[str, Any]] = []
+    for chunk in normalized_chunks:
+        score = compute_cosine_similarity(query_embedding, chunk["embedding"])
+        entry: dict[str, Any] = {
+            "chunk_id": chunk["chunk_id"],
+            "section": chunk["section"],
+            "text": chunk["text"],
+            "score": score,
+            "matched_facets": [matched_facet] if matched_facet else [],
+        }
+        scored.append(entry)
+    scored.sort(key=lambda item: item["score"], reverse=True)
+    return scored
+
+
 async def retrieve_course_syllabus_chunks(
     course_id: str,
     question: str,
     top_k: int = DEFAULT_TOP_K,
     storage: CourseArtifactStorage | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Load one course index and retrieve a diverse top-K chunk set."""
+    """Load one course index and retrieve a diverse, coverage-aware top-K set."""
     safe_course_id = _validate_course_id(course_id)
     artifact_storage = storage or get_course_artifact_storage()
     index_data = artifact_storage.load_index(safe_course_id)
@@ -81,44 +111,62 @@ async def retrieve_course_syllabus_chunks(
             detail=f'No syllabus chunks found for course "{safe_course_id}".',
         )
 
-    question_embedding = await get_embedding(question)
-    scored_chunks: list[dict[str, Any]] = []
-
+    normalized_chunks: list[dict[str, Any]] = []
     for raw_chunk in raw_chunks:
         if not isinstance(raw_chunk, dict):
             continue
         normalized = _normalize_course_chunk(raw_chunk)
-        if normalized is None:
-            continue
+        if normalized is not None:
+            normalized_chunks.append(normalized)
 
-        score = compute_cosine_similarity(question_embedding, normalized["embedding"])
-        scored_chunks.append(
-            {
-                "chunk_id": normalized["chunk_id"],
-                "section": normalized["section"],
-                "text": normalized["text"],
-                "score": score,
-            }
-        )
-
-    if not scored_chunks:
+    if not normalized_chunks:
         raise HTTPException(
             status_code=404,
             detail=f'No usable embedded chunks found for course "{safe_course_id}".',
         )
 
-    scored_chunks.sort(key=lambda item: item["score"], reverse=True)
-    selected = select_diverse_course_chunks(
-        scored_chunks,
-        top_k=max(1, top_k),
-        candidate_pool_size=CANDIDATE_POOL_SIZE,
-    )
+    facets = extract_question_facets(question)
+    multi_facet = len(facets) >= 2
+    final_top_k = resolve_final_top_k(top_k, multi_facet=multi_facet)
+
+    # Always retrieve with the full question embedding first.
+    question_embedding = await get_embedding(question)
+    full_ranked = _score_chunks_against_embedding(normalized_chunks, question_embedding)
+    full_pool = full_ranked[:CANDIDATE_POOL_SIZE]
+
+    if multi_facet:
+        facet_pools: list[list[dict[str, Any]]] = [full_pool]
+        for facet in facets:
+            facet_embedding = await get_embedding(facet)
+            facet_ranked = _score_chunks_against_embedding(
+                normalized_chunks,
+                facet_embedding,
+                matched_facet=facet,
+            )
+            facet_pools.append(facet_ranked[:FACET_CANDIDATE_POOL])
+
+        merged = merge_scored_candidates(*facet_pools)
+        assign_missing_facet_matches(merged, facets)
+        selected = select_coverage_aware_chunks(
+            merged,
+            facets=facets,
+            top_k=final_top_k,
+            candidate_pool_size=max(CANDIDATE_POOL_SIZE, len(merged)),
+        )
+    else:
+        selected = select_diverse_course_chunks(
+            full_ranked,
+            top_k=final_top_k,
+            candidate_pool_size=CANDIDATE_POOL_SIZE,
+        )
+
+    selected = selected[:MAX_FINAL_TOP_K]
     # Bound the context before prompt building so CPU-only generation stays
     # inside OLLAMA_TIMEOUT_SECONDS. Sources are derived from these same chunks.
     selected = apply_context_budget(
         selected,
         per_chunk_limit=MAX_CHUNK_CONTEXT_CHARS,
-        total_limit=MAX_TOTAL_CONTEXT_CHARS,
+        total_limit=resolve_total_context_limit(multi_facet=multi_facet),
     )
     embedding_model = index_data.get("embeddingModel") or OLLAMA_EMBEDDING_MODEL
     return str(embedding_model), selected
