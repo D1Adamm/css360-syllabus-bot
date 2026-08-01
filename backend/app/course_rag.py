@@ -20,6 +20,7 @@ from app.retrieval_diversity import (
     MAX_CHUNK_CONTEXT_CHARS,
     MAX_FINAL_TOP_K,
     apply_context_budget,
+    apply_relevance_floor,
     resolve_final_top_k,
     resolve_total_context_limit,
     select_coverage_aware_chunks,
@@ -168,6 +169,12 @@ async def retrieve_course_syllabus_chunks(
         )
 
     selected = selected[:MAX_FINAL_TOP_K]
+    selected = apply_relevance_floor(
+        selected,
+        question=question,
+        facets=facets,
+        multi_facet=multi_facet,
+    )
     # Bound the context before prompt building so CPU-only generation stays
     # inside OLLAMA_TIMEOUT_SECONDS. Sources are derived from these same chunks.
     selected = apply_context_budget(
@@ -186,6 +193,7 @@ async def generate_course_rag_answer(
     storage: CourseArtifactStorage | None = None,
 ) -> dict[str, Any]:
     safe_course_id = _validate_course_id(course_id)
+    facets = extract_question_facets(question)
     _, retrieved_chunks = await retrieve_course_syllabus_chunks(
         course_id=safe_course_id,
         question=question,
@@ -193,7 +201,7 @@ async def generate_course_rag_answer(
         storage=storage,
     )
 
-    prompt = build_rag_prompt(question, retrieved_chunks)
+    prompt = build_rag_prompt(question, retrieved_chunks, facets=facets)
     generation = await generate_ollama_completion(prompt)
 
     sources = [

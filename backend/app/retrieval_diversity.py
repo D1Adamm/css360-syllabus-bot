@@ -29,6 +29,11 @@ MAX_TOTAL_CONTEXT_CHARS = 3000
 MULTI_FACET_TOTAL_CONTEXT_CHARS = 4200
 # Keep a truncated chunk only if this much of its budget survives.
 MIN_USEFUL_CHUNK_CHARS = 200
+# Relative relevance floor: keep a weak chunk only when it is close to the
+# strongest selected score and/or has lexical/facet overlap with the question.
+RELATIVE_SCORE_FLOOR = 0.55
+# Single-topic path uses a looser floor so ordinary top-K behavior stays stable.
+SINGLE_TOPIC_RELATIVE_SCORE_FLOOR = 0.40
 
 
 def resolve_final_top_k(requested_top_k: int, *, multi_facet: bool) -> int:
@@ -45,6 +50,74 @@ def resolve_total_context_limit(*, multi_facet: bool) -> int:
     return MAX_TOTAL_CONTEXT_CHARS
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]{3,}")
+_OVERLAP_STOPWORDS = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "this",
+        "that",
+        "with",
+        "from",
+        "about",
+        "what",
+        "when",
+        "where",
+        "which",
+        "how",
+        "why",
+        "who",
+        "are",
+        "was",
+        "were",
+        "will",
+        "would",
+        "could",
+        "should",
+        "can",
+        "may",
+        "might",
+        "does",
+        "did",
+        "have",
+        "has",
+        "had",
+        "into",
+        "onto",
+        "over",
+        "under",
+        "after",
+        "before",
+        "between",
+        "among",
+        "using",
+        "use",
+        "get",
+        "any",
+        "all",
+        "each",
+        "some",
+        "only",
+        "also",
+        "just",
+        "than",
+        "then",
+        "them",
+        "they",
+        "their",
+        "there",
+        "these",
+        "those",
+        "your",
+        "you",
+        "our",
+        "out",
+        "not",
+        "but",
+        "its",
+        "per",
+    }
+)
 _GENERIC_SECTION_TITLES = frozenset(
     {
         "general",
@@ -60,6 +133,10 @@ _GENERIC_SECTION_TITLES = frozenset(
 
 def _tokenize(text: str) -> set[str]:
     return set(_TOKEN_PATTERN.findall(text.lower()))
+
+
+def _content_tokens(text: str) -> set[str]:
+    return {token for token in _tokenize(text) if token not in _OVERLAP_STOPWORDS}
 
 
 def token_jaccard(left: str, right: str) -> float:
@@ -154,6 +231,114 @@ def truncate_chunk_text(text: str, limit: int) -> str:
         return window[:space_break].strip()
 
     return window.strip()
+
+
+def content_token_overlap(query: str, chunk: dict[str, Any]) -> float:
+    """Fraction of query content tokens that appear in the chunk section/text."""
+    query_tokens = _content_tokens(query)
+    if not query_tokens:
+        return 0.0
+    haystack = _content_tokens(f"{chunk.get('section', '')} {chunk.get('text', '')}")
+    if not haystack:
+        return 0.0
+    hits = len(query_tokens & haystack)
+    return hits / len(query_tokens)
+
+
+def _best_facet_overlap(chunk: dict[str, Any], facets: list[str]) -> float:
+    if not facets:
+        return 0.0
+    return max((content_token_overlap(facet, chunk) for facet in facets), default=0.0)
+
+
+def apply_relevance_floor(
+    chunks: list[dict[str, Any]],
+    *,
+    question: str,
+    facets: list[str] | None = None,
+    multi_facet: bool = False,
+) -> list[dict[str, Any]]:
+    """Drop weakly relevant fillers that lack lexical/facet support.
+
+    Keeps a chunk when any of the following hold:
+    - it is the strongest (or tied strongest) selected candidate;
+    - it has matched facets for a multi-facet question;
+    - it has meaningful lexical overlap with the question or a facet;
+    - its similarity score is not substantially below the strongest candidate
+      (semantic near-neighbors are retained even with low literal overlap).
+
+    Rejects chunks that have no meaningful lexical/facet overlap and are
+    substantially below the strongest candidates. Does not change top-K caps.
+    """
+    if not chunks:
+        return []
+
+    facet_list = [str(facet).strip() for facet in (facets or []) if str(facet).strip()]
+    best_score = max(float(chunk.get("score") or 0.0) for chunk in chunks)
+    relative_floor = (
+        RELATIVE_SCORE_FLOOR if multi_facet else SINGLE_TOPIC_RELATIVE_SCORE_FLOOR
+    )
+    score_cutoff = best_score * relative_floor
+
+    kept: list[dict[str, Any]] = []
+    for chunk in chunks:
+        score = float(chunk.get("score") or 0.0)
+        matched_facets = [
+            str(item) for item in (chunk.get("matched_facets") or []) if str(item).strip()
+        ]
+        lexical_overlap = content_token_overlap(question, chunk)
+        facet_overlap = _best_facet_overlap(chunk, facet_list)
+        has_lexical = lexical_overlap > 0.0 or facet_overlap > 0.0
+        has_facet = bool(matched_facets)
+        near_top = score >= score_cutoff or abs(score - best_score) <= 1e-9
+
+        if abs(score - best_score) <= 1e-9:
+            retention_reason = "top_score"
+            retain = True
+        elif has_facet and (has_lexical or near_top):
+            retention_reason = "facet_match"
+            retain = True
+        elif has_lexical:
+            retention_reason = "lexical_overlap"
+            retain = True
+        elif near_top:
+            # Semantically close to the best hit even if wording differs.
+            retention_reason = "relative_score"
+            retain = True
+        else:
+            retention_reason = "filtered_low_relevance"
+            retain = False
+
+        diagnostics = {
+            "fullQueryScore": score,
+            "matchedFacet": matched_facets[0] if matched_facets else None,
+            "matchedFacets": matched_facets,
+            "lexicalOverlap": round(max(lexical_overlap, facet_overlap), 4),
+            "relativeScoreFloor": relative_floor,
+            "nearTopScore": near_top,
+            "retentionReason": retention_reason,
+            "diversityKey": diversity_section_key(chunk),
+        }
+        annotated = {**chunk, "retrieval_diagnostics": diagnostics}
+        if retain:
+            if matched_facets:
+                annotated["coverage_contribution"] = "facet_coverage"
+            elif retention_reason == "relative_score":
+                annotated["coverage_contribution"] = "semantic_neighbor"
+            else:
+                annotated["coverage_contribution"] = "lexical_or_diverse"
+            kept.append(annotated)
+
+    return kept if kept else [{**chunks[0], "retrieval_diagnostics": {
+        "fullQueryScore": float(chunks[0].get("score") or 0.0),
+        "matchedFacet": None,
+        "matchedFacets": [],
+        "lexicalOverlap": content_token_overlap(question, chunks[0]),
+        "relativeScoreFloor": relative_floor,
+        "nearTopScore": True,
+        "retentionReason": "fallback_top_score",
+        "diversityKey": diversity_section_key(chunks[0]),
+    }, "coverage_contribution": "fallback"}]
 
 
 def apply_context_budget(
