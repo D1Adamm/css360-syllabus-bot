@@ -280,7 +280,18 @@ export function ComparisonPage() {
       };
 
       try {
-        await Promise.all([loadBase(), loadRag(), loadFineTuned(), loadFineTunedRag()]);
+        // Local Ollama paths share one CPU-bound llama3.2:3b process. Run them
+        // sequentially (Base, then RAG) to avoid contention. Fine-Tuned paths use
+        // a separate remote service and may overlap with the Base→RAG chain.
+        // Base failures must not skip RAG; each loader isolates its own card state.
+        await Promise.all([
+          (async () => {
+            await loadBase();
+            await loadRag();
+          })(),
+          loadFineTuned(),
+          loadFineTunedRag(),
+        ]);
       } finally {
         if (isCurrentRequest()) {
           isComparisonRunningRef.current = false;

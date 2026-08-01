@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import comparisonData from '../data/comparisonData.json';
 import { CourseProvider } from '../context/CourseContext';
-import { generateBaseModel, generateFineTuned, generateFineTunedRag, generateRag } from '../lib/api';
+import { ApiError, generateBaseModel, generateFineTuned, generateFineTunedRag, generateRag } from '../lib/api';
 import type { ComparisonRecord } from '../types';
 import { ComparisonPage } from './ComparisonPage';
 
@@ -374,14 +374,6 @@ describe('ComparisonPage manual comparison runs', () => {
       responseType: 'base',
       courseId: COURSE_ID,
     });
-    deferredRag.resolve({
-      courseId: COURSE_ID,
-      answer: 'RAG answer',
-      model: 'llama3.2:3b',
-      responseType: 'rag',
-      sources: [],
-      retrievedChunks: [],
-    });
     deferredFineTuned.resolve({
       answer: 'Fine-tuned answer',
       model: 'meta-llama/Llama-3.2-3B-Instruct',
@@ -401,9 +393,198 @@ describe('ComparisonPage manual comparison runs', () => {
       retrievedChunks: [],
     });
 
+    // Buttons stay disabled until RAG (last local Ollama path) settles too.
+    await waitFor(() => {
+      expect(generateRagMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByRole('button', { name: 'Running comparison…' })).toBeDisabled();
+
+    deferredRag.resolve({
+      courseId: COURSE_ID,
+      answer: 'RAG answer',
+      model: 'llama3.2:3b',
+      responseType: 'rag',
+      sources: [],
+      retrievedChunks: [],
+    });
+
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Run comparison' })).not.toBeDisabled();
       expect(screen.getByRole('button', { name: 'Ask question' })).not.toBeDisabled();
     });
+  });
+
+  it('starts Base before RAG and does not call RAG until Base settles', async () => {
+    const callOrder: string[] = [];
+    const deferredBase = createDeferred<{
+      answer: string;
+      model: string;
+      responseType: 'base';
+      courseId: string;
+    }>();
+
+    generateBaseModelMock.mockImplementation(() => {
+      callOrder.push('base-start');
+      return deferredBase.promise.then((value) => {
+        callOrder.push('base-settle');
+        return value;
+      });
+    });
+    generateRagMock.mockImplementation(async () => {
+      callOrder.push('rag-start');
+      return {
+        courseId: COURSE_ID,
+        answer: 'RAG answer',
+        model: 'llama3.2:3b',
+        responseType: 'rag' as const,
+        sources: [],
+        retrievedChunks: [],
+      };
+    });
+
+    renderComparisonPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Run comparison' }));
+
+    await waitFor(() => {
+      expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
+    });
+    expect(generateRagMock).not.toHaveBeenCalled();
+    expect(callOrder).toEqual(['base-start']);
+
+    deferredBase.resolve({
+      answer: 'Base answer',
+      model: 'llama3.2:3b',
+      responseType: 'base',
+      courseId: COURSE_ID,
+    });
+
+    await waitFor(() => {
+      expect(generateRagMock).toHaveBeenCalledTimes(1);
+    });
+    expect(callOrder).toEqual(['base-start', 'base-settle', 'rag-start']);
+  });
+
+  it('still runs RAG when Base fails', async () => {
+    generateBaseModelMock.mockRejectedValue(new ApiError('Base unavailable', 503));
+    generateRagMock.mockResolvedValue({
+      courseId: COURSE_ID,
+      answer: 'RAG recovered answer',
+      model: 'llama3.2:3b',
+      responseType: 'rag',
+      sources: [],
+      retrievedChunks: [],
+    });
+
+    renderComparisonPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Run comparison' }));
+
+    await waitFor(() => {
+      expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
+      expect(generateRagMock).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Base unavailable')).toBeInTheDocument();
+      expect(screen.getByText('RAG recovered answer')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps the Base result when RAG fails', async () => {
+    generateBaseModelMock.mockResolvedValue({
+      answer: 'Base survived answer',
+      model: 'llama3.2:3b',
+      responseType: 'base',
+      courseId: COURSE_ID,
+    });
+    generateRagMock.mockRejectedValue(new ApiError('RAG unavailable', 503));
+
+    renderComparisonPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Run comparison' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Base survived answer')).toBeInTheDocument();
+      expect(screen.getByText('RAG unavailable')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps Fine-Tuned calls functional alongside sequential Base then RAG', async () => {
+    const deferredBase = createDeferred<{
+      answer: string;
+      model: string;
+      responseType: 'base';
+      courseId: string;
+    }>();
+
+    generateBaseModelMock.mockReturnValue(deferredBase.promise);
+    generateRagMock.mockResolvedValue({
+      courseId: COURSE_ID,
+      answer: 'RAG answer',
+      model: 'llama3.2:3b',
+      responseType: 'rag',
+      sources: [],
+      retrievedChunks: [],
+    });
+
+    renderComparisonPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Run comparison' }));
+
+    await waitFor(() => {
+      expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
+      expect(generateFineTunedMock).toHaveBeenCalledTimes(1);
+      expect(generateFineTunedRagMock).toHaveBeenCalledTimes(1);
+    });
+    // Remote fine-tuned paths start without waiting for Base; RAG still waits.
+    expect(generateRagMock).not.toHaveBeenCalled();
+
+    deferredBase.resolve({
+      answer: 'Base answer',
+      model: 'llama3.2:3b',
+      responseType: 'base',
+      courseId: COURSE_ID,
+    });
+
+    await waitFor(() => {
+      expect(generateRagMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Fine-tuned answer')).toBeInTheDocument();
+      expect(screen.getByText('Fine-tuned RAG answer')).toBeInTheDocument();
+    });
+  });
+
+  it('does not let a prior comparison overwrite a newer run once the lock releases', async () => {
+    mockSuccessfulResponses({
+      baseAnswer: 'First base answer',
+      ragAnswer: 'First rag answer',
+      fineTunedAnswer: 'First fine-tuned answer',
+      fineTunedRagAnswer: 'First fine-tuned RAG answer',
+    });
+
+    renderComparisonPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Run comparison' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('First base answer')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Run comparison' })).not.toBeDisabled();
+    });
+
+    mockSuccessfulResponses({
+      baseAnswer: 'Second base answer',
+      ragAnswer: 'Second rag answer',
+      fineTunedAnswer: 'Second fine-tuned answer',
+      fineTunedRagAnswer: 'Second fine-tuned RAG answer',
+    });
+
+    fireEvent.change(screen.getByLabelText('Predefined syllabus questions'), {
+      target: { value: records[1]?.id },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Run comparison' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Second base answer')).toBeInTheDocument();
+      expect(screen.getByText('Second rag answer')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('First base answer')).not.toBeInTheDocument();
+    expect(screen.queryByText('First rag answer')).not.toBeInTheDocument();
+    expect(generateBaseModelMock).toHaveBeenLastCalledWith(COURSE_ID, SECOND_QUESTION);
+    expect(generateRagMock).toHaveBeenLastCalledWith(COURSE_ID, SECOND_QUESTION);
   });
 });
