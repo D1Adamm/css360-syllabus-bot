@@ -148,8 +148,9 @@ _OBLIGATION_STATEMENT_TERMS = (
     "are expected to",
 )
 # Evidence terms that legitimately ground an obligation-style statement.
+# Soft emphasis like "important to" is NOT obligation grounding — treating it as
+# such let "must" answers pass entailment when the source only urged students.
 _REQUIREMENT_EVIDENCE_TERMS = _OBLIGATION_STATEMENT_TERMS + (
-    "important",
     "impact",
     "penalty",
     "responsible",

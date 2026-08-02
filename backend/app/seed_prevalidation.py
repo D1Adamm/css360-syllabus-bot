@@ -11,11 +11,35 @@ from typing import Any
 
 from app.syllabus_facts import statement_entailment_violation
 
-# Permission / soft modality in evidence.
+# Soft / advisory modality in evidence (permission, suggestion, emphasis).
 _SOFT_MODAL_RE = re.compile(
     r"\b("
     r"may|might|can|could|optional|suggested|recommend(?:ed|ation)?|"
-    r"encouraged|allowed|permitted|available"
+    r"encouraged?|allowed|permitted|available|"
+    r"should|ought(?:\s+to)?|"
+    r"important(?:\s+to)?|"
+    r"welcome\s+to|please|"
+    r"feel\s+free|invited\s+to"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Soft/advisory cues used for recommendation → requirement escalation.
+_ADVISORY_RE = re.compile(
+    r"\b("
+    r"suggest(?:ed|ion)?|recommend(?:ed|ation)?|encourag(?:e|ed|ement)?|"
+    r"should|ought(?:\s+to)?|"
+    r"important(?:\s+to)?|"
+    r"please|welcome\s+to|feel\s+free|invited\s+to"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Permission / invitation cues that must not become obligations.
+_PERMISSION_RE = re.compile(
+    r"\b("
+    r"may|might|can|could|optional|allowed|permitted|available|"
+    r"welcome\s+to|feel\s+free|invited\s+to"
     r")\b",
     re.IGNORECASE,
 )
@@ -56,8 +80,36 @@ _CONDITIONAL_NUDGE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Restrictive / fallback conditions that scope when a rule applies.
+_RESTRICTIVE_CONDITION_RE = re.compile(
+    r"\b("
+    r"if\s+you\s+(don'?t|do\s+not)|"
+    r"if\s+there\s+(is|are)\s+no|"
+    r"if\s+no\b|"
+    r"when\s+no|"
+    r"unless|"
+    r"except|"
+    r"only\s+when|"
+    r"only\s+if|"
+    r"provided\s+that|"
+    r"if\s+you\s+(cannot|can'?t)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Markers that count as preserving a condition in Q/A.
+_CONDITION_PRESERVED_RE = re.compile(
+    r"\b("
+    r"if|unless|except|only|when|provided|otherwise|"
+    r"no\s+obvious|don'?t\s+see|do\s+not\s+see|"
+    r"no\s+place|not\s+see|cannot\s+find|can'?t\s+find"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _WHITESPACE_RE = re.compile(r"\s+")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+_HASH_TAG_RE = re.compile(r"#([a-z0-9\-_]{2,})", re.IGNORECASE)
 
 # High-signal qualifier tokens that, when present in evidence, should not be
 # contradicted by an absolute rewrite in the answer.
@@ -95,26 +147,36 @@ def _hard_obligation_in_text(text: str) -> bool:
     return bool(_HARD_OBLIGATION_RE.search(text))
 
 
-def _absolute_in_text(text: str) -> bool:
-    return bool(_ABSOLUTE_RE.search(text))
-
-
 def detect_modal_escalation(*, answer: str, evidence: str) -> str | None:
-    """Reject may/can/suggested → must/required when evidence stays soft."""
+    """Reject soft/advisory evidence rewritten as hard requirements."""
     answer_text = _norm(answer)
     evidence_text = _norm(evidence)
     if not answer_text or not evidence_text:
         return None
 
-    # Recommendation → requirement (check before generic soft→hard escalation).
-    if re.search(r"\b(suggest|recommend|encourag)", evidence_text) and re.search(
-        r"\b(must|required|mandatory)\b", answer_text
-    ):
-        if not re.search(r"\b(must|required|mandatory)\b", evidence_text):
-            return "recommendation_as_requirement"
-
     answer_hard = _hard_obligation_in_text(answer_text)
     evidence_hard = _hard_obligation_in_text(evidence_text)
+
+    # Advisory emphasis/recommendation → requirement
+    # ("important to", "should", "recommended", "encouraged", …).
+    if (
+        answer_hard
+        and not evidence_hard
+        and _ADVISORY_RE.search(evidence_text)
+        and re.search(r"\b(must|required|mandatory|need to|have to)\b", answer_text)
+    ):
+        return "recommendation_as_requirement"
+
+    # Permission / invitation → requirement
+    # ("may", "can", "welcome to", "optional", …).
+    if (
+        answer_hard
+        and not evidence_hard
+        and _PERMISSION_RE.search(evidence_text)
+    ):
+        return "modal_escalation"
+
+    # Generic soft → hard when evidence stays soft and answer invents obligation.
     if answer_hard and not evidence_hard and _soft_modal_in_evidence(evidence_text):
         return "modal_escalation"
 
@@ -152,6 +214,62 @@ def detect_response_time_guarantee(*, answer: str, evidence: str) -> str | None:
     violation = statement_entailment_violation(answer_text, evidence_text)
     if violation in {"guarantee_from_conditional", "guarantee_not_in_evidence"}:
         return "response_time_guarantee"
+    return None
+
+
+def detect_dropped_condition(
+    *,
+    question: str,
+    answer: str,
+    evidence: str,
+) -> str | None:
+    """Reject answers that turn a restrictive/fallback condition into a universal rule.
+
+    Fires only for high-signal conditions (if you don't / unless / only when / except /
+    …). Harmless paraphrases that keep an if/unless/when cue still pass. Mild
+    eligibility phrasing such as "if you have not yet…" is intentionally not covered
+    here so optional contact wording is not over-rejected.
+    """
+    evidence_text = _norm(evidence)
+    answer_text = _norm(answer)
+    question_text = _norm(question)
+    combined = f"{question_text} {answer_text}".strip()
+    if not evidence_text or not answer_text:
+        return None
+
+    if not _RESTRICTIVE_CONDITION_RE.search(evidence_text):
+        return None
+
+    # Condition preserved in the question or answer — allow paraphrase.
+    if _CONDITION_PRESERVED_RE.search(combined):
+        return None
+
+    # Require that the answer still asserts a concrete consequent from evidence
+    # (channel tag, or meaningful content overlap) rather than a vague hedge.
+    evidence_tags = {m.group(1).lower() for m in _HASH_TAG_RE.finditer(evidence_text)}
+    answer_tags = {m.group(1).lower() for m in _HASH_TAG_RE.finditer(answer_text)}
+    concrete_tag = bool(evidence_tags and (evidence_tags & answer_tags))
+
+    overlap = _token_set(answer_text) & _token_set(evidence_text)
+    # Ignore ultra-generic overlap alone; need a specific shared content word.
+    generic = {
+        "the",
+        "and",
+        "you",
+        "your",
+        "ask",
+        "question",
+        "questions",
+        "channel",
+        "discord",
+        "about",
+        "assignment",
+        "assignments",
+    }
+    specific_overlap = {tok for tok in overlap if tok not in generic and len(tok) > 3}
+
+    if concrete_tag or len(specific_overlap) >= 1:
+        return "dropped_condition"
     return None
 
 
@@ -274,6 +392,14 @@ def prevalidate_candidate(
         return {"reason": "obligation_not_in_evidence", "category": "modal_escalation"}
     if entailment in {"guarantee_from_conditional", "guarantee_not_in_evidence"}:
         return {"reason": entailment, "category": "modal_escalation"}
+
+    dropped = detect_dropped_condition(
+        question=question,
+        answer=answer,
+        evidence=evidence,
+    )
+    if dropped:
+        return {"reason": dropped, "category": "qualifier_mismatch"}
 
     missing = detect_missing_critical_qualifier(answer=answer, evidence=evidence)
     if missing:

@@ -10,10 +10,12 @@ from unittest.mock import AsyncMock, patch
 
 from app.seed_generation import FACT_SEED_GENERATION_PROMPT_MARKER, _build_fact_seed_prompt
 from app.seed_prevalidation import (
+    detect_dropped_condition,
     detect_modal_escalation,
     detect_response_time_guarantee,
     prevalidate_candidate,
 )
+from app.syllabus_facts import statement_entailment_violation
 from app.storage import LocalCourseArtifactStorage
 
 
@@ -53,12 +55,158 @@ class ModalEscalationTests(unittest.TestCase):
         )
         self.assertEqual(reason, "recommendation_as_requirement")
 
+    def test_important_to_must_is_rejected(self) -> None:
+        """Real failure: soft 'important to' must not become 'must'."""
+        evidence = (
+            "It is important to tell me if you are not coming to class at least "
+            "one hour before class begins."
+        )
+        answer = (
+            "Yes, you must notify the instructor at least one hour before class "
+            "if absent."
+        )
+        reason = detect_modal_escalation(answer=answer, evidence=evidence)
+        self.assertEqual(reason, "recommendation_as_requirement")
+
+        result = prevalidate_candidate(
+            candidate={
+                "question": "Do I need to notify the instructor if I miss class?",
+                "answer": answer,
+            },
+            fact={
+                "statement": evidence,
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-001"],
+            },
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["category"], "modal_escalation")
+        # Also caught by entailment once "important" is not obligation grounding.
+        self.assertEqual(
+            statement_entailment_violation(answer, evidence),
+            "obligation_not_in_evidence",
+        )
+
+    def test_welcome_to_must_is_rejected(self) -> None:
+        reason = detect_modal_escalation(
+            answer="You must contact DRS to request accommodations.",
+            evidence=(
+                "If you have not yet established services through DRS you are "
+                "welcome to contact DRS."
+            ),
+        )
+        self.assertIn(reason, {"recommendation_as_requirement", "modal_escalation"})
+
+    def test_optional_drs_can_wording_remains_optional(self) -> None:
+        evidence = (
+            "If you have not yet established services through DRS you are "
+            "welcome to contact DRS."
+        )
+        answer = "You can contact DRS to request accommodations."
+        self.assertIsNone(detect_modal_escalation(answer=answer, evidence=evidence))
+        result = prevalidate_candidate(
+            candidate={
+                "question": "Can I contact DRS about accommodations?",
+                "answer": answer,
+            },
+            fact={
+                "statement": evidence,
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-001"],
+            },
+        )
+        self.assertIsNone(result)
+
+    def test_grounded_must_still_passes(self) -> None:
+        evidence = (
+            "Students must notify the instructor at least one hour before class "
+            "if absent."
+        )
+        answer = (
+            "Yes. Students must notify the instructor at least one hour before "
+            "class if absent."
+        )
+        self.assertIsNone(detect_modal_escalation(answer=answer, evidence=evidence))
+        result = prevalidate_candidate(
+            candidate={
+                "question": "Do I need to notify before missing class?",
+                "answer": answer,
+            },
+            fact={
+                "statement": evidence,
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-001"],
+            },
+        )
+        self.assertIsNone(result)
+
     def test_faithful_may_wording_passes(self) -> None:
         reason = detect_modal_escalation(
             answer="Students may use one 48-hour extension per quarter.",
             evidence="Students may use one 48-hour extension per quarter.",
         )
         self.assertIsNone(reason)
+
+
+class DroppedConditionTests(unittest.TestCase):
+    def test_general_discussion_fallback_becoming_universal_is_rejected(self) -> None:
+        evidence = (
+            "If you don't see an obvious place to ask your question, go ahead "
+            "and ask it in the #general-discussion channel."
+        )
+        question = "Where should I ask questions about assignments in Discord?"
+        answer = "In the #general-discussion channel"
+
+        reason = detect_dropped_condition(
+            question=question,
+            answer=answer,
+            evidence=evidence,
+        )
+        self.assertEqual(reason, "dropped_condition")
+
+        result = prevalidate_candidate(
+            candidate={"question": question, "answer": answer},
+            fact={
+                "statement": evidence,
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-001"],
+            },
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["category"], "qualifier_mismatch")
+        self.assertEqual(result["reason"], "dropped_condition")
+
+    def test_answer_preserving_condition_passes(self) -> None:
+        evidence = (
+            "If you don't see an obvious place to ask your question, go ahead "
+            "and ask it in the #general-discussion channel."
+        )
+        question = (
+            "Where should I ask if I don't see an obvious Discord channel for "
+            "my question?"
+        )
+        answer = (
+            "If you don't see an obvious place to ask, use the "
+            "#general-discussion channel."
+        )
+        self.assertIsNone(
+            detect_dropped_condition(
+                question=question,
+                answer=answer,
+                evidence=evidence,
+            )
+        )
+        result = prevalidate_candidate(
+            candidate={"question": question, "answer": answer},
+            fact={
+                "statement": evidence,
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-001"],
+            },
+        )
+        self.assertIsNone(result)
 
 
 class ResponseTimeGuaranteeTests(unittest.TestCase):

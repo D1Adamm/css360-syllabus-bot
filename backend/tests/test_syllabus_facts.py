@@ -517,6 +517,16 @@ class EntailmentTests(unittest.TestCase):
         )
         self.assertEqual(reason, "obligation_not_in_evidence")
 
+    def test_important_to_does_not_ground_must(self) -> None:
+        reason = statement_entailment_violation(
+            "Yes, you must notify the instructor at least one hour before class if absent.",
+            (
+                "It is important to tell me if you are not coming to class at least "
+                "one hour before class begins."
+            ),
+        )
+        self.assertEqual(reason, "obligation_not_in_evidence")
+
     def test_grounded_obligation_is_allowed(self) -> None:
         reason = statement_entailment_violation(
             "Grade-related discussion must happen via Canvas.",
