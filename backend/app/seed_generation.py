@@ -23,6 +23,8 @@ from app.seed_export import write_generation_snapshot
 from app.ollama import (
     embed_ollama_texts,
     generate_starter_ollama_completion,
+    get_starter_generation_num_predict,
+    get_starter_validation_num_predict,
     is_ollama_timeout_error,
 )
 from app.fact_inventory_cache import load_or_build_fact_inventory
@@ -93,6 +95,11 @@ def get_starter_max_total_ollama_calls() -> int:
     except ValueError:
         return DEFAULT_STARTER_MAX_TOTAL_OLLAMA_CALLS
     return max(1, value)
+
+
+def starter_backfill_limit(target_count: int) -> int:
+    """Max zero-slot backfill opportunities for a generation run."""
+    return max(int(target_count) * 2, 6)
 
 
 def resolve_starter_run_status(
@@ -637,6 +644,8 @@ async def _generate_candidates_for_fact(
         model=SEED_GENERATION_MODEL,
         response_format="json",
         think=False,
+        num_predict=get_starter_generation_num_predict(),
+        stage="generation",
     )
     raw_seeds = _parse_seed_payload(generation["answer"])
     seeds: list[dict[str, Any]] = []
@@ -1005,6 +1014,8 @@ async def _validate_candidate(
         model=SEED_GENERATION_MODEL,
         response_format="json",
         think=False,
+        num_predict=get_starter_validation_num_predict(),
+        stage="validation",
     )
     return _try_parse_validation_payload(generation["answer"])
 
@@ -1300,7 +1311,12 @@ async def generate_starter_seeds_for_course(
             opportunities.append((fact, alloc, False))
 
     # Backfill pool: next-best eligible facts that received 0 slots.
+    # Cap size for small targets so CPU runs do not walk dozens of facts.
+    backfill_limit = starter_backfill_limit(generation_limit)
+    backfill_added = 0
     for alloc in allocation.get("allocations", []):
+        if backfill_added >= backfill_limit:
+            break
         if int(alloc.get("slotCount") or 0) > 0:
             continue
         if int(alloc.get("desiredSlots") or 0) <= 0:
@@ -1317,10 +1333,13 @@ async def generate_starter_seeds_for_course(
             "suggestedStyles": list(alloc.get("suggestedStyles") or ["factual"]),
         }
         opportunities.append((fact, backfill_alloc, True))
+        backfill_added += 1
 
     # Extra backfill from previously covered facts (top-up only).
     if top_up and backfill_extra_facts:
         for fact in backfill_extra_facts:
+            if backfill_added >= backfill_limit:
+                break
             fact_id = str(fact.get("factId") or "")
             if not fact_id or fact_id in primary_fact_ids:
                 continue
@@ -1336,6 +1355,7 @@ async def generate_starter_seeds_for_course(
                     True,
                 )
             )
+            backfill_added += 1
 
     allocated_fact_count = len(primary_fact_ids)
     allocated_slots = int(allocation.get("summary", {}).get("allocatedSlots") or 0)

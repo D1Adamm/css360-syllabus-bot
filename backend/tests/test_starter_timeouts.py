@@ -64,11 +64,16 @@ class StarterTimeoutHelperTests(unittest.IsolatedAsyncioTestCase):
                 model="qwen3:4b",
                 response_format="json",
                 think=False,
+                num_predict=384,
+                stage="generation",
             )
 
         self.assertEqual(result["answer"], '{"ok": true}')
         self.assertEqual(mock_generate.await_count, 2)
         self.assertEqual(mock_generate.await_args.kwargs["timeout"], 300.0)
+        for call in mock_generate.await_args_list:
+            self.assertEqual(call.kwargs["num_predict"], 384)
+            self.assertIs(call.kwargs["think"], False)
 
     async def test_non_timeout_errors_are_not_retried(self) -> None:
         with (

@@ -23,7 +23,12 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from app.ollama import DEFAULT_EMBED_MODEL, embed_ollama_texts, generate_starter_ollama_completion
+from app.ollama import (
+    DEFAULT_EMBED_MODEL,
+    embed_ollama_texts,
+    generate_starter_ollama_completion,
+    get_starter_inventory_num_predict,
+)
 from app.seed_similarity import cosine_similarity
 
 SEED_GENERATION_MODEL = "qwen3:4b"
@@ -1276,6 +1281,8 @@ async def _extract_facts_for_batch(
             model=model,
             response_format="json",
             think=False,
+            num_predict=get_starter_inventory_num_predict(),
+            stage="inventory",
         )
     except HTTPException:
         return [], 0

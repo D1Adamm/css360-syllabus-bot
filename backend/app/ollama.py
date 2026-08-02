@@ -1,5 +1,7 @@
 import asyncio
+import logging
 import os
+import time
 
 import httpx
 from fastapi import HTTPException
@@ -10,6 +12,12 @@ OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 DEFAULT_STARTER_OLLAMA_TIMEOUT_SECONDS = 300.0
 DEFAULT_STARTER_OLLAMA_RETRY_DELAY_SECONDS = 1.5
 DEFAULT_EMBED_MODEL = os.getenv("STARTER_EMBED_MODEL", "nomic-embed-text")
+
+DEFAULT_STARTER_INVENTORY_NUM_PREDICT = 1024
+DEFAULT_STARTER_GENERATION_NUM_PREDICT = 384
+DEFAULT_STARTER_VALIDATION_NUM_PREDICT = 256
+
+logger = logging.getLogger(__name__)
 
 
 def get_starter_ollama_timeout_seconds() -> float:
@@ -34,6 +42,40 @@ def get_starter_ollama_retry_delay_seconds() -> float:
     return max(0.0, value)
 
 
+def _positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    if value < 1:
+        return default
+    return value
+
+
+def get_starter_inventory_num_predict() -> int:
+    return _positive_int_env(
+        "STARTER_INVENTORY_NUM_PREDICT",
+        DEFAULT_STARTER_INVENTORY_NUM_PREDICT,
+    )
+
+
+def get_starter_generation_num_predict() -> int:
+    return _positive_int_env(
+        "STARTER_GENERATION_NUM_PREDICT",
+        DEFAULT_STARTER_GENERATION_NUM_PREDICT,
+    )
+
+
+def get_starter_validation_num_predict() -> int:
+    return _positive_int_env(
+        "STARTER_VALIDATION_NUM_PREDICT",
+        DEFAULT_STARTER_VALIDATION_NUM_PREDICT,
+    )
+
+
 def is_ollama_timeout_error(exc: BaseException) -> bool:
     if isinstance(exc, HTTPException):
         detail = str(exc.detail).lower()
@@ -48,6 +90,7 @@ async def generate_ollama_completion(
     response_format: str | None = None,
     think: bool | None = None,
     timeout: float | None = None,
+    num_predict: int | None = None,
 ) -> dict[str, str]:
     """Generate a completion from Ollama.
 
@@ -57,6 +100,7 @@ async def generate_ollama_completion(
     Pass think=False for models like qwen3 that otherwise put output in `thinking`
     and leave `response` empty.
     Pass timeout= to override OLLAMA_TIMEOUT_SECONDS for long-running starter calls.
+    Pass num_predict= only for starter calls; Base/RAG omit it so Ollama defaults apply.
     """
     selected_model = model or OLLAMA_MODEL
     request_timeout = OLLAMA_TIMEOUT_SECONDS if timeout is None else float(timeout)
@@ -69,6 +113,8 @@ async def generate_ollama_completion(
         payload["format"] = response_format
     if think is not None:
         payload["think"] = think
+    if num_predict is not None:
+        payload["options"] = {"num_predict": int(num_predict)}
 
     try:
         async with httpx.AsyncClient(timeout=request_timeout) as client:
@@ -113,36 +159,124 @@ async def generate_ollama_completion(
     }
 
 
+def _log_starter_ollama_call(
+    *,
+    stage: str,
+    attempt: int,
+    prompt_chars: int,
+    num_predict: int | None,
+    elapsed_ms: int,
+    outcome: str,
+    retry: bool,
+) -> None:
+    logger.info(
+        "starter_ollama stage=%s attempt=%s prompt_chars=%s num_predict=%s "
+        "elapsed_ms=%s outcome=%s retry=%s",
+        stage,
+        attempt,
+        prompt_chars,
+        num_predict if num_predict is not None else "none",
+        elapsed_ms,
+        outcome,
+        str(retry).lower(),
+    )
+
+
 async def generate_starter_ollama_completion(
     prompt: str,
     *,
     model: str | None = None,
     response_format: str | None = None,
     think: bool | None = None,
+    num_predict: int | None = None,
+    stage: str = "starter",
 ) -> dict[str, str]:
     """Starter-pipeline completion with a longer timeout and one timeout retry."""
     timeout = get_starter_ollama_timeout_seconds()
+    prompt_chars = len(prompt)
+    attempt = 1
+    started = time.perf_counter()
     try:
-        return await generate_ollama_completion(
+        result = await generate_ollama_completion(
             prompt,
             model=model,
             response_format=response_format,
             think=think,
             timeout=timeout,
+            num_predict=num_predict,
         )
     except HTTPException as exc:
+        elapsed_ms = max(0, int(round((time.perf_counter() - started) * 1000)))
         if not is_ollama_timeout_error(exc):
+            _log_starter_ollama_call(
+                stage=stage,
+                attempt=attempt,
+                prompt_chars=prompt_chars,
+                num_predict=num_predict,
+                elapsed_ms=elapsed_ms,
+                outcome="error",
+                retry=False,
+            )
             raise
+        _log_starter_ollama_call(
+            stage=stage,
+            attempt=attempt,
+            prompt_chars=prompt_chars,
+            num_predict=num_predict,
+            elapsed_ms=elapsed_ms,
+            outcome="timeout",
+            retry=True,
+        )
         delay = get_starter_ollama_retry_delay_seconds()
         if delay > 0:
             await asyncio.sleep(delay)
-        return await generate_ollama_completion(
-            prompt,
-            model=model,
-            response_format=response_format,
-            think=think,
-            timeout=timeout,
+        attempt = 2
+        started = time.perf_counter()
+        try:
+            result = await generate_ollama_completion(
+                prompt,
+                model=model,
+                response_format=response_format,
+                think=think,
+                timeout=timeout,
+                num_predict=num_predict,
+            )
+        except HTTPException as retry_exc:
+            elapsed_ms = max(0, int(round((time.perf_counter() - started) * 1000)))
+            outcome = "timeout" if is_ollama_timeout_error(retry_exc) else "error"
+            _log_starter_ollama_call(
+                stage=stage,
+                attempt=attempt,
+                prompt_chars=prompt_chars,
+                num_predict=num_predict,
+                elapsed_ms=elapsed_ms,
+                outcome=outcome,
+                retry=True,
+            )
+            raise
+        elapsed_ms = max(0, int(round((time.perf_counter() - started) * 1000)))
+        _log_starter_ollama_call(
+            stage=stage,
+            attempt=attempt,
+            prompt_chars=prompt_chars,
+            num_predict=num_predict,
+            elapsed_ms=elapsed_ms,
+            outcome="success",
+            retry=True,
         )
+        return result
+
+    elapsed_ms = max(0, int(round((time.perf_counter() - started) * 1000)))
+    _log_starter_ollama_call(
+        stage=stage,
+        attempt=attempt,
+        prompt_chars=prompt_chars,
+        num_predict=num_predict,
+        elapsed_ms=elapsed_ms,
+        outcome="success",
+        retry=False,
+    )
+    return result
 
 
 BASE_MODEL_SYSTEM_PROMPT = (
