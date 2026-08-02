@@ -61,6 +61,7 @@ from app.schemas import (
     StarterSeedPersistence,
     StarterSeedProgress,
     StarterSeedTopUpRequest,
+    StarterGenerationStatusResponse,
     SyllabusTextResponse,
     SyllabusUploadResponse,
 )
@@ -83,6 +84,10 @@ from app.seed_review import REVIEW_STATUSES, apply_seed_review, resolve_review_s
 from app.seed_allocation import allocate_slots
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
 from app.fact_inventory_cache import load_or_build_fact_inventory
+from app.ollama_coordination import (
+    get_starter_job_status,
+    starter_job_slot,
+)
 from app.starter_jobs import (
     run_auto_starter_seed_generation,
     try_queue_starter_seed_generation,
@@ -398,6 +403,21 @@ async def generate_course_seeds(
     )
 
 
+@app.get(
+    "/api/starter-generation/status",
+    response_model=StarterGenerationStatusResponse,
+)
+async def starter_generation_status() -> StarterGenerationStatusResponse:
+    """Read-only process-local status of the in-flight starter seed job."""
+    status = get_starter_job_status()
+    return StarterGenerationStatusResponse(
+        active=bool(status["active"]),
+        courseId=status["courseId"],
+        operation=status["operation"],
+        startedAt=status["startedAt"],
+    )
+
+
 @app.post(
     "/api/courses/{course_id}/seeds/generate-starter",
     response_model=StarterSeedGenerateResponse,
@@ -416,13 +436,15 @@ async def generate_course_starter_seeds(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    result = await generate_starter_seeds_for_course(
-        course_id=safe_course_id,
-        target_count=request.target_count,
-        save=request.save,
-        force_refresh=request.force_refresh,
-        top_up=request.top_up,
-    )
+    operation = "top_up" if request.top_up else "manual"
+    async with starter_job_slot(safe_course_id, operation):
+        result = await generate_starter_seeds_for_course(
+            course_id=safe_course_id,
+            target_count=request.target_count,
+            save=request.save,
+            force_refresh=request.force_refresh,
+            top_up=request.top_up,
+        )
 
     persistence = None
     if result.get("persistence") is not None:
@@ -459,13 +481,14 @@ async def top_up_course_starter_seeds(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     body = request or StarterSeedTopUpRequest()
-    result = await generate_starter_seeds_for_course(
-        course_id=safe_course_id,
-        target_count=body.target_count,
-        save=body.save,
-        force_refresh=body.force_refresh,
-        top_up=True,
-    )
+    async with starter_job_slot(safe_course_id, "top_up"):
+        result = await generate_starter_seeds_for_course(
+            course_id=safe_course_id,
+            target_count=body.target_count,
+            save=body.save,
+            force_refresh=body.force_refresh,
+            top_up=True,
+        )
 
     persistence = None
     if result.get("persistence") is not None:

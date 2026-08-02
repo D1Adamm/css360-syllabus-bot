@@ -14,6 +14,13 @@ from app.firebase_metadata import (
     best_effort_patch_starter_seed_generation,
     read_starter_seed_generation_status,
 )
+from app.ollama_coordination import (
+    end_starter_job,
+    get_active_starter_job_course_id,
+    is_starter_job_active,
+    reset_ollama_coordination_for_tests,
+    try_begin_starter_job,
+)
 from app.seed_generation import generate_starter_seeds_for_course
 
 logger = logging.getLogger(__name__)
@@ -68,8 +75,9 @@ def is_course_starter_job_active(course_id: str) -> bool:
 
 
 def clear_active_starter_jobs_for_tests() -> None:
-    """Reset process-local job set (tests only)."""
+    """Reset process-local job set and global coordination (tests only)."""
     _active_starter_jobs.clear()
+    reset_ollama_coordination_for_tests()
 
 
 async def _durable_status_is_active(course_id: str) -> bool:
@@ -120,12 +128,31 @@ async def try_queue_starter_seed_generation(course_id: str) -> dict[str, Any]:
             "targetCount": target_count,
         }
 
+    if is_starter_job_active():
+        return {
+            "queued": False,
+            "status": "generating",
+            "reason": "global_job_active",
+            "targetCount": target_count,
+            "activeCourseId": get_active_starter_job_course_id(),
+        }
+
     if await _durable_status_is_active(safe_course_id):
         return {
             "queued": False,
             "status": "queued",
             "reason": "durable_status_active",
             "targetCount": target_count,
+        }
+
+    began = await try_begin_starter_job(safe_course_id, "automatic")
+    if not began:
+        return {
+            "queued": False,
+            "status": "generating",
+            "reason": "global_job_active",
+            "targetCount": target_count,
+            "activeCourseId": get_active_starter_job_course_id(),
         }
 
     _active_starter_jobs.add(safe_course_id)
@@ -162,7 +189,19 @@ async def run_auto_starter_seed_generation(course_id: str) -> None:
     target_count = get_starter_auto_generate_count()
     if not is_auto_starter_seed_generation_enabled() or target_count <= 0:
         _active_starter_jobs.discard(safe_course_id)
+        await end_starter_job(course_id=safe_course_id)
         return
+
+    # Normally claimed in try_queue; claim here if a caller invoked the worker directly.
+    if get_active_starter_job_course_id() != safe_course_id:
+        began = await try_begin_starter_job(safe_course_id, "automatic")
+        if not began:
+            logger.warning(
+                "Skipping automatic starter generation for %s; another job is active",
+                safe_course_id,
+            )
+            _active_starter_jobs.discard(safe_course_id)
+            return
 
     started_at = _utc_now()
     await best_effort_patch_starter_seed_generation(
@@ -228,3 +267,4 @@ async def run_auto_starter_seed_generation(course_id: str) -> None:
         )
     finally:
         _active_starter_jobs.discard(safe_course_id)
+        await end_starter_job(course_id=safe_course_id)

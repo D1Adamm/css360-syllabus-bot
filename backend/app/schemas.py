@@ -506,6 +506,18 @@ class StarterSeedGenerateResponse(BaseModel):
     local_snapshot_path: str | None = Field(default=None, alias="localSnapshotPath")
 
 
+class StarterGenerationStatusResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    active: bool
+    course_id: str | None = Field(default=None, alias="courseId")
+    operation: str | None = Field(
+        default=None,
+        description="automatic | manual | top_up when a job is active",
+    )
+    started_at: str | None = Field(default=None, alias="startedAt")
+
+
 class SeedReviewRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

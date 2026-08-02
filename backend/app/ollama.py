@@ -6,6 +6,8 @@ import time
 import httpx
 from fastapi import HTTPException
 
+from app.ollama_coordination import ollama_generation_slot
+
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
@@ -116,47 +118,55 @@ async def generate_ollama_completion(
     if num_predict is not None:
         payload["options"] = {"num_predict": int(num_predict)}
 
-    try:
-        async with httpx.AsyncClient(timeout=request_timeout) as client:
-            response = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
-                json=payload,
+    # Serialize Base / RAG / starter generation against the local Ollama server.
+    # Embeddings use embed_ollama_texts and intentionally skip this lock.
+    async with ollama_generation_slot():
+        try:
+            async with httpx.AsyncClient(timeout=request_timeout) as client:
+                response = await client.post(
+                    f"{OLLAMA_BASE_URL}/api/generate",
+                    json=payload,
+                )
+        except httpx.TimeoutException as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Ollama request timed out. Ensure Ollama is running and responsive."
+                ),
+            ) from exc
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Ollama is unavailable. Start Ollama locally and try again.",
+            ) from exc
+
+        if response.status_code >= 500:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Ollama returned a server error. Ensure the model is available "
+                    "locally."
+                ),
             )
-    except httpx.TimeoutException as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Ollama request timed out. Ensure Ollama is running and responsive.",
-        ) from exc
-    except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Ollama is unavailable. Start Ollama locally and try again.",
-        ) from exc
 
-    if response.status_code >= 500:
-        raise HTTPException(
-            status_code=503,
-            detail="Ollama returned a server error. Ensure the model is available locally.",
-        )
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Ollama rejected the request: {response.text}",
+            )
 
-    if response.status_code >= 400:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Ollama rejected the request: {response.text}",
-        )
+        data = response.json()
+        answer = data.get("response", "").strip()
+        if not answer:
+            raise HTTPException(
+                status_code=502,
+                detail="Ollama returned an empty response.",
+            )
 
-    data = response.json()
-    answer = data.get("response", "").strip()
-    if not answer:
-        raise HTTPException(
-            status_code=502,
-            detail="Ollama returned an empty response.",
-        )
-
-    return {
-        "answer": answer,
-        "model": data.get("model", selected_model),
-    }
+        return {
+            "answer": answer,
+            "model": data.get("model", selected_model),
+        }
 
 
 def _log_starter_ollama_call(
