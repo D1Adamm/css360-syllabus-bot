@@ -44,12 +44,20 @@ _PERMISSION_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Hard obligation / absolute language in answers.
+# Hard obligation / requirement language in questions or answers.
+# Includes interrogative forms ("do I need to", "must I") that assert duty.
 _HARD_OBLIGATION_RE = re.compile(
-    r"\b("
-    r"must|required|mandatory|have to|shall|obligated|need to|"
-    r"are expected to|you are to"
-    r")\b",
+    r"("
+    r"\b(?:must|required|mandatory|shall|obligated)\b|"
+    r"\b(?:have to|need to|required to)\b|"
+    r"\bare expected to\b|"
+    r"\byou are to\b|"
+    r"\bdo i need to\b|"
+    r"\bam i required to\b|"
+    r"\bmust i\b|"
+    r"\bstudents must\b|"
+    r"\byou must\b"
+    r")",
     re.IGNORECASE,
 )
 
@@ -147,37 +155,69 @@ def _hard_obligation_in_text(text: str) -> bool:
     return bool(_HARD_OBLIGATION_RE.search(text))
 
 
-def detect_modal_escalation(*, answer: str, evidence: str) -> str | None:
-    """Reject soft/advisory evidence rewritten as hard requirements."""
+def modality_evidence_for_fact(fact: dict[str, Any]) -> str:
+    """Evidence text used for obligation/modality checks.
+
+    Prefer ``evidenceQuote`` over ``statement``. Full chunk ``source_text`` is
+    intentionally excluded: neighboring syllabus sentences often contain unrelated
+    ``must``/``required`` wording that would falsely mark soft facts as mandatory.
+
+    When the quote is advisory/soft (important/should/recommended/…) and does not
+    itself contain hard obligation language, use the quote alone even if the
+    inventory ``statement`` was already overstated to ``must``.
+    """
+    quote = str(fact.get("evidenceQuote") or "").strip()
+    statement = str(fact.get("statement") or "").strip()
+    if quote:
+        quote_norm = _norm(quote)
+        if _ADVISORY_RE.search(quote_norm) and not _hard_obligation_in_text(quote_norm):
+            return quote
+        return quote
+    return statement
+
+
+def detect_modal_escalation(
+    *,
+    answer: str,
+    evidence: str,
+    question: str = "",
+) -> str | None:
+    """Reject soft/advisory evidence rewritten as hard requirements in Q or A."""
     answer_text = _norm(answer)
+    question_text = _norm(question)
     evidence_text = _norm(evidence)
-    if not answer_text or not evidence_text:
+    qa_text = f"{question_text} {answer_text}".strip()
+    if not qa_text or not evidence_text:
         return None
 
-    answer_hard = _hard_obligation_in_text(answer_text)
+    qa_hard = _hard_obligation_in_text(qa_text)
     evidence_hard = _hard_obligation_in_text(evidence_text)
+    if not qa_hard:
+        return None
 
-    # Advisory emphasis/recommendation → requirement
-    # ("important to", "should", "recommended", "encouraged", …).
+    # Soft advisory evidence must not ground must/required/need-to in Q or A.
     if (
-        answer_hard
-        and not evidence_hard
+        not evidence_hard
         and _ADVISORY_RE.search(evidence_text)
-        and re.search(r"\b(must|required|mandatory|need to|have to)\b", answer_text)
+        and re.search(
+            r"("
+            r"\b(?:must|required|mandatory)\b|"
+            r"\b(?:need to|have to|required to)\b|"
+            r"\bdo i need to\b|"
+            r"\bam i required to\b|"
+            r"\bmust i\b"
+            r")",
+            qa_text,
+        )
     ):
         return "recommendation_as_requirement"
 
     # Permission / invitation → requirement
-    # ("may", "can", "welcome to", "optional", …).
-    if (
-        answer_hard
-        and not evidence_hard
-        and _PERMISSION_RE.search(evidence_text)
-    ):
+    if not evidence_hard and _PERMISSION_RE.search(evidence_text):
         return "modal_escalation"
 
-    # Generic soft → hard when evidence stays soft and answer invents obligation.
-    if answer_hard and not evidence_hard and _soft_modal_in_evidence(evidence_text):
+    # Generic soft → hard when evidence stays soft and Q/A invent obligation.
+    if not evidence_hard and _soft_modal_in_evidence(evidence_text):
         return "modal_escalation"
 
     return None
@@ -372,9 +412,17 @@ def prevalidate_candidate(
     if not question or not answer:
         return {"reason": "empty_qa", "category": "prevalidation"}
 
+    # Full bundle (incl. source chunks) for grounding checks that need context.
     evidence = _evidence_bundle(fact, source_text)
+    # Modality checks use quote-focused text so chunk/statement contamination
+    # cannot mask soft "important to" / "should" evidence as already-mandatory.
+    modality_evidence = modality_evidence_for_fact(fact) or evidence
 
-    modal = detect_modal_escalation(answer=answer, evidence=evidence)
+    modal = detect_modal_escalation(
+        question=question,
+        answer=answer,
+        evidence=modality_evidence,
+    )
     if modal:
         return {"reason": modal, "category": "modal_escalation"}
 
@@ -386,12 +434,17 @@ def prevalidate_candidate(
     if guarantee:
         return {"reason": guarantee, "category": "modal_escalation"}
 
-    # Reuse fact-inventory entailment against the answer as a statement.
-    entailment = statement_entailment_violation(answer, evidence)
+    # Entailment also uses modality-focused evidence so an overstated inventory
+    # statement containing "must" cannot ground an escalated answer.
+    entailment = statement_entailment_violation(answer, modality_evidence)
     if entailment == "obligation_not_in_evidence":
         return {"reason": "obligation_not_in_evidence", "category": "modal_escalation"}
     if entailment in {"guarantee_from_conditional", "guarantee_not_in_evidence"}:
         return {"reason": entailment, "category": "modal_escalation"}
+    # Question-side obligation escalation (e.g. "do I need to") against soft evidence.
+    question_entailment = statement_entailment_violation(question, modality_evidence)
+    if question_entailment == "obligation_not_in_evidence":
+        return {"reason": "obligation_not_in_evidence", "category": "modal_escalation"}
 
     dropped = detect_dropped_condition(
         question=question,

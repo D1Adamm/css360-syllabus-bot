@@ -65,7 +65,11 @@ class ModalEscalationTests(unittest.TestCase):
             "Yes, you must notify the instructor at least one hour before class "
             "if absent."
         )
-        reason = detect_modal_escalation(answer=answer, evidence=evidence)
+        reason = detect_modal_escalation(
+            question="Do I need to notify the instructor if I miss class?",
+            answer=answer,
+            evidence=evidence,
+        )
         self.assertEqual(reason, "recommendation_as_requirement")
 
         result = prevalidate_candidate(
@@ -87,6 +91,60 @@ class ModalEscalationTests(unittest.TestCase):
             statement_entailment_violation(answer, evidence),
             "obligation_not_in_evidence",
         )
+
+    def test_question_do_i_need_to_escalates_against_important_evidence(self) -> None:
+        evidence = (
+            "Course absence form: It is important to tell me if you are not "
+            "coming to class at least one hour before class begins."
+        )
+        question = (
+            "If I'm absent from class, do I need to tell the instructor at least "
+            "one hour before class starts?"
+        )
+        # Soft answer alone would not escalate; question obligation must still fail.
+        answer = (
+            "Yes — tell the instructor at least one hour before class if absent."
+        )
+        reason = detect_modal_escalation(
+            question=question,
+            answer=answer,
+            evidence=evidence,
+        )
+        self.assertEqual(reason, "recommendation_as_requirement")
+
+    def test_polluted_statement_and_source_cannot_mask_soft_quote(self) -> None:
+        """Live miss: inventory statement/chunks already contained 'must'."""
+        quote = (
+            "Course absence form: It is important to tell me if you are not "
+            "coming to class at least one hour before class begins."
+        )
+        result = prevalidate_candidate(
+            candidate={
+                "question": (
+                    "If I'm absent from class, do I need to tell the instructor "
+                    "at least one hour before class starts?"
+                ),
+                "answer": (
+                    "Yes, students must notify instructor at least one hour "
+                    "before class if absent."
+                ),
+            },
+            fact={
+                "statement": (
+                    "Course absence form: Students must inform instructor at "
+                    "least one hour before class if absent"
+                ),
+                "evidenceQuote": quote,
+                "sourceChunkIds": ["chunk-003"],
+            },
+            source_text=(
+                f"{quote}\n\nObviously, you must be in class in order to participate. "
+                "We do not have a required textbook."
+            ),
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["category"], "modal_escalation")
 
     def test_welcome_to_must_is_rejected(self) -> None:
         reason = detect_modal_escalation(
@@ -519,6 +577,212 @@ class PrevalidationSkipsLlmTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["progress"]["candidatesRejectedPreValidation"], 0)
         self.assertEqual(result["progress"]["finalCount"], 1)
         self.assertIsNotNone(result["seeds"][0].get("validation"))
+
+
+class LiveAbsenceFormRegressionTests(unittest.TestCase):
+    """Exact live candidate that previously slipped past prevalidation."""
+
+    EVIDENCE = (
+        "Course absence form: It is important to tell me if you are not coming "
+        "to class at least one hour before class begins."
+    )
+    QUESTION = (
+        "If I'm absent from class, do I need to tell the instructor at least "
+        "one hour before class starts?"
+    )
+    ANSWER = (
+        "Yes, students must notify instructor at least one hour before class "
+        "if absent."
+    )
+
+    def test_exact_live_candidate_rejected_via_prevalidate_candidate(self) -> None:
+        result = prevalidate_candidate(
+            candidate={"question": self.QUESTION, "answer": self.ANSWER},
+            fact={
+                "factId": "fact-live-absence",
+                "statement": self.EVIDENCE,
+                "evidenceQuote": self.EVIDENCE,
+                "sourceChunkIds": ["chunk-003"],
+            },
+            source_text=self.EVIDENCE,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["category"], "modal_escalation")
+        self.assertIn(
+            result["reason"],
+            {"recommendation_as_requirement", "modal_escalation", "obligation_not_in_evidence"},
+        )
+
+
+class LiveAbsenceFormGenerationLoopTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._temp = tempfile.TemporaryDirectory()
+        root = Path(self._temp.name)
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=root / "course_data",
+            index_dir=root / "indexes",
+        )
+        self.course_id = "css-360-live-absence"
+        evidence = (
+            "Course absence form: It is important to tell me if you are not "
+            "coming to class at least one hour before class begins."
+        )
+        self.evidence = evidence
+        chunks = [
+            {
+                "chunkId": "chunk-003",
+                "sectionTitle": "Attendance",
+                "text": (
+                    f"{evidence} Obviously, you must be in class in order to "
+                    "participate. We do not have a required textbook."
+                )
+                * 2,
+                "order": 1,
+            }
+        ]
+        self.storage.save_index(
+            self.course_id,
+            {"courseId": self.course_id, "chunkCount": 1, "chunks": chunks},
+        )
+        # Inventory statement already overstated (matches the live miss).
+        self.fact = {
+            "factId": "fact-02",
+            "statement": (
+                "Course absence form: Students must inform instructor at least "
+                "one hour before class if absent"
+            ),
+            "importance": "high",
+            "importanceScore": 0.9,
+            "studentAskLikelihood": 0.9,
+            "complexity": 1,
+            "usefulnessScore": 0.86,
+            "sourceChunkIds": ["chunk-003"],
+            "evidenceQuote": evidence,
+            "kind": "attendance",
+            "scope": "course_wide",
+        }
+
+    def tearDown(self) -> None:
+        self._temp.cleanup()
+
+    async def test_live_candidate_rejected_before_llm_validation(self) -> None:
+        from app.seed_generation import (
+            SEED_GENERATION_MODEL,
+            VALIDATION_PROMPT_MARKER,
+            generate_starter_seeds_for_course,
+        )
+
+        inventory = {
+            "model": SEED_GENERATION_MODEL,
+            "facts": [self.fact],
+            "factCount": 1,
+            "droppedCount": 0,
+            "duplicatesRemoved": 0,
+            "fallbackUsed": False,
+            "cached": True,
+            "countsByScope": {},
+            "countsByKind": {},
+            "countsBySeries": {},
+        }
+
+        calls = {"validation": 0, "generation": 0}
+
+        async def _fake(prompt: str, **kwargs):
+            if VALIDATION_PROMPT_MARKER in prompt:
+                calls["validation"] += 1
+                return {
+                    "answer": json.dumps(
+                        {
+                            "grounded": 0.9,
+                            "correct": 0.9,
+                            "clear": 0.85,
+                            "useful": 0.85,
+                            "naturalStudentWording": 0.85,
+                            "categoryCorrect": 0.8,
+                            "notTrivialOrTemporary": 0.8,
+                            "unsupportedClaims": [],
+                            "reason": "ok",
+                        }
+                    ),
+                    "model": SEED_GENERATION_MODEL,
+                }
+            calls["generation"] += 1
+            return {
+                "answer": json.dumps(
+                    {
+                        "seeds": [
+                            {
+                                "question": (
+                                    "If I'm absent from class, do I need to tell "
+                                    "the instructor at least one hour before "
+                                    "class starts?"
+                                ),
+                                "answer": (
+                                    "Yes, students must notify instructor at "
+                                    "least one hour before class if absent."
+                                ),
+                                "category": "attendance",
+                                "questionType": "direct",
+                            }
+                        ]
+                    }
+                ),
+                "model": SEED_GENERATION_MODEL,
+            }
+
+        with (
+            patch(
+                "app.seed_generation.load_or_build_fact_inventory",
+                new=AsyncMock(return_value=inventory),
+            ),
+            patch(
+                "app.seed_generation.generate_starter_ollama_completion",
+                new=AsyncMock(side_effect=_fake),
+            ),
+            patch(
+                "app.seed_generation.embed_ollama_texts",
+                new=AsyncMock(
+                    return_value={"embeddings": [[1.0, 0.0]], "model": "t"}
+                ),
+            ),
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=1,
+                storage=self.storage,
+            )
+
+        progress = result["progress"]
+        self.assertGreaterEqual(progress["candidatesRejectedPreValidation"], 1)
+        self.assertGreaterEqual(progress["candidatesRejectedModalEscalation"], 1)
+        self.assertEqual(progress["validationCalls"], 0)
+        self.assertEqual(calls["validation"], 0)
+        self.assertEqual(progress["finalCount"], 0)
+
+
+class GeneralDiscussionEndToEndTests(unittest.TestCase):
+    def test_universal_general_discussion_still_blocked(self) -> None:
+        evidence = (
+            "If you don't see an obvious place to ask your question, go ahead "
+            "and ask it in the #general-discussion channel."
+        )
+        result = prevalidate_candidate(
+            candidate={
+                "question": "Where should I ask questions about assignments in Discord?",
+                "answer": "In the #general-discussion channel",
+            },
+            fact={
+                "statement": evidence,
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-010"],
+            },
+            source_text=evidence,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["category"], "qualifier_mismatch")
+        self.assertEqual(result["reason"], "dropped_condition")
 
 
 if __name__ == "__main__":
