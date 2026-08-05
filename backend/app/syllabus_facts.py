@@ -25,13 +25,12 @@ from fastapi import HTTPException
 
 from app.ollama import (
     DEFAULT_EMBED_MODEL,
+    SEED_GENERATION_MODEL,
     embed_ollama_texts,
     generate_starter_ollama_completion,
     get_starter_inventory_num_predict,
 )
 from app.seed_similarity import cosine_similarity
-
-SEED_GENERATION_MODEL = "qwen3:4b"
 
 FACT_EXTRACTION_PROMPT_MARKER = "You extract atomic student-facing facts from a syllabus."
 

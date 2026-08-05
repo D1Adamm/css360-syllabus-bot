@@ -21,6 +21,7 @@ from app.firebase_seeds import (
 )
 from app.seed_export import write_generation_snapshot
 from app.ollama import (
+    SEED_GENERATION_MODEL,
     embed_ollama_texts,
     generate_starter_ollama_completion,
     get_starter_generation_num_predict,
@@ -49,7 +50,6 @@ from app.seed_validation import (
     validation_result_accepts as rubric_validation_result_accepts,
 )
 
-SEED_GENERATION_MODEL = "qwen3:4b"
 DEFAULT_SEED_COUNT = 3
 MAX_SEED_COUNT = 5
 

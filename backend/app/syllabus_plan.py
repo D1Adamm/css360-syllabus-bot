@@ -9,11 +9,10 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.ollama import (
+    SEED_GENERATION_MODEL,
     generate_starter_ollama_completion,
     is_ollama_timeout_error,
 )
-
-SEED_GENERATION_MODEL = "qwen3:4b"
 
 DEFAULT_PLANNING_BATCH_SIZE = 18
 MIN_PLANNING_BATCH_SIZE = 15

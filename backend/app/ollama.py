@@ -10,6 +10,7 @@ from app.ollama_coordination import ollama_generation_slot
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+SEED_GENERATION_MODEL = os.getenv("SEED_GENERATION_MODEL", "qwen3:4b")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 DEFAULT_STARTER_OLLAMA_TIMEOUT_SECONDS = 300.0
 DEFAULT_STARTER_OLLAMA_RETRY_DELAY_SECONDS = 1.5
