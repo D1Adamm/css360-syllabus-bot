@@ -13,6 +13,7 @@ from app.seed_prevalidation import (
     detect_dropped_condition,
     detect_modal_escalation,
     detect_response_time_guarantee,
+    detect_time_window_preposition_mismatch,
     prevalidate_candidate,
 )
 from app.syllabus_facts import statement_entailment_violation
@@ -783,6 +784,201 @@ class GeneralDiscussionEndToEndTests(unittest.TestCase):
         assert result is not None
         self.assertEqual(result["category"], "qualifier_mismatch")
         self.assertEqual(result["reason"], "dropped_condition")
+
+
+class BenchmarkFalseQualifierRegressionTests(unittest.TestCase):
+    """Benchmark false qualifier rejects: conditions preserved must pass.
+
+    Fact ids follow the benchmark narrative (extension / demo / accommodations /
+    Canvas / important→must), not a particular inventory ordering.
+    """
+
+    # Neighboring syllabus sentences that previously contaminated qualifier checks.
+    CONTAMINATED_SOURCE = (
+        "Among these 7 projects, you may choose one project for which you want "
+        "to use one 48-hour extension per quarter, no questions asked. "
+        "No extension is possible for the Demo and Feedback assignments as those "
+        "involve coordinating the entire class community and have very tight timing. "
+        "Note: all grade-related discussion must happen via Canvas. "
+        "If you don't see an obvious place to ask your question, go ahead and ask "
+        "it in the #general-discussion channel. "
+        "Accommodations must be requested within the first two weeks of this course "
+        "using the Religious Accommodations Request form. "
+        "Course absence form: It is important to tell me if you are not coming to "
+        "class at least one hour before class begins."
+    )
+
+    def test_fact_01_extension_limits_preserved_despite_chunk_neighbors(self) -> None:
+        evidence = (
+            "Among these 7 projects, you may choose one project for which you want "
+            "to use one 48-hour extension per quarter, no questions asked."
+        )
+        result = prevalidate_candidate(
+            candidate={
+                "question": (
+                    "Can I use a 48-hour extension on one of the Bot Project 1-7 "
+                    "assignments?"
+                ),
+                "answer": (
+                    "Yes. Among the 7 projects, you may choose one project for one "
+                    "48-hour extension per quarter, no questions asked."
+                ),
+            },
+            fact={
+                "factId": "fact-01",
+                "statement": (
+                    "Students may request one 48-hour extension per quarter for "
+                    "Bot Project 1-7."
+                ),
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-late"],
+            },
+            source_text=self.CONTAMINATED_SOURCE,
+        )
+        self.assertIsNone(result)
+
+    def test_fact_02_demo_feedback_exception_preserved_despite_chunk_neighbors(
+        self,
+    ) -> None:
+        evidence = (
+            "No extension is possible for the Demo and Feedback assignments as "
+            "those involve coordinating the entire class community and have very "
+            "tight timing."
+        )
+        result = prevalidate_candidate(
+            candidate={
+                "question": "Can I use the 48-hour extension on Demo and Feedback?",
+                "answer": (
+                    "No. No extension is possible for the Demo and Feedback "
+                    "assignments because they involve coordinating the entire "
+                    "class community and have very tight timing."
+                ),
+            },
+            fact={
+                "factId": "fact-02",
+                "statement": (
+                    "No extension is possible for the Demo and Feedback assignments."
+                ),
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-late"],
+            },
+            source_text=self.CONTAMINATED_SOURCE,
+        )
+        self.assertIsNone(result)
+
+    def test_fact_05_before_vs_within_first_two_weeks_is_rejected(self) -> None:
+        evidence = (
+            "Accommodations must be requested within the first two weeks of this "
+            "course using the Religious Accommodations Request form."
+        )
+        question = (
+            "Do I need to request religious accommodations before the first two "
+            "weeks of the course?"
+        )
+        answer = (
+            "Yes. Accommodations must be requested within the first two weeks "
+            "using the Religious Accommodations Request form."
+        )
+        self.assertEqual(
+            detect_time_window_preposition_mismatch(
+                question=question,
+                answer=answer,
+                evidence=evidence,
+            ),
+            "time_window_preposition_mismatch",
+        )
+        result = prevalidate_candidate(
+            candidate={"question": question, "answer": answer},
+            fact={
+                "factId": "fact-05",
+                "statement": evidence,
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-accommodations"],
+            },
+            source_text=self.CONTAMINATED_SOURCE,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["category"], "qualifier_mismatch")
+        self.assertEqual(result["reason"], "time_window_preposition_mismatch")
+
+    def test_fact_05_faithful_within_wording_passes(self) -> None:
+        evidence = (
+            "Accommodations must be requested within the first two weeks of this "
+            "course using the Religious Accommodations Request form."
+        )
+        result = prevalidate_candidate(
+            candidate={
+                "question": (
+                    "By when must I request religious accommodations for this course?"
+                ),
+                "answer": (
+                    "Accommodations must be requested within the first two weeks "
+                    "using the Religious Accommodations Request form."
+                ),
+            },
+            fact={
+                "factId": "fact-05",
+                "statement": evidence,
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-accommodations"],
+            },
+            source_text=self.CONTAMINATED_SOURCE,
+        )
+        self.assertIsNone(result)
+
+    def test_fact_06_canvas_grade_discussion_preserved_despite_chunk_neighbors(
+        self,
+    ) -> None:
+        evidence = "Note: all grade-related discussion must happen via Canvas"
+        result = prevalidate_candidate(
+            candidate={
+                "question": "Can I email the instructor about a grade question?",
+                "answer": (
+                    "No. All grade-related discussion must happen through Canvas."
+                ),
+            },
+            fact={
+                "factId": "fact-06",
+                "statement": "All grade-related discussion must happen via Canvas",
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-grades"],
+            },
+            source_text=self.CONTAMINATED_SOURCE,
+        )
+        self.assertIsNone(result)
+
+    def test_fact_08_important_to_must_still_rejected(self) -> None:
+        evidence = (
+            "Course absence form: It is important to tell me if you are not "
+            "coming to class at least one hour before class begins."
+        )
+        result = prevalidate_candidate(
+            candidate={
+                "question": (
+                    "If I'm absent from class, do I need to tell the instructor "
+                    "at least one hour before class starts?"
+                ),
+                "answer": (
+                    "Yes, students must notify instructor at least one hour "
+                    "before class if absent."
+                ),
+            },
+            fact={
+                "factId": "fact-08",
+                "statement": (
+                    "Course absence form: Students must inform instructor at "
+                    "least one hour before class if absent"
+                ),
+                "evidenceQuote": evidence,
+                "sourceChunkIds": ["chunk-absence"],
+            },
+            source_text=self.CONTAMINATED_SOURCE,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["category"], "modal_escalation")
+        self.assertEqual(result["reason"], "recommendation_as_requirement")
 
 
 if __name__ == "__main__":

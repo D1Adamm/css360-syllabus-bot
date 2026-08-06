@@ -129,6 +129,18 @@ _LIMIT_PHRASE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Evidence says "within the first N …"; Q/A must not flip that to "before …".
+# Accept digits or common number words used in syllabi ("two weeks").
+_FIRST_WINDOW_COUNT = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+_WITHIN_FIRST_WINDOW_RE = re.compile(
+    rf"\bwithin\s+the\s+first\s+({_FIRST_WINDOW_COUNT})\s+(weeks?|days?|hours?)\b",
+    re.IGNORECASE,
+)
+_BEFORE_FIRST_WINDOW_RE = re.compile(
+    rf"\bbefore\s+the\s+first\s+({_FIRST_WINDOW_COUNT})\s+(weeks?|days?|hours?)\b",
+    re.IGNORECASE,
+)
+
 
 def _norm(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", (text or "").strip().lower())
@@ -145,6 +157,16 @@ def _evidence_bundle(fact: dict[str, Any], source_text: str = "") -> str:
         source_text or "",
     ]
     return " ".join(part for part in parts if part.strip())
+
+
+def fact_qualifier_evidence(fact: dict[str, Any]) -> str:
+    """Evidence for dropped-condition / missing-qualifier checks.
+
+    Uses only this fact's statement + evidenceQuote. Neighboring syllabus
+    sentences from ``source_text`` must not invent restrictive conditions or
+    numeric limits that this candidate never claimed to cover.
+    """
+    return _evidence_bundle(fact, source_text="")
 
 
 def _soft_modal_in_evidence(evidence: str) -> bool:
@@ -395,6 +417,57 @@ def detect_question_beyond_evidence(*, question: str, evidence: str) -> str | No
     return None
 
 
+def _window_unit(raw: str) -> str:
+    return raw.lower().rstrip("s")
+
+
+def _window_count(raw: str) -> str:
+    text = raw.lower().strip()
+    words = {
+        "one": "1",
+        "two": "2",
+        "three": "3",
+        "four": "4",
+        "five": "5",
+        "six": "6",
+        "seven": "7",
+        "eight": "8",
+        "nine": "9",
+        "ten": "10",
+    }
+    return words.get(text, text)
+
+
+def detect_time_window_preposition_mismatch(
+    *,
+    question: str,
+    answer: str,
+    evidence: str,
+) -> str | None:
+    """Reject flipping evidence ``within the first N …`` to ``before the first N …``.
+
+    ``before the first two weeks`` is not a faithful paraphrase of
+    ``within the first two weeks`` — it changes the deadline window.
+    """
+    evidence_text = _norm(evidence)
+    qa_text = _norm(f"{question} {answer}")
+    if not evidence_text or not qa_text:
+        return None
+
+    within = _WITHIN_FIRST_WINDOW_RE.search(evidence_text)
+    if within is None:
+        return None
+    before = _BEFORE_FIRST_WINDOW_RE.search(qa_text)
+    if before is None:
+        return None
+
+    if _window_count(within.group(1)) == _window_count(before.group(1)) and _window_unit(
+        within.group(2)
+    ) == _window_unit(before.group(2)):
+        return "time_window_preposition_mismatch"
+    return None
+
+
 def prevalidate_candidate(
     *,
     candidate: dict[str, Any],
@@ -417,6 +490,9 @@ def prevalidate_candidate(
     # Modality checks use quote-focused text so chunk/statement contamination
     # cannot mask soft "important to" / "should" evidence as already-mandatory.
     modality_evidence = modality_evidence_for_fact(fact) or evidence
+    # Qualifier checks stay on this fact only — neighboring chunk sentences with
+    # unrelated "if you don't…" / "one per quarter" must not false-reject.
+    qualifier_evidence = fact_qualifier_evidence(fact) or evidence
 
     modal = detect_modal_escalation(
         question=question,
@@ -449,14 +525,25 @@ def prevalidate_candidate(
     dropped = detect_dropped_condition(
         question=question,
         answer=answer,
-        evidence=evidence,
+        evidence=qualifier_evidence,
     )
     if dropped:
         return {"reason": dropped, "category": "qualifier_mismatch"}
 
-    missing = detect_missing_critical_qualifier(answer=answer, evidence=evidence)
+    missing = detect_missing_critical_qualifier(
+        answer=answer,
+        evidence=qualifier_evidence,
+    )
     if missing:
         return {"reason": missing, "category": "qualifier_mismatch"}
+
+    time_window = detect_time_window_preposition_mismatch(
+        question=question,
+        answer=answer,
+        evidence=qualifier_evidence,
+    )
+    if time_window:
+        return {"reason": time_window, "category": "qualifier_mismatch"}
 
     beyond = detect_question_beyond_evidence(question=question, evidence=evidence)
     if beyond:
