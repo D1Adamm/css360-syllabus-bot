@@ -64,6 +64,10 @@ MAX_QUESTION_CHARS = 300
 MIN_ANSWER_CHARS = 8
 MAX_ANSWER_CHARS = 600
 STARTER_SEED_CANDIDATES_PER_TOPIC_CALL = 4
+# Generation attempts per opportunity before the fact is marked failed.
+# Attempt 1 is the primary/backfill draw; further attempts are safe retries
+# after rejectable candidates (prevalidation / validation / empty parse).
+STARTER_FACT_GENERATION_ATTEMPTS = 2
 QUESTION_TYPES = ("direct", "scenario", "clarification", "procedure", "comparison")
 FACT_SEED_GENERATION_PROMPT_MARKER = (
     "You generate training seed examples for ONE syllabus fact."
@@ -98,8 +102,20 @@ def get_starter_max_total_ollama_calls() -> int:
 
 
 def starter_backfill_limit(target_count: int) -> int:
-    """Max zero-slot backfill opportunities for a generation run."""
+    """Max backfill opportunities for a generation run.
+
+    Backfill draws from unused allocator capacity: outcompeted zero-slot
+    facts with desiredSlots > 0, plus leftover desired slots on facts that
+    already received a primary slot (common after breadth-first allocation).
+    """
     return max(int(target_count) * 2, 6)
+
+
+def _backfill_unused_slots(alloc: dict[str, Any]) -> int:
+    """How many rejection-backfill opportunities one allocation can contribute."""
+    desired = int(alloc.get("desiredSlots") or 0)
+    slot_count = int(alloc.get("slotCount") or 0)
+    return max(0, desired - slot_count)
 
 
 def resolve_starter_run_status(
@@ -1078,7 +1094,8 @@ async def generate_starter_seeds_for_course(
 
     Live path (Phase 4 / 4.5 / 5):
       chunks → cached-or-fresh fact inventory → breadth-first allocation
-      → sequential fact-scoped Q/A with rejection backfill
+      → sequential fact-scoped Q/A with safe retries + rejection backfill
+        (unused desired capacity and outcompeted eligible facts)
       → programmatic checks → exact/semantic dedupe → pre-validation
       → LLM validation → accept
 
@@ -1310,30 +1327,33 @@ async def generate_starter_seeds_for_course(
         for _ in range(slot_count):
             opportunities.append((fact, alloc, False))
 
-    # Backfill pool: next-best eligible facts that received 0 slots.
+    # Backfill pool: unused allocator capacity up to backfill_limit.
+    # Includes outcompeted zero-slot facts (desiredSlots > 0) and leftover
+    # desired slots on facts that already received a primary breadth slot.
     # Cap size for small targets so CPU runs do not walk dozens of facts.
     backfill_limit = starter_backfill_limit(generation_limit)
     backfill_added = 0
     for alloc in allocation.get("allocations", []):
         if backfill_added >= backfill_limit:
             break
-        if int(alloc.get("slotCount") or 0) > 0:
-            continue
-        if int(alloc.get("desiredSlots") or 0) <= 0:
+        unused = _backfill_unused_slots(alloc)
+        if unused <= 0:
             continue
         fact_id = str(alloc.get("factId") or "")
-        if fact_id in primary_fact_ids:
-            continue
         fact = facts_by_id.get(fact_id)
         if fact is None:
             continue
-        backfill_alloc = {
-            **alloc,
-            "slotCount": 1,
-            "suggestedStyles": list(alloc.get("suggestedStyles") or ["factual"]),
-        }
-        opportunities.append((fact, backfill_alloc, True))
-        backfill_added += 1
+        styles = list(alloc.get("suggestedStyles") or ["factual"])
+        for _ in range(unused):
+            if backfill_added >= backfill_limit:
+                break
+            backfill_alloc = {
+                **alloc,
+                "slotCount": 1,
+                "suggestedStyles": styles,
+            }
+            opportunities.append((fact, backfill_alloc, True))
+            backfill_added += 1
 
     # Extra backfill from previously covered facts (top-up only).
     if top_up and backfill_extra_facts:
@@ -1394,154 +1414,167 @@ async def generate_starter_seeds_for_course(
             continue
 
         chunks_processed += len(fact_chunk_texts)
-        ollama_calls += 1
-        generation_calls += 1
         accepted_before = len(seeds)
-        try:
-            candidates, model_used = await _generate_candidates_for_fact(
-                fact=fact,
-                chunk_texts=fact_chunk_texts,
-                count=1,
-                suggested_styles=list(alloc.get("suggestedStyles") or []),
-            )
-        except HTTPException as exc:
-            failed_facts.add(fact_id)
-            if is_ollama_timeout_error(exc):
-                timeout_failures += 1
-                continue
-            if exc.status_code == 503:
-                raise
-            continue
+        hard_failure = False
 
-        candidates_generated += len(candidates)
-        if not candidates:
-            failed_facts.add(fact_id)
-            continue
-
-        for candidate in candidates:
-            if len(seeds) >= generation_limit:
+        # Safe retries: regenerate on rejectable candidates before failing the
+        # fact. Timeouts / transport errors still fail the fact immediately.
+        for _attempt in range(STARTER_FACT_GENERATION_ATTEMPTS):
+            if len(seeds) >= generation_limit or not _budget_remaining():
                 break
-
-            if not passes_programmatic_candidate_checks(candidate):
-                candidates_rejected += 1
-                candidates_rejected_invalid += 1
-                continue
-
-            normalized_question = normalize_question_for_dedupe(candidate["question"])
-            if not normalized_question:
-                duplicates_removed += 1
-                candidates_rejected += 1
-                continue
-            if normalized_question in seen_questions:
-                duplicates_removed += 1
-                candidates_rejected += 1
-                continue
-
-            if accepted_questions:
-                embedding_calls += 1
-                try:
-                    semantic_duplicate = await find_semantic_duplicate_question(
-                        candidate_question=candidate["question"],
-                        accepted_questions=accepted_questions,
-                        embed_fn=embed_ollama_texts,
-                        cache=embedding_cache,
-                    )
-                except HTTPException:
-                    embedding_cache.last_candidate_embedding = None
-                    semantic_duplicate = None
-                if semantic_duplicate is not None:
-                    semantic_duplicates_removed += 1
-                    candidates_rejected += 1
-                    continue
-
-            # Deterministic grounding/escalation checks before LLM validation.
-            prevalidation = prevalidate_candidate(
-                candidate=candidate,
-                fact=fact,
-                source_text="\n\n".join(fact_chunk_texts),
-            )
-            if prevalidation is not None:
-                candidates_rejected += 1
-                candidates_rejected_prevalidation += 1
-                category = prevalidation.get("category")
-                if category == "modal_escalation":
-                    candidates_rejected_modal_escalation += 1
-                elif category == "qualifier_mismatch":
-                    candidates_rejected_qualifier_mismatch += 1
-                continue
-
-            if not _budget_remaining():
+            if len(seeds) > accepted_before:
                 break
 
             ollama_calls += 1
-            validation_calls += 1
+            generation_calls += 1
             try:
-                validation = await _validate_candidate(
-                    question=candidate["question"],
-                    answer=candidate["answer"],
-                    topic_name=str(candidate.get("category", "General")),
-                    question_type=str(candidate.get("questionType", "direct")),
-                    chunk_text="\n\n".join(fact_chunk_texts),
+                candidates, model_used = await _generate_candidates_for_fact(
+                    fact=fact,
+                    chunk_texts=fact_chunk_texts,
+                    count=1,
+                    suggested_styles=list(alloc.get("suggestedStyles") or []),
                 )
             except HTTPException as exc:
+                hard_failure = True
+                failed_facts.add(fact_id)
                 if is_ollama_timeout_error(exc):
                     timeout_failures += 1
+                    break
+                if exc.status_code == 503:
+                    raise
+                break
+
+            candidates_generated += len(candidates)
+            if not candidates:
+                continue
+
+            for candidate in candidates:
+                if len(seeds) >= generation_limit:
+                    break
+
+                if not passes_programmatic_candidate_checks(candidate):
+                    candidates_rejected += 1
+                    candidates_rejected_invalid += 1
+                    continue
+
+                normalized_question = normalize_question_for_dedupe(
+                    candidate["question"]
+                )
+                if not normalized_question:
+                    duplicates_removed += 1
+                    candidates_rejected += 1
+                    continue
+                if normalized_question in seen_questions:
+                    duplicates_removed += 1
+                    candidates_rejected += 1
+                    continue
+
+                if accepted_questions:
+                    embedding_calls += 1
+                    try:
+                        semantic_duplicate = await find_semantic_duplicate_question(
+                            candidate_question=candidate["question"],
+                            accepted_questions=accepted_questions,
+                            embed_fn=embed_ollama_texts,
+                            cache=embedding_cache,
+                        )
+                    except HTTPException:
+                        embedding_cache.last_candidate_embedding = None
+                        semantic_duplicate = None
+                    if semantic_duplicate is not None:
+                        semantic_duplicates_removed += 1
+                        candidates_rejected += 1
+                        continue
+
+                # Deterministic grounding/escalation checks before LLM validation.
+                prevalidation = prevalidate_candidate(
+                    candidate=candidate,
+                    fact=fact,
+                    source_text="\n\n".join(fact_chunk_texts),
+                )
+                if prevalidation is not None:
+                    candidates_rejected += 1
+                    candidates_rejected_prevalidation += 1
+                    category = prevalidation.get("category")
+                    if category == "modal_escalation":
+                        candidates_rejected_modal_escalation += 1
+                    elif category == "qualifier_mismatch":
+                        candidates_rejected_qualifier_mismatch += 1
+                    continue
+
+                if not _budget_remaining():
+                    break
+
+                ollama_calls += 1
+                validation_calls += 1
+                try:
+                    validation = await _validate_candidate(
+                        question=candidate["question"],
+                        answer=candidate["answer"],
+                        topic_name=str(candidate.get("category", "General")),
+                        question_type=str(candidate.get("questionType", "direct")),
+                        chunk_text="\n\n".join(fact_chunk_texts),
+                    )
+                except HTTPException as exc:
+                    if is_ollama_timeout_error(exc):
+                        timeout_failures += 1
+                        candidates_validated += 1
+                        candidates_rejected += 1
+                        candidates_rejected_validation += 1
+                        continue
+                    if exc.status_code == 503:
+                        raise
                     candidates_validated += 1
                     candidates_rejected += 1
                     candidates_rejected_validation += 1
                     continue
-                if exc.status_code == 503:
-                    raise
+
                 candidates_validated += 1
-                candidates_rejected += 1
-                candidates_rejected_validation += 1
-                continue
+                if validation is None:
+                    candidates_rejected += 1
+                    candidates_rejected_validation += 1
+                    continue
+                validation = calibrate_validation_result(
+                    result=validation,
+                    question=candidate["question"],
+                    answer=candidate["answer"],
+                    topic_name=str(candidate.get("category", "General")),
+                    question_type=str(candidate.get("questionType", "direct")),
+                )
+                if not validation_result_accepts(validation):
+                    candidates_rejected += 1
+                    candidates_rejected_validation += 1
+                    if validation.get("unsupportedClaims"):
+                        candidates_rejected_unsupported += 1
+                    continue
 
-            candidates_validated += 1
-            if validation is None:
-                candidates_rejected += 1
-                candidates_rejected_validation += 1
-                continue
-            validation = calibrate_validation_result(
-                result=validation,
-                question=candidate["question"],
-                answer=candidate["answer"],
-                topic_name=str(candidate.get("category", "General")),
-                question_type=str(candidate.get("questionType", "direct")),
-            )
-            if not validation_result_accepts(validation):
-                candidates_rejected += 1
-                candidates_rejected_validation += 1
-                if validation.get("unsupportedClaims"):
-                    candidates_rejected_unsupported += 1
-                continue
+                seen_questions.add(normalized_question)
+                accepted_questions.append(candidate["question"])
+                embedding_cache.remember_last_candidate()
+                candidates_accepted += 1
+                if is_backfill:
+                    backfill_accepted += 1
+                seeds.append(
+                    {
+                        **candidate,
+                        "factId": str(
+                            candidate.get("factId") or fact.get("factId") or ""
+                        ),
+                        "evidenceQuote": str(
+                            candidate.get("evidenceQuote")
+                            or fact.get("evidenceQuote")
+                            or ""
+                        ),
+                        "sourceChunkIds": list(
+                            candidate.get("sourceChunkIds") or fact_chunk_ids
+                        ),
+                        "validation": validation,
+                    }
+                )
+                break
 
-            seen_questions.add(normalized_question)
-            accepted_questions.append(candidate["question"])
-            embedding_cache.remember_last_candidate()
-            candidates_accepted += 1
-            if is_backfill:
-                backfill_accepted += 1
-            seeds.append(
-                {
-                    **candidate,
-                    "factId": str(
-                        candidate.get("factId") or fact.get("factId") or ""
-                    ),
-                    "evidenceQuote": str(
-                        candidate.get("evidenceQuote")
-                        or fact.get("evidenceQuote")
-                        or ""
-                    ),
-                    "sourceChunkIds": list(
-                        candidate.get("sourceChunkIds") or fact_chunk_ids
-                    ),
-                    "validation": validation,
-                }
-            )
-
-        if len(seeds) == accepted_before:
-            # No accept from this attempt — do not keep regenerating this fact.
+        if len(seeds) == accepted_before and not hard_failure:
+            # No accept after retries — do not keep regenerating this fact.
             failed_facts.add(fact_id)
 
     saved_count = 0

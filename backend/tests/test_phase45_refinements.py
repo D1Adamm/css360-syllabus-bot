@@ -557,6 +557,286 @@ class BackfillGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["progress"]["factExtractionCalls"], 0)
         self.assertLessEqual(result["progress"]["finalCount"], 2)
 
+    async def test_backfill_uses_unused_desired_capacity_when_no_zero_slot_facts(
+        self,
+    ) -> None:
+        """Breadth-first can exhaust eligible facts; leftover desiredSlots refill gaps."""
+        from app.seed_generation import (
+            SEED_GENERATION_MODEL,
+            VALIDATION_PROMPT_MARKER,
+            generate_starter_seeds_for_course,
+        )
+
+        # Three complex facts of distinct kinds → each desires 2+ slots.
+        # target=3 assigns one breadth slot each (no kind-cap leftovers),
+        # leaving unused desired capacity. The old zero-slot-only backfill
+        # pool would be empty in this shape.
+        complex_kinds = ("late_work", "attendance", "grading")
+        complex_facts = [
+            _fact(
+                f"fact-{index:02d}",
+                kind=complex_kinds[index - 1],
+                chunk=f"chunk-{index:03d}",
+                complexity=3,
+                usefulness=0.9,
+                ask=0.9,
+            )
+            for index in range(1, 4)
+        ]
+        inventory = {
+            "model": SEED_GENERATION_MODEL,
+            "facts": complex_facts,
+            "factCount": len(complex_facts),
+            "droppedCount": 0,
+            "duplicatesRemoved": 0,
+            "fallbackUsed": False,
+            "countsByScope": {},
+            "countsByKind": {},
+            "countsBySeries": {},
+            "cached": True,
+        }
+
+        allocation = allocate_slots(complex_facts, target_count=3)
+        zero_slot_eligible = sum(
+            1
+            for row in allocation["allocations"]
+            if int(row.get("slotCount") or 0) == 0
+            and int(row.get("desiredSlots") or 0) > 0
+        )
+        unused_capacity = sum(
+            max(0, int(row.get("desiredSlots") or 0) - int(row.get("slotCount") or 0))
+            for row in allocation["allocations"]
+        )
+        self.assertEqual(zero_slot_eligible, 0)
+        self.assertGreaterEqual(unused_capacity, 3)
+
+        gen_calls = {"n": 0}
+
+        async def _fake(prompt: str, **kwargs):
+            if VALIDATION_PROMPT_MARKER in prompt:
+                return {
+                    "answer": json.dumps(
+                        {
+                            "grounded": 0.9,
+                            "correct": 0.9,
+                            "clear": 0.85,
+                            "useful": 0.85,
+                            "naturalStudentWording": 0.85,
+                            "categoryCorrect": 0.8,
+                            "notTrivialOrTemporary": 0.8,
+                            "unsupportedClaims": [],
+                            "reason": "ok",
+                        }
+                    ),
+                    "model": SEED_GENERATION_MODEL,
+                }
+            gen_calls["n"] += 1
+            n = gen_calls["n"]
+            # Fail every generation for fact-01 (including safe retry) so the
+            # missing slot must come from unused desired capacity on other facts.
+            if "Fact id: fact-01" in prompt:
+                payload = {
+                    "seeds": [
+                        {
+                            "question": "Bad?",
+                            "answer": "No",
+                            "category": "late work",
+                            "questionType": "direct",
+                        }
+                    ]
+                }
+            else:
+                payload = {
+                    "seeds": [
+                        {
+                            "question": f"Useful late-work question {n}?",
+                            "answer": (
+                                f"Grounded late-work answer {n} with policy detail."
+                            ),
+                            "category": "late work",
+                            "questionType": "direct",
+                        }
+                    ]
+                }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        async def _embed(texts, *, model=None):
+            dim = 16
+            embeddings = []
+            for text in texts:
+                vector = [0.0] * dim
+                bucket = sum(ord(ch) for ch in str(text)) % dim
+                vector[bucket] = 1.0
+                embeddings.append(vector)
+            return {"embeddings": embeddings, "model": model or "test"}
+
+        with (
+            patch(
+                "app.seed_generation.load_or_build_fact_inventory",
+                new=AsyncMock(return_value=inventory),
+            ),
+            patch(
+                "app.seed_generation.generate_starter_ollama_completion",
+                new=AsyncMock(side_effect=_fake),
+            ),
+            patch(
+                "app.seed_generation.embed_ollama_texts",
+                new=_embed,
+            ),
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=3,
+                storage=self.storage,
+            )
+
+        progress = result["progress"]
+        self.assertEqual(progress["finalCount"], 3)
+        self.assertGreaterEqual(progress["backfillAttempts"], 1)
+        self.assertGreaterEqual(progress["backfillAccepted"], 1)
+        self.assertGreaterEqual(progress["candidatesRejectedInvalid"], 1)
+
+    async def test_safe_retry_recovers_after_modal_escalation_rejection(self) -> None:
+        """Same fact can regenerate once after strict prevalidation rejection."""
+        from app.seed_generation import (
+            SEED_GENERATION_MODEL,
+            VALIDATION_PROMPT_MARKER,
+            generate_starter_seeds_for_course,
+        )
+
+        evidence = "Students may use one 48-hour extension per quarter."
+        facts = [
+            {
+                "factId": "fact-late",
+                "statement": evidence,
+                "importance": "high",
+                "importanceScore": 0.9,
+                "studentAskLikelihood": 0.9,
+                "complexity": 2,
+                "usefulnessScore": 0.9,
+                "sourceChunkIds": ["chunk-001"],
+                "evidenceQuote": evidence,
+                "kind": "late_work",
+                "scope": "course_wide",
+                "seriesKey": None,
+                "assignmentGroup": None,
+                "seriesOrdinal": None,
+            },
+            _fact("fact-02", kind="attendance", chunk="chunk-002"),
+            _fact("fact-03", kind="grading", chunk="chunk-003"),
+        ]
+        inventory = {
+            "model": SEED_GENERATION_MODEL,
+            "facts": facts,
+            "factCount": len(facts),
+            "droppedCount": 0,
+            "duplicatesRemoved": 0,
+            "fallbackUsed": False,
+            "countsByScope": {},
+            "countsByKind": {},
+            "countsBySeries": {},
+            "cached": True,
+        }
+
+        gen_calls = {"n": 0}
+
+        async def _fake(prompt: str, **kwargs):
+            if VALIDATION_PROMPT_MARKER in prompt:
+                return {
+                    "answer": json.dumps(
+                        {
+                            "grounded": 0.9,
+                            "correct": 0.9,
+                            "clear": 0.85,
+                            "useful": 0.85,
+                            "naturalStudentWording": 0.85,
+                            "categoryCorrect": 0.8,
+                            "notTrivialOrTemporary": 0.8,
+                            "unsupportedClaims": [],
+                            "reason": "ok",
+                        }
+                    ),
+                    "model": SEED_GENERATION_MODEL,
+                }
+            gen_calls["n"] += 1
+            n = gen_calls["n"]
+            if n == 1:
+                # Escalates may → must; strict prevalidation must reject.
+                payload = {
+                    "seeds": [
+                        {
+                            "question": "Can I use a 48-hour extension?",
+                            "answer": "Students must use a 48-hour extension.",
+                            "category": "late work",
+                            "questionType": "direct",
+                        }
+                    ]
+                }
+            elif n == 2:
+                # Safe retry for the same fact with faithful wording.
+                payload = {
+                    "seeds": [
+                        {
+                            "question": "May I use a 48-hour extension?",
+                            "answer": (
+                                "Students may use one 48-hour extension per quarter."
+                            ),
+                            "category": "late work",
+                            "questionType": "direct",
+                        }
+                    ]
+                }
+            else:
+                payload = {
+                    "seeds": [
+                        {
+                            "question": f"Another grounded student question {n}?",
+                            "answer": f"Another grounded syllabus answer {n}.",
+                            "category": "policy",
+                            "questionType": "direct",
+                        }
+                    ]
+                }
+            return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
+
+        async def _embed(texts, *, model=None):
+            dim = 16
+            embeddings = []
+            for text in texts:
+                vector = [0.0] * dim
+                bucket = sum(ord(ch) for ch in str(text)) % dim
+                vector[bucket] = 1.0
+                embeddings.append(vector)
+            return {"embeddings": embeddings, "model": model or "test"}
+
+        with (
+            patch(
+                "app.seed_generation.load_or_build_fact_inventory",
+                new=AsyncMock(return_value=inventory),
+            ),
+            patch(
+                "app.seed_generation.generate_starter_ollama_completion",
+                new=AsyncMock(side_effect=_fake),
+            ),
+            patch(
+                "app.seed_generation.embed_ollama_texts",
+                new=_embed,
+            ),
+        ):
+            result = await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=2,
+                storage=self.storage,
+            )
+
+        progress = result["progress"]
+        self.assertGreaterEqual(progress["candidatesRejectedModalEscalation"], 1)
+        self.assertGreaterEqual(progress["candidatesRejectedPreValidation"], 1)
+        self.assertGreaterEqual(progress["finalCount"], 1)
+        self.assertGreaterEqual(gen_calls["n"], 2)
+        accepted_ids = {seed["factId"] for seed in result["seeds"]}
+        self.assertIn("fact-late", accepted_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

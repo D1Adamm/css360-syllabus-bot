@@ -21,7 +21,7 @@ from app.ollama import (
     get_starter_inventory_num_predict,
     get_starter_validation_num_predict,
 )
-from app.seed_generation import starter_backfill_limit
+from app.seed_generation import _backfill_unused_slots, starter_backfill_limit
 from app.storage import LocalCourseArtifactStorage
 
 
@@ -74,6 +74,24 @@ class BackfillLimitHelperTests(unittest.TestCase):
 
     def test_larger_targets_scale_with_two_x(self) -> None:
         self.assertEqual(starter_backfill_limit(10), 20)
+
+    def test_unused_slots_include_leftover_desired_capacity(self) -> None:
+        self.assertEqual(
+            _backfill_unused_slots({"desiredSlots": 2, "slotCount": 1}),
+            1,
+        )
+        self.assertEqual(
+            _backfill_unused_slots({"desiredSlots": 1, "slotCount": 0}),
+            1,
+        )
+        self.assertEqual(
+            _backfill_unused_slots({"desiredSlots": 0, "slotCount": 0}),
+            0,
+        )
+        self.assertEqual(
+            _backfill_unused_slots({"desiredSlots": 1, "slotCount": 1}),
+            0,
+        )
 
 
 class BackfillOpportunityCapTests(unittest.IsolatedAsyncioTestCase):
