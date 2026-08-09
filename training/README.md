@@ -1,209 +1,192 @@
 # CSS 360 QLoRA training (Tillicum)
 
-This scaffold fine-tunes **LoRA adapters only** on top of
-`meta-llama/Llama-3.2-3B-Instruct` using the approved train/validation JSONL split:
+Fine-tunes **LoRA adapters only** on top of `meta-llama/Llama-3.2-3B-Instruct`
+using the **approved** course export under `data/exports/<courseId>/`.
 
-- `data/exports/css-360-winter-2026-a7rp/train.jsonl` (48 examples)
-- `data/exports/css-360-winter-2026-a7rp/validation.jsonl` (6 examples)
-- `data/exports/css-360-winter-2026-a7rp/manifest.json`
+This is the **canonical** training workflow. Inference deployment is separate
+(see `training/inference_service/README.md`).
 
-It does **not** change the backend/frontend export or split workflow. Inference is
-not integrated yet.
+Exports are **gitignored**. Code reaches Tillicum via `git pull`; training JSONL
+must be prepared on a machine with Firebase access, then synced explicitly.
 
-## 1. Create the Python environment (on Tillicum)
+---
 
-From the repo root on a Tillicum login node:
+## Canonical workflow
+
+### A) Machine with backend / Firebase access (local or UWB VM)
 
 ```bash
-python3 -m venv /gpfs/projects/simswe/$USER/venvs/css360-qlora
-source /gpfs/projects/simswe/$USER/venvs/css360-qlora/bin/activate
-python -m pip install --upgrade pip
-pip install -r training/requirements.txt
+cd backend
+.venv/bin/python scripts/prepare_qlora_dataset.py css-360-winter-2026-a7rp
+
+cd ..
+./scripts/sync_training_data_to_tillicum.sh css-360-winter-2026-a7rp
 ```
 
-Install a CUDA-enabled PyTorch build that matches the Tillicum GPU/driver stack if
-the default `torch` wheel is CPU-only. Prefer the official PyTorch install
-instructions for your CUDA version; do not commit CUDA wheel URLs into this repo.
+`prepare_qlora_dataset.py` calls the existing approved-export + train/validation
+split logic (it does not reimplement them). Sync sends **only**
+`data/exports/<courseId>/` to Tillicum (rsync; Duo remains interactive).
 
-Optional local venv for development:
+Required files after prepare:
+
+- `data/exports/<courseId>/train.jsonl`
+- `data/exports/<courseId>/validation.jsonl`
+- `data/exports/<courseId>/manifest.json`
+
+### B) Tillicum — train
 
 ```bash
-python3 -m venv training/.venv
-source training/.venv/bin/activate
-pip install -r training/requirements.txt
+cd /gpfs/projects/simswe/$USER/css360-syllabus-bot
+git pull
+
+./training/start_qlora_training.sh --course css-360-winter-2026-a7rp --smoke
+./training/status_qlora_training.sh
+
+# Only after smoke looks good — explicit second command:
+./training/start_qlora_training.sh --course css-360-winter-2026-a7rp --full
 ```
 
-## 2. Hugging Face authentication
+Smoke and full are **never** chained automatically.
 
-Llama 3.2 Instruct requires Hugging Face access + acceptance of the model license.
+Automation writes versioned outputs under:
 
-```bash
-huggingface-cli login
-# or:
-export HF_TOKEN=hf_...
+```text
+/gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<runId>-{smoke|full}/
 ```
 
-Confirm you can access `meta-llama/Llama-3.2-3B-Instruct` before submitting jobs.
+including `adapter/`. This does **not** overwrite the live inference adapter.
 
-## 3. Cache and output paths
+### C) Explicit promotion (optional, intentional)
 
-Slurm scripts set:
+Only after you are satisfied with a finished full run:
 
 ```bash
-export HF_HOME=/gpfs/projects/simswe/$USER/hf_cache
+./training/promote_qlora_adapter.sh \
+  /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<runId>-full/adapter
+```
+
+This backs up the previous live adapter (if present) and replaces:
+
+```text
+/gpfs/projects/simswe/$USER/training_outputs/css-360-qlora/adapter
+```
+
+Promotion does **not** start or restart inference.
+
+### D) Inference (separate)
+
+Use the existing fine-tuned inference helpers:
+
+```bash
+./training/start_finetuned_service.sh
+# on aiswe.uwb.edu:
+./scripts/start_finetuned_tunnel.sh <NODE>
+```
+
+See `training/inference_service/README.md`.
+
+---
+
+## Environment (Tillicum)
+
+Preferred venv order (smoke / train / compare Slurm):
+
+1. `training/.venv` if present  
+2. `/gpfs/projects/simswe/$USER/venvs/qlora`  
+
+Jobs fail immediately if neither exists.
+
+Hugging Face paths used by Slurm:
+
+```bash
+export HF_HOME=/gpfs/projects/simswe/$USER/huggingface
 export HF_HUB_CACHE=$HF_HOME/hub
+export HF_TOKEN_PATH=$HF_HOME/token
 ```
 
-Outputs go under:
+Place a non-empty HF token at `$HF_TOKEN_PATH` before submitting jobs.
+Llama 3.2 Instruct requires HF access + license acceptance.
 
-```text
-/gpfs/projects/simswe/$USER/training_outputs/
-```
+---
 
-Keep model weights, adapters, caches, and logs **off git**.
+## Slurm scripts (advanced)
 
-## 4. Submit the smoke job first
-
-From the repository root:
+Normal training must go through:
 
 ```bash
-mkdir -p training/logs
-sbatch training/smoke.slurm
+./training/start_qlora_training.sh --course <courseId> --smoke|--full
 ```
 
-Smoke mode:
+That helper always exports a **versioned** `TRAINING_OUTPUT_DIR` under
+`.../training_outputs/qlora-runs/...`.
 
-- uses 4 train + 2 validation examples
-- runs `max_steps=3`
-- still saves a LoRA adapter
-- measures completed step timing
-- prints an **approximate** full-run duration and GPU-hour estimate
+`training/train.slurm` and `training/smoke.slurm` **require** `TRAINING_OUTPUT_DIR`.
+Raw `sbatch training/train.slurm` / `sbatch training/smoke.slurm` without it fails
+immediately (before training). They also refuse any path under the live tree
+`.../training_outputs/css-360-qlora/`.
 
-## 5. Check queue status
+Only `./training/promote_qlora_adapter.sh` writes the live inference adapter.
 
-```bash
-squeue -u $USER
-```
-
-## 6. Check logs
-
-```bash
-ls -lt training/logs/
-tail -n 100 training/logs/smoke-<JOB_ID>.out
-tail -n 100 training/logs/smoke-<JOB_ID>.err
-```
-
-## 7. Read `runtime-report.json`
-
-Smoke/full outputs include `runtime-report.json` in the job output directory, for example:
-
-```bash
-cat /gpfs/projects/simswe/$USER/training_outputs/css-360-qlora-smoke/runtime-report.json
-```
-
-Important fields:
-
-| Field | Meaning |
-| --- | --- |
-| `completedSteps` | Measured optimizer/training steps completed |
-| `averageSecondsPerStep` | Conservative measured average (prefers excluding first-step warmup when available) |
-| `estimatedOptimizerSteps` | Expected full-run steps from 48 examples × epochs × batching |
-| `estimatedTrainingOnlySeconds` | Steady-state training estimate (no one-time download) |
-| `estimatedConservativeTotalSeconds` | Adds model load + eval + checkpoint overhead |
-| `estimatedGpuHours` | Conservative seconds ÷ 3600 × GPU count |
-| `actualGpuHours` | Present after **full** runs: total elapsed hours × GPU count |
-| `slurmJobId` / `gitCommitSha` | Provenance when available |
-
-## 8. Interpreting the smoke estimate
-
-The smoke printout looks like:
-
-```text
-Smoke benchmark:
-  - Completed steps: 3
-  - Training time: ...
-  - Average seconds per step: ...
-  - Estimated full optimizer steps: ...
-  - Estimated training-only duration: ...
-  - Conservative estimated total duration: ...
-  - Requested GPUs: 1
-  - Estimated GPU hours: ...
-```
-
-Treat this as **approximate**. First-step / warmup overhead is identified when possible.
-If no steps complete, estimates are reported as `n/a` (no division by zero).
-
-## 9. Compare with Slurm elapsed time after completion
-
-```bash
-sacct -j JOB_ID --format=JobID,State,Elapsed,AllocTRES,Start,End
-seff JOB_ID
-```
-
-## 10. Submit the full job only after smoke success
-
-```bash
-sbatch training/train.slurm
-```
-
-Full training uses the complete 48/6 split and writes under:
-
-```text
-/gpfs/projects/simswe/$USER/training_outputs/css-360-qlora/
-```
-
-After completion, inspect:
-
-```bash
-cat /gpfs/projects/simswe/$USER/training_outputs/css-360-qlora/runtime-report.json
-sacct -j JOB_ID --format=JobID,State,Elapsed,AllocTRES,Start,End
-```
-
-## Default training settings
-
-- Model: `meta-llama/Llama-3.2-3B-Instruct` (4-bit NF4)
-- LoRA: `r=8`, `alpha=16`, `dropout=0.05`, `bias=none`, Llama attn/MLP targets
-- Max length 512, LR `2e-4`, 3 epochs, batch 1, grad accum 8
-- Warmup ratio 0.1, weight decay 0.01, seed 360
-- Eval + save each epoch, bf16 when supported, gradient checkpointing on
-
-## Local helper tests (no GPU / no model download)
-
-```bash
-cd training
-python -m unittest test_train_qlora_helpers.py test_compare_inference_helpers.py -v
-```
-
-## Compare base vs fine-tuned (after full training)
+Compare (read-only evaluation against an adapter) may still be submitted as:
 
 ```bash
 sbatch training/compare.slurm
 ```
 
-Outputs land under:
+Environment variables:
 
-```text
-/gpfs/projects/simswe/$USER/training_outputs/css-360-comparison/
-```
+| Variable | Purpose |
+| --- | --- |
+| `TRAIN_FILE` / `VAL_FILE` | Train/validation JSONL paths |
+| `TRAINING_OUTPUT_DIR` | **Required** for smoke/full; versioned output root (`adapter/` underneath) |
+| `ADAPTER_PATH` | Compare job adapter to **read** (default: live path) |
+| `COMPARISON_OUTPUT_DIR` | Compare job outputs |
 
-Files written:
+---
 
-- `comparison_results.json`
-- `comparison_results.jsonl`
-- `comparison_summary.json`
+## Default training settings (unchanged)
 
-## Fine-tuned inference service (Tillicum GPU + UWB tunnel)
+- Model: `meta-llama/Llama-3.2-3B-Instruct` (4-bit NF4)
+- LoRA: `r=8`, `alpha=16`, `dropout=0.05`, `bias=none`, Llama attn/MLP targets
+- Max length 512, LR `2e-4`, 3 epochs, batch 1, grad accum 8 (effective batch 8)
+- Warmup ratio 0.1, weight decay 0.01, seed 360
+- Eval + save each epoch, bf16 when supported, gradient checkpointing on
 
-Wired into the UWB FastAPI backend via `FINETUNED_SERVICE_URL` (typically an SSH
-tunnel to `localhost:9001`). Admin quick start:
+Do not change these casually; automation intentionally leaves hyperparameters alone.
+
+---
+
+## Status / logs
 
 ```bash
-# On Tillicum
-./training/start_finetuned_service.sh
-
-# On aiswe.uwb.edu (use the NODE printed above)
-./scripts/start_finetuned_tunnel.sh <NODE>
+./training/status_qlora_training.sh
+squeue -u $USER
+ls -lt training/logs/
+sacct -j JOB_ID --format=JobID,State,Elapsed,AllocTRES,Start,End
 ```
 
-See `training/inference_service/README.md` for architecture, stop/status helpers,
-and curl examples against `/health` and `/generate`.
+Runtime / metrics files live under the job `TRAINING_OUTPUT_DIR`
+(`runtime-report.json`, `evaluation_metrics.json`, etc.).
+
+---
+
+## Local helper tests (no GPU)
+
+```bash
+python3 -m unittest \
+  training.test_qlora_training_helpers \
+  training.test_train_qlora_helpers \
+  training.test_compare_inference_helpers \
+  -v
+```
+
+---
+
+## Legacy data docs (not used by current QLoRA training)
+
+The older root-level pipeline in `docs/export-dataset.md`,
+`docs/prepare-dataset.md`, and `docs/split-dataset.md`
+(`scripts/export_seed_dataset.py` → `prepare_seed_dataset.py` →
+`split_training_dataset.py` producing `data/splits/` with a 70/15/15 split)
+is **legacy**. Current QLoRA training uses Firebase **approved** seeds via
+`backend` export + `prepare_training_split` into `data/exports/<courseId>/`.

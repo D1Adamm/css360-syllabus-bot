@@ -1,5 +1,9 @@
 # Seed Dataset Export
 
+> **Legacy / not used by current QLoRA training.**  
+> Prefer approved Firebase export via `backend/scripts/prepare_qlora_dataset.py`
+> (see `training/README.md`).
+
 This document describes the read-only local export script used to combine prototype seed examples and student-created Firebase examples for later review and fine-tuning preparation.
 
 This step **only prepares data**. It does **not** train or fine-tune a model, and it does **not** modify or delete Firebase data.

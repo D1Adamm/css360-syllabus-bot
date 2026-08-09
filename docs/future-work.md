@@ -38,15 +38,15 @@ Collect classroom-created seed examples, apply instructor review, and export a c
 
 ### 6. Fine-tune a small open model with LoRA
 
-Train a LoRA adapter on the reviewed dataset. Track training hyperparameters, dataset version, and model checkpoint.
+**Largely done** for CSS 360 QLoRA on Tillicum (`training/README.md`). Remaining work is operational (dataset refresh, evaluation, explicit adapter promotion).
 
 ### 7. Add fine-tuned inference
 
-Serve the fine-tuned adapter for inference without retrieval context.
+**Done** for the workshop path: Tillicum inference service + UWB SSH tunnel (`training/inference_service/README.md`).
 
 ### 8. Combine fine-tuned inference with retrieved context
 
-Implement the Fine-Tuned + RAG pipeline: retrieve syllabus passages and generate with the fine-tuned model.
+**Done** for the workshop path: Fine-Tuned + RAG uses course retrieval on the UWB backend plus the remote fine-tuned service.
 
 ### 9. Add model and prompt version tracking
 

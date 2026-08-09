@@ -1,5 +1,11 @@
 # Training Dataset Splits
 
+> **Legacy / not used by current QLoRA training.**  
+> The canonical path is Firebase approved seeds →
+> `backend/scripts/prepare_qlora_dataset.py` → `data/exports/<courseId>/` →
+> Tillicum helpers in `training/README.md`. This document describes the older
+> `data/splits/` 70/15/15 pipeline (`scripts/split_training_dataset.py`).
+
 This document describes the deterministic train/validation/test split step for the reviewed fine-tuning dataset.
 
 This step **creates splits only**. It does **not** fine-tune a model.

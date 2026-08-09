@@ -1,5 +1,8 @@
 # Seed Dataset Preparation
 
+> **Legacy / not used by current QLoRA training.**  
+> Prefer `backend/scripts/prepare_qlora_dataset.py` and `training/README.md`.
+
 This document describes the local preparation script that converts the combined export into review-ready and fine-tuning-ready files.
 
 This step **only prepares data**. It does **not** train or fine-tune a model, and it does **not** modify Firebase data.
