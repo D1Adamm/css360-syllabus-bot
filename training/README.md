@@ -192,10 +192,18 @@ Files written:
 - `comparison_results.jsonl`
 - `comparison_summary.json`
 
-## Fine-tuned inference service (GPU, not wired to app yet)
+## Fine-tuned inference service (Tillicum GPU + UWB tunnel)
+
+Wired into the UWB FastAPI backend via `FINETUNED_SERVICE_URL` (typically an SSH
+tunnel to `localhost:9001`). Admin quick start:
 
 ```bash
-sbatch training/inference_service/serve.slurm
+# On Tillicum
+./training/start_finetuned_service.sh
+
+# On aiswe.uwb.edu (use the NODE printed above)
+./scripts/start_finetuned_tunnel.sh <NODE>
 ```
 
-See `training/inference_service/README.md` for curl examples against `/health` and `/generate`.
+See `training/inference_service/README.md` for architecture, stop/status helpers,
+and curl examples against `/health` and `/generate`.

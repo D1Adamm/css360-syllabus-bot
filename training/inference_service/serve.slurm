@@ -1,12 +1,12 @@
 #!/bin/bash
 # Launch the CSS 360 fine-tuned inference service on one Tillicum GPU.
-# Submit from the repository root:
-#   sbatch training/inference_service/serve.slurm
+# Preferred (from repository root on Tillicum):
+#   ./training/start_finetuned_service.sh
 #
-# After the job starts, find the compute node hostname in the log, then:
-#   curl http://NODE:8001/health
-#   curl -X POST http://NODE:8001/generate -H 'Content-Type: application/json' \
-#     -d '{"question":"When and where does CSS 360 meet?"}'
+# Manual submit:
+#   sbatch training/inference_service/serve.slurm
+# Then discover NODE via squeue (not hardcoded), and on aiswe.uwb.edu:
+#   ./scripts/start_finetuned_tunnel.sh NODE
 
 #SBATCH --job-name=css360-ft-infer
 #SBATCH --account=simswe
@@ -57,12 +57,26 @@ date -u
 echo "=== nvidia-smi ==="
 nvidia-smi
 
+QLORA_VENV="/gpfs/projects/simswe/${USER}/venvs/qlora/bin/activate"
 if [[ -f "${REPO_ROOT}/training/.venv/bin/activate" ]]; then
   # shellcheck disable=SC1091
   source "${REPO_ROOT}/training/.venv/bin/activate"
-elif [[ -f "/gpfs/projects/simswe/${USER}/venvs/css360-qlora/bin/activate" ]]; then
+  echo "Using venv: ${REPO_ROOT}/training/.venv"
+elif [[ -f "${QLORA_VENV}" ]]; then
   # shellcheck disable=SC1091
-  source "/gpfs/projects/simswe/${USER}/venvs/css360-qlora/bin/activate"
+  source "${QLORA_VENV}"
+  echo "Using venv: /gpfs/projects/simswe/${USER}/venvs/qlora"
+else
+  echo "No qlora virtual environment found." >&2
+  echo "Checked:" >&2
+  echo "  - ${REPO_ROOT}/training/.venv/bin/activate" >&2
+  echo "  - ${QLORA_VENV}" >&2
+  exit 1
+fi
+
+if ! command -v python >/dev/null 2>&1; then
+  echo "python not found after activating the qlora virtual environment." >&2
+  exit 1
 fi
 
 python -m pip install -q -r training/inference_service/requirements.txt
