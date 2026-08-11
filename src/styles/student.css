@@ -211,6 +211,15 @@
   border-style: dashed;
 }
 
+/* Placeholder chip: same box, no content, no interaction. */
+.ask__chip--skeleton {
+  display: inline-block;
+  height: 1.55rem;
+  border-color: transparent;
+  background-color: var(--canvas-sunken);
+  cursor: default;
+}
+
 @media (max-width: 40rem) {
   .ask__controls {
     flex-direction: column;
