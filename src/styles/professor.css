@@ -502,6 +502,12 @@
 
 /* What the model was built from — facts a professor can act on, nothing
    about where the artifact lives. */
+.model-state__error {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--danger-700);
+}
+
 .model-facts {
   display: flex;
   flex-wrap: wrap;

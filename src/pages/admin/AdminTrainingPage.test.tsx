@@ -1,5 +1,12 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 
@@ -38,6 +45,12 @@ vi.mock('../../lib/api', () => ({
   exportApprovedCourseSeeds: (...args: unknown[]) => exportApprovedCourseSeeds(...args),
   getApprovedExportStatus: (...args: unknown[]) => getApprovedExportStatus(...args),
   prepareTrainingSplit: (...args: unknown[]) => prepareTrainingSplit(...args),
+}));
+
+const fetchCourseModelRequest = vi.fn();
+
+vi.mock('../../lib/courseModelRequestDb', () => ({
+  fetchCourseModelRequest: (...args: unknown[]) => fetchCourseModelRequest(...args),
 }));
 
 const subscribeToCoursesMock = vi.fn();
@@ -101,6 +114,8 @@ describe('AdminTrainingPage', () => {
       courseId: COURSE_ID,
       summary: { trainExamples: 48, validationExamples: 6, totalExamples: 54 },
     });
+
+    fetchCourseModelRequest.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -177,5 +192,70 @@ describe('AdminTrainingPage', () => {
     expect(
       await screen.findByText('Prepared split: 48 train, 6 validation'),
     ).toBeInTheDocument();
+  });
+
+  it('shows an outstanding model request with its course, count, time and status', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'requested',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T10:00:00.000Z',
+      approvedExampleCount: 54,
+    });
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(within(requests).getByText(/CSS 360/)).toBeInTheDocument();
+    expect(within(requests).getByText(new RegExp(COURSE_ID))).toBeInTheDocument();
+    expect(
+      within(requests).getByText(/54 approved examples at request/),
+    ).toBeInTheDocument();
+    expect(within(requests).getByText('requested')).toBeInTheDocument();
+  });
+
+  it('asks each course for its own request', async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(fetchCourseModelRequest).toHaveBeenCalledWith(COURSE_ID);
+    });
+  });
+
+  it('says so when no course has requested a model', async () => {
+    renderPage();
+
+    expect(await screen.findByText('No model requests')).toBeInTheDocument();
+  });
+
+  it('offers no training-launch control alongside a request', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'requested',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T10:00:00.000Z',
+      approvedExampleCount: 54,
+    });
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    // Acting on a request is still manual; nothing here submits a job.
+    expect(within(requests).queryByRole('button')).toBeNull();
+  });
+
+  it('shows an admin the recorded failure detail a professor never sees', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'failed',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T11:00:00.000Z',
+      approvedExampleCount: 54,
+      failureMessage: 'run exited non-zero',
+    });
+
+    renderPage();
+
+    expect(await screen.findByText('run exited non-zero')).toBeInTheDocument();
   });
 });

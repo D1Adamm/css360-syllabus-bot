@@ -31,3 +31,15 @@ export function getCourseModelPath(courseId: string): string {
   assertValidCourseId(courseId);
   return `courses/${courseId}/model`;
 }
+
+/**
+ * A course's outstanding model request.
+ *
+ * Sibling of `model`, never inside it: the registry records artifacts that
+ * exist, and a request is work that has not happened yet. Mixing them would
+ * mean a pending request looked like a model.
+ */
+export function getCourseModelRequestPath(courseId: string): string {
+  assertValidCourseId(courseId);
+  return `courses/${courseId}/modelRequest`;
+}

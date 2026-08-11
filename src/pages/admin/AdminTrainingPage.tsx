@@ -5,8 +5,11 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { formatCourseHeading } from '../../lib/courseLabels';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SectionHeader } from '../../components/ui/SectionHeader';
+import { StatusPill } from '../../components/ui/StatusPill';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
+import { fetchCourseModelRequest } from '../../lib/courseModelRequestDb';
+import type { CourseModelRequest } from '../../types';
 import {
   ApiError,
   exportApprovedCourseSeeds,
@@ -185,6 +188,131 @@ function CourseTrainingRow({ courseId, name }: { courseId: string; name: string 
   );
 }
 
+interface RequestRow {
+  courseId: string;
+  name: string;
+  request: CourseModelRequest;
+}
+
+function requestTone(status: CourseModelRequest['status']) {
+  switch (status) {
+    case 'requested':
+      return 'info' as const;
+    case 'preparing':
+    case 'training':
+      return 'progress' as const;
+    case 'ready':
+      return 'success' as const;
+    case 'failed':
+      return 'danger' as const;
+    default:
+      return 'neutral' as const;
+  }
+}
+
+/**
+ * Model requests professors have submitted.
+ *
+ * Read-only. There is no launch control here because there is no job-submission
+ * endpoint — a request is a queue entry someone acts on outside the
+ * application. Terminal requests are filtered out: what an operator needs is
+ * the work still outstanding.
+ */
+function OutstandingRequests() {
+  const { state: courses } = useCourses();
+  const [rows, setRows] = useState<RequestRow[] | null>(null);
+
+  useEffect(() => {
+    if (courses.status !== 'ready') {
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.all(
+      courses.courses.map(async ({ courseId, metadata }) => {
+        try {
+          const request = await fetchCourseModelRequest(courseId);
+          return request
+            ? {
+                courseId,
+                name: formatCourseHeading(metadata.name, metadata.title),
+                request,
+              }
+            : null;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((result) => {
+      if (!cancelled) {
+        setRows(result.filter((row): row is RequestRow => row !== null));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courses]);
+
+  const outstanding = (rows ?? []).filter(
+    (row) => row.request.status !== 'ready' && row.request.status !== 'failed',
+  );
+  const recent = (rows ?? []).filter(
+    (row) => row.request.status === 'ready' || row.request.status === 'failed',
+  );
+
+  return (
+    <section className="ui-stack ui-stack--snug">
+      <SectionHeader
+        title="Model requests"
+        description="Submitted by professors. Acting on one is still a manual step."
+        divider
+      />
+
+      {rows === null ? (
+        <p className="ui-text-muted" role="status" aria-live="polite">
+          Reading course requests…
+        </p>
+      ) : outstanding.length === 0 && recent.length === 0 ? (
+        <EmptyState
+          title="No model requests"
+          description="A professor with enough approved examples and no model can request one from their course's Model page."
+        />
+      ) : (
+        <ul className="admin-rows" aria-label="Model requests">
+          {[...outstanding, ...recent].map((row) => (
+            <li key={row.courseId} className="admin-row admin-row--stacked">
+              <div className="admin-row__main">
+                <p className="admin-row__label">{row.name}</p>
+                <p className="admin-row__value">
+                  <code>{row.courseId}</code>
+                </p>
+                <p className="ui-text-xs ui-text-muted">
+                  {row.request.approvedExampleCount} approved example
+                  {row.request.approvedExampleCount === 1 ? '' : 's'} at request ·
+                  requested {new Date(row.request.requestedAt).toLocaleString()}
+                  {row.request.updatedAt !== row.request.requestedAt
+                    ? ` · updated ${new Date(row.request.updatedAt).toLocaleString()}`
+                    : ''}
+                </p>
+                {row.request.failureMessage && (
+                  <p className="admin-row__error">{row.request.failureMessage}</p>
+                )}
+              </div>
+              <div className="admin-row__actions">
+                <StatusPill tone={requestTone(row.request.status)}>
+                  {row.request.status}
+                </StatusPill>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function AdminTrainingPage() {
   const { state: courses } = useCourses();
 
@@ -205,6 +333,8 @@ export function AdminTrainingPage() {
         scripts in <code>training/</code>. There is no endpoint for any of it,
         and no dataset versioning, so nothing here pretends otherwise.
       </Callout>
+
+      <OutstandingRequests />
 
       <section className="ui-stack">
         <SectionHeader title="Per-course datasets" divider />

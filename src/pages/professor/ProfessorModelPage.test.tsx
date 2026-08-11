@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -13,6 +13,8 @@ import type { CourseModelRegistry } from '../../types';
  */
 
 const subscribeToCourseModel = vi.fn();
+const subscribeToCourseModelRequest = vi.fn();
+const createCourseModelRequest = vi.fn();
 const fetchFineTunedHealth = vi.fn();
 
 vi.mock('../../lib/courseModelDb', async () => {
@@ -29,6 +31,19 @@ vi.mock('../../lib/courseModelDb', async () => {
 vi.mock('../../lib/adminApi', () => ({
   fetchFineTunedHealth: (...args: unknown[]) => fetchFineTunedHealth(...args),
 }));
+
+vi.mock('../../lib/courseModelRequestDb', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../lib/courseModelRequestDb')
+  >('../../lib/courseModelRequestDb');
+  return {
+    ...actual,
+    subscribeToCourseModelRequest: (...args: unknown[]) =>
+      subscribeToCourseModelRequest(...args),
+    createCourseModelRequest: (...args: unknown[]) =>
+      createCourseModelRequest(...args),
+  };
+});
 
 vi.mock('../../hooks/useCourseMetadata', () => ({
   useCourseMetadata: () => ({
@@ -50,7 +65,18 @@ vi.mock('../../context/CourseContext', () => ({
   useCourseId: () => courseId,
 }));
 
+import type { CourseModelRequest } from '../../types';
 import { ProfessorModelPage } from './ProfessorModelPage';
+
+/** Emits a request for `forCourse` only; any other course sees none. */
+function mockRequest(request: CourseModelRequest | null, forCourse?: string) {
+  subscribeToCourseModelRequest.mockImplementation(
+    (id: string, onData: (value: CourseModelRequest | null) => void) => {
+      onData(!forCourse || id === forCourse ? request : null);
+      return () => undefined;
+    },
+  );
+}
 
 const CSS360_REGISTRY: CourseModelRegistry = {
   currentVersion: 'v1',
@@ -89,6 +115,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   courseId = 'css-360-winter-2026-a7rp';
   fetchFineTunedHealth.mockRejectedValue(new Error('service down'));
+  mockRequest(null);
+  createCourseModelRequest.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -159,5 +187,137 @@ describe('ProfessorModelPage', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('Model status unavailable');
     expect(screen.queryByText(/No course model yet/i)).not.toBeInTheDocument();
+  });
+
+  it('offers no first-model request for a course that already has one', () => {
+    // CSS 360 has v1. Offering "Request course model" here would be nonsense.
+    mockRegistry(CSS360_REGISTRY);
+    renderPage();
+
+    expect(
+      screen.queryByRole('button', { name: /Request course model/i }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('ProfessorModelPage requests', () => {
+  it('offers a request when there is no model and enough approved examples', () => {
+    mockRegistry(null);
+    renderPage();
+
+    expect(
+      screen.getByRole('button', { name: /Request course model/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('persists the request with the approved count', async () => {
+    mockRegistry(null);
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Request course model/i }));
+
+    await waitFor(() => {
+      expect(createCourseModelRequest).toHaveBeenCalledWith(
+        'css-360-winter-2026-a7rp',
+        54,
+      );
+    });
+  });
+
+  it('shows the request status instead of the button once one exists', () => {
+    mockRegistry(null);
+    mockRequest({
+      courseId: 'css-360-winter-2026-a7rp',
+      status: 'requested',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T10:00:00.000Z',
+      approvedExampleCount: 54,
+    });
+    renderPage();
+
+    expect(
+      screen.getByText(/Your course model has been requested/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Request course model/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('describes preparing and training the same way to a professor', () => {
+    for (const status of ['preparing', 'training'] as const) {
+      mockRegistry(null);
+      mockRequest({
+        courseId: 'css-360-winter-2026-a7rp',
+        status,
+        requestedAt: '2026-08-11T10:00:00.000Z',
+        updatedAt: '2026-08-11T10:00:00.000Z',
+        approvedExampleCount: 54,
+      });
+      renderPage();
+
+      expect(
+        screen.getByText(/Your course model is being prepared/i),
+      ).toBeInTheDocument();
+      cleanup();
+    }
+  });
+
+  it('never shows a recorded failure message to a professor', () => {
+    mockRegistry(null);
+    mockRequest({
+      courseId: 'css-360-winter-2026-a7rp',
+      status: 'failed',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T11:00:00.000Z',
+      approvedExampleCount: 54,
+      failureMessage: 'sbatch job 91231 failed on gpu node n2145',
+    });
+    renderPage();
+
+    const text = document.body.textContent ?? '';
+    expect(text).not.toContain('sbatch');
+    expect(text).not.toContain('n2145');
+    expect(screen.getByText(/didn't complete/i)).toBeInTheDocument();
+  });
+
+  it('keeps requests isolated per course', () => {
+    courseId = 'css-490-spring-2026-cgvl';
+    mockRegistry(null);
+    mockRequest(
+      {
+        courseId: 'css-360-winter-2026-a7rp',
+        status: 'training',
+        requestedAt: '2026-08-11T10:00:00.000Z',
+        updatedAt: '2026-08-11T10:00:00.000Z',
+        approvedExampleCount: 54,
+      },
+      'css-360-winter-2026-a7rp',
+    );
+    renderPage();
+
+    // Another course's in-flight request must not appear here.
+    expect(screen.queryByText(/being prepared/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Request course model/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('exposes no infrastructure vocabulary in any request state', () => {
+    for (const status of ['requested', 'preparing', 'training', 'failed'] as const) {
+      mockRegistry(null);
+      mockRequest({
+        courseId: 'css-360-winter-2026-a7rp',
+        status,
+        requestedAt: '2026-08-11T10:00:00.000Z',
+        updatedAt: '2026-08-11T10:00:00.000Z',
+        approvedExampleCount: 54,
+      });
+      renderPage();
+
+      expect(document.body.textContent ?? '').not.toMatch(
+        /tillicum|slurm|sbatch|ssh|duo|gpu|node|adapter|qlora|hugging ?face|token|http|\.edu/i,
+      );
+      cleanup();
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { LinkButton } from '../../components/ui/Button';
+import { Button, LinkButton } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { Illustration } from '../../components/illustration/Illustration';
@@ -8,10 +8,12 @@ import { useCourseId } from '../../context/CourseContext';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourseMetadata } from '../../hooks/useCourseMetadata';
 import { useCourseModel } from '../../hooks/useCourseModel';
+import { useCourseModelRequest } from '../../hooks/useCourseModelRequest';
 import { formatCourseCode } from '../../lib/courseLabels';
 import { getCurrentVersion } from '../../lib/courseModelDb';
 import {
   describeCourseModel,
+  describeModelRequest,
   getModelReadiness,
   RECOMMENDED_APPROVED_EXAMPLES,
 } from '../../lib/modelStatus';
@@ -29,14 +31,23 @@ import { professorCoursePath } from '../../lib/roleRoutes';
  * service and cannot say which course's adapter is loaded. Existence comes
  * only from this course's registry record.
  *
- * Still absent: requesting training from the UI. There is no request record and
- * no job submission endpoint, so no button pretends to start one.
+ * A professor whose course has no model, and enough approved examples, can
+ * request one. That writes a durable record at `courses/{courseId}/modelRequest`
+ * — separate from the registry, because a request is work asked for and the
+ * registry is artifacts that exist. Nothing here starts a training run; the
+ * request is a queue entry an administrator picks up.
  */
 export function ProfessorModelPage() {
   const courseId = useCourseId();
   const { metadata } = useCourseMetadata(courseId);
   const countsState = useCourseExampleCounts(courseId);
   const { state: modelState, retry } = useCourseModel(courseId);
+  const {
+    state: requestState,
+    submitting,
+    submitError,
+    submit,
+  } = useCourseModelRequest(courseId);
 
   const counts = countsState.status === 'ready' ? countsState.counts : null;
   const readiness = getModelReadiness(counts?.approved ?? 0);
@@ -50,6 +61,32 @@ export function ProfessorModelPage() {
   });
 
   const hasModel = presentation.presence === 'ready';
+
+  const request = requestState.status === 'ready' ? requestState.request : null;
+  // A terminal request tells the professor nothing they cannot see from the
+  // model itself, so only outstanding work is surfaced.
+  const activeRequest =
+    request && request.status !== 'ready' && request.status !== 'failed'
+      ? request
+      : null;
+  const failedRequest = request?.status === 'failed' ? request : null;
+
+  /*
+   * The Request button appears only when all four are true:
+   *   - the registry has been read and this course has no model
+   *   - enough approved examples to be worth training on
+   *   - no request is already outstanding
+   *   - the request record itself was readable
+   *
+   * CSS 360 fails the first, so its page keeps the Ready/Offline treatment and
+   * never offers a first-model request. Retraining is a separate feature.
+   */
+  const canRequest =
+    modelState.status !== 'loading' &&
+    modelState.status !== 'unavailable' &&
+    presentation.presence === 'none' &&
+    readiness.hasEnough &&
+    requestState.status === 'none';
 
   return (
     <div className="ui-stack ui-stack--section">
@@ -76,8 +113,10 @@ export function ProfessorModelPage() {
           <Illustration name="model-ready" size="lg" />
 
           <div className="model-state__body">
-            <StatusPill tone={presentation.tone}>
-              {presentation.presence === 'ready'
+            <StatusPill tone={activeRequest ? describeModelRequest(activeRequest).tone : presentation.tone}>
+              {activeRequest
+                ? describeModelRequest(activeRequest).label
+                : presentation.presence === 'ready'
                 ? presentation.availability === 'online'
                   ? 'Ready · in use'
                   : presentation.availability === 'offline'
@@ -92,8 +131,22 @@ export function ProfessorModelPage() {
                       : 'Unknown'}
             </StatusPill>
 
-            <h2 className="model-state__title">{presentation.title}</h2>
-            <p className="model-state__text">{presentation.detail}</p>
+            <h2 className="model-state__title">
+              {activeRequest ? describeModelRequest(activeRequest).title : presentation.title}
+            </h2>
+            <p className="model-state__text">
+              {activeRequest
+                ? describeModelRequest(activeRequest).detail
+                : presentation.detail}
+            </p>
+
+            {activeRequest && (
+              <p className="ui-text-xs ui-text-muted">
+                Requested {new Date(activeRequest.requestedAt).toLocaleDateString()} ·{' '}
+                {activeRequest.approvedExampleCount} approved example
+                {activeRequest.approvedExampleCount === 1 ? '' : 's'} at the time
+              </p>
+            )}
 
             {/* What the model was built from. No artifact reference, no base
                 model id, no service address — none of it changes what a
@@ -118,7 +171,7 @@ export function ProfessorModelPage() {
               </dl>
             )}
 
-            {!hasModel && (
+            {!hasModel && !activeRequest && (
               <p className="model-state__text">
                 {countsState.status === 'loading'
                   ? 'Counting your approved examples…'
@@ -131,14 +184,31 @@ export function ProfessorModelPage() {
             )}
 
             <div className="model-state__actions">
+              {canRequest && (
+                <Button
+                  variant="primary"
+                  iconLeft="model"
+                  loading={submitting}
+                  loadingLabel="Sending…"
+                  onClick={() => void submit(counts?.approved ?? 0)}
+                >
+                  Request course model
+                </Button>
+              )}
               <LinkButton
                 to={professorCoursePath(courseId, 'examples')}
-                variant={hasModel ? 'secondary' : 'primary'}
+                variant={hasModel || canRequest ? 'secondary' : 'primary'}
                 iconRight="forward"
               >
                 Review examples
               </LinkButton>
             </div>
+
+            {submitError && (
+              <p className="model-state__error" role="alert">
+                {submitError}
+              </p>
+            )}
           </div>
         </section>
       )}
@@ -152,11 +222,19 @@ export function ProfessorModelPage() {
         </Callout>
       )}
 
-      {presentation.presence === 'none' && (
-        <Callout tone="info" title="Requesting a model isn't built yet">
-          Training is started by the project administrator for now. Your approved
-          examples are saved and will be used when it runs — keep reviewing, and
-          the set will be waiting.
+      {presentation.presence === 'none' && !activeRequest && !readiness.hasEnough && (
+        <Callout tone="info" title="Keep reviewing">
+          A course model is worth training once around{' '}
+          {RECOMMENDED_APPROVED_EXAMPLES} examples are approved. Everything you
+          approve is saved and will be used when you request one.
+        </Callout>
+      )}
+
+      {failedRequest && (
+        <Callout tone="warning" title="Your last request didn't complete">
+          The project administrator has the details and will follow up. Your
+          approved examples are safe, and you can request again once they have
+          looked at it.
         </Callout>
       )}
     </div>

@@ -1,4 +1,4 @@
-import type { CourseModelVersion } from '../types';
+import type { CourseModelRequest, CourseModelVersion } from '../types';
 
 /**
  * How a course's model is described to people.
@@ -177,4 +177,70 @@ export function getModelReadiness(approved: number): ModelReadiness {
     hasEnough: approved >= RECOMMENDED_APPROVED_EXAMPLES,
     remaining: Math.max(0, RECOMMENDED_APPROVED_EXAMPLES - approved),
   };
+}
+
+/* ------------------------------------------------------------------------ *
+ * Request status, in plain language
+ * ------------------------------------------------------------------------ */
+
+export interface RequestPresentation {
+  title: string;
+  detail: string;
+  /** Short pill label. */
+  label: string;
+  tone: 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'progress' | 'accent';
+}
+
+/**
+ * What a professor reads about their outstanding request.
+ *
+ * `preparing` and `training` are distinct states to whoever runs the work, but
+ * both mean the same thing to a professor: it is under way and there is nothing
+ * for them to do. They get one honest sentence rather than a pipeline stage.
+ *
+ * A failure message, if one was recorded, is deliberately not shown — it is
+ * written for whoever debugs the run and will mention infrastructure.
+ */
+export function describeModelRequest(request: CourseModelRequest): RequestPresentation {
+  switch (request.status) {
+    case 'requested':
+      return {
+        label: 'Requested',
+        title: 'Your course model has been requested',
+        detail:
+          'The project administrator has been notified. Preparing a model takes a while — you can keep reviewing examples in the meantime.',
+        tone: 'info',
+      };
+    case 'preparing':
+    case 'training':
+      return {
+        label: 'Preparing',
+        title: 'Your course model is being prepared',
+        detail:
+          'This runs on shared research hardware and can take a while. Nothing is needed from you.',
+        tone: 'progress',
+      };
+    case 'ready':
+      return {
+        label: 'Ready',
+        title: 'Your course model is ready',
+        detail: 'It was built from the examples you approved.',
+        tone: 'accent',
+      };
+    case 'failed':
+      return {
+        label: 'Needs attention',
+        title: "Your course model couldn't be prepared",
+        detail:
+          'The project administrator has the details and will follow up. Your approved examples are safe.',
+        tone: 'danger',
+      };
+    default:
+      return {
+        label: 'Unknown',
+        title: 'Request status unknown',
+        detail: 'We could not determine the state of this request.',
+        tone: 'neutral',
+      };
+  }
 }

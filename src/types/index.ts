@@ -192,3 +192,35 @@ export interface CourseModelRegistry {
   currentVersion: string;
   versions: Record<string, CourseModelVersion>;
 }
+
+/* ------------------------------------------------------------------------ *
+ * Course model requests
+ *
+ * Stored at `courses/{courseId}/modelRequest`, deliberately outside the model
+ * registry. The registry describes artifacts that exist; a request describes
+ * work that has been asked for and has not produced one yet. A course can have
+ * a request and no model, a model and no request, or both.
+ * ------------------------------------------------------------------------ */
+
+export type CourseModelRequestStatus =
+  /** Submitted by a professor; nobody has picked it up. */
+  | 'requested'
+  /** Being set up — dataset export, split, queueing. */
+  | 'preparing'
+  /** A training run is under way. */
+  | 'training'
+  /** Finished; a model was registered. Terminal. */
+  | 'ready'
+  /** Did not produce a usable model. Terminal. */
+  | 'failed';
+
+export interface CourseModelRequest {
+  courseId: string;
+  status: CourseModelRequestStatus;
+  requestedAt: string;
+  updatedAt: string;
+  /** Approved examples at the moment of the request, for later comparison. */
+  approvedExampleCount: number;
+  /** Set only when `status` is `failed`. Never shown to a professor verbatim. */
+  failureMessage?: string;
+}
