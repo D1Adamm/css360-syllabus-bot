@@ -1,5 +1,16 @@
-import { get, onValue, ref, runTransaction, type Unsubscribe } from 'firebase/database';
-import type { CourseModelRequest, CourseModelRequestStatus } from '../types';
+import {
+  get,
+  onValue,
+  ref,
+  runTransaction,
+  update,
+  type Unsubscribe,
+} from 'firebase/database';
+import type {
+  CourseModelRequest,
+  CourseModelRequestPreparation,
+  CourseModelRequestStatus,
+} from '../types';
 import { assertValidCourseId } from './courseId';
 import { getCourseModelRequestPath } from './coursePaths';
 import { database } from './firebase';
@@ -64,6 +75,7 @@ export function parseCourseModelRequest(value: unknown): CourseModelRequest | nu
   }
 
   const count = Number(record.approvedExampleCount);
+  const preparation = parsePreparation(record.preparation);
 
   return {
     courseId: record.courseId,
@@ -74,6 +86,42 @@ export function parseCourseModelRequest(value: unknown): CourseModelRequest | nu
     approvedExampleCount: Number.isFinite(count) && count >= 0 ? count : 0,
     ...(typeof record.failureMessage === 'string'
       ? { failureMessage: record.failureMessage }
+      : {}),
+    ...(preparation ? { preparation } : {}),
+    ...(typeof record.preparationError === 'string'
+      ? { preparationError: record.preparationError }
+      : {}),
+  };
+}
+
+function parsePreparation(value: unknown): CourseModelRequestPreparation | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (
+    typeof record.preparedAt !== 'string' ||
+    typeof record.datasetRef !== 'string' ||
+    record.datasetRef.trim() === ''
+  ) {
+    return null;
+  }
+
+  const asCount = (raw: unknown) => {
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : 0;
+  };
+
+  return {
+    preparedAt: record.preparedAt,
+    sourceApprovedExampleCount: asCount(record.sourceApprovedExampleCount),
+    datasetRef: record.datasetRef,
+    trainExamples: asCount(record.trainExamples),
+    validationExamples: asCount(record.validationExamples),
+    ...(Number.isFinite(Number(record.splitSeed))
+      ? { splitSeed: Number(record.splitSeed) }
       : {}),
   };
 }
@@ -155,4 +203,22 @@ export async function createCourseModelRequest(
   }
 
   return request;
+}
+
+/**
+ * Patches a course's request in place.
+ *
+ * A merge rather than a write: preparation records extra fields onto a request
+ * that already exists, and must not clobber `requestedAt` or the professor's
+ * original approved count.
+ */
+export async function updateCourseModelRequest(
+  courseId: string,
+  patch: Partial<CourseModelRequest>,
+): Promise<void> {
+  assertValidCourseId(courseId);
+  await update(getCourseModelRequestRef(courseId), {
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  });
 }

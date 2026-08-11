@@ -320,4 +320,56 @@ describe('ProfessorModelPage requests', () => {
       cleanup();
     }
   });
+
+  it('offers no preparation control to a professor', () => {
+    mockRegistry(null);
+    mockRequest({
+      courseId: 'css-360-winter-2026-a7rp',
+      status: 'preparing',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T12:00:00.000Z',
+      approvedExampleCount: 54,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 54,
+        datasetRef: 'exports/css-360-winter-2026-a7rp',
+        trainExamples: 48,
+        validationExamples: 6,
+        splitSeed: 360,
+      },
+    });
+    renderPage();
+
+    // Preparing training data is an administrator action.
+    expect(
+      screen.queryByRole('button', { name: /Prepare training data/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows no dataset internals from a prepared request', () => {
+    mockRegistry(null);
+    mockRequest({
+      courseId: 'css-360-winter-2026-a7rp',
+      status: 'preparing',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T12:00:00.000Z',
+      approvedExampleCount: 54,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 54,
+        datasetRef: 'exports/css-360-winter-2026-a7rp',
+        trainExamples: 48,
+        validationExamples: 6,
+        splitSeed: 360,
+      },
+      preparationError: 'sbatch rejected the job on gpu node n2145',
+    });
+    renderPage();
+
+    const text = document.body.textContent ?? '';
+    expect(text).not.toMatch(/exports\/|train\b.*validation|split seed|jsonl/i);
+    expect(text).not.toMatch(/sbatch|n2145|gpu/i);
+    // The professor sees only that it is under way.
+    expect(screen.getByText(/being prepared/i)).toBeInTheDocument();
+  });
 });

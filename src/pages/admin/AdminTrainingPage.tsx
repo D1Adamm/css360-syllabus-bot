@@ -9,6 +9,10 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
 import { fetchCourseModelRequest } from '../../lib/courseModelRequestDb';
+import {
+  InsufficientApprovedExamplesError,
+  prepareTrainingDataForRequest,
+} from '../../lib/prepareTrainingData';
 import type { CourseModelRequest } from '../../types';
 import {
   ApiError,
@@ -221,6 +225,9 @@ function requestTone(status: CourseModelRequest['status']) {
 function OutstandingRequests() {
   const { state: courses } = useCourses();
   const [rows, setRows] = useState<RequestRow[] | null>(null);
+  const [preparing, setPreparing] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Record<string, string>>({});
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (courses.status !== 'ready') {
@@ -253,7 +260,41 @@ function OutstandingRequests() {
     return () => {
       cancelled = true;
     };
-  }, [courses]);
+  }, [courses, reload]);
+
+  /*
+   * Runs the existing export + split endpoints for one course and records the
+   * result on that course's request. Nothing is submitted or trained.
+   */
+  async function prepare(courseId: string) {
+    setPreparing(courseId);
+    setMessages((current) => ({ ...current, [courseId]: '' }));
+
+    try {
+      const { preparation } = await prepareTrainingDataForRequest(courseId);
+      setMessages((current) => ({
+        ...current,
+        [courseId]:
+          `Prepared ${preparation.trainExamples} train / ` +
+          `${preparation.validationExamples} validation from ` +
+          `${preparation.sourceApprovedExampleCount} approved.`,
+      }));
+    } catch (error) {
+      setMessages((current) => ({
+        ...current,
+        [courseId]:
+          error instanceof InsufficientApprovedExamplesError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : 'Preparation failed.',
+      }));
+    } finally {
+      setPreparing(null);
+      // Pick up the request's new status and metadata.
+      setReload((current) => current + 1);
+    }
+  }
 
   const outstanding = (rows ?? []).filter(
     (row) => row.request.status !== 'ready' && row.request.status !== 'failed',
@@ -296,14 +337,57 @@ function OutstandingRequests() {
                     ? ` · updated ${new Date(row.request.updatedAt).toLocaleString()}`
                     : ''}
                 </p>
+                <p className="ui-text-xs ui-text-muted">
+                  Training data:{' '}
+                  {row.request.preparation ? (
+                    <>
+                      <strong>prepared</strong> ·{' '}
+                      {row.request.preparation.trainExamples} train /{' '}
+                      {row.request.preparation.validationExamples} validation ·{' '}
+                      from {row.request.preparation.sourceApprovedExampleCount}{' '}
+                      approved ·{' '}
+                      <code>{row.request.preparation.datasetRef}</code> ·{' '}
+                      {new Date(row.request.preparation.preparedAt).toLocaleString()}
+                    </>
+                  ) : (
+                    'not prepared'
+                  )}
+                </p>
+                {row.request.preparationError && (
+                  <p className="admin-row__error">
+                    Last attempt: {row.request.preparationError}
+                  </p>
+                )}
                 {row.request.failureMessage && (
                   <p className="admin-row__error">{row.request.failureMessage}</p>
+                )}
+                {messages[row.courseId] && (
+                  <p className="ui-text-xs ui-text-muted" role="status">
+                    {messages[row.courseId]}
+                  </p>
                 )}
               </div>
               <div className="admin-row__actions">
                 <StatusPill tone={requestTone(row.request.status)}>
                   {row.request.status}
                 </StatusPill>
+                {/* Only an outstanding, non-terminal request can be prepared.
+                    Re-preparing after a change to the approved set is allowed —
+                    the export and split are both idempotent overwrites. */}
+                {row.request.status !== 'ready' && row.request.status !== 'failed' && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void prepare(row.courseId)}
+                    loading={preparing === row.courseId}
+                    loadingLabel="Preparing…"
+                    disabled={preparing !== null}
+                  >
+                    {row.request.preparation
+                      ? 'Re-prepare training data'
+                      : 'Prepare training data'}
+                  </Button>
+                )}
               </div>
             </li>
           ))}

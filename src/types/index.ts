@@ -223,4 +223,30 @@ export interface CourseModelRequest {
   approvedExampleCount: number;
   /** Set only when `status` is `failed`. Never shown to a professor verbatim. */
   failureMessage?: string;
+  /**
+   * Training-data preparation, recorded once an administrator has run it.
+   *
+   * Metadata only — the dataset itself lives on the backend under
+   * `data/exports/{courseId}/`. `datasetRef` is deliberately relative: absolute
+   * paths embed a machine layout and must not reach anything a professor can
+   * read.
+   */
+  preparation?: CourseModelRequestPreparation;
+  /**
+   * Why the last preparation attempt failed. Admin-only, and cleared on the
+   * next success. The request stays `requested` so it can simply be retried.
+   */
+  preparationError?: string;
+}
+
+export interface CourseModelRequestPreparation {
+  preparedAt: string;
+  /** Approved examples actually exported, re-counted at preparation time. */
+  sourceApprovedExampleCount: number;
+  /** Relative, course-scoped, e.g. `exports/css-490-spring-2026-cgvl`. */
+  datasetRef: string;
+  trainExamples: number;
+  validationExamples: number;
+  /** Recorded so a split can be reproduced exactly. */
+  splitSeed?: number;
 }

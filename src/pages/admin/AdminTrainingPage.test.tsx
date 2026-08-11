@@ -48,10 +48,22 @@ vi.mock('../../lib/api', () => ({
 }));
 
 const fetchCourseModelRequest = vi.fn();
+const prepareTrainingDataForRequest = vi.fn();
 
 vi.mock('../../lib/courseModelRequestDb', () => ({
   fetchCourseModelRequest: (...args: unknown[]) => fetchCourseModelRequest(...args),
 }));
+
+vi.mock('../../lib/prepareTrainingData', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/prepareTrainingData')>(
+    '../../lib/prepareTrainingData',
+  );
+  return {
+    ...actual,
+    prepareTrainingDataForRequest: (...args: unknown[]) =>
+      prepareTrainingDataForRequest(...args),
+  };
+});
 
 const subscribeToCoursesMock = vi.fn();
 
@@ -59,6 +71,7 @@ vi.mock('../../lib/coursesDb', () => ({
   subscribeToCourses: (...args: unknown[]) => subscribeToCoursesMock(...args),
 }));
 
+import { InsufficientApprovedExamplesError } from '../../lib/prepareTrainingData';
 import { AdminTrainingPage } from './AdminTrainingPage';
 
 const COURSE_ID = 'css-360-winter-2026-a7rp';
@@ -116,6 +129,16 @@ describe('AdminTrainingPage', () => {
     });
 
     fetchCourseModelRequest.mockResolvedValue(null);
+    prepareTrainingDataForRequest.mockResolvedValue({
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 42,
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 38,
+        validationExamples: 4,
+        splitSeed: 360,
+      },
+    });
   });
 
   afterEach(() => {
@@ -228,7 +251,7 @@ describe('AdminTrainingPage', () => {
     expect(await screen.findByText('No model requests')).toBeInTheDocument();
   });
 
-  it('offers no training-launch control alongside a request', async () => {
+  it('offers no job-submission control alongside a request', async () => {
     fetchCourseModelRequest.mockResolvedValue({
       courseId: COURSE_ID,
       status: 'requested',
@@ -240,8 +263,15 @@ describe('AdminTrainingPage', () => {
     renderPage();
 
     const requests = await screen.findByRole('list', { name: 'Model requests' });
-    // Acting on a request is still manual; nothing here submits a job.
-    expect(within(requests).queryByRole('button')).toBeNull();
+    // Preparing data is offered; submitting a training job is not.
+    expect(
+      within(requests).getByRole('button', { name: /Prepare training data/i }),
+    ).toBeInTheDocument();
+    for (const button of within(requests).getAllByRole('button')) {
+      expect(button.textContent ?? '').not.toMatch(
+        /start|submit|launch|run training|train now/i,
+      );
+    }
   });
 
   it('shows an admin the recorded failure detail a professor never sees', async () => {
@@ -257,5 +287,95 @@ describe('AdminTrainingPage', () => {
     renderPage();
 
     expect(await screen.findByText('run exited non-zero')).toBeInTheDocument();
+  });
+
+  it('prepares training data for that exact course', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'requested',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T10:00:00.000Z',
+      approvedExampleCount: 42,
+    });
+
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Prepare training data/i }),
+    );
+
+    await waitFor(() => {
+      expect(prepareTrainingDataForRequest).toHaveBeenCalledWith(COURSE_ID);
+    });
+    expect(
+      await screen.findByText(/Prepared 38 train \/ 4 validation from 42 approved/),
+    ).toBeInTheDocument();
+  });
+
+  it('shows whether training data has been prepared', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'preparing',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T12:00:00.000Z',
+      approvedExampleCount: 42,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 42,
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 38,
+        validationExamples: 4,
+        splitSeed: 360,
+      },
+    });
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(within(requests).getByText(/prepared/)).toBeInTheDocument();
+    expect(within(requests).getByText(/38 train \/ 4 validation/)).toBeInTheDocument();
+    expect(within(requests).getByText(`exports/${COURSE_ID}`)).toBeInTheDocument();
+    // Re-preparing is allowed once data exists.
+    expect(
+      within(requests).getByRole('button', { name: /Re-prepare training data/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('surfaces a refusal when the course no longer has enough approved examples', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'requested',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T10:00:00.000Z',
+      approvedExampleCount: 42,
+    });
+    prepareTrainingDataForRequest.mockRejectedValue(
+      new InsufficientApprovedExamplesError(12, 30),
+    );
+
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Prepare training data/i }),
+    );
+
+    expect(await screen.findByText(/12 approved examples/)).toBeInTheDocument();
+  });
+
+  it('shows the admin why the last attempt failed', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'requested',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T11:00:00.000Z',
+      approvedExampleCount: 42,
+      preparationError: 'no approved export found',
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/Last attempt: no approved export found/),
+    ).toBeInTheDocument();
   });
 });
