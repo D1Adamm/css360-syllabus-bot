@@ -1,24 +1,24 @@
-import { Link } from 'react-router-dom';
-import { PageHeader } from './PageHeader';
+import { EmptyState } from './ui/EmptyState';
+import { LinkButton } from './ui/Button';
 
-interface InvalidCoursePageProps {
-  courseId?: string;
-}
-
-export function InvalidCoursePage({ courseId }: InvalidCoursePageProps) {
-  const displayId = courseId && courseId.trim() !== '' ? courseId : '(missing)';
-
+/**
+ * Shown when a course URL contains an id this application cannot use.
+ *
+ * The id format is an internal detail, so it is no longer explained here — a
+ * bad link is not something the reader can fix by learning our naming rules.
+ */
+export function InvalidCoursePage() {
   return (
-    <section aria-labelledby="invalid-course-title">
-      <PageHeader
-        title="Invalid Course"
-        description={`The course id "${displayId}" is not valid. Course ids must use lowercase letters, numbers, and hyphens only, and cannot begin or end with a hyphen.`}
-      />
-      <p>
-        <Link to="/" className="button-link button-link--primary">
-          Back to Courses
-        </Link>
-      </p>
-    </section>
+    <EmptyState
+      size="full"
+      illustration="empty-course"
+      title="We couldn't find that course"
+      description="The link you followed doesn't point to a course in Syllabus Model Lab. It may have been mistyped or the course may have been removed."
+      action={
+        <LinkButton to="/" variant="primary">
+          Go to your courses
+        </LinkButton>
+      }
+    />
   );
 }

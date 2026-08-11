@@ -1,16 +1,16 @@
+import { approachLabel } from '../components/compare/approaches';
 import type { ComparisonRecord, EvaluationRecord, ModelKey } from '../types';
 
 export const MODEL_KEYS: ModelKey[] = ['base', 'rag', 'fineTuned', 'fineTunedRag'];
 
-const MODEL_LABELS: Record<ModelKey, string> = {
-  base: 'Base Model',
-  rag: 'RAG',
-  fineTuned: 'Fine-Tuned Model',
-  fineTunedRag: 'Fine-Tuned + RAG',
-};
-
+/**
+ * Human-readable names for the four approaches.
+ *
+ * Defined once in `components/compare/approaches.ts` and re-exported here so
+ * evaluation and results screens cannot drift from the compare screen.
+ */
 export function getModelLabel(key: ModelKey): string {
-  return MODEL_LABELS[key];
+  return approachLabel(key);
 }
 
 export function isValidModelKey(value: unknown): value is ModelKey {
@@ -162,10 +162,15 @@ export function groupByQuestion(
 
   for (const [comparisonId, questionEvaluations] of grouped) {
     const comparison = comparisonMap.get(comparisonId);
+    // Free-text questions have no predefined record; fall back to the wording
+    // stored with the rating so they still group and read correctly.
+    const storedQuestion = questionEvaluations.find((item) =>
+      Boolean(item.questionText?.trim()),
+    )?.questionText;
     results.push({
       comparisonId,
-      question: comparison?.question ?? comparisonId,
-      category: comparison?.category ?? 'Unknown',
+      question: comparison?.question ?? storedQuestion ?? comparisonId,
+      category: comparison?.category ?? (storedQuestion ? 'Student question' : 'Unknown'),
       evaluationCount: questionEvaluations.length,
       mostPreferred: formatTopModels(countByField(questionEvaluations, 'preferredModel')),
       mostAccurate: formatTopModels(countByField(questionEvaluations, 'mostAccurate')),
@@ -198,7 +203,10 @@ export function extractRecentComments(
     .slice(0, limit)
     .map((evaluation) => ({
       id: evaluation.id,
-      question: comparisonMap.get(evaluation.comparisonId)?.question ?? evaluation.comparisonId,
+      question:
+        comparisonMap.get(evaluation.comparisonId)?.question ??
+        evaluation.questionText ??
+        evaluation.comparisonId,
       preferredModel: getModelLabel(evaluation.preferredModel),
       comment: evaluation.comment ?? '',
       createdAt: evaluation.createdAt,
@@ -223,7 +231,10 @@ export function getRecentEvaluations(
     .slice(0, limit)
     .map((evaluation) => ({
       id: evaluation.id,
-      question: comparisonMap.get(evaluation.comparisonId)?.question ?? evaluation.comparisonId,
+      question:
+        comparisonMap.get(evaluation.comparisonId)?.question ??
+        evaluation.questionText ??
+        evaluation.comparisonId,
       preferredModel: getModelLabel(evaluation.preferredModel),
       mostAccurate: getModelLabel(evaluation.mostAccurate),
       createdAt: evaluation.createdAt,

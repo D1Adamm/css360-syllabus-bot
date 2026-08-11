@@ -1,0 +1,175 @@
+/*
+ * Admin surfaces.
+ *
+ * Denser than the rest of the application on purpose — this is an operations
+ * console, and the reader is looking for a specific value rather than reading
+ * prose. Still uses the same tokens, so it does not feel like a different app.
+ */
+
+.admin-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-10);
+  margin: 0;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line-200);
+}
+
+.admin-stat dt {
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+}
+
+.admin-stat dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-900);
+}
+
+.admin-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  gap: var(--space-4);
+  align-items: end;
+}
+
+.admin-example__labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.admin-example__question {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--ink-900);
+}
+
+.admin-example__answer {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+  line-height: var(--leading-normal);
+}
+
+.admin-example__meta {
+  margin: var(--space-3) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.admin-example__meta dt {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
+.admin-example__meta dd {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-700);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------- Diagnostics output ---------------- */
+
+.admin-probe {
+  margin-top: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.admin-probe summary {
+  cursor: pointer;
+  color: var(--purple-700);
+}
+
+.admin-chunks {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--ink-500);
+}
+
+.admin-chunks code {
+  font-family: var(--font-mono);
+  color: var(--ink-700);
+}
+
+/* Raw report output. Scrolls inside itself so the page never scrolls sideways —
+   an `overflow` on an ancestor would break the sticky header and the sticky
+   syllabus contents list. */
+.admin-json {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  max-height: 22rem;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background-color: var(--canvas-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-normal);
+  color: var(--ink-700);
+}
+
+/* ---------------- Bar chart (shared with professor results) ------------- */
+
+.results-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.results-chart__title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-900);
+}
+
+.results-chart__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.results-chart__label-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  margin-bottom: var(--space-1);
+}
+
+.results-chart__label {
+  color: var(--ink-700);
+}
+
+.results-chart__value {
+  color: var(--ink-500);
+  white-space: nowrap;
+}
+
+.results-chart__track {
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background-color: var(--canvas-sunken);
+  overflow: hidden;
+}
+
+.results-chart__bar {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background-color: var(--purple-600);
+  transition: width var(--dur-base) var(--ease-standard);
+}

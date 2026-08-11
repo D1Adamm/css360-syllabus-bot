@@ -78,7 +78,7 @@ async function requestJson<T>(
 
   if (!baseUrl) {
     throw new ApiError(
-      'API base URL is not configured. Set VITE_API_BASE_URL in your .env file.',
+      'The service is not configured.',
     );
   }
 
@@ -149,7 +149,7 @@ export async function generateBaseModel(
     '/base-model/generate',
     { courseId, question },
     'The backend could not generate a base model response.',
-    'Could not reach the backend. Make sure the FastAPI server is running.',
+    'The service could not be reached.',
   );
 }
 
@@ -161,7 +161,7 @@ export async function generateFineTuned(
     '/fine-tuned/generate',
     { courseId, question },
     'The backend could not generate a fine-tuned model response.',
-    'Could not reach the backend. Make sure the FastAPI server is running and FINETUNED_SERVICE_URL is set.',
+    'The course-trained model service could not be reached.',
   );
 }
 
@@ -174,7 +174,7 @@ export async function generateFineTunedRag(
     '/fine-tuned-rag/generate',
     { courseId, question, topK },
     'The backend could not generate a Fine-Tuned + RAG response.',
-    'Could not reach the backend. Make sure the FastAPI server is running, the course syllabus is indexed, and FINETUNED_SERVICE_URL is set.',
+    'The course-trained model service could not be reached.',
   );
 }
 
@@ -187,7 +187,7 @@ export async function generateRag(
     '/rag/generate',
     { courseId, question, topK },
     'The backend could not generate a RAG response.',
-    'Could not reach the backend. Make sure the FastAPI server is running and Ollama is available.',
+    'The service could not be reached.',
   );
 }
 
@@ -213,7 +213,7 @@ export async function fetchCourseSyllabusText(
   return getJson<SyllabusTextResponse>(
     `/api/courses/${courseId}/syllabus/text`,
     'The backend could not load the syllabus text for this course.',
-    'Could not reach the backend to load the syllabus. Make sure the FastAPI server is running.',
+    'The service could not be reached.',
   );
 }
 
@@ -225,7 +225,7 @@ export async function uploadCourseSyllabus(
 
   if (!baseUrl) {
     throw new ApiError(
-      'API base URL is not configured. Set VITE_API_BASE_URL in your .env file.',
+      'The service is not configured.',
     );
   }
 
@@ -241,7 +241,7 @@ export async function uploadCourseSyllabus(
     });
   } catch {
     throw new ApiError(
-      'Could not reach the backend to upload the syllabus. Make sure the FastAPI server is running.',
+      'The service could not be reached.',
     );
   }
 
@@ -349,7 +349,7 @@ export async function listCourseSeeds(
   return getJson<CourseSeedListResponse>(
     `/api/courses/${courseId}/seeds`,
     'The backend could not load seed examples for this course.',
-    'Could not reach the backend to load seeds. Make sure the FastAPI server is running.',
+    'The service could not be reached.',
   );
 }
 
@@ -367,7 +367,7 @@ export async function reviewCourseSeed(
     `/api/courses/${courseId}/seeds/${encodeURIComponent(seedId)}/review`,
     body,
     'The backend could not update the seed review status.',
-    'Could not reach the backend to review this seed. Make sure the FastAPI server is running.',
+    'The service could not be reached.',
   );
 }
 
@@ -378,7 +378,7 @@ export async function exportApprovedCourseSeeds(
     `/api/courses/${courseId}/seeds/export-approved`,
     {},
     'The backend could not export approved seeds.',
-    'Could not reach the backend to export approved seeds. Make sure the FastAPI server is running.',
+    'The service could not be reached.',
   );
 }
 
@@ -388,7 +388,7 @@ export async function getApprovedExportStatus(
   return getJson<ApprovedExportStatusResponse>(
     `/api/courses/${courseId}/seeds/approved-export-status`,
     'The backend could not check the approved export status.',
-    'Could not reach the backend to check approved export status. Make sure the FastAPI server is running.',
+    'The service could not be reached.',
   );
 }
 
@@ -399,6 +399,6 @@ export async function prepareTrainingSplit(
     `/api/courses/${courseId}/seeds/prepare-training-split`,
     {},
     'The backend could not prepare the training split.',
-    'Could not reach the backend to prepare the training split. Make sure the FastAPI server is running.',
+    'The service could not be reached.',
   );
 }

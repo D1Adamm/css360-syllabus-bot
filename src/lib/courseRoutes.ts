@@ -26,9 +26,17 @@ export function defaultCoursePagePath(segment: CoursePageSegment, search = ''): 
   return coursePagePath(DEFAULT_COURSE_ID, segment, search);
 }
 
-/** Resolve courseId from a pathname like /course/{courseId}/... */
+/**
+ * Resolve courseId from any course-scoped pathname.
+ *
+ * Matches the legacy `/course/{courseId}/...` shape as well as the role-scoped
+ * `/student/course/...`, `/professor/course/...` and `/admin/courses/...`
+ * trees, so shared chrome can find the active course during the migration.
+ */
 export function getCourseIdFromPathname(pathname: string): string | null {
-  const match = pathname.match(/^\/course\/([^/]+)/);
+  const match = pathname.match(
+    /^(?:\/(?:student|professor)\/course|\/admin\/courses|\/course)\/([^/]+)/,
+  );
   if (!match) {
     return null;
   }

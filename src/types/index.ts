@@ -79,6 +79,12 @@ export interface ComparisonRecord {
 
 export interface EvaluationRecord {
   id: string;
+  /**
+   * Predefined comparison this rating belongs to, when the question matched
+   * one. Free-text questions store a synthetic id here and carry the wording
+   * in `questionText`. Required so records written before live evaluation
+   * keep aggregating exactly as they did.
+   */
   comparisonId: string;
   mostAccurate: ModelKey;
   mostHelpful: ModelKey;
@@ -88,6 +94,11 @@ export interface EvaluationRecord {
   hallucinationFlags: ModelKey[];
   comment?: string;
   createdAt: string;
+  /** Links a rating to the comparison run the student actually saw. */
+  runId?: string;
+  /** The question as asked. Present for free-text questions. */
+  questionText?: string;
+  courseId?: string;
 }
 
 /** Syllabus processing status for a course in Firebase. */

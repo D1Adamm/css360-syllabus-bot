@@ -1,0 +1,111 @@
+/*
+ * A deliberately small utility layer.
+ *
+ * These exist because layout composition (stacking, spacing, wrapping rows)
+ * is the single most repeated need across pages, and repeating it as bespoke
+ * BEM classes is what produced the 3,000-line stylesheet we are replacing.
+ *
+ * This is not a utility framework. Resist growing it. If a pattern needs more
+ * than stack/row/grid/measure, it belongs in a component.
+ */
+
+/* Vertical stack with a consistent gap. */
+.ui-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ui-stack--tight {
+  gap: var(--space-2);
+}
+
+.ui-stack--snug {
+  gap: var(--space-3);
+}
+
+.ui-stack--loose {
+  gap: var(--space-6);
+}
+
+/* Space between major page sections. */
+.ui-stack--section {
+  gap: var(--rhythm-section);
+}
+
+/* Horizontal row that wraps rather than overflowing. */
+.ui-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ui-row--tight {
+  gap: var(--space-2);
+}
+
+.ui-row--loose {
+  gap: var(--space-6);
+}
+
+.ui-row--between {
+  justify-content: space-between;
+}
+
+.ui-row--baseline {
+  align-items: baseline;
+}
+
+/* Auto-fitting grid used by card collections. */
+.ui-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+}
+
+/* Page width containers. */
+.ui-container {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding-inline: var(--space-6);
+}
+
+.ui-container--narrow {
+  max-width: var(--content-narrow);
+}
+
+@media (max-width: 40rem) {
+  .ui-container {
+    padding-inline: var(--space-4);
+  }
+}
+
+/* Prose width caps. */
+.ui-measure {
+  max-width: var(--measure);
+}
+
+.ui-measure--narrow {
+  max-width: var(--measure-narrow);
+}
+
+/* Text tones and sizes used often enough to justify a utility. */
+.ui-text-muted {
+  color: var(--ink-500);
+}
+
+.ui-text-sm {
+  font-size: var(--text-sm);
+}
+
+.ui-text-xs {
+  font-size: var(--text-xs);
+}
+
+/* A hairline divider between sections that should not become a box. */
+.ui-divider {
+  border: 0;
+  border-top: var(--border-hairline);
+}

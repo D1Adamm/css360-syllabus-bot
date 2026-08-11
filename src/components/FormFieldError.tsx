@@ -5,7 +5,7 @@ interface FormFieldErrorProps {
 
 export function FormFieldError({ id, message }: FormFieldErrorProps) {
   return (
-    <p id={id} className="form-field-error" role="alert">
+    <p id={id} className="ui-field__error" role="alert">
       {message}
     </p>
   );

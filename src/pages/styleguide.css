@@ -1,0 +1,95 @@
+/*
+ * TEMPORARY — layout for the Phase 1 styleguide page only.
+ * Removed together with StyleguidePage in Phase 10.
+ */
+
+.sg-page {
+  min-height: 100vh;
+  padding-block: var(--space-12) var(--space-24);
+}
+
+.sg-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.sg-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 8rem;
+}
+
+.sg-swatch__chip {
+  display: block;
+  height: 3rem;
+  border-radius: var(--radius-md);
+  border: var(--border-hairline);
+}
+
+.sg-swatch__name {
+  font-size: var(--text-2xs);
+  color: var(--ink-500);
+}
+
+.sg-type-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line-100);
+}
+
+.sg-type-row__sample {
+  line-height: var(--leading-tight);
+  color: var(--ink-900);
+}
+
+.sg-space-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.sg-space-bar {
+  display: block;
+  height: 0.75rem;
+  background-color: var(--purple-400);
+  border-radius: var(--radius-sm);
+  flex: none;
+}
+
+.sg-form {
+  max-width: var(--content-narrow);
+}
+
+.sg-illustration {
+  align-items: center;
+  text-align: center;
+}
+
+.sg-icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: var(--space-4);
+}
+
+.sg-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: var(--border-hairline);
+  background-color: var(--surface);
+  color: var(--purple-700);
+  text-align: center;
+}
+
+.sg-footer {
+  padding-top: var(--space-8);
+  border-top: var(--border-hairline);
+}

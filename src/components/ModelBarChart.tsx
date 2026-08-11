@@ -38,7 +38,7 @@ export function ModelBarChart({ title, counts, total, id }: ModelBarChartProps) 
                   style={{ width: `${percentage}%` }}
                 />
               </div>
-              <span className="visually-hidden">
+              <span className="ui-visually-hidden">
                 {getModelLabel(key)}: {count} votes, {percentage} percent
               </span>
             </li>

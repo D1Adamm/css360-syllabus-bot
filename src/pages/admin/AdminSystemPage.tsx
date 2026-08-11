@@ -1,0 +1,133 @@
+import { Callout } from '../../components/ui/Callout';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { SectionHeader } from '../../components/ui/SectionHeader';
+import { getConfiguredApiBaseUrl } from '../../lib/adminApi';
+
+/**
+ * Architecture and infrastructure reference.
+ *
+ * This is the one place in the application where implementation detail is the
+ * point. It used to be a top-level navigation item visible to every student.
+ */
+export function AdminSystemPage() {
+  return (
+    <div className="ui-stack ui-stack--loose">
+      <PageHeader
+        title="Architecture"
+        eyebrow="Admin"
+        description="How Syllabus Model Lab is put together and which model paths are live."
+      />
+
+      <Callout tone="info" title="Internal reference">
+        Everything on this page is implementation detail. It is intentionally
+        not reachable from the student or professor experience.
+      </Callout>
+
+      <section className="ui-stack">
+        <SectionHeader title="Frontend" divider />
+        <div className="ui-prose">
+          <p>
+            React 19 and TypeScript, bundled by Vite and deployed to Firebase
+            Hosting. React Router serves three role-scoped trees —{' '}
+            <code>/student</code>, <code>/professor</code> and <code>/admin</code> —
+            plus redirects from the earlier <code>/course/:courseId/*</code> URLs.
+          </p>
+          <p>
+            Course metadata, example questions, and evaluations live in Firebase
+            Realtime Database under <code>courses/{'{courseId}'}</code>.
+          </p>
+        </div>
+      </section>
+
+      <section className="ui-stack">
+        <SectionHeader title="Data model" divider />
+        <ul className="admin-rows" aria-label="Storage locations">
+          <li className="admin-row">
+            <span className="admin-row__label">Course records</span>
+            <span className="admin-row__value">
+              <code>courses/{'{courseId}'}/metadata|seedExamples|evaluations</code>
+            </span>
+          </li>
+          <li className="admin-row">
+            <span className="admin-row__label">Syllabus text</span>
+            <span className="admin-row__value">
+              <code>backend/course_data/{'{courseId}'}/syllabus.txt</code>
+            </span>
+          </li>
+          <li className="admin-row">
+            <span className="admin-row__label">Retrieval index</span>
+            <span className="admin-row__value">
+              <code>backend/data/indexes/{'{courseId}'}.json</code>
+            </span>
+          </li>
+          <li className="admin-row">
+            <span className="admin-row__label">API base URL</span>
+            <span className="admin-row__value">
+              <code>{getConfiguredApiBaseUrl() ?? 'not configured'}</code>
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      <section className="ui-stack">
+        <SectionHeader title="Backend and models" divider />
+        <div className="ui-prose">
+          <p>
+            A FastAPI service handles syllabus upload and extraction, chunking,
+            embeddings, course-scoped retrieval, and generation. Three distinct
+            model roles are involved and are worth keeping apart:
+          </p>
+          <ul>
+            <li>
+              <strong>Answering model</strong> — serves the Base Model and
+              Syllabus-Aware paths through Ollama.
+            </li>
+            <li>
+              <strong>Embedding model</strong> — <code>nomic-embed-text</code>,
+              used only to build and query the retrieval index.
+            </li>
+            <li>
+              <strong>Example-generation model</strong> — used offline to draft
+              starter examples and extract the fact inventory. Configurable, and
+              not necessarily the same model that answers questions.
+            </li>
+            <li>
+              <strong>Fine-tuned inference service</strong> — a separate service
+              named by <code>FINETUNED_SERVICE_URL</code>, serving the
+              Course-Trained and Course-Trained + Syllabus paths.
+            </li>
+          </ul>
+          <p>
+            All four comparison paths are implemented. Base and Syllabus-Aware
+            depend on the local model runtime; Course-Trained availability
+            depends on the configured inference service, which may or may not be
+            running at any given moment — see Overview for its live state. The
+            base and retrieval paths share one CPU-bound process and are
+            therefore issued sequentially; the two fine-tuned paths run against
+            the separate service and overlap with them.
+          </p>
+        </div>
+      </section>
+
+      <section className="ui-stack">
+        <SectionHeader title="Not yet implemented" divider />
+        <div className="ui-prose">
+          <p>
+            Authentication and access control; student enrolment and course join
+            codes; fine-tuning request records; training job submission and
+            status; a model version registry with promotion and rollback. Training
+            currently runs through Slurm scripts on Tillicum, outside this
+            application.
+          </p>
+          <p>
+            Syllabus artifacts and retrieval indexes are written to local disk by
+            the backend, under <code>backend/course_data/</code> and{' '}
+            <code>backend/data/indexes/</code>. Course records, examples, and
+            evaluations live in the Realtime Database and are readable
+            independently of the backend.
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}

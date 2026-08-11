@@ -1,0 +1,191 @@
+/*
+ * Shared page patterns.
+ *
+ * Two list shapes cover most of what the new pages need: a scannable course
+ * row for student/professor surfaces, and a denser label/value row for admin
+ * diagnostics. Both are lists with hairline separators rather than grids of
+ * cards — a course list can get long, and fifteen bordered rectangles is
+ * harder to scan than fifteen rows.
+ */
+
+/* ---------------- Course rows (openable) ---------------- */
+
+.course-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line-200);
+}
+
+.course-row {
+  border-bottom: 1px solid var(--line-200);
+}
+
+/* The whole row is the link. Keeps keyboard focus, middle-click and
+   open-in-new-tab working without click handlers on non-interactive elements. */
+.course-row__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-3);
+  margin-inline: calc(var(--space-3) * -1);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.course-row__link:hover {
+  background-color: var(--purple-50);
+}
+
+.course-row__link:hover .course-row__name {
+  color: var(--purple-800);
+}
+
+.course-row__link:hover .course-row__chevron {
+  color: var(--purple-700);
+  transform: translateX(2px);
+}
+
+.course-row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.course-row__name {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink-900);
+  letter-spacing: var(--tracking-tight);
+}
+
+.course-row__title {
+  font-size: var(--text-sm);
+  color: var(--ink-700);
+}
+
+.course-row__meta {
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+}
+
+.course-row__detail {
+  font-size: var(--text-xs);
+  color: var(--ink-400);
+  overflow-wrap: anywhere;
+}
+
+.course-row__status {
+  flex: none;
+}
+
+.course-row__chevron {
+  flex: none;
+  color: var(--ink-400);
+  transition:
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+
+@media (max-width: 40rem) {
+  .course-row__link {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  /* Full width so the status pill drops to its own line instead of crowding
+     the term and instructor text. */
+  .course-row__main {
+    flex-basis: 100%;
+  }
+
+  .course-row__chevron {
+    display: none;
+  }
+}
+
+/* ---------------- Admin rows ---------------- */
+
+.admin-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line-200);
+}
+
+.admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-1);
+  border-bottom: 1px solid var(--line-200);
+  font-size: var(--text-sm);
+}
+
+.admin-row--stacked {
+  align-items: flex-start;
+}
+
+.admin-row__main {
+  flex: 1;
+  min-width: 16rem;
+}
+
+.admin-row__label {
+  min-width: 10rem;
+  font-weight: var(--weight-medium);
+  color: var(--ink-900);
+  margin: 0;
+}
+
+.admin-row__label--link {
+  color: var(--purple-700);
+  text-decoration: none;
+}
+
+.admin-row__label--link:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.admin-row__value {
+  flex: 1;
+  min-width: 12rem;
+  color: var(--ink-500);
+  margin: var(--space-1) 0 0;
+  word-break: break-word;
+}
+
+.admin-row__value code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.admin-row__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.admin-row__error {
+  color: var(--danger-700);
+}
+
+@media (max-width: 40rem) {
+  .admin-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-row__label {
+    min-width: 0;
+  }
+}

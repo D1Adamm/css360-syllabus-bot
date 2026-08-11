@@ -1,0 +1,19 @@
+/*
+ * Self-hosted variable fonts.
+ *
+ * Both families ship as woff2 inside node_modules and are emitted into the
+ * build output by Vite, so the running application never requests a font from
+ * an external host.
+ *
+ * `wght.css` is the weight-axis-only, upright build of each family. Optical
+ * size and italic axes are intentionally not loaded; browsers synthesize the
+ * rare italic. Each subset carries a `unicode-range`, so a visitor only ever
+ * downloads the subsets their content actually uses.
+ *
+ * Family names exposed by these packages:
+ *   Inter Variable          -> --font-sans    (all UI text)
+ *   Source Serif 4 Variable -> --font-display (page and course titles only)
+ */
+
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/source-serif-4/wght.css';

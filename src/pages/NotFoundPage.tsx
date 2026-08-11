@@ -1,15 +1,17 @@
-import { ButtonLink } from '../components/ButtonLink';
+import { EmptyState } from '../components/ui/EmptyState';
+import { LinkButton } from '../components/ui/Button';
 
 export function NotFoundPage() {
   return (
-    <section className="not-found" aria-labelledby="not-found-title">
-      <h1 id="not-found-title" className="not-found__title">
-        Page Not Found
-      </h1>
-      <p className="not-found__text">
-        The page you are looking for does not exist or may have been moved.
-      </p>
-      <ButtonLink to="/">Back to Courses</ButtonLink>
-    </section>
+    <EmptyState
+      size="full"
+      title="Page not found"
+      description="The page you are looking for doesn't exist or may have moved."
+      action={
+        <LinkButton to="/" variant="primary">
+          Go back
+        </LinkButton>
+      }
+    />
   );
 }

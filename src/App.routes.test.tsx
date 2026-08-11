@@ -5,60 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 
 vi.mock('./lib/firebase', () => ({
+  database: {},
   app: {},
-  database: { name: 'mock-db' },
 }));
 
-vi.mock('firebase/app', () => ({
-  initializeApp: () => ({}),
-}));
-
-vi.mock('firebase/database', () => ({
-  getDatabase: () => ({}),
-  ref: (_db: unknown, path: string) => ({ path }),
-  onValue: vi.fn(() => () => undefined),
-  push: vi.fn(() => ({ key: 'generated-id' })),
-  set: vi.fn(async () => undefined),
-  remove: vi.fn(async () => undefined),
-  get: vi.fn(async () => ({ exists: () => false, val: () => null })),
-  update: vi.fn(async () => undefined),
-}));
-
-vi.mock('./lib/api', () => ({
-  ApiError: class ApiError extends Error {},
-  generateBaseModel: vi.fn(),
-  generateFineTuned: vi.fn(),
-  generateFineTunedRag: vi.fn(),
-  generateRag: vi.fn(),
-  fetchCourseSyllabusText: vi.fn(async () => ({
-    courseId: 'css360-default',
-    text: 'Mock syllabus text for route tests.',
-    characterCount: 34,
-  })),
-  listCourseSeeds: vi.fn(async () => ({
-    courseId: 'css360-default',
-    count: 0,
-    firebasePath: 'courses/css360-default/seedExamples',
-    seeds: [],
-  })),
-  reviewCourseSeed: vi.fn(),
-  exportApprovedCourseSeeds: vi.fn(),
-  getApprovedExportStatus: vi.fn(async () => ({
-    courseId: 'css360-default',
-    exists: false,
-    exportPath: 'data/exports/css360-default/approved-finetune.jsonl',
-    exampleCount: 0,
-    sourceFile: 'approved-finetune.jsonl',
-  })),
-  prepareTrainingSplit: vi.fn(),
-}));
-
-const subscribeToCoursesMock = vi.hoisted(() =>
-  vi.fn((onData: (courses: unknown[]) => void) => {
-    onData([]);
-    return () => undefined;
-  }),
-);
+const subscribeToCoursesMock = vi.fn();
+const subscribeToCourseMetadataMock = vi.fn();
 
 vi.mock('./lib/coursesDb', async () => {
   const actual = await vi.importActual<typeof import('./lib/coursesDb')>(
@@ -66,167 +18,266 @@ vi.mock('./lib/coursesDb', async () => {
   );
   return {
     ...actual,
-    subscribeToCourses: subscribeToCoursesMock,
+    subscribeToCourses: (...args: unknown[]) => subscribeToCoursesMock(...args),
+    subscribeToCourseMetadata: (...args: unknown[]) =>
+      subscribeToCourseMetadataMock(...args),
   };
 });
 
+vi.mock('./lib/api', async () => {
+  const actual = await vi.importActual<typeof import('./lib/api')>('./lib/api');
+  return {
+    ...actual,
+    fetchCourseSyllabusText: vi.fn().mockResolvedValue({
+      courseId: 'css360-default',
+      text: 'Syllabus body',
+      characterCount: 13,
+    }),
+    listCourseSeeds: vi.fn().mockResolvedValue({
+      courseId: 'css360-default',
+      count: 0,
+      firebasePath: 'courses/css360-default/seedExamples',
+      seeds: [],
+    }),
+    getApprovedExportStatus: vi.fn().mockResolvedValue({
+      courseId: 'css360-default',
+      exists: false,
+      exportPath: '',
+      exampleCount: 0,
+      sourceFile: '',
+    }),
+  };
+});
+
+vi.mock('./hooks/useSeedExamples', () => ({
+  useSeedExamples: () => ({
+    seeds: [],
+    loading: false,
+    error: null,
+    saving: false,
+    saveError: null,
+    addSeed: vi.fn(),
+    deleteSeed: vi.fn(),
+    deleteAllSeeds: vi.fn(),
+    clearSaveError: vi.fn(),
+  }),
+}));
+
+vi.mock('./hooks/useEvaluations', () => ({
+  useEvaluations: () => ({
+    evaluations: [],
+    loading: false,
+    error: null,
+    saving: false,
+    saveError: null,
+    addEvaluation: vi.fn(),
+    deleteEvaluation: vi.fn(),
+    deleteAllEvaluations: vi.fn(),
+    clearSaveError: vi.fn(),
+  }),
+}));
+
 import { AppRoutes } from './App';
-import { DEFAULT_COURSE_ID } from './lib/courseId';
+import { ComparisonRunProvider } from './context/ComparisonRunContext';
+import { RoleProvider, type Role } from './context/RoleContext';
 
 function LocationProbe() {
   const location = useLocation();
   return (
-    <div data-testid="location">
-      {location.pathname}
-      {location.search}
-    </div>
+    <div data-testid="location">{`${location.pathname}${location.search}`}</div>
   );
 }
 
-function renderApp(initialEntry: string) {
+function renderAt(path: string, role: Role = 'student') {
   return render(
-    <MemoryRouter initialEntries={[initialEntry]}>
-      <AppRoutes />
-      <LocationProbe />
+    <MemoryRouter initialEntries={[path]}>
+      <RoleProvider initialRole={role}>
+        <ComparisonRunProvider>
+          <LocationProbe />
+          <AppRoutes />
+        </ComparisonRunProvider>
+      </RoleProvider>
     </MemoryRouter>,
   );
 }
 
-describe('course-specific routes', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    subscribeToCoursesMock.mockImplementation((onData: (courses: unknown[]) => void) => {
-      onData([]);
-      return () => undefined;
-    });
+beforeEach(() => {
+  subscribeToCoursesMock.mockReset();
+  subscribeToCoursesMock.mockImplementation((onData: (value: unknown[]) => void) => {
+    onData([]);
+    return () => {};
   });
 
-  afterEach(() => {
+  subscribeToCourseMetadataMock.mockReset();
+  subscribeToCourseMetadataMock.mockImplementation(
+    (_courseId: string, onData: (value: unknown) => void) => {
+      onData({
+        name: 'CSS 360',
+        title: 'Software Engineering',
+        term: 'Winter 2026',
+        instructorName: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        syllabusStatus: 'indexed',
+        syllabusFileName: 'syllabus.pdf',
+        syllabusType: 'pdf',
+        chunkCount: 12,
+      });
+      return () => {};
+    },
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe('role landing', () => {
+  it('sends each role to its own home from the root route', async () => {
+    const student = renderAt('/', 'student');
+    await waitFor(() => {
+      expect(student.getByTestId('location')).toHaveTextContent('/student');
+    });
     cleanup();
-  });
 
-  it('renders the course picker on the root route instead of redirecting', async () => {
-    const view = renderApp('/');
-
+    const professor = renderAt('/', 'professor');
     await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent('/');
-    });
-    expect(view.getByRole('heading', { name: 'Courses' })).toBeInTheDocument();
-    const main = view.container.querySelector('main');
-    expect(main).not.toBeNull();
-    expect(
-      within(main as HTMLElement).getByRole('link', { name: 'Create Course' }),
-    ).toHaveAttribute('href', '/create-course');
-    expect(view.getByTestId('location').textContent).toBe('/');
-  });
-
-  it('redirects /course/css360-default to /course/css360-default/home', async () => {
-    const view = renderApp(`/course/${DEFAULT_COURSE_ID}`);
-
-    await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent(
-        `/course/${DEFAULT_COURSE_ID}/home`,
+      expect(professor.getByTestId('location')).toHaveTextContent(
+        '/professor/courses',
       );
     });
-    expect(view.getByRole('heading', { name: 'Syllabus Model Lab' })).toBeInTheDocument();
+    cleanup();
+
+    const admin = renderAt('/', 'admin');
+    await waitFor(() => {
+      expect(admin.getByTestId('location')).toHaveTextContent('/admin');
+    });
+  });
+});
+
+describe('role navigation', () => {
+  it('shows only the student sections in the student area', async () => {
+    const view = renderAt('/student/course/css360-default', 'student');
+
+    const nav = await view.findByRole('navigation', { name: 'Main navigation' });
+    for (const label of ['Home', 'Contribute', 'Compare', 'Evaluate']) {
+      expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
+    }
+    expect(within(nav).queryByRole('link', { name: 'Courses' })).toBeNull();
+    expect(within(nav).queryByRole('link', { name: 'System' })).toBeNull();
   });
 
-  it('renders existing page content on a valid course route', async () => {
-    const view = renderApp(`/course/${DEFAULT_COURSE_ID}/syllabus`);
+  it('keeps course links scoped to the active course', async () => {
+    const view = renderAt('/student/course/other-course', 'student');
 
-    await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent(
-        `/course/${DEFAULT_COURSE_ID}/syllabus`,
-      );
-    });
-    expect(view.getByRole('heading', { level: 1 })).toBeInTheDocument();
-  });
-
-  it('preserves courseId in course navigation links', async () => {
-    const view = renderApp(`/course/${DEFAULT_COURSE_ID}/home`);
-
-    await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent(
-        `/course/${DEFAULT_COURSE_ID}/home`,
-      );
-    });
-
-    const nav = view.getByRole('navigation', { name: 'Main navigation' });
+    const nav = await view.findByRole('navigation', { name: 'Main navigation' });
     expect(within(nav).getByRole('link', { name: 'Compare' })).toHaveAttribute(
       'href',
-      `/course/${DEFAULT_COURSE_ID}/compare`,
+      '/student/course/other-course/compare',
     );
-    expect(within(nav).getByRole('link', { name: 'Build Seeds' })).toHaveAttribute(
+    expect(within(nav).getByRole('link', { name: 'Contribute' })).toHaveAttribute(
       'href',
-      `/course/${DEFAULT_COURSE_ID}/seeds`,
-    );
-    expect(within(nav).getByRole('link', { name: 'Architecture' })).toHaveAttribute(
-      'href',
-      '/architecture',
+      '/student/course/other-course/contribute',
     );
   });
 
-  it('redirects legacy routes to the default course', async () => {
-    const view = renderApp('/compare');
+  it('shows only the professor sections in the professor area', async () => {
+    const view = renderAt('/professor/courses', 'professor');
 
+    const nav = await view.findByRole('navigation', { name: 'Main navigation' });
+    expect(within(nav).getByRole('link', { name: 'Courses' })).toBeInTheDocument();
+    // Everything a professor does is scoped to a course, so Courses is the only
+    // top-level destination; the old cross-course hubs are gone.
+    expect(within(nav).queryByRole('link', { name: 'Reviews' })).toBeNull();
+    expect(within(nav).queryByRole('link', { name: 'Models' })).toBeNull();
+    expect(within(nav).queryByRole('link', { name: 'Contribute' })).toBeNull();
+  });
+
+  it('uses the admin sidebar and exposes the technical sections there', async () => {
+    const view = renderAt('/admin', 'admin');
+
+    const nav = await view.findByRole('navigation', { name: 'Admin navigation' });
+    for (const label of ['Overview', 'Courses', 'Training', 'Models', 'System']) {
+      expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it('derives the shell from the URL, not the remembered development role', async () => {
+    // A professor deep link opened while the switcher says "student".
+    const view = renderAt('/professor/courses', 'student');
+
+    const nav = await view.findByRole('navigation', { name: 'Main navigation' });
+    expect(within(nav).getByRole('link', { name: 'Courses' })).toBeInTheDocument();
+    expect(within(nav).queryByRole('link', { name: 'Evaluate' })).toBeNull();
+  });
+});
+
+describe('legacy URL redirects', () => {
+  const cases: { from: string; to: string; role?: Role }[] = [
+    { from: '/architecture', to: '/admin/system' },
+    { from: '/create-course', to: '/professor/courses/new' },
+    { from: '/course/css360-default/seeds', to: '/student/course/css360-default/contribute' },
+    { from: '/course/css360-default/compare', to: '/student/course/css360-default/compare' },
+    { from: '/course/css360-default/review', to: '/professor/course/css360-default/examples' },
+    { from: '/course/css360-default/results', to: '/professor/course/css360-default/results' },
+    { from: '/course/css360-default/dataset', to: '/admin/courses/css360-default/examples' },
+    { from: '/professor/reviews', to: '/professor/courses', role: 'professor' },
+    { from: '/professor/models', to: '/professor/courses', role: 'professor' },
+    { from: '/seed-builder', to: '/student/course/css360-default/contribute' },
+    { from: '/compare', to: '/student/course/css360-default/compare' },
+    { from: '/review', to: '/professor/course/css360-default/examples' },
+    { from: '/dataset', to: '/admin/courses/css360-default/examples' },
+    { from: '/home', to: '/student/course/css360-default', role: 'student' },
+    { from: '/home', to: '/professor/course/css360-default', role: 'professor' },
+    { from: '/course/css360-default', to: '/student/course/css360-default', role: 'student' },
+  ];
+
+  for (const { from, to, role } of cases) {
+    it(`redirects ${from} to ${to}${role ? ` as ${role}` : ''}`, async () => {
+      const view = renderAt(from, role ?? 'student');
+      await waitFor(() => {
+        expect(view.getByTestId('location')).toHaveTextContent(to);
+      });
+    });
+  }
+
+  it('preserves the query string when redirecting evaluate', async () => {
+    const view = renderAt('/evaluate?comparison=comparison-2');
     await waitFor(() => {
       expect(view.getByTestId('location')).toHaveTextContent(
-        `/course/${DEFAULT_COURSE_ID}/compare`,
+        '/student/course/css360-default/evaluate?comparison=comparison-2',
       );
     });
   });
+});
 
-  it('redirects legacy /seed-builder to /course/css360-default/seeds', async () => {
-    const view = renderApp('/seed-builder');
-
-    await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent(
-        `/course/${DEFAULT_COURSE_ID}/seeds`,
-      );
-    });
-  });
-
-  it('preserves query strings when redirecting legacy evaluate', async () => {
-    const view = renderApp('/evaluate?comparison=comparison-001');
-
-    await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent(
-        `/course/${DEFAULT_COURSE_ID}/evaluate?comparison=comparison-001`,
-      );
-    });
-  });
-
-  it('redirects /home to the default course home', async () => {
-    const view = renderApp('/home');
-
-    await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent(
-        `/course/${DEFAULT_COURSE_ID}/home`,
-      );
-    });
-  });
-
-  it('shows an invalid course error for unsafe course ids', async () => {
-    const view = renderApp('/course/Bad_Id/home');
-
-    await waitFor(() => {
-      expect(view.getByRole('heading', { name: 'Invalid Course' })).toBeInTheDocument();
-    });
+describe('course id validation', () => {
+  it('rejects an unsafe course id instead of rendering a course page', async () => {
+    const view = renderAt('/student/course/Bad_Id/compare');
     expect(
-      view.getByText(/The course id "Bad_Id" is not valid/),
+      await view.findByText(/We couldn't find that course/i),
     ).toBeInTheDocument();
-    expect(view.getByRole('link', { name: 'Back to Courses' })).toHaveAttribute(
-      'href',
-      '/',
-    );
   });
 
-  it('keeps Architecture outside the course route tree', async () => {
-    const view = renderApp('/architecture');
-
+  it('sends a legacy URL with an unsafe course id to the not-found page', async () => {
+    const view = renderAt('/course/Bad_Id/compare');
     await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent('/architecture');
+      expect(view.getByTestId('location')).toHaveTextContent('/not-found');
     });
-    expect(view.getByRole('heading', { level: 1 })).toBeInTheDocument();
+  });
+});
+
+describe('technical surfaces', () => {
+  it('keeps the architecture reference inside the admin area', async () => {
+    const view = renderAt('/admin/system', 'admin');
+    expect(
+      await view.findByRole('heading', { name: 'Architecture' }),
+    ).toBeInTheDocument();
+  });
+
+  it('does not offer the architecture page in student navigation', async () => {
+    const view = renderAt('/student/course/css360-default', 'student');
+    const nav = await view.findByRole('navigation', { name: 'Main navigation' });
+    expect(within(nav).queryByRole('link', { name: /architecture/i })).toBeNull();
   });
 });

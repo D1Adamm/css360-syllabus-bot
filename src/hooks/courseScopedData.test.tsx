@@ -79,12 +79,13 @@ vi.mock('../lib/api', () => ({
   generateRag: vi.fn(),
 }));
 
+import { ComparisonRunProvider } from '../context/ComparisonRunContext';
 import { CourseProvider } from '../context/CourseContext';
 import { getCourseEvaluationsPath, getCourseSeedExamplesPath } from '../lib/coursePaths';
-import { SeedBuilderPage } from '../pages/SeedBuilderPage';
-import { SeedDatasetPage } from '../pages/SeedDatasetPage';
-import { EvaluationPage } from '../pages/EvaluationPage';
-import { ResultsPage } from '../pages/ResultsPage';
+import { ContributePage } from '../pages/student/ContributePage';
+import { AdminExamplesPage } from '../pages/admin/AdminExamplesPage';
+import { EvaluatePage } from '../pages/student/EvaluatePage';
+import { ProfessorResultsPage } from '../pages/professor/ProfessorResultsPage';
 
 function mockSeedSubscription(courseId: string) {
   subscribeToSeedExamplesMock.mockImplementation(
@@ -120,7 +121,11 @@ function renderWithCourse(courseId: string, page: React.ReactNode, pathSuffix: s
       <Routes>
         <Route
           path={`/course/${courseId}/${pathSuffix}`}
-          element={<CourseProvider courseId={courseId}>{page}</CourseProvider>}
+          element={
+            <ComparisonRunProvider>
+              <CourseProvider courseId={courseId}>{page}</CourseProvider>
+            </ComparisonRunProvider>
+          }
         />
       </Routes>
     </MemoryRouter>,
@@ -152,7 +157,7 @@ describe('course-scoped seed and evaluation data', () => {
     const courseId = 'css360-default';
     mockSeedSubscription(courseId);
 
-    renderWithCourse(courseId, <SeedBuilderPage />, 'seeds');
+    renderWithCourse(courseId, <ContributePage />, 'seeds');
 
     await waitFor(() => {
       expect(subscribeToSeedExamplesMock).toHaveBeenCalledWith(
@@ -167,14 +172,14 @@ describe('course-scoped seed and evaluation data', () => {
     );
     expect(
       document.body.textContent,
-    ).toMatch(/No manually created examples yet/);
+    ).toMatch(/Nothing added yet/);
   });
 
   it('Dataset page uses the same course-specific seed path', async () => {
     const courseId = 'css360-default';
     mockSeedSubscription(courseId);
 
-    renderWithCourse(courseId, <SeedDatasetPage />, 'dataset');
+    renderWithCourse(courseId, <AdminExamplesPage />, 'dataset');
 
     await waitFor(() => {
       expect(subscribeToSeedExamplesMock).toHaveBeenCalledWith(
@@ -187,7 +192,7 @@ describe('course-scoped seed and evaluation data', () => {
       'courses/css360-default/seedExamples',
     );
     expect(
-      await screen.findByText('No seed examples have been created for this course yet.'),
+      await screen.findByText('No examples stored'),
     ).toBeInTheDocument();
   });
 
@@ -195,7 +200,7 @@ describe('course-scoped seed and evaluation data', () => {
     const courseId = 'css360-default';
     mockEvaluationSubscription(courseId);
 
-    renderWithCourse(courseId, <ResultsPage />, 'results');
+    renderWithCourse(courseId, <ProfessorResultsPage />, 'results');
 
     await waitFor(() => {
       expect(subscribeToEvaluationsMock).toHaveBeenCalledWith(
@@ -207,14 +212,14 @@ describe('course-scoped seed and evaluation data', () => {
     expect(getCourseEvaluationsPath(courseId)).toBe(
       'courses/css360-default/evaluations',
     );
-    expect(document.body.textContent).toMatch(/No evaluations for this course yet/);
+    expect(document.body.textContent).toMatch(/Results appear once students compare answers/);
   });
 
   it('Evaluate page subscribes to course-specific evaluations for saves', async () => {
     const courseId = 'css360-default';
     mockEvaluationSubscription(courseId);
 
-    renderWithCourse(courseId, <EvaluationPage />, 'evaluate');
+    renderWithCourse(courseId, <EvaluatePage />, 'evaluate');
 
     await waitFor(() => {
       expect(subscribeToEvaluationsMock).toHaveBeenCalledWith(
@@ -227,7 +232,7 @@ describe('course-scoped seed and evaluation data', () => {
 
   it('does not share seed examples across different course ids', async () => {
     mockSeedSubscription('course-alpha');
-    const first = renderWithCourse('course-alpha', <SeedBuilderPage />, 'seeds');
+    const first = renderWithCourse('course-alpha', <ContributePage />, 'seeds');
     await waitFor(() => {
       expect(subscribeToSeedExamplesMock).toHaveBeenCalledWith(
         'course-alpha',
@@ -238,7 +243,7 @@ describe('course-scoped seed and evaluation data', () => {
     first.unmount();
 
     mockSeedSubscription('course-beta');
-    renderWithCourse('course-beta', <SeedBuilderPage />, 'seeds');
+    renderWithCourse('course-beta', <ContributePage />, 'seeds');
     await waitFor(() => {
       expect(subscribeToSeedExamplesMock).toHaveBeenCalledWith(
         'course-beta',
@@ -256,7 +261,7 @@ describe('course-scoped seed and evaluation data', () => {
 
   it('does not share evaluations across different course ids', async () => {
     mockEvaluationSubscription('course-alpha');
-    const first = renderWithCourse('course-alpha', <ResultsPage />, 'results');
+    const first = renderWithCourse('course-alpha', <ProfessorResultsPage />, 'results');
     await waitFor(() => {
       expect(subscribeToEvaluationsMock).toHaveBeenCalledWith(
         'course-alpha',
@@ -267,7 +272,7 @@ describe('course-scoped seed and evaluation data', () => {
     first.unmount();
 
     mockEvaluationSubscription('course-beta');
-    renderWithCourse('course-beta', <ResultsPage />, 'results');
+    renderWithCourse('course-beta', <ProfessorResultsPage />, 'results');
     await waitFor(() => {
       expect(subscribeToEvaluationsMock).toHaveBeenCalledWith(
         'course-beta',
