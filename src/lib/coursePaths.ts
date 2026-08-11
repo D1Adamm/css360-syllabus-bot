@@ -26,3 +26,8 @@ export function getCourseEvaluationPath(courseId: string, evaluationId: string):
   assertValidCourseId(courseId);
   return `courses/${courseId}/evaluations/${evaluationId}`;
 }
+
+export function getCourseModelPath(courseId: string): string {
+  assertValidCourseId(courseId);
+  return `courses/${courseId}/model`;
+}

@@ -1,23 +1,69 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Callout } from '../../components/ui/Callout';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SectionHeader } from '../../components/ui/SectionHeader';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { useCourses } from '../../hooks/useCourses';
 import { fetchFineTunedHealth, type FineTunedHealth } from '../../lib/adminApi';
+import { formatCourseHeading } from '../../lib/courseLabels';
+import {
+  fetchCourseModel,
+  getCurrentVersion,
+  sortVersionsNewestFirst,
+} from '../../lib/courseModelDb';
+import { adminCoursePath } from '../../lib/roleRoutes';
+import type { CourseModelRegistry, CourseModelVersion } from '../../types';
 
 /**
- * Model deployment state.
+ * Registered models per course, and the service that serves them.
  *
- * The only thing the backend can currently answer is "what is the one shared
- * fine-tuned service reporting right now". There is no model registry, no
- * version history, no promotion record and no rollback, so this page shows the
- * live service and then says explicitly what is missing rather than rendering
- * an empty table that implies those features exist.
+ * These are two different questions and the page keeps them in two sections.
+ * A course's model exists because training produced an artifact and someone
+ * registered it; that record is durable and unaffected by whether the shared
+ * inference service happens to be up. The service check below says only whether
+ * *something* is currently loaded — it is never used to decide whether a course
+ * has a model.
  */
+
+interface CourseRegistryRow {
+  courseId: string;
+  name: string;
+  registry: CourseModelRegistry | null;
+  failed: boolean;
+}
+
+function statusTone(version: CourseModelVersion) {
+  switch (version.status) {
+    case 'ready':
+      return 'success' as const;
+    case 'training':
+      return 'progress' as const;
+    case 'failed':
+      return 'danger' as const;
+    default:
+      return 'neutral' as const;
+  }
+}
+
+function deploymentTone(version: CourseModelVersion) {
+  switch (version.deployment) {
+    case 'online':
+      return 'accent' as const;
+    case 'offline':
+      return 'warning' as const;
+    default:
+      return 'neutral' as const;
+  }
+}
+
 export function AdminModelsPage() {
+  const { state: courses } = useCourses();
+  const [rows, setRows] = useState<CourseRegistryRow[] | null>(null);
+
   const [health, setHealth] = useState<FineTunedHealth | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [healthFailed, setHealthFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,12 +72,12 @@ export function AdminModelsPage() {
       .then((result) => {
         if (!cancelled) {
           setHealth(result);
-          setFailed(false);
+          setHealthFailed(false);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setFailed(true);
+          setHealthFailed(true);
         }
       });
 
@@ -40,20 +86,151 @@ export function AdminModelsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (courses.status !== 'ready') {
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.all(
+      courses.courses.map(async ({ courseId, metadata }) => {
+        try {
+          const registry = await fetchCourseModel(courseId);
+          return {
+            courseId,
+            name: formatCourseHeading(metadata.name, metadata.title),
+            registry,
+            failed: false,
+          };
+        } catch {
+          return {
+            courseId,
+            name: formatCourseHeading(metadata.name, metadata.title),
+            registry: null,
+            failed: true,
+          };
+        }
+      }),
+    ).then((result) => {
+      if (!cancelled) {
+        setRows(result);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courses]);
+
+  const registered = rows?.filter((row) => row.registry) ?? [];
+  const unregistered = rows?.filter((row) => !row.registry && !row.failed) ?? [];
+
   return (
     <div className="ui-stack ui-stack--loose">
       <PageHeader
         title="Models"
         eyebrow="Admin"
-        description="The deployed fine-tuned inference service."
+        description="Registered course models and the inference service that serves them."
       />
 
-      <section className="ui-stack">
-        <SectionHeader title="Active service" divider />
+      <section className="ui-stack ui-stack--snug">
+        <SectionHeader
+          title="Registered course models"
+          description="From each course's own registry record. Independent of service state."
+          divider
+        />
 
-        {failed && (
+        {rows === null ? (
+          <p className="ui-text-muted" role="status" aria-live="polite">
+            Reading course registries…
+          </p>
+        ) : registered.length === 0 ? (
+          <EmptyState
+            title="No course models registered"
+            description="A record is written when a trained adapter is promoted for a course."
+          />
+        ) : (
+          <ul className="admin-rows" aria-label="Registered course models">
+            {registered.map((row) => {
+              const registry = row.registry!;
+              const current = getCurrentVersion(registry);
+              const history = sortVersionsNewestFirst(registry.versions);
+
+              return (
+                <li key={row.courseId} className="admin-row admin-row--stacked">
+                  <div className="admin-row__main">
+                    <Link
+                      to={adminCoursePath(row.courseId)}
+                      className="admin-row__label admin-row__label--link"
+                    >
+                      {row.name}
+                    </Link>
+                    <p className="admin-row__value">
+                      <code>{row.courseId}</code>
+                    </p>
+
+                    {current && (
+                      <p className="ui-text-xs ui-text-muted">
+                        current <code>{current.version}</code> · base{' '}
+                        <code>{current.baseModel}</code> ·{' '}
+                        {current.trainingExampleCount} training examples · artifact{' '}
+                        <code>{current.artifactRef}</code>
+                      </p>
+                    )}
+
+                    {history.length > 1 && (
+                      <details className="admin-probe">
+                        <summary>Version history ({history.length})</summary>
+                        <ul className="admin-chunks">
+                          {history.map((version) => (
+                            <li key={version.version}>
+                              <code>{version.version}</code> · {version.status} ·{' '}
+                              {version.trainingExampleCount} examples ·{' '}
+                              {new Date(version.createdAt).toLocaleDateString()}
+                              {version.version === registry.currentVersion
+                                ? ' · current'
+                                : ''}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+
+                  {current && (
+                    <div className="admin-row__actions">
+                      <StatusPill tone={statusTone(current)}>{current.status}</StatusPill>
+                      <StatusPill tone={deploymentTone(current)}>
+                        {current.deployment}
+                      </StatusPill>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {unregistered.length > 0 && (
+          <p className="ui-text-xs ui-text-muted">
+            No model registered for: {unregistered.map((row) => row.courseId).join(', ')}
+          </p>
+        )}
+      </section>
+
+      <section className="ui-stack ui-stack--snug">
+        <SectionHeader
+          title="Inference service"
+          description="One shared service. It reports what is loaded, not which course it belongs to."
+          divider
+        />
+
+        {healthFailed && (
           <Callout tone="warning" title="Service did not respond">
-            The fine-tuned inference service could not be reached.
+            The fine-tuned inference service could not be reached. Registered
+            models above are unaffected — this says nothing about whether they
+            exist.
           </Callout>
         )}
 
@@ -95,13 +272,12 @@ export function AdminModelsPage() {
         )}
       </section>
 
-      <section className="ui-stack">
-        <SectionHeader title="Version history" divider />
-        <EmptyState
-          title="No model registry yet"
-          description="Adapter versions, promotion, and rollback are handled by scripts outside this application. There is no endpoint for them to read from."
-        />
-      </section>
+      <Callout tone="info" title="Registration is manual">
+        Records are written by <code>scripts/register_course_model.py</code> after
+        a run is promoted. Training submission, job status, and automatic
+        promotion still have no endpoint — see{' '}
+        <code>docs/frontend-backend-gaps.md</code>.
+      </Callout>
     </div>
   );
 }

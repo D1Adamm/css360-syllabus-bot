@@ -67,27 +67,52 @@ GET  /api/courses/{courseId}/model            -> { state, updatedAt, modelVersio
 describes a single shared inference service. It reports whether *some* adapter
 is loaded, not which course it belongs to. Reading it as "this course's model
 is ready" would be correct for at most one course and wrong for every other, so
-`getCourseModelStatus()` returns `unknown` and reads nothing.
+`describeCourseModel()` reports model existence from the registry alone; it never consults `/fine-tuned/health`, which describes one shared service and cannot say whose adapter is loaded.
 
 ---
 
-## 3. Per-course model registry
+## 3. Automatic model registration and promotion
 
-**Where:** `/admin/models` (`AdminModelsPage`)
+**Where:** `/admin/models` (`AdminModelsPage`), `/professor/course/:id/model`
 
-**Today:** shows the live fine-tuned service (status, model, adapter loaded,
-host) and an explicit empty state for version history.
-
-**Blocked by:** adapter versions, promotion, and rollback are handled by
-`training/promote_qlora_adapter.sh` with no record the application can read.
-
-**Needed:**
+**Now partly closed.** A durable per-course model registry exists at
+`courses/{courseId}/model` in the Realtime Database:
 
 ```
-GET  /api/models                     -> { versions: [{ id, courseId, createdAt, active }] }
-POST /api/models/{versionId}/promote -> { active: true }
-POST /api/models/{versionId}/rollback
+courses/{courseId}/model
+  currentVersion: "v1"
+  versions/
+    v1/
+      version, baseModel, trainingExampleCount,
+      status:     ready | training | failed      (durable; the artifact exists)
+      deployment: online | offline | unknown     (whether it is being served)
+      artifactRef, createdAt, updatedAt, notes?
 ```
+
+`status` and `deployment` are separate on purpose. A promoted adapter stays
+`ready` whether or not anything serves it — conflating the two is what made the
+professor page report "not available yet" for a course that has a trained model.
+
+`artifactRef` is stored relative (`css-360-qlora/adapter`). The absolute
+promote-script destination embeds a cluster home directory and a username, so it
+is never stored or shown. Admin surfaces show the reference; professor surfaces
+show none of it.
+
+Records are written by `scripts/register_course_model.py`, which only writes the
+record — it does not train, promote, or deploy.
+
+**Still missing:** the registry has no writer other than that script. Training
+submission, job status, and automatic promotion still have no endpoint, so
+registration is a manual step after a run is promoted by hand.
+
+```
+POST /api/courses/{courseId}/model/versions     -> register a completed run
+POST /api/courses/{courseId}/model/promote      -> { currentVersion }
+POST /api/courses/{courseId}/model/deployment   -> { status: online | offline }
+```
+
+The third would let the deployment field track reality automatically instead of
+being set when someone remembers.
 
 ---
 

@@ -129,3 +129,66 @@ export interface CourseMetadata {
   syllabusType: string | null;
   chunkCount: number;
 }
+
+/* ------------------------------------------------------------------------ *
+ * Course model registry
+ *
+ * Stored at `courses/{courseId}/model`, alongside the course's other durable
+ * records. Two things are deliberately kept apart:
+ *
+ *   - `status` — does a trained model exist for this course, and is it usable?
+ *     This is a durable fact about an artifact that was produced. It stays true
+ *     whether or not anything is currently serving it.
+ *   - `deployment` — is that model actually loaded somewhere answering
+ *     requests right now? This changes when a service starts or stops and says
+ *     nothing about whether the model exists.
+ *
+ * Conflating them is what made the UI unable to describe a trained-but-offline
+ * model, which is exactly CSS 360's situation.
+ * ------------------------------------------------------------------------ */
+
+/** Training/artifact state. Durable; survives the service going away. */
+export type CourseModelStatus =
+  /** Training completed and the artifact is registered. */
+  | 'ready'
+  /** Training is running. Set by whoever runs it; nothing infers this. */
+  | 'training'
+  /** Training was attempted and did not produce a usable artifact. */
+  | 'failed';
+
+/** Whether the registered model is currently being served. */
+export type CourseModelDeploymentStatus =
+  /** Loaded and serving requests. */
+  | 'online'
+  /** Registered but nothing is serving it. */
+  | 'offline'
+  /** Not recorded. Never guessed from service health. */
+  | 'unknown';
+
+export interface CourseModelVersion {
+  /** `v1`, `v2`, … Monotonic per course. */
+  version: string;
+  /** Model the adapter was trained on, e.g. `meta-llama/Llama-3.2-3B-Instruct`. */
+  baseModel: string;
+  /** Approved examples the version was trained from. */
+  trainingExampleCount: number;
+  status: CourseModelStatus;
+  deployment: CourseModelDeploymentStatus;
+  /**
+   * Logical artifact reference, e.g. `css-360-qlora/adapter`.
+   *
+   * Deliberately relative and machine-independent: the absolute path embeds a
+   * cluster home directory and a username. Admin surfaces may show this;
+   * professor surfaces never do.
+   */
+  artifactRef: string;
+  createdAt: string;
+  updatedAt?: string;
+  notes?: string;
+}
+
+export interface CourseModelRegistry {
+  /** Version key that Professor-facing screens describe. */
+  currentVersion: string;
+  versions: Record<string, CourseModelVersion>;
+}

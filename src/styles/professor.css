@@ -500,6 +500,31 @@
   max-width: var(--measure-narrow);
 }
 
+/* What the model was built from — facts a professor can act on, nothing
+   about where the artifact lives. */
+.model-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-200);
+}
+
+.model-facts dt {
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
+.model-facts dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--ink-900);
+}
+
 .model-state__actions {
   display: flex;
   gap: var(--space-3);

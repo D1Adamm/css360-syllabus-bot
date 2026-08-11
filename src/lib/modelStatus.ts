@@ -1,51 +1,162 @@
+import type { CourseModelVersion } from '../types';
+
 /**
- * Course model state.
+ * How a course's model is described to people.
  *
- * THERE IS NO BACKEND FOR THIS YET. Everything a professor would want to know —
- * has a model been requested, is it training, is it ready for this course — has
- * no endpoint and no stored record. This module exists so that fact lives in
- * exactly one file instead of being smeared across the professor pages.
+ * Two independent questions, deliberately never merged:
  *
- * Why the one related endpoint cannot answer it: `GET /fine-tuned/health`
- * describes a single shared inference service. It reports whether *some*
- * adapter is loaded, not which course it belongs to. Reading it as "this
- * course's model is ready" would be wrong for every course but one, so we do
- * not read it here at all.
+ *   1. Does a trained model exist for this course, and did training succeed?
+ *      Answered only by the registry record at `courses/{courseId}/model`.
+ *   2. Is that model reachable for inference right now? Answered only by the
+ *      live service check.
  *
- * See `docs/frontend-backend-gaps.md` for the endpoints this needs.
+ * `GET /fine-tuned/health` describes one shared inference service. It reports
+ * whether *some* adapter is loaded, not whose. It is therefore never consulted
+ * for question 1 — a course's model does not stop existing because a GPU node
+ * is down, and another course's model being served does not mean yours is.
  */
 
-export type CourseModelState =
-  /** No request has been made. The only state we can currently be sure of. */
-  | 'not_requested'
-  /** A request exists and is queued. Needs a request record to be real. */
-  | 'requested'
-  /** Training is running. Needs job status to be real. */
-  | 'preparing'
-  /** A model for this course is deployed. Needs a per-course model registry. */
-  | 'ready'
-  /** Training failed. Needs job status to be real. */
-  | 'needs_attention'
-  /** We genuinely cannot tell. This is what the UI shows today. */
-  | 'unknown';
+/** Whether a course has a usable model, from the registry alone. */
+export type CourseModelPresence = 'none' | 'training' | 'ready' | 'failed' | 'unknown';
 
-export interface CourseModelStatus {
-  state: CourseModelState;
-  /** True while no backend can answer the question. */
-  isPlaceholder: boolean;
+/** Whether that model can answer right now. Independent of presence. */
+export type CourseModelAvailability = 'online' | 'offline' | 'unknown';
+
+export interface CourseModelPresentation {
+  presence: CourseModelPresence;
+  availability: CourseModelAvailability;
+  /** Headline a professor reads. Never mentions infrastructure. */
+  title: string;
+  /** One sentence of explanation. */
+  detail: string;
+  tone: 'neutral' | 'success' | 'warning' | 'danger' | 'progress' | 'accent';
+}
+
+export function presenceFromVersion(
+  version: CourseModelVersion | null,
+): CourseModelPresence {
+  if (!version) {
+    return 'none';
+  }
+  switch (version.status) {
+    case 'ready':
+      return 'ready';
+    case 'training':
+      return 'training';
+    case 'failed':
+      return 'failed';
+    default:
+      return 'unknown';
+  }
+}
+
+export interface DescribeModelInput {
+  version: CourseModelVersion | null;
+  /**
+   * Live service reachability, when it has been checked. Only ever narrows
+   * *availability* — it can never create or remove a model.
+   */
+  serviceReachable?: boolean | null;
+  /** True when the registry itself could not be read. */
+  registryUnavailable?: boolean;
 }
 
 /**
- * What we can honestly report about a course's model right now.
- *
- * Always `unknown`. When the backend gains a request record and job status,
- * this becomes a real read and every caller updates for free.
+ * Turns a registry record plus optional live service state into what a
+ * professor sees.
  */
-export function getCourseModelStatus(): CourseModelStatus {
-  return { state: 'unknown', isPlaceholder: true };
+export function describeCourseModel({
+  version,
+  serviceReachable = null,
+  registryUnavailable = false,
+}: DescribeModelInput): CourseModelPresentation {
+  if (registryUnavailable) {
+    return {
+      presence: 'unknown',
+      availability: 'unknown',
+      title: 'Model status unavailable',
+      detail:
+        "We couldn't check your course model just now. Nothing about it has changed.",
+      tone: 'warning',
+    };
+  }
+
+  const presence = presenceFromVersion(version);
+
+  if (presence === 'none') {
+    return {
+      presence,
+      availability: 'unknown',
+      title: 'No course model yet',
+      detail:
+        'Once enough of your example questions are approved, a course model can be trained from them.',
+      tone: 'neutral',
+    };
+  }
+
+  if (presence === 'training') {
+    return {
+      presence,
+      availability: 'unknown',
+      title: 'Your course model is being prepared',
+      detail: 'This can take a while. You can keep reviewing examples in the meantime.',
+      tone: 'progress',
+    };
+  }
+
+  if (presence === 'failed') {
+    return {
+      presence,
+      availability: 'unknown',
+      title: 'Your course model needs attention',
+      detail:
+        'The last attempt to prepare it did not finish. The project administrator has the details.',
+      tone: 'danger',
+    };
+  }
+
+  // Ready. Availability is a separate question, and the recorded deployment is
+  // only trusted when a live check has not contradicted it.
+  const recorded = version?.deployment ?? 'unknown';
+  const availability: CourseModelAvailability =
+    serviceReachable === true
+      ? 'online'
+      : serviceReachable === false
+        ? 'offline'
+        : recorded;
+
+  if (availability === 'online') {
+    return {
+      presence,
+      availability,
+      title: 'Your course model is ready',
+      detail: 'It is answering questions on the Compare page now.',
+      tone: 'accent',
+    };
+  }
+
+  if (availability === 'offline') {
+    return {
+      presence,
+      availability,
+      title: 'Your course model is ready, but offline',
+      detail:
+        'It has been trained from your approved examples and is saved. It is not running right now, so it cannot answer questions until it is brought back online.',
+      tone: 'warning',
+    };
+  }
+
+  return {
+    presence,
+    availability,
+    title: 'Your course model is ready',
+    detail:
+      'It has been trained from your approved examples. Whether it is currently answering questions is not known.',
+    tone: 'success',
+  };
 }
 
-/** Minimum approved examples before requesting a model is worthwhile. */
+/** Minimum approved examples before training a model is worthwhile. */
 export const RECOMMENDED_APPROVED_EXAMPLES = 30;
 
 export interface ModelReadiness {
@@ -58,9 +169,7 @@ export interface ModelReadiness {
 /**
  * Whether a course has enough approved examples to be worth training on.
  *
- * This *is* answerable today, because it depends only on review status. It is
- * deliberately separate from `getCourseModelStatus` so that a real readiness
- * figure is never mistaken for a real model state.
+ * Depends only on review status, never on the export or the registry.
  */
 export function getModelReadiness(approved: number): ModelReadiness {
   return {
