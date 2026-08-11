@@ -6,6 +6,8 @@ export interface QuestionAskProps {
   examples: string[];
   /** Describes where the suggestions came from, so the UI cannot overclaim. */
   examplesLabel: string;
+  /** True while suggestions are being fetched for this course. */
+  examplesLoading?: boolean;
   isRunning: boolean;
   onAsk: (question: string) => void;
 }
@@ -23,6 +25,7 @@ const VISIBLE_EXAMPLES = 4;
 export function QuestionAsk({
   examples,
   examplesLabel,
+  examplesLoading = false,
   isRunning,
   onAsk,
 }: QuestionAskProps) {
@@ -79,7 +82,22 @@ export function QuestionAsk({
         </div>
       </form>
 
-      {examples.length > 0 && (
+      {/* Placeholders hold the row's height while suggestions load, so the
+          question box does not jump when they arrive. */}
+      {examplesLoading && (
+        <div className="ask__examples" aria-hidden="true">
+          <span className="ask__examples-label">&nbsp;</span>
+          <ul className="ask__chips">
+            {[14, 18, 12].map((width, index) => (
+              <li key={index}>
+                <span className="ask__chip ask__chip--skeleton" style={{ width: `${width}ch` }} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {!examplesLoading && examples.length > 0 && (
         <div className="ask__examples">
           <span className="ask__examples-label" id={`${inputId}-examples`}>
             {examplesLabel}

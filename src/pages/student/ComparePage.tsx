@@ -73,6 +73,7 @@ export function ComparePage() {
             ? 'Questions from this course'
             : 'Try an example'
         }
+        examplesLoading={suggestions.loading}
         isRunning={isRunning}
         onAsk={handleAsk}
       />

@@ -24,7 +24,7 @@ export function AppShell() {
 
   const area = getRoleAreaFromPathname(pathname) ?? storedRole;
   const courseId = getCourseIdFromPathname(pathname);
-  const { metadata } = useCourseMetadata(courseId);
+  const { state: metadataState, metadata } = useCourseMetadata(courseId);
 
   const navItems = primaryNavItems(area, courseId);
   const subNavItems = courseId ? courseNavItems(area, courseId) : [];
@@ -48,9 +48,10 @@ export function AppShell() {
 
       {courseId && !isAdmin && (
         <CourseContextBar
-          name={metadata?.name || 'Course'}
+          name={metadata?.name}
           title={metadata?.title}
           term={metadata?.term}
+          loading={metadataState.status === 'loading'}
           items={subNavItems}
         />
       )}

@@ -31,11 +31,27 @@ export const GENERIC_SUGGESTIONS = [
 export type SuggestionSource = 'course' | 'generic';
 
 export interface QuestionSuggestions {
+  /** Empty while loading — never pre-seeded with the generic fallback. */
   questions: string[];
   /** Lets the UI say where these came from instead of implying provenance. */
   source: SuggestionSource;
   loading: boolean;
 }
+
+/*
+ * While the request is in flight the hook reports no suggestions at all.
+ *
+ * It used to seed state with the generic list and flip to the course's own
+ * questions a tick later, which made every hard refresh flash a set of
+ * questions that were not this course's. The generic list is a fallback for a
+ * course that genuinely has no approved examples — a resolved answer, not a
+ * placeholder — so it must not appear until we know that is the case.
+ */
+const LOADING: QuestionSuggestions = {
+  questions: [],
+  source: 'generic',
+  loading: true,
+};
 
 const MAX_SUGGESTIONS = 6;
 
@@ -45,20 +61,12 @@ function isReviewedApproved(status: string): boolean {
 }
 
 export function useQuestionSuggestions(courseId: string): QuestionSuggestions {
-  const [state, setState] = useState<QuestionSuggestions>({
-    questions: [...GENERIC_SUGGESTIONS],
-    source: 'generic',
-    loading: true,
-  });
+  const [state, setState] = useState<QuestionSuggestions>(LOADING);
 
   useEffect(() => {
     let cancelled = false;
 
-    setState({
-      questions: [...GENERIC_SUGGESTIONS],
-      source: 'generic',
-      loading: true,
-    });
+    setState(LOADING);
 
     void listCourseSeeds(courseId)
       .then((response) => {
