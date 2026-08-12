@@ -780,3 +780,30 @@ class FactAllocationResponse(BaseModel):
     summary: FactAllocationSummary
     ranking: list[FactAllocationRankingItem] = Field(default_factory=list)
 
+
+
+class TrainingLaunchCapabilityResponse(BaseModel):
+    """Whether this backend can submit a training job at all."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    enabled: bool
+    reason: str = ""
+
+
+class TrainingLaunchRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    # `smoke` is the cheap sanity run; `full` is the real training job.
+    mode: str = "full"
+
+
+class TrainingLaunchResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    job_id: str = Field(alias="jobId")
+    mode: str
+    submitted_at: str = Field(alias="submittedAt")
+    train_count: int = Field(alias="trainCount")
+    validation_count: int = Field(alias="validationCount")

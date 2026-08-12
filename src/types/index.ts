@@ -237,6 +237,25 @@ export interface CourseModelRequest {
    * next success. The request stays `requested` so it can simply be retried.
    */
   preparationError?: string;
+  /** Submitted training job. Admin-only; no field here reaches a professor. */
+  training?: CourseModelRequestTraining;
+  /**
+   * Why the last launch attempt failed. Admin-only, cleared on success. The
+   * request stays `preparing` so it can be retried.
+   */
+  launchError?: string;
+}
+
+export interface CourseModelRequestTraining {
+  /** Slurm job id, captured from the real submission. */
+  jobId: string;
+  /** `smoke` or `full`. */
+  mode: string;
+  submittedAt: string;
+  /** Relative, course-scoped dataset the job was given. */
+  datasetRef: string;
+  trainExamples: number;
+  validationExamples: number;
 }
 
 export interface CourseModelRequestPreparation {

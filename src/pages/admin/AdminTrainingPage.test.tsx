@@ -49,9 +49,26 @@ vi.mock('../../lib/api', () => ({
 
 const fetchCourseModelRequest = vi.fn();
 const prepareTrainingDataForRequest = vi.fn();
+const launchTrainingForRequest = vi.fn();
+const fetchTrainingLaunchCapability = vi.fn();
 
 vi.mock('../../lib/courseModelRequestDb', () => ({
   fetchCourseModelRequest: (...args: unknown[]) => fetchCourseModelRequest(...args),
+}));
+
+vi.mock('../../lib/launchTraining', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/launchTraining')>(
+    '../../lib/launchTraining',
+  );
+  return {
+    ...actual,
+    launchTrainingForRequest: (...args: unknown[]) => launchTrainingForRequest(...args),
+  };
+});
+
+vi.mock('../../lib/adminApi', () => ({
+  fetchTrainingLaunchCapability: (...args: unknown[]) =>
+    fetchTrainingLaunchCapability(...args),
 }));
 
 vi.mock('../../lib/prepareTrainingData', async () => {
@@ -129,6 +146,17 @@ describe('AdminTrainingPage', () => {
     });
 
     fetchCourseModelRequest.mockResolvedValue(null);
+    fetchTrainingLaunchCapability.mockResolvedValue({ enabled: true, reason: '' });
+    launchTrainingForRequest.mockResolvedValue({
+      training: {
+        jobId: '9182736',
+        mode: 'full',
+        submittedAt: '2026-08-11T13:00:00.000Z',
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 38,
+        validationExamples: 4,
+      },
+    });
     prepareTrainingDataForRequest.mockResolvedValue({
       preparation: {
         preparedAt: '2026-08-11T12:00:00.000Z',
@@ -376,6 +404,164 @@ describe('AdminTrainingPage', () => {
 
     expect(
       await screen.findByText(/Last attempt: no approved export found/),
+    ).toBeInTheDocument();
+  });
+
+  it('offers Start training only once data is prepared', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'requested',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T10:00:00.000Z',
+      approvedExampleCount: 42,
+    });
+
+    renderPage();
+    await screen.findByRole('list', { name: 'Model requests' });
+
+    expect(screen.queryByRole('button', { name: /Start training/i })).toBeNull();
+  });
+
+  it('submits training for the prepared course and shows the job id', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'preparing',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T12:00:00.000Z',
+      approvedExampleCount: 42,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 42,
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 38,
+        validationExamples: 4,
+        splitSeed: 360,
+      },
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Start training/i }));
+
+    await waitFor(() => {
+      expect(launchTrainingForRequest).toHaveBeenCalledWith(
+        COURSE_ID,
+        expect.objectContaining({ courseId: COURSE_ID, status: 'preparing' }),
+      );
+    });
+    expect(await screen.findByText(/Submitted job 9182736/)).toBeInTheDocument();
+  });
+
+  it('shows a submitted job and offers no second start', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'training',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T13:00:00.000Z',
+      approvedExampleCount: 42,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 42,
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 38,
+        validationExamples: 4,
+      },
+      training: {
+        jobId: '9182736',
+        mode: 'full',
+        submittedAt: '2026-08-11T13:00:00.000Z',
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 38,
+        validationExamples: 4,
+      },
+    });
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(within(requests).getByText('9182736')).toBeInTheDocument();
+    expect(within(requests).getByText('training')).toBeInTheDocument();
+    // Duplicate launches are not offered.
+    expect(within(requests).queryByRole('button', { name: /Start training/i })).toBeNull();
+  });
+
+  it('disables Start training when the backend cannot launch', async () => {
+    fetchTrainingLaunchCapability.mockResolvedValue({
+      enabled: false,
+      reason: 'Training launch is disabled on this backend.',
+    });
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'preparing',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T12:00:00.000Z',
+      approvedExampleCount: 42,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 42,
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 38,
+        validationExamples: 4,
+        splitSeed: 360,
+      },
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/Training launch is disabled on this backend/),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Start training/i })).toBeDisabled();
+  });
+
+  it('surfaces a launch failure to the admin', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'preparing',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T12:00:00.000Z',
+      approvedExampleCount: 42,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 42,
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 38,
+        validationExamples: 4,
+        splitSeed: 360,
+      },
+    });
+    launchTrainingForRequest.mockRejectedValue(
+      new Error('Syncing training data failed: connection closed'),
+    );
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Start training/i }));
+
+    expect(
+      await screen.findByText(/Syncing training data failed/),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the admin why the last launch attempt failed', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      courseId: COURSE_ID,
+      status: 'preparing',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T13:00:00.000Z',
+      approvedExampleCount: 42,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 42,
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 38,
+        validationExamples: 4,
+      },
+      launchError: 'rsync: connection closed',
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/Last launch attempt: rsync: connection closed/),
     ).toBeInTheDocument();
   });
 });

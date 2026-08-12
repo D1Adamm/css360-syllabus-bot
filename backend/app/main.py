@@ -64,6 +64,9 @@ from app.schemas import (
     StarterGenerationStatusResponse,
     SyllabusTextResponse,
     SyllabusUploadResponse,
+    TrainingLaunchCapabilityResponse,
+    TrainingLaunchRequest,
+    TrainingLaunchResponse,
 )
 from app.firebase_seeds import (
     FirebaseConfigurationError,
@@ -95,6 +98,13 @@ from app.starter_jobs import (
 from app.storage import get_course_artifact_storage
 from app.syllabus_extract import extract_clean_syllabus_text
 from app.syllabus_upload import SyllabusUploadError, validate_syllabus_upload
+from app.training_launch import (
+    LaunchDisabledError,
+    LaunchExecutionError,
+    LaunchValidationError,
+    describe_capability,
+    launch_training,
+)
 
 app = FastAPI(title="Syllabus Model Lab Backend")
 
@@ -815,6 +825,60 @@ async def get_approved_export_status(course_id: str) -> ApprovedExportStatusResp
         exportPath=status["exportPath"],
         exampleCount=status["exampleCount"],
         sourceFile=status["sourceFile"],
+    )
+
+
+@app.get("/api/training/launch-capability", response_model=TrainingLaunchCapabilityResponse)
+def training_launch_capability() -> TrainingLaunchCapabilityResponse:
+    """Report whether this backend can submit a training job.
+
+    Lets the admin UI show an honest disabled state instead of offering a
+    button that cannot work on this host.
+    """
+    capability = describe_capability()
+    return TrainingLaunchCapabilityResponse(
+        enabled=capability.enabled, reason=capability.reason
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/training/launch",
+    response_model=TrainingLaunchResponse,
+)
+def launch_course_training(
+    course_id: str,
+    body: TrainingLaunchRequest | None = None,
+) -> TrainingLaunchResponse:
+    """Sync one course's prepared dataset and submit its QLoRA job.
+
+    The whole infrastructure boundary lives behind this endpoint: the browser
+    never runs ssh, rsync, or sbatch. Everything is scoped to `course_id`, and
+    the underlying scripts refuse to touch another course's export or the live
+    inference adapter.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    mode = (body.mode if body is not None else "full") or "full"
+
+    try:
+        result = launch_training(safe_course_id, mode=mode)
+    except LaunchDisabledError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except LaunchValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LaunchExecutionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return TrainingLaunchResponse(
+        courseId=safe_course_id,
+        jobId=result.job_id,
+        mode=result.mode,
+        submittedAt=result.submitted_at,
+        trainCount=result.train_count,
+        validationCount=result.validation_count,
     )
 
 

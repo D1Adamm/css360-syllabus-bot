@@ -10,6 +10,7 @@ import type {
   CourseModelRequest,
   CourseModelRequestPreparation,
   CourseModelRequestStatus,
+  CourseModelRequestTraining,
 } from '../types';
 import { assertValidCourseId } from './courseId';
 import { getCourseModelRequestPath } from './coursePaths';
@@ -76,6 +77,7 @@ export function parseCourseModelRequest(value: unknown): CourseModelRequest | nu
 
   const count = Number(record.approvedExampleCount);
   const preparation = parsePreparation(record.preparation);
+  const training = parseTraining(record.training);
 
   return {
     courseId: record.courseId,
@@ -91,6 +93,42 @@ export function parseCourseModelRequest(value: unknown): CourseModelRequest | nu
     ...(typeof record.preparationError === 'string'
       ? { preparationError: record.preparationError }
       : {}),
+    ...(training ? { training } : {}),
+    ...(typeof record.launchError === 'string'
+      ? { launchError: record.launchError }
+      : {}),
+  };
+}
+
+function parseTraining(value: unknown): CourseModelRequestTraining | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  // A training block without a real job id is meaningless — it would claim a
+  // job exists that nothing can look up.
+  if (
+    typeof record.jobId !== 'string' ||
+    record.jobId.trim() === '' ||
+    typeof record.submittedAt !== 'string'
+  ) {
+    return null;
+  }
+
+  const asCount = (raw: unknown) => {
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : 0;
+  };
+
+  return {
+    jobId: record.jobId,
+    mode: typeof record.mode === 'string' ? record.mode : 'full',
+    submittedAt: record.submittedAt,
+    datasetRef: typeof record.datasetRef === 'string' ? record.datasetRef : '',
+    trainExamples: asCount(record.trainExamples),
+    validationExamples: asCount(record.validationExamples),
   };
 }
 

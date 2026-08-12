@@ -212,12 +212,19 @@ export function describeModelRequest(request: CourseModelRequest): RequestPresen
         tone: 'info',
       };
     case 'preparing':
-    case 'training':
       return {
-        label: 'Preparing',
+        label: 'Being prepared',
         title: 'Your course model is being prepared',
         detail:
-          'This runs on shared research hardware and can take a while. Nothing is needed from you.',
+          'Your approved examples are being gathered ready for training. Nothing is needed from you.',
+        tone: 'progress',
+      };
+    case 'training':
+      return {
+        label: 'Training',
+        title: 'Your course model is training',
+        detail:
+          'This runs on shared research hardware and can take a while. Nothing is needed from you — you can keep reviewing examples in the meantime.',
         tone: 'progress',
       };
     case 'ready':

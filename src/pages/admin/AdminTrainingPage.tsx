@@ -10,6 +10,11 @@ import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
 import { fetchCourseModelRequest } from '../../lib/courseModelRequestDb';
 import {
+  fetchTrainingLaunchCapability,
+  type TrainingLaunchCapability,
+} from '../../lib/adminApi';
+import { canLaunchTraining, launchTrainingForRequest } from '../../lib/launchTraining';
+import {
   InsufficientApprovedExamplesError,
   prepareTrainingDataForRequest,
 } from '../../lib/prepareTrainingData';
@@ -226,8 +231,33 @@ function OutstandingRequests() {
   const { state: courses } = useCourses();
   const [rows, setRows] = useState<RequestRow[] | null>(null);
   const [preparing, setPreparing] = useState<string | null>(null);
+  const [launching, setLaunching] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [reload, setReload] = useState(0);
+  const [capability, setCapability] = useState<TrainingLaunchCapability | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetchTrainingLaunchCapability()
+      .then((result) => {
+        if (!cancelled) {
+          setCapability(result);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCapability({
+            enabled: false,
+            reason: 'The backend could not be reached to check launch availability.',
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (courses.status !== 'ready') {
@@ -296,6 +326,28 @@ function OutstandingRequests() {
     }
   }
 
+  /** Submits the job for one prepared request. */
+  async function launch(courseId: string, request: RequestRow['request']) {
+    setLaunching(courseId);
+    setMessages((current) => ({ ...current, [courseId]: '' }));
+
+    try {
+      const { training } = await launchTrainingForRequest(courseId, request);
+      setMessages((current) => ({
+        ...current,
+        [courseId]: `Submitted job ${training.jobId} (${training.mode}).`,
+      }));
+    } catch (error) {
+      setMessages((current) => ({
+        ...current,
+        [courseId]: error instanceof Error ? error.message : 'Launch failed.',
+      }));
+    } finally {
+      setLaunching(null);
+      setReload((current) => current + 1);
+    }
+  }
+
   const outstanding = (rows ?? []).filter(
     (row) => row.request.status !== 'ready' && row.request.status !== 'failed',
   );
@@ -310,6 +362,12 @@ function OutstandingRequests() {
         description="Submitted by professors. Acting on one is still a manual step."
         divider
       />
+
+      {capability && !capability.enabled && (
+        <Callout tone="info" title="Starting training is unavailable here">
+          {capability.reason} Preparing data still works.
+        </Callout>
+      )}
 
       {rows === null ? (
         <p className="ui-text-muted" role="status" aria-live="polite">
@@ -353,9 +411,24 @@ function OutstandingRequests() {
                     'not prepared'
                   )}
                 </p>
+                {row.request.training && (
+                  <p className="ui-text-xs ui-text-muted">
+                    Training job: <code>{row.request.training.jobId}</code> ·{' '}
+                    {row.request.training.mode} ·{' '}
+                    {row.request.training.trainExamples} train /{' '}
+                    {row.request.training.validationExamples} validation ·
+                    submitted{' '}
+                    {new Date(row.request.training.submittedAt).toLocaleString()}
+                  </p>
+                )}
                 {row.request.preparationError && (
                   <p className="admin-row__error">
                     Last attempt: {row.request.preparationError}
+                  </p>
+                )}
+                {row.request.launchError && (
+                  <p className="admin-row__error">
+                    Last launch attempt: {row.request.launchError}
                   </p>
                 )}
                 {row.request.failureMessage && (
@@ -374,18 +447,42 @@ function OutstandingRequests() {
                 {/* Only an outstanding, non-terminal request can be prepared.
                     Re-preparing after a change to the approved set is allowed —
                     the export and split are both idempotent overwrites. */}
-                {row.request.status !== 'ready' && row.request.status !== 'failed' && (
+                {row.request.status !== 'ready' &&
+                  row.request.status !== 'failed' &&
+                  !row.request.training && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void prepare(row.courseId)}
+                      loading={preparing === row.courseId}
+                      loadingLabel="Preparing…"
+                      disabled={preparing !== null || launching !== null}
+                    >
+                      {row.request.preparation
+                        ? 'Re-prepare training data'
+                        : 'Prepare training data'}
+                    </Button>
+                  )}
+
+                {/* Only a request whose data is prepared and which has no job
+                    yet can be launched. */}
+                {canLaunchTraining(row.request) && (
                   <Button
                     size="sm"
-                    variant="secondary"
-                    onClick={() => void prepare(row.courseId)}
-                    loading={preparing === row.courseId}
-                    loadingLabel="Preparing…"
-                    disabled={preparing !== null}
+                    variant="primary"
+                    onClick={() => void launch(row.courseId, row.request)}
+                    loading={launching === row.courseId}
+                    loadingLabel="Submitting…"
+                    disabled={
+                      preparing !== null ||
+                      launching !== null ||
+                      capability?.enabled !== true
+                    }
+                    title={
+                      capability?.enabled === false ? capability.reason : undefined
+                    }
                   >
-                    {row.request.preparation
-                      ? 'Re-prepare training data'
-                      : 'Prepare training data'}
+                    Start training
                   </Button>
                 )}
               </div>

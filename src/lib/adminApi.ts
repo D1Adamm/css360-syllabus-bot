@@ -170,3 +170,38 @@ export function runSeedQualityCheck(
     {},
   );
 }
+
+/* ---------------------------------------------------------------------------
+ * Training launch
+ *
+ * The browser never runs ssh, rsync, or sbatch. It asks the backend, which owns
+ * that boundary and shells out to the existing sync and launcher scripts.
+ * ------------------------------------------------------------------------- */
+
+export interface TrainingLaunchCapability {
+  enabled: boolean;
+  reason: string;
+}
+
+export function fetchTrainingLaunchCapability(): Promise<TrainingLaunchCapability> {
+  return getJson<TrainingLaunchCapability>('/api/training/launch-capability');
+}
+
+export interface TrainingLaunchResponse {
+  courseId: string;
+  jobId: string;
+  mode: string;
+  submittedAt: string;
+  trainCount: number;
+  validationCount: number;
+}
+
+export function launchCourseTraining(
+  courseId: string,
+  mode: 'smoke' | 'full' = 'full',
+): Promise<TrainingLaunchResponse> {
+  return postJsonAdmin<TrainingLaunchResponse>(
+    `/api/courses/${courseId}/training/launch`,
+    { mode },
+  );
+}

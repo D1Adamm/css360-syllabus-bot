@@ -243,21 +243,26 @@ describe('ProfessorModelPage requests', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('describes preparing and training the same way to a professor', () => {
-    for (const status of ['preparing', 'training'] as const) {
+  it('gives a professor simple language for each stage', () => {
+    // Requested / Being prepared / Training — no pipeline vocabulary.
+    const expected = {
+      requested: /has been requested/i,
+      preparing: /is being prepared/i,
+      training: /is training/i,
+    } as const;
+
+    for (const [status, pattern] of Object.entries(expected)) {
       mockRegistry(null);
       mockRequest({
         courseId: 'css-360-winter-2026-a7rp',
-        status,
+        status: status as 'requested' | 'preparing' | 'training',
         requestedAt: '2026-08-11T10:00:00.000Z',
         updatedAt: '2026-08-11T10:00:00.000Z',
         approvedExampleCount: 54,
       });
       renderPage();
 
-      expect(
-        screen.getByText(/Your course model is being prepared/i),
-      ).toBeInTheDocument();
+      expect(screen.getByText(pattern)).toBeInTheDocument();
       cleanup();
     }
   });
@@ -370,6 +375,48 @@ describe('ProfessorModelPage requests', () => {
     expect(text).not.toMatch(/exports\/|train\b.*validation|split seed|jsonl/i);
     expect(text).not.toMatch(/sbatch|n2145|gpu/i);
     // The professor sees only that it is under way.
-    expect(screen.getByText(/being prepared/i)).toBeInTheDocument();
+    expect(screen.getByText(/is being prepared/i)).toBeInTheDocument();
+  });
+
+  it('shows a training request without any job or cluster detail', () => {
+    mockRegistry(null);
+    mockRequest({
+      courseId: 'css-360-winter-2026-a7rp',
+      status: 'training',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T13:00:00.000Z',
+      approvedExampleCount: 54,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 54,
+        datasetRef: 'exports/css-360-winter-2026-a7rp',
+        trainExamples: 48,
+        validationExamples: 6,
+      },
+      training: {
+        jobId: '9182736',
+        mode: 'full',
+        submittedAt: '2026-08-11T13:00:00.000Z',
+        datasetRef: 'exports/css-360-winter-2026-a7rp',
+        trainExamples: 48,
+        validationExamples: 6,
+      },
+      launchError: 'ssh: connect to host tillicum.hyak.uw.edu port 22: refused',
+    });
+    renderPage();
+
+    const text = document.body.textContent ?? '';
+
+    // Simple language only.
+    expect(screen.getByText(/is training/i)).toBeInTheDocument();
+
+    // No job id, host, path, or account detail anywhere.
+    expect(text).not.toContain('9182736');
+    expect(text).not.toMatch(/tillicum|hyak|gpfs|slurm|sbatch|ssh|duo/i);
+    expect(text).not.toMatch(/exports\/|jsonl|adapter|hugging/i);
+    // No Start training control for a professor.
+    expect(
+      screen.queryByRole('button', { name: /Start training/i }),
+    ).not.toBeInTheDocument();
   });
 });
