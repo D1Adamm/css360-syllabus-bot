@@ -530,5 +530,92 @@ class CliTests(unittest.TestCase):
         self.assertEqual(runner.main(["--once", "--lease-seconds", "0"]), 2)
 
 
+TILLICUM_RUNTIME_FILES = (
+    REPO_ROOT / "training" / "run_training_queue.py",
+    REPO_ROOT / "scripts" / "lib" / "training_queue.py",
+)
+
+
+class Python39RuntimeCompatibilityTests(unittest.TestCase):
+    """Tillicum login nodes run Python 3.9; these files must import there."""
+
+    def test_runtime_files_do_not_use_pep604_unions(self) -> None:
+        """Reject `T | None` (and any `X | Y`) in Tillicum runtime sources.
+
+        `from __future__ import annotations` postpones function annotations, but
+        type aliases like `Transport = Callable[..., bytes | None, ...]` are still
+        evaluated at import and crash on 3.9. Keep Optional[...] instead.
+        """
+        import ast
+        import re
+
+        pattern = re.compile(r"\|\s*None\b")
+        for path in TILLICUM_RUNTIME_FILES:
+            source = path.read_text(encoding="utf-8")
+            self.assertIsNone(
+                pattern.search(source),
+                f"{path.relative_to(REPO_ROOT)} reintroduced PEP 604 `T | None`; "
+                "use Optional[T] for Python 3.9",
+            )
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+                    self.fail(
+                        f"{path.relative_to(REPO_ROOT)}:{node.lineno} uses `|` "
+                        "(PEP 604 unions are Python 3.10+). Use Optional[...] instead."
+                    )
+
+    def test_runtime_files_have_no_other_post39_syntax(self) -> None:
+        import ast
+
+        match_cls = getattr(ast, "Match", ())
+        try_star_cls = getattr(ast, "TryStar", ())
+        type_alias_cls = getattr(ast, "TypeAlias", ())
+
+        for path in TILLICUM_RUNTIME_FILES:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if match_cls and isinstance(node, match_cls):
+                    self.fail(
+                        f"{path.name}:{node.lineno} uses match/case (Python 3.10+)"
+                    )
+                if try_star_cls and isinstance(node, try_star_cls):
+                    self.fail(
+                        f"{path.name}:{node.lineno} uses except* (Python 3.11+)"
+                    )
+                if type_alias_cls and isinstance(node, type_alias_cls):
+                    self.fail(
+                        f"{path.name}:{node.lineno} uses a type statement (Python 3.12+)"
+                    )
+                if isinstance(node, ast.Call):
+                    for keyword in node.keywords:
+                        if keyword.arg == "strict":
+                            func = node.func
+                            name = getattr(func, "id", getattr(func, "attr", ""))
+                            if name == "zip":
+                                self.fail(
+                                    f"{path.name}:{node.lineno} uses zip(..., strict=) "
+                                    "(Python 3.10+)"
+                                )
+
+    def test_type_aliases_evaluate_on_python39_builtins(self) -> None:
+        """Type aliases are evaluated at import; they must not use `X | Y`."""
+        import ast
+
+        path = REPO_ROOT / "scripts" / "lib" / "training_queue.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            if any(
+                isinstance(child, ast.BinOp) and isinstance(child.op, ast.BitOr)
+                for child in ast.walk(node)
+            ):
+                self.fail(
+                    f"training_queue.py:{node.lineno} type alias uses PEP 604 `|`; "
+                    "that is evaluated at import on Tillicum's Python 3.9."
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

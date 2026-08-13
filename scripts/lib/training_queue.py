@@ -46,7 +46,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -103,7 +103,7 @@ def firebase_database_url() -> str:
     return url
 
 
-def firebase_auth_token() -> str | None:
+def firebase_auth_token() -> Optional[str]:
     token = (os.environ.get("FIREBASE_AUTH_TOKEN") or "").strip()
     return token or None
 
@@ -150,13 +150,13 @@ class HttpResponse:
 
 #: (method, url, body, headers) -> HttpResponse. Injected in tests so nothing
 #: here reaches the network on its own.
-Transport = Callable[[str, str, bytes | None, dict[str, str]], HttpResponse]
+Transport = Callable[[str, str, Optional[bytes], dict[str, str]], HttpResponse]
 
 
 def urllib_transport(
     method: str,
     url: str,
-    body: bytes | None,
+    body: Optional[bytes],
     headers: dict[str, str],
 ) -> HttpResponse:
     request = urllib.request.Request(url, data=body, method=method)
@@ -189,7 +189,7 @@ class FirebaseRest:
         self,
         *,
         database_url: str,
-        auth_token: str | None = None,
+        auth_token: Optional[str] = None,
         transport: Transport = urllib_transport,
     ) -> None:
         self.database_url = database_url.rstrip("/")
@@ -284,7 +284,7 @@ class TrainingRun:
     train_examples: int
     validation_examples: int
     attempt: int
-    claim: dict[str, str] | None = None
+    claim: Optional[dict[str, str]] = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
     @property
@@ -300,7 +300,7 @@ def _as_count(raw: Any) -> int:
     return value if value >= 0 else 0
 
 
-def parse_run(run_id: str, raw: Any) -> TrainingRun | None:
+def parse_run(run_id: str, raw: Any) -> Optional[TrainingRun]:
     """Read one stored run, or None when it is not usable.
 
     Deliberately strict about `courseId`, `state` and `mode`: a record missing
@@ -326,7 +326,7 @@ def parse_run(run_id: str, raw: Any) -> TrainingRun | None:
         return None
 
     claim = raw.get("claim")
-    parsed_claim: dict[str, str] | None = None
+    parsed_claim: Optional[dict[str, str]] = None
     if isinstance(claim, dict):
         owner = claim.get("owner")
         claimed_at = claim.get("claimedAt")
@@ -380,7 +380,7 @@ def iso(moment: datetime) -> str:
     return moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def parse_iso(value: str) -> datetime | None:
+def parse_iso(value: str) -> Optional[datetime]:
     text = (value or "").strip()
     if not text:
         return None
@@ -415,7 +415,7 @@ def is_claimable(run: TrainingRun, now: datetime) -> bool:
     return False
 
 
-def select_next_run(runs: list[TrainingRun], now: datetime) -> TrainingRun | None:
+def select_next_run(runs: list[TrainingRun], now: datetime) -> Optional[TrainingRun]:
     """Oldest claimable run first, so nothing waits behind newer work."""
     claimable = [run for run in runs if is_claimable(run, now)]
     if not claimable:
@@ -450,7 +450,7 @@ class TrainingQueue:
         self,
         *,
         now: datetime,
-        course_ids: list[str] | None = None,
+        course_ids: Optional[list[str]] = None,
     ) -> list[tuple[str, TrainingRun]]:
         """Claimable runs across the courses asked for, oldest first.
 
@@ -472,7 +472,7 @@ class TrainingQueue:
         *,
         owner: str,
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
-        now: datetime | None = None,
+        now: Optional[datetime] = None,
     ) -> TrainingRun:
         """Take one run, or raise `ClaimConflict` and take nothing.
 
@@ -520,8 +520,8 @@ class TrainingQueue:
         course_id: str,
         run: TrainingRun,
         *,
-        error: str | None = None,
-        now: datetime | None = None,
+        error: Optional[str] = None,
+        now: Optional[datetime] = None,
     ) -> None:
         """Put a claimed run back on the queue.
 
@@ -544,8 +544,8 @@ class TrainingQueue:
 def build_queue(
     *,
     transport: Transport = urllib_transport,
-    database_url: str | None = None,
-    auth_token: str | None = None,
+    database_url: Optional[str] = None,
+    auth_token: Optional[str] = None,
 ) -> TrainingQueue:
     return TrainingQueue(
         FirebaseRest(

@@ -34,7 +34,7 @@ import socket
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_LIB = REPO_ROOT / "scripts" / "lib"
@@ -174,8 +174,8 @@ def run_once(
     owner: str,
     dry_run: bool,
     lease_seconds: int,
-    course_ids: list[str] | None,
-    now: datetime | None = None,
+    course_ids: Optional[list[str]],
+    now: Optional[datetime] = None,
     root: Path = REPO_ROOT,
 ) -> int:
     moment = now or utc_now()
@@ -287,7 +287,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
     if not args.once:
