@@ -1,23 +1,16 @@
 #!/usr/bin/env python3
-"""Claim one queued training run on Tillicum and report what it would launch.
+"""Claim one queued training run on Tillicum and submit it through the launcher.
 
 Run this *on* Tillicum, in a session you logged into normally — the usual
 password and two-factor prompt. Nothing here bypasses that, and nothing here
-opens a connection to anywhere except the database over HTTPS. That is the
-whole point of the queue: the browser writes a run and stops, and the work is
-picked up later by a person who is already logged in.
+opens a connection to anywhere except the database over HTTPS and the local
+`training/start_qlora_training.sh` script. That is the whole point of the
+queue: the browser writes a run and stops, and the work is picked up later by
+a person who is already logged in.
 
-This stage does not submit anything.
---------------------------------------
-It discovers queued work, claims exactly one run, checks the run against the
-prepared dataset actually present on this machine, and prints the command that
-`training/start_qlora_training.sh` would be invoked with. It does not run that
-command, does not call sbatch, and does not sync or copy any data. Datasets are
-prepared elsewhere and pushed; nothing is regenerated here.
-
-Because nothing is submitted, a claimed run is released back to `queued` before
-this exits. Holding a lease for work that never started would make the run wait
-out its expiry for no reason.
+Submission reuses the existing launcher. This process never calls sbatch
+itself, never syncs data, and never promotes an adapter. `--dry-run` is
+read-only: it does not claim, write, or spawn the launcher.
 
 Usage (from the repository root on Tillicum):
 
@@ -31,16 +24,19 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import socket
+import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_LIB = REPO_ROOT / "scripts" / "lib"
 
 sys.path.insert(0, str(SCRIPTS_LIB))
 
+from finetuned_deploy_helpers import parse_sbatch_job_id  # noqa: E402
 from training_queue import (  # noqa: E402  (path set above)
     ClaimConflict,
     DEFAULT_LEASE_SECONDS,
@@ -54,6 +50,18 @@ from training_queue import (  # noqa: E402  (path set above)
 )
 
 START_SCRIPT = "./training/start_qlora_training.sh"
+DEFAULT_LAUNCHER_TIMEOUT_SECONDS = 900
+_JOB_ID_LINE_PREFIX = "job id:"
+
+
+@dataclass(frozen=True)
+class LauncherResult:
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+Launcher = Callable[[list[str], Path], LauncherResult]
 
 
 def _load_qlora_helpers() -> Any:
@@ -153,6 +161,69 @@ def describe_planned_launch(run: TrainingRun, *, helpers: Any) -> dict[str, str]
     return {"jobName": job_name, "command": command}
 
 
+def launcher_argv(run: TrainingRun) -> list[str]:
+    return [START_SCRIPT, "--course", run.course_id, f"--{run.mode}", "--yes"]
+
+
+def subprocess_launcher(
+    command: list[str],
+    cwd: Path,
+    timeout: int = DEFAULT_LAUNCHER_TIMEOUT_SECONDS,
+) -> LauncherResult:
+    """Run the existing launcher. Never used by ``--dry-run``."""
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode(
+            "utf-8", errors="replace"
+        )
+        stderr = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode(
+            "utf-8", errors="replace"
+        )
+        return LauncherResult(
+            returncode=124,
+            stdout=stdout or "",
+            stderr=(stderr or "") + "\nLauncher timed out.",
+        )
+    return LauncherResult(
+        returncode=int(completed.returncode),
+        stdout=completed.stdout or "",
+        stderr=completed.stderr or "",
+    )
+
+
+def parse_launcher_job_id(output: str) -> Optional[str]:
+    """Reuse the existing sbatch parser; also accept the launcher's Job ID line."""
+    try:
+        return parse_sbatch_job_id(output)
+    except ValueError:
+        pass
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith(_JOB_ID_LINE_PREFIX):
+            token = stripped.split(":", 1)[1].strip().split()[0] if ":" in stripped else ""
+            if token.isdigit():
+                return token
+    return None
+
+
+def _combined_output(result: LauncherResult) -> str:
+    return "{0}\n{1}".format(result.stdout or "", result.stderr or "")
+
+
+def _short_error(message: str) -> str:
+    text = " ".join(message.split())
+    if len(text) > 500:
+        return text[:497] + "..."
+    return text
+
+
 def _print_run(run: TrainingRun, course_id: str) -> None:
     print(f"Run:      {run.run_id}")
     print(f"  Course:   {course_id}")
@@ -177,6 +248,7 @@ def run_once(
     course_ids: Optional[list[str]],
     now: Optional[datetime] = None,
     root: Path = REPO_ROOT,
+    launcher: Optional[Launcher] = None,
 ) -> int:
     moment = now or utc_now()
 
@@ -189,7 +261,8 @@ def run_once(
 
     if dry_run:
         # Read-only on purpose: a dry run must be safe to point at the real
-        # queue, which means claiming nothing another runner could have had.
+        # queue, which means claiming nothing another runner could have had,
+        # and never spawning the launcher.
         print("Dry run — nothing is claimed, written, or submitted.")
         _print_run(candidate, course_id)
         try:
@@ -205,7 +278,7 @@ def run_once(
         print(f"  Prepared: {counts['train_count']} train / {counts['validation_count']} validation")
         print(f"  Job name: {plan['jobName']}")
         print(f"  Would run: {plan['command']}")
-        print("Not submitted (this stage never calls sbatch).")
+        print("Not submitted (--dry-run never calls the launcher).")
         return 0
 
     try:
@@ -225,6 +298,21 @@ def run_once(
     print(f"Claimed by {owner} (lease {lease_seconds}s).")
     _print_run(run, course_id)
 
+    if run.job_id:
+        # A previous attempt already captured a real job id. Do not submit again.
+        print(f"  Already submitted as job {run.job_id}; will not submit another.")
+        submitted = queue.record_submission(
+            course_id,
+            run,
+            job_id=run.job_id,
+            train_count=run.train_examples,
+            validation_count=run.validation_examples,
+            now=moment,
+        )
+        print(f"  Job ID: {submitted.job_id}")
+        print("  modelRequest.status=training")
+        return 0
+
     try:
         counts, warnings = validate_run_against_prepared_data(
             run, helpers=helpers, root=root
@@ -240,20 +328,52 @@ def run_once(
         print(f"  Warning: {warning}")
     print(f"  Prepared: {counts['train_count']} train / {counts['validation_count']} validation")
     print(f"  Job name: {plan['jobName']}")
-    print(f"  Would run: {plan['command']}")
+    print(f"  Running: {plan['command']}")
 
-    # Nothing was submitted, so nothing may keep holding the lease.
-    queue.release(course_id, run, now=moment)
-    print("Released back to queued; nothing was submitted.")
-    return 0
+    invoke = launcher if launcher is not None else subprocess_launcher
+    result = invoke(launcher_argv(run), root)
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, end="" if result.stderr.endswith("\n") else "\n")
+
+    job_id = parse_launcher_job_id(_combined_output(result))
+    if job_id:
+        submitted = queue.record_submission(
+            course_id,
+            run,
+            job_id=job_id,
+            train_count=counts["train_count"],
+            validation_count=counts["validation_count"],
+            now=moment,
+        )
+        print(f"  Job ID: {submitted.job_id}")
+        print("  trainingRun.state=submitted")
+        print("  modelRequest.status=training")
+        if result.returncode != 0:
+            print("  Launcher exited nonzero after reporting a job id; recorded the job anyway.")
+        return 0
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "launcher exited nonzero"
+        error = _short_error("Submitting the training job failed: {0}".format(detail))
+    else:
+        error = (
+            "The training job did not report a Slurm job ID; nothing was "
+            "recorded as submitted."
+        )
+    print(f"  Submission failed: {error}")
+    queue.record_submission_failure(course_id, run, error=error, now=moment)
+    print("Released back to queued; modelRequest stays preparing.")
+    return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="run_training_queue.py",
         description=(
-            "Claim one queued training run and report what would be launched. "
-            "This stage never submits a job."
+            "Claim one queued training run and submit it through "
+            "training/start_qlora_training.sh. --dry-run never submits."
         ),
     )
     parser.add_argument(

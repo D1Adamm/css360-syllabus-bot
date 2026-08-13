@@ -53,6 +53,7 @@ def make_run_record(
     attempt: int = 0,
     train: int = 38,
     validation: int = 4,
+    job_id: str = "",
 ) -> dict:
     record = {
         "courseId": course_id,
@@ -68,7 +69,57 @@ def make_run_record(
     }
     if claim is not None:
         record["claim"] = claim
+    if job_id:
+        record["jobId"] = job_id
     return record
+
+
+def make_request_record(
+    course_id: str = COURSE_A,
+    *,
+    status: str = "preparing",
+    current_run_id: str = "run-1",
+) -> dict:
+    return {
+        "courseId": course_id,
+        "status": status,
+        "requestedAt": "2026-08-12T16:00:00Z",
+        "updatedAt": "2026-08-12T16:30:00Z",
+        "approvedExampleCount": 42,
+        "currentRunId": current_run_id,
+        "preparation": {
+            "preparedAt": "2026-08-12T16:30:00Z",
+            "sourceApprovedExampleCount": 42,
+            "datasetRef": f"exports/{course_id}",
+            "trainExamples": 38,
+            "validationExamples": 4,
+        },
+    }
+
+
+class FakeLauncher:
+    def __init__(
+        self,
+        returncode: int = 0,
+        stdout: str = "Submitted batch job 9182736\n",
+        stderr: str = "",
+    ) -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.calls: list[tuple[list[str], Path]] = []
+
+    def __call__(self, command: list[str], cwd: Path) -> "runner.LauncherResult":
+        self.calls.append((list(command), cwd))
+        return runner.LauncherResult(
+            returncode=self.returncode,
+            stdout=self.stdout,
+            stderr=self.stderr,
+        )
+
+
+def boom_launcher(command: list[str], cwd: Path) -> "runner.LauncherResult":
+    raise AssertionError(f"launcher must not be called: {command} cwd={cwd}")
 
 
 class FakeFirebase:
@@ -176,7 +227,13 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(run.course_id, COURSE_A)
         self.assertEqual(run.state, "queued")
         self.assertEqual(run.train_examples, 38)
+        self.assertEqual(run.job_id, "")
         self.assertFalse(run.is_terminal)
+
+    def test_reads_a_persisted_job_id(self) -> None:
+        run = queue_module.parse_run("run-1", make_run_record(job_id="9182736"))
+        assert run is not None
+        self.assertEqual(run.job_id, "9182736")
 
     def test_rejects_records_that_cannot_be_acted_on(self) -> None:
         for bad in (
@@ -193,6 +250,13 @@ class ParseTests(unittest.TestCase):
             run = queue_module.parse_run("run-1", make_run_record(state=state))
             assert run is not None
             self.assertFalse(queue_module.is_claimable(run, NOW))
+
+    def test_a_run_with_a_job_id_is_never_claimable(self) -> None:
+        run = queue_module.parse_run(
+            "run-1", make_run_record(state="queued", job_id="9182736")
+        )
+        assert run is not None
+        self.assertFalse(queue_module.is_claimable(run, NOW))
 
 
 class SelectionTests(unittest.TestCase):
@@ -293,6 +357,89 @@ class ClaimTests(unittest.TestCase):
         self.assertNotIn("claim", stored)
 
 
+class RecordSubmissionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fake = FakeFirebase(
+            {
+                "courses": {
+                    COURSE_A: {
+                        "trainingRuns": {"run-1": make_run_record()},
+                        "modelRequest": make_request_record(),
+                    }
+                }
+            }
+        )
+        self.queue = build_queue(self.fake)
+
+    def test_persists_the_job_id_then_marks_the_request_training(self) -> None:
+        run = self.queue.list_runs(COURSE_A)[0]
+        claimed = self.queue.claim(COURSE_A, run, owner="alice@tillicum", now=NOW)
+        submitted = self.queue.record_submission(
+            COURSE_A,
+            claimed,
+            job_id="9182736",
+            train_count=38,
+            validation_count=4,
+            now=NOW,
+        )
+
+        self.assertEqual(submitted.state, "submitted")
+        self.assertEqual(submitted.job_id, "9182736")
+        stored = self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+        self.assertEqual(stored["state"], "submitted")
+        self.assertEqual(stored["jobId"], "9182736")
+        self.assertNotIn("claim", stored)
+
+        request = self.fake._read(f"courses/{COURSE_A}/modelRequest")
+        self.assertEqual(request["status"], "training")
+        self.assertEqual(request["training"]["jobId"], "9182736")
+        self.assertEqual(request["currentRunId"], "run-1")
+        self.assertNotIn("launchError", request)
+        self.assertNotIn("failureMessage", request)
+
+        run_write = next(
+            payload
+            for method, path, payload in self.fake.writes
+            if method == "PATCH" and path.endswith("trainingRuns/run-1")
+        )
+        request_write = next(
+            payload
+            for method, path, payload in self.fake.writes
+            if method == "PATCH" and path.endswith("modelRequest")
+        )
+        self.assertEqual(run_write["jobId"], "9182736")
+        self.assertEqual(request_write["status"], "training")
+
+    def test_refuses_to_mark_training_without_a_real_job_id(self) -> None:
+        run = self.queue.list_runs(COURSE_A)[0]
+        with self.assertRaises(queue_module.TrainingQueueError):
+            self.queue.record_submission(
+                COURSE_A, run, job_id="", train_count=38, validation_count=4, now=NOW
+            )
+        request = self.fake._read(f"courses/{COURSE_A}/modelRequest")
+        self.assertEqual(request["status"], "preparing")
+        self.assertNotIn("training", request)
+
+    def test_failure_keeps_the_request_preparing_and_hides_the_error_from_professors(
+        self,
+    ) -> None:
+        run = self.queue.list_runs(COURSE_A)[0]
+        claimed = self.queue.claim(COURSE_A, run, owner="alice@tillicum", now=NOW)
+        self.queue.record_submission_failure(
+            COURSE_A, claimed, error="sbatch: error: Invalid account", now=NOW
+        )
+
+        stored = self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+        self.assertEqual(stored["state"], "queued")
+        self.assertEqual(stored["error"], "sbatch: error: Invalid account")
+
+        request = self.fake._read(f"courses/{COURSE_A}/modelRequest")
+        self.assertEqual(request["status"], "preparing")
+        self.assertEqual(request["launchError"], "sbatch: error: Invalid account")
+        self.assertNotIn("failureMessage", request)
+        self.assertNotIn("training", request)
+
+
 class CourseIsolationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.fake = FakeFirebase(
@@ -330,6 +477,28 @@ class CourseIsolationTests(unittest.TestCase):
             with self.assertRaises(queue_module.TrainingQueueError):
                 queue_module.course_training_runs_path(bad)
 
+    def test_recording_a_submission_does_not_touch_another_course(self) -> None:
+        self.fake._write(
+            f"courses/{COURSE_A}/modelRequest", make_request_record(COURSE_A, current_run_id="run-a")
+        )
+        self.fake._write(
+            f"courses/{COURSE_B}/modelRequest", make_request_record(COURSE_B, current_run_id="run-b")
+        )
+        run = self.queue.list_runs(COURSE_A)[0]
+        claimed = self.queue.claim(COURSE_A, run, owner="alice@tillicum", now=NOW)
+        self.queue.record_submission(
+            COURSE_A, claimed, job_id="1001", train_count=38, validation_count=4, now=NOW
+        )
+
+        other_run = self.fake._read(f"courses/{COURSE_B}/trainingRuns/run-b")
+        other_request = self.fake._read(f"courses/{COURSE_B}/modelRequest")
+        self.assertEqual(other_run["state"], "queued")
+        self.assertNotIn("jobId", other_run)
+        self.assertEqual(other_request["status"], "preparing")
+        self.assertNotIn("training", other_request)
+        for _method, path, _payload in self.fake.writes:
+            self.assertNotIn(COURSE_B, path)
+
 
 def _prepared_export(root: Path, course_id: str, *, train: int = 38, validation: int = 4) -> None:
     export_dir = root / "data" / "exports" / course_id
@@ -359,9 +528,17 @@ class RunnerTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         _prepared_export(self.root, COURSE_A)
         self.fake = FakeFirebase(
-            {"courses": {COURSE_A: {"trainingRuns": {"run-1": make_run_record()}}}}
+            {
+                "courses": {
+                    COURSE_A: {
+                        "trainingRuns": {"run-1": make_run_record()},
+                        "modelRequest": make_request_record(),
+                    }
+                }
+            }
         )
         self.queue = build_queue(self.fake)
+        self.launcher = FakeLauncher()
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -378,103 +555,206 @@ class RunnerTests(unittest.TestCase):
             "course_ids": [COURSE_A],
             "now": NOW,
             "root": self.root,
+            "launcher": self.launcher,
         }
         kwargs.update(overrides)
+        if kwargs.get("dry_run") and "launcher" not in overrides:
+            kwargs["launcher"] = boom_launcher
 
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             code = runner.run_once(self.queue, **kwargs)
         return code, buffer.getvalue()
 
-    def test_reports_the_command_the_existing_launcher_would_be_given(self) -> None:
+    def _request(self) -> dict:
+        return self.fake._read(f"courses/{COURSE_A}/modelRequest")
+
+    def _run_record(self) -> dict:
+        return self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+
+    def test_successful_submission_invokes_the_existing_launcher(self) -> None:
         code, output = self._run_once()
 
         self.assertEqual(code, 0)
+        self.assertEqual(len(self.launcher.calls), 1)
+        argv, cwd = self.launcher.calls[0]
+        self.assertEqual(
+            argv,
+            ["./training/start_qlora_training.sh", "--course", COURSE_A, "--full", "--yes"],
+        )
+        self.assertEqual(cwd, self.root)
         self.assertIn(
             f"./training/start_qlora_training.sh --course {COURSE_A} --full --yes", output
         )
-        # The job name comes from the launcher's own helper, per course.
         self.assertIn(f"qlora-train-{COURSE_A}", output)
-        self.assertIn("38 train / 4 validation", output)
 
-    def test_claims_the_run_and_releases_it_because_nothing_was_submitted(self) -> None:
+    def test_persists_the_real_job_id_and_marks_the_run_submitted(self) -> None:
         code, output = self._run_once()
 
         self.assertEqual(code, 0)
-        methods = [method for method, _, _ in self.fake.writes]
-        self.assertEqual(methods, ["PUT", "PATCH"])
-        stored = self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
-        self.assertEqual(stored["state"], "queued")
+        stored = self._run_record()
+        self.assertEqual(stored["state"], "submitted")
+        self.assertEqual(stored["jobId"], "9182736")
         self.assertEqual(stored["attempt"], 1)
-        self.assertIn("nothing was submitted", output)
+        self.assertNotIn("claim", stored)
+        self.assertIn("Job ID: 9182736", output)
 
-    def test_dry_run_writes_nothing_at_all(self) -> None:
-        code, output = self._run_once(dry_run=True)
+    def test_request_stays_preparing_until_a_job_id_exists(self) -> None:
+        seen = []
+
+        def launcher(command, cwd):
+            seen.append(self._request()["status"])
+            self.assertNotIn("training", self._request())
+            return self.launcher(command, cwd)
+
+        code, _ = self._run_once(launcher=launcher)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(seen, ["preparing"])
+        request = self._request()
+        self.assertEqual(request["status"], "training")
+        self.assertEqual(request["training"]["jobId"], "9182736")
+        self.assertEqual(request["currentRunId"], "run-1")
+        self.assertNotIn("failureMessage", request)
+        self.assertNotIn("launchError", request)
+
+    def test_launcher_failure_does_not_mark_training(self) -> None:
+        failing = FakeLauncher(
+            returncode=1, stdout="", stderr="sbatch: error: Invalid account\n"
+        )
+        code, output = self._run_once(launcher=failing)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(len(failing.calls), 1)
+        self.assertIn("Invalid account", output)
+        stored = self._run_record()
+        self.assertEqual(stored["state"], "queued")
+        self.assertNotIn("jobId", stored)
+        request = self._request()
+        self.assertEqual(request["status"], "preparing")
+        self.assertIn("Invalid account", request["launchError"])
+        self.assertNotIn("training", request)
+        self.assertNotIn("failureMessage", request)
+
+    def test_missing_job_id_does_not_mark_training(self) -> None:
+        silent = FakeLauncher(returncode=0, stdout="submitted something, who knows\n")
+        code, output = self._run_once(launcher=silent)
+
+        self.assertEqual(code, 1)
+        self.assertIn("did not report a Slurm job ID", output)
+        stored = self._run_record()
+        self.assertEqual(stored["state"], "queued")
+        self.assertNotIn("jobId", stored)
+        request = self._request()
+        self.assertEqual(request["status"], "preparing")
+        self.assertNotIn("training", request)
+        self.assertNotIn("failureMessage", request)
+
+    def test_duplicate_submission_is_prevented(self) -> None:
+        first, _ = self._run_once()
+        self.assertEqual(first, 0)
+        self.assertEqual(len(self.launcher.calls), 1)
+
+        second, output = self._run_once()
+        self.assertEqual(second, 0)
+        self.assertEqual(len(self.launcher.calls), 1)
+        self.assertIn("No queued training runs.", output)
+        self.assertEqual(self._run_record()["jobId"], "9182736")
+
+    def test_a_queued_run_that_already_has_a_job_id_is_not_launched(self) -> None:
+        self.fake._write(
+            f"courses/{COURSE_A}/trainingRuns/run-1",
+            make_run_record(job_id="225122"),
+        )
+        code, output = self._run_once()
+
+        self.assertEqual(code, 0)
+        self.assertEqual(self.launcher.calls, [])
+        self.assertIn("No queued training runs.", output)
+
+    def test_submitting_one_course_leaves_another_untouched(self) -> None:
+        _prepared_export(self.root, COURSE_B)
+        self.fake._write(
+            f"courses/{COURSE_B}/trainingRuns/run-b", make_run_record(COURSE_B)
+        )
+        self.fake._write(
+            f"courses/{COURSE_B}/modelRequest",
+            make_request_record(COURSE_B, current_run_id="run-b"),
+        )
+
+        code, _ = self._run_once(course_ids=[COURSE_A])
+        self.assertEqual(code, 0)
+
+        other_run = self.fake._read(f"courses/{COURSE_B}/trainingRuns/run-b")
+        other_request = self.fake._read(f"courses/{COURSE_B}/modelRequest")
+        self.assertEqual(other_run["state"], "queued")
+        self.assertNotIn("jobId", other_run)
+        self.assertEqual(other_request["status"], "preparing")
+        self.assertNotIn("training", other_request)
+        argv, _ = self.launcher.calls[0]
+        self.assertIn(COURSE_A, argv)
+        self.assertNotIn(COURSE_B, argv)
+
+    def test_dry_run_writes_nothing_and_spawns_nothing(self) -> None:
+        code, output = self._run_once(dry_run=True, launcher=boom_launcher)
 
         self.assertEqual(code, 0)
         self.assertEqual(self.fake.writes, [])
         self.assertEqual({method for method, _ in self.fake.requests}, {"GET"})
-        stored = self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+        stored = self._run_record()
         self.assertEqual(stored["state"], "queued")
         self.assertEqual(stored["attempt"], 0)
         self.assertIn("Would run:", output)
+        self.assertEqual(self._request()["status"], "preparing")
 
-    def test_the_runner_cannot_submit_or_copy_anything(self) -> None:
-        """No path here shells out — the source itself has no way to.
+    def test_the_runner_never_calls_sbatch_itself(self) -> None:
+        """Submission goes through start_qlora_training.sh only.
 
-        The launch command is produced as a string and printed. If a future
-        edit gave this module a way to start a process — sbatch, ssh, rsync or
-        anything else — this test is what notices.
+        sbatch, ssh, and rsync are the launcher's job. This process may import
+        subprocess to spawn that script; it must not invoke the cluster tools
+        directly. Tests never use the real launcher — they inject one.
         """
         import ast
 
-        for path in (
-            REPO_ROOT / "training" / "run_training_queue.py",
-            REPO_ROOT / "scripts" / "lib" / "training_queue.py",
-        ):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
+        queue_path = REPO_ROOT / "scripts" / "lib" / "training_queue.py"
+        queue_tree = ast.parse(queue_path.read_text(encoding="utf-8"))
+        imported: set[str] = set()
+        for node in ast.walk(queue_tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".")[0])
+        self.assertNotIn("subprocess", imported)
 
-            imported: set[str] = set()
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    imported.update(alias.name.split(".")[0] for alias in node.names)
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    imported.add(node.module.split(".")[0])
-
-            for forbidden in ("subprocess", "pty", "multiprocessing", "asyncio"):
-                self.assertNotIn(forbidden, imported, f"{path.name} imports {forbidden}")
-
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Call):
-                    name = getattr(node.func, "attr", getattr(node.func, "id", ""))
-                    self.assertNotIn(
-                        name,
-                        ("system", "popen", "spawn", "spawnv", "execv", "execvp", "run"),
-                        f"{path.name} calls {name}()",
-                    )
-
-        self.assertFalse(hasattr(runner, "subprocess"))
-        # The command is only ever a string handed to print().
-        plan = runner.describe_planned_launch(
-            queue_module.parse_run("run-1", make_run_record()), helpers=helpers
+        runner_src = (REPO_ROOT / "training" / "run_training_queue.py").read_text(
+            encoding="utf-8"
         )
-        self.assertIsInstance(plan["command"], str)
+        self.assertIn("start_qlora_training.sh", runner_src)
+
+        code, _ = self._run_once()
+        self.assertEqual(code, 0)
+        argv, _ = self.launcher.calls[0]
+        self.assertEqual(argv[0], "./training/start_qlora_training.sh")
+        self.assertNotIn("sbatch", argv)
+        self.assertNotIn("ssh", argv)
+        self.assertNotIn("rsync", argv)
 
     def test_refuses_and_releases_when_the_dataset_is_missing(self) -> None:
         empty = Path(self.tmp.name) / "empty"
         empty.mkdir()
-        code, output = self._run_once(root=empty)
+        code, output = self._run_once(root=empty, launcher=boom_launcher)
 
         self.assertEqual(code, 1)
         self.assertIn("No prepared training data", output)
-        stored = self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+        stored = self._run_record()
         self.assertEqual(stored["state"], "queued")
         self.assertIn("No prepared training data", stored["error"])
+        self.assertEqual(self._request()["status"], "preparing")
 
     def test_dry_run_refuses_a_missing_dataset_without_writing(self) -> None:
         empty = Path(self.tmp.name) / "empty-dry"
         empty.mkdir()
-        code, _ = self._run_once(dry_run=True, root=empty)
+        code, _ = self._run_once(dry_run=True, root=empty, launcher=boom_launcher)
 
         self.assertEqual(code, 1)
         self.assertEqual(self.fake.writes, [])
@@ -486,10 +766,11 @@ class RunnerTests(unittest.TestCase):
         _, output = self._run_once()
         self.assertIn("999", output)
         self.assertIn("Warning:", output)
+        self.assertEqual(self._run_record()["jobId"], "9182736")
 
     def test_says_so_when_the_queue_is_empty(self) -> None:
         self.fake._write(f"courses/{COURSE_A}/trainingRuns", {})
-        code, output = self._run_once()
+        code, output = self._run_once(launcher=boom_launcher)
 
         self.assertEqual(code, 0)
         self.assertIn("No queued training runs.", output)
@@ -507,7 +788,7 @@ class RunnerTests(unittest.TestCase):
                 },
             ),
         )
-        code, output = self._run_once()
+        code, output = self._run_once(launcher=boom_launcher)
 
         self.assertEqual(code, 0)
         self.assertIn("No queued training runs.", output)
@@ -520,6 +801,32 @@ class RunnerTests(unittest.TestCase):
         _, output = self._run_once()
         self.assertIn(f"--course {COURSE_A} --smoke --yes", output)
         self.assertIn(f"qlora-smoke-{COURSE_A}", output)
+        argv, _ = self.launcher.calls[0]
+        self.assertIn("--smoke", argv)
+
+    def test_existing_active_job_output_still_captures_a_real_job_id(self) -> None:
+        existing = FakeLauncher(
+            returncode=0,
+            stdout=(
+                "Existing active qlora-train-css-490-spring-2026-cgvl job found; "
+                "will not submit another.\n"
+                "Job ID: 225122\n"
+            ),
+        )
+        code, output = self._run_once(launcher=existing)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(self._run_record()["jobId"], "225122")
+        self.assertEqual(self._request()["status"], "training")
+        self.assertIn("Job ID: 225122", output)
+
+    def test_parse_launcher_job_id_reuses_the_existing_helper(self) -> None:
+        self.assertEqual(
+            runner.parse_launcher_job_id("Submitted batch job 216829\n"),
+            "216829",
+        )
+        self.assertEqual(runner.parse_launcher_job_id("Job ID: 225122\n"), "225122")
+        self.assertIsNone(runner.parse_launcher_job_id("nope\n"))
 
 
 class CliTests(unittest.TestCase):

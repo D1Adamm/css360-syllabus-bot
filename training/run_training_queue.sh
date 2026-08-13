@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Claim one queued training run and report what it would launch (no sbatch).
+# Claim one queued training run and submit it through start_qlora_training.sh.
 #
 # Run this on Tillicum inside a session you logged into normally. It reads the
 # training queue over HTTPS, claims at most one run, checks it against the
-# prepared dataset already pushed to this machine, and prints the
-# start_qlora_training.sh command that would be used. It submits nothing.
+# prepared dataset already pushed to this machine, and invokes
+# training/start_qlora_training.sh --yes. --dry-run never claims, writes, or
+# spawns the launcher.
 #
 # Usage (from the repository root on Tillicum):
 #   ./training/run_training_queue.sh --once

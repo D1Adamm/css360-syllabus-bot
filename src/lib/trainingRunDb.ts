@@ -124,6 +124,9 @@ export function parseTrainingRun(runId: string, value: unknown): TrainingRun | n
     trainExamples: asCount(record.trainExamples),
     validationExamples: asCount(record.validationExamples),
     attempt: asCount(record.attempt),
+    ...(typeof record.jobId === 'string' && record.jobId.trim() !== ''
+      ? { jobId: record.jobId }
+      : {}),
     ...(claim ? { claim } : {}),
     ...(typeof record.error === 'string' && record.error !== ''
       ? { error: record.error }

@@ -440,6 +440,7 @@ function OutstandingRequests() {
                       {run.mode} · {run.trainExamples} train /{' '}
                       {run.validationExamples} validation · queued{' '}
                       {new Date(run.enqueuedAt).toLocaleString()}
+                      {run.jobId ? ` · job ${run.jobId}` : ''}
                       {run.attempt > 0
                         ? ` · attempt ${run.attempt}`
                         : ''}

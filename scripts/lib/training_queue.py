@@ -136,6 +136,18 @@ def course_training_run_path(course_id: str, run_id: str) -> str:
     return f"{course_training_runs_path(course_id)}/{validate_run_id(run_id)}"
 
 
+def course_model_request_path(course_id: str) -> str:
+    return f"courses/{validate_course_id(course_id)}/modelRequest"
+
+
+def validate_slurm_job_id(job_id: str) -> str:
+    """A real scheduler id is digits only. Placeholders are refused."""
+    value = (job_id or "").strip()
+    if not value.isdigit():
+        raise TrainingQueueError(f"Invalid Slurm job id: {job_id!r}")
+    return value
+
+
 # --------------------------------------------------------------------------- #
 # Transport
 # --------------------------------------------------------------------------- #
@@ -284,6 +296,7 @@ class TrainingRun:
     train_examples: int
     validation_examples: int
     attempt: int
+    job_id: str = ""
     claim: Optional[dict[str, str]] = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
@@ -344,6 +357,8 @@ def parse_run(run_id: str, raw: Any) -> Optional[TrainingRun]:
             }
 
     updated_at = raw.get("updatedAt")
+    raw_job_id = raw.get("jobId")
+    job_id = raw_job_id.strip() if isinstance(raw_job_id, str) else ""
 
     return TrainingRun(
         run_id=run_id,
@@ -357,6 +372,7 @@ def parse_run(run_id: str, raw: Any) -> Optional[TrainingRun]:
         train_examples=_as_count(raw.get("trainExamples")),
         validation_examples=_as_count(raw.get("validationExamples")),
         attempt=_as_count(raw.get("attempt")),
+        job_id=job_id,
         claim=parsed_claim,
         raw=dict(raw),
     )
@@ -407,6 +423,9 @@ def lease_expired(run: TrainingRun, now: datetime) -> bool:
 
 
 def is_claimable(run: TrainingRun, now: datetime) -> bool:
+    # A real job id means a submission already happened. Never take it again.
+    if run.job_id:
+        return False
     if run.state == "queued":
         return True
     if run.state == "claimed":
@@ -488,6 +507,10 @@ class TrainingQueue:
         current = parse_run(run.run_id, current_raw)
         if current is None:
             raise ClaimConflict(f"Run {run.run_id} is no longer readable.")
+        if current.job_id:
+            raise ClaimConflict(
+                f"Run {run.run_id} already has job {current.job_id}; it was not claimed."
+            )
         if not is_claimable(current, moment):
             raise ClaimConflict(
                 f"Run {run.run_id} is {current.state} and held by "
@@ -539,6 +562,99 @@ class TrainingQueue:
         if error is not None:
             patch["error"] = error
         self.client.patch(course_training_run_path(course_id, run.run_id), patch)
+
+    def record_submission(
+        self,
+        course_id: str,
+        run: TrainingRun,
+        *,
+        job_id: str,
+        train_count: int,
+        validation_count: int,
+        now: Optional[datetime] = None,
+    ) -> TrainingRun:
+        """Persist a real job id, then point the request at the running job.
+
+        Order matters. The run is marked ``submitted`` first so a crash before
+        the request update cannot look like "nothing was queued". The request
+        becomes ``training`` only once that id exists — a professor must never
+        be told their model is training when no job can be looked up.
+
+        ``failureMessage`` is not written. That field is professor-facing when
+        a request has failed; a successful submission is not a failure, and a
+        later launch error belongs on ``launchError`` (admin-only).
+        """
+        moment = now or utc_now()
+        safe_job_id = validate_slurm_job_id(job_id)
+        submitted_at = iso(moment)
+
+        run_patch: dict[str, Any] = {
+            "state": "submitted",
+            "updatedAt": submitted_at,
+            "jobId": safe_job_id,
+            "claim": None,
+            "error": None,
+        }
+        self.client.patch(course_training_run_path(course_id, run.run_id), run_patch)
+
+        request_patch: dict[str, Any] = {
+            "status": "training",
+            "updatedAt": submitted_at,
+            "currentRunId": run.run_id,
+            "launchError": None,
+            "training": {
+                "jobId": safe_job_id,
+                "mode": run.mode,
+                "submittedAt": submitted_at,
+                "datasetRef": run.dataset_ref,
+                "trainExamples": int(train_count),
+                "validationExamples": int(validation_count),
+            },
+        }
+        self.client.patch(course_model_request_path(course_id), request_patch)
+
+        stored = dict(run.raw)
+        stored.update(
+            {
+                "state": "submitted",
+                "updatedAt": submitted_at,
+                "jobId": safe_job_id,
+            }
+        )
+        stored.pop("claim", None)
+        stored.pop("error", None)
+        result = parse_run(run.run_id, stored)
+        if result is None:  # pragma: no cover - we just built this record
+            raise TrainingQueueError("Submitted run could not be read back.")
+        return result
+
+    def record_submission_failure(
+        self,
+        course_id: str,
+        run: TrainingRun,
+        *,
+        error: str,
+        now: Optional[datetime] = None,
+    ) -> None:
+        """Leave the run retryable and keep professor-facing status unchanged.
+
+        The dataset is still valid, so the run goes back to ``queued`` with an
+        operator-visible error. The request stays ``preparing``: nothing was
+        submitted, and telling a professor it is training (or that it failed)
+        would be untrue. ``launchError`` is admin-only. ``failureMessage`` is
+        not written — that field is what a professor-facing failed request
+        carries.
+        """
+        moment = now or utc_now()
+        self.release(course_id, run, error=error, now=moment)
+        self.client.patch(
+            course_model_request_path(course_id),
+            {
+                "launchError": error,
+                "updatedAt": iso(moment),
+                "currentRunId": run.run_id,
+            },
+        )
 
 
 def build_queue(

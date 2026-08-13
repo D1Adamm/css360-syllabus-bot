@@ -334,6 +334,10 @@ export interface TrainingRun {
   validationExamples: number;
   /** How many times a runner has taken this run. Starts at 0. */
   attempt: number;
+  /**
+   * Slurm job id, only after a real submission. Never invented by the browser.
+   */
+  jobId?: string;
   /** Present only while a runner holds it. */
   claim?: TrainingRunClaim;
   /** Why the last attempt failed. Operator-facing. */
