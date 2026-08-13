@@ -128,6 +128,35 @@ export interface CourseMetadata {
   syllabusFileName: string | null;
   syllabusType: string | null;
   chunkCount: number;
+  /**
+   * Automatic starter-seed generation, written by the backend job.
+   *
+   * Optional because courses created before the job existed have no record,
+   * and because a course whose syllabus was never indexed never starts one.
+   */
+  starterSeedGeneration?: StoredStarterSeedGeneration;
+}
+
+/**
+ * The record exactly as the generation job stores it.
+ *
+ * Its vocabulary is the job's, not the professor's: `queued` and `generating`
+ * are two points in one wait, and `partial` means fewer examples than asked for
+ * were produced — which is still a course with examples to review. Translating
+ * that for a professor is `starterSeedGeneration.ts`'s job, not this type's.
+ *
+ * `error` holds whatever the model or backend said. It is operator detail and
+ * never reaches a professor.
+ */
+export interface StoredStarterSeedGeneration {
+  status?: string;
+  targetCount?: number;
+  finalCount?: number;
+  savedCount?: number;
+  failedToSaveCount?: number;
+  error?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
 }
 
 /* ------------------------------------------------------------------------ *

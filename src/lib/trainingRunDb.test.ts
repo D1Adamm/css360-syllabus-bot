@@ -96,6 +96,13 @@ describe('parseTrainingRun', () => {
     expect(run?.attempt).toBe(1);
   });
 
+  it('keeps a real job id and ignores a blank one', () => {
+    expect(parseTrainingRun('run-1', { ...STORED, jobId: '9182736' })?.jobId).toBe(
+      '9182736',
+    );
+    expect(parseTrainingRun('run-1', { ...STORED, jobId: '' })?.jobId).toBeUndefined();
+  });
+
   it('drops a claim that cannot be reasoned about', () => {
     const run = parseTrainingRun('run-1', {
       ...STORED,
