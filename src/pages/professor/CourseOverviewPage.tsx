@@ -13,6 +13,7 @@ import {
 import { useEvaluations } from '../../hooks/useEvaluations';
 import { getModelReadiness } from '../../lib/modelStatus';
 import { professorCoursePath } from '../../lib/roleRoutes';
+import { getStarterGeneration } from '../../lib/starterSeedGeneration';
 import type { SyllabusStatus } from '../../types';
 
 interface Presentation {
@@ -77,6 +78,15 @@ export function CourseOverviewPage() {
   const counts = countsState.status === 'ready' ? countsState.counts : null;
   const syllabus = syllabusPresentation(metadataState);
   const readiness = getModelReadiness(counts?.approved ?? 0);
+
+  /*
+   * Starter examples are still being written for this course.
+   *
+   * While that is true, "0 approved" is not a fact about the course — it is a
+   * fact about a job that has not finished. Reporting it as though the course
+   * had nothing is what made an upload look like it had done nothing at all.
+   */
+  const generating = getStarterGeneration(metadata).state === 'generating';
 
   const attention: { key: string; text: string; to: string; action: string }[] = [];
 
@@ -173,7 +183,19 @@ export function CourseOverviewPage() {
           <div className="overview__row">
             <dt className="overview__label">Training examples</dt>
             <dd className="overview__value">
-              {counts ? (
+              {generating ? (
+                <>
+                  <StatusPill tone="progress">Generating…</StatusPill>
+                  {/* Anything already reviewable is still worth saying: it is
+                      work a professor can start on now. */}
+                  {counts && counts.pending > 0 && (
+                    <span className="overview__muted">
+                      {' '}
+                      · {counts.pending} ready to review
+                    </span>
+                  )}
+                </>
+              ) : counts ? (
                 <>
                   <strong>{counts.approved}</strong> approved
                   {counts.pending > 0 && (

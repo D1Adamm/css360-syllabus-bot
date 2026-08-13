@@ -7,9 +7,14 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Icon } from '../../components/ui/Icon';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { useCourseId } from '../../context/CourseContext';
+import { useCourseMetadata } from '../../hooks/useCourseMetadata';
 import { useExampleReview, type ReviewDraft } from '../../hooks/useExampleReview';
 import { toUserMessage } from '../../lib/errorMessages';
 import { resolveExampleStatus } from '../../lib/exampleCounts';
+import {
+  describeStarterGeneration,
+  getStarterGeneration,
+} from '../../lib/starterSeedGeneration';
 
 type ReviewFilter = 'pending' | 'approved' | 'rejected' | 'edited' | 'all';
 
@@ -53,6 +58,17 @@ export function ReviewExamplesPage() {
     reject,
     saveEdit,
   } = useExampleReview(courseId);
+
+  /*
+   * Whether this course's starter examples are still being written.
+   *
+   * Read from the course's own metadata, which the generation job updates as
+   * it goes. That is why a refresh keeps showing "generating": the answer is
+   * durable and course-scoped, and this page only reads it.
+   */
+  const { metadata } = useCourseMetadata(courseId);
+  const generation = getStarterGeneration(metadata);
+  const generationMessage = describeStarterGeneration(generation.state);
 
   const [filter, setFilter] = useState<ReviewFilter>('pending');
   const [index, setIndex] = useState(0);
@@ -159,6 +175,21 @@ export function ReviewExamplesPage() {
         <Callout tone={actionFailed ? 'danger' : 'success'}>{actionMessage}</Callout>
       )}
 
+      {/* Examples have started arriving and more are still coming. A professor
+          looking at six examples has no other way to know that. When there are
+          none yet the empty state below says the same thing more prominently,
+          so this would only repeat it.
+
+          A failure is deliberately not announced here: once there are examples
+          to review, telling a professor something went wrong on a page full of
+          work they can do is alarming and useless. The empty state covers the
+          case where it actually matters. */}
+      {generation.state === 'generating' && counts.total > 0 && generationMessage && (
+        <Callout tone="info" title={generationMessage.title}>
+          {generationMessage.detail}
+        </Callout>
+      )}
+
       <div className="review-controls">
         <div className="filter-tabs" role="tablist" aria-label="Filter examples">
           {FILTERS.map((item) => {
@@ -198,6 +229,16 @@ export function ReviewExamplesPage() {
         <p className="ui-text-muted" role="status" aria-live="polite">
           Loading examples…
         </p>
+      ) : visible.length === 0 && counts.total === 0 && generationMessage ? (
+        /* An empty course whose examples are still being made, or whose
+           generation failed, is not "nothing collected yet" — that wording
+           reads as "your upload did nothing" and is what left a professor
+           staring at zero with no explanation. */
+        <EmptyState
+          illustration="empty-course"
+          title={generationMessage.title}
+          description={generationMessage.detail}
+        />
       ) : visible.length === 0 ? (
         <EmptyState
           illustration="empty-course"
