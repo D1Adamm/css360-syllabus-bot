@@ -419,4 +419,69 @@ describe('ProfessorModelPage requests', () => {
       screen.queryByRole('button', { name: /Start training/i }),
     ).not.toBeInTheDocument();
   });
+
+  /*
+   * A queued training run.
+   *
+   * The request carries a pointer to it, and that pointer is the only thing
+   * about the queue that touches a professor-facing record. None of it — the
+   * run id, the queue, the machine that will pick it up — means anything to a
+   * professor, so none of it is shown. They see the same "being prepared" they
+   * saw before it was queued, which is true: nothing is training yet.
+   */
+  it('says nothing about a queued run beyond the stage it is at', () => {
+    mockRegistry(null);
+    mockRequest({
+      courseId: 'css-360-winter-2026-a7rp',
+      status: 'preparing',
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-12T12:00:00.000Z',
+      approvedExampleCount: 54,
+      preparation: {
+        preparedAt: '2026-08-11T12:00:00.000Z',
+        sourceApprovedExampleCount: 54,
+        datasetRef: 'exports/css-360-winter-2026-a7rp',
+        trainExamples: 48,
+        validationExamples: 6,
+      },
+      currentRunId: 'run-20260812t120000z-0a1b2c',
+    });
+    renderPage();
+
+    const text = document.body.textContent ?? '';
+
+    expect(screen.getByText('Being prepared')).toBeInTheDocument();
+    expect(screen.getByText(/is being prepared/i)).toBeInTheDocument();
+
+    // The run id, and everything the run exists to describe, stays internal.
+    expect(text).not.toContain('run-20260812t120000z-0a1b2c');
+    expect(text).not.toMatch(/\brun\b|queue|claim|lease|attempt/i);
+    expect(text).not.toMatch(
+      /courses\/|trainingRuns|firebase|tillicum|hyak|slurm|sbatch|ssh|duo|gpu/i,
+    );
+  });
+
+  it('shows a professor only the three stages that mean something to them', () => {
+    for (const status of ['requested', 'preparing', 'training'] as const) {
+      mockRegistry(null);
+      mockRequest({
+        courseId: 'css-360-winter-2026-a7rp',
+        status,
+        requestedAt: '2026-08-11T10:00:00.000Z',
+        updatedAt: '2026-08-12T12:00:00.000Z',
+        approvedExampleCount: 54,
+        currentRunId: 'run-20260812t120000z-0a1b2c',
+      });
+      renderPage();
+
+      const label = { requested: 'Requested', preparing: 'Being prepared', training: 'Training' }[
+        status
+      ];
+      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(document.body.textContent ?? '').not.toContain(
+        'run-20260812t120000z-0a1b2c',
+      );
+      cleanup();
+    }
+  });
 });

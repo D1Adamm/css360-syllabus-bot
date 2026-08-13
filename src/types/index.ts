@@ -244,6 +244,15 @@ export interface CourseModelRequest {
    * request stays `preparing` so it can be retried.
    */
   launchError?: string;
+  /**
+   * The training run currently carrying this request, if one has been queued.
+   *
+   * A pointer and nothing else. Operational state — claims, attempts, job
+   * identifiers — lives on the run itself at
+   * `courses/{courseId}/trainingRuns/{runId}`, so a professor-facing record
+   * never has to carry it.
+   */
+  currentRunId?: string;
 }
 
 export interface CourseModelRequestTraining {
@@ -269,3 +278,66 @@ export interface CourseModelRequestPreparation {
   /** Recorded so a split can be reproduced exactly. */
   splitSeed?: number;
 }
+
+/* ------------------------------------------------------------------------ *
+ * Training runs
+ *
+ * Stored at `courses/{courseId}/trainingRuns/{runId}`: the durable queue a
+ * runner on the cluster reads. Operational only. It is kept apart from
+ * `modelRequest` because the two answer different questions — a professor asks
+ * "is my model coming?", an operator asks "what is queued, who holds it, and
+ * how many times has it been tried?" — and because a professor-facing record
+ * must never grow fields that describe infrastructure.
+ * ------------------------------------------------------------------------ */
+
+export type TrainingRunState =
+  /** Enqueued by an administrator; no runner holds it. */
+  | 'queued'
+  /** A runner holds a lease on it and is working on it. */
+  | 'claimed'
+  /** Handed to the scheduler; a job identifier exists. */
+  | 'submitted'
+  /** The job is running. */
+  | 'training'
+  /** Finished and produced what was asked for. Terminal. */
+  | 'succeeded'
+  /** Did not produce a usable result. Terminal. */
+  | 'failed';
+
+/**
+ * A time-limited hold by exactly one runner.
+ *
+ * The lease is what stops two runners doing the same work. It expires so that a
+ * runner which dies mid-run — a dropped session, a rebooted login node — cannot
+ * strand a run forever.
+ */
+export interface TrainingRunClaim {
+  /** Who holds it, for operators reading the queue. */
+  owner: string;
+  claimedAt: string;
+  expiresAt: string;
+}
+
+export interface TrainingRun {
+  runId: string;
+  courseId: string;
+  /** `smoke` or `full`. Smoke is never chained into full automatically. */
+  mode: TrainingMode;
+  state: TrainingRunState;
+  enqueuedAt: string;
+  updatedAt: string;
+  /** Relative, course-scoped dataset reference the preparation stage recorded. */
+  datasetRef: string;
+  /** Approved examples the prepared dataset was built from. */
+  approvedExampleCount: number;
+  trainExamples: number;
+  validationExamples: number;
+  /** How many times a runner has taken this run. Starts at 0. */
+  attempt: number;
+  /** Present only while a runner holds it. */
+  claim?: TrainingRunClaim;
+  /** Why the last attempt failed. Operator-facing. */
+  error?: string;
+}
+
+export type TrainingMode = 'smoke' | 'full';

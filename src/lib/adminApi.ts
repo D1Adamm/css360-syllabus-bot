@@ -172,10 +172,16 @@ export function runSeedQualityCheck(
 }
 
 /* ---------------------------------------------------------------------------
- * Training launch
+ * Training launch (deprecated)
  *
- * The browser never runs ssh, rsync, or sbatch. It asks the backend, which owns
- * that boundary and shells out to the existing sync and launcher scripts.
+ * The browser never runs ssh, rsync, or sbatch. It asked the backend, which
+ * owns that boundary and shells out to the existing sync and launcher scripts.
+ *
+ * No page calls these now. Submitting from a web request needed a
+ * non-interactive session to a cluster that only offers interactive logins, so
+ * the endpoint stayed disabled behind TRAINING_LAUNCH_ENABLED. Administrators
+ * enqueue a training run instead (see `queueTraining.ts`), and the run is
+ * claimed on the cluster by someone already logged in.
  * ------------------------------------------------------------------------- */
 
 export interface TrainingLaunchCapability {

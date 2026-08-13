@@ -56,6 +56,38 @@ Automation writes versioned outputs under:
 
 including `adapter/`. This does **not** overwrite the live inference adapter.
 
+### B2) Tillicum — the training queue (claim only, no submission yet)
+
+An administrator queues a run from the web application instead of trying to
+launch one through a backend. The run is stored course-scoped at
+`courses/<courseId>/trainingRuns/<runId>` and waits there. Nothing about it
+reaches the cluster until someone runs the queue **in a normal interactive
+session** — the usual login and two-factor prompt. Nothing here bypasses that.
+
+```bash
+cd /gpfs/projects/simswe/$USER/css360-syllabus-bot
+./training/run_training_queue.sh --once --dry-run   # read only
+./training/run_training_queue.sh --once             # claims one run
+```
+
+What it does today:
+
+- finds the oldest queued (or expired-lease) run
+- claims exactly one, with a time-limited lease, using a conditional write so
+  two runners can never hold the same run
+- validates the course id and the prepared `data/exports/<courseId>/` files
+  using the same helpers `start_qlora_training.sh` uses
+- prints the exact command that launcher **would** be given
+
+What it deliberately does **not** do yet: submit anything. It never calls
+`sbatch`, never syncs or regenerates a dataset, and releases its claim before
+exiting, so the run goes back to `queued` rather than waiting out a lease for
+work that never started. Submitting stays the explicit step in (B).
+
+It needs `FIREBASE_DATABASE_URL` (and `FIREBASE_AUTH_TOKEN` if the database
+rules require one) in the environment or `.env.local`, and outbound HTTPS.
+Nothing else.
+
 ### C) Explicit promotion (optional, intentional)
 
 Only after you are satisfied with a finished full run:

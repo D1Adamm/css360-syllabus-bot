@@ -6,6 +6,19 @@ import type { CourseModelRequest, CourseModelRequestTraining } from '../types';
 /**
  * Submits a prepared course's training job and records the result.
  *
+ * @deprecated Superseded by `queueTraining.ts`. Nothing in the application
+ * calls this any more: an administrator enqueues a run at
+ * `courses/{courseId}/trainingRuns` and a runner on the cluster picks it up.
+ *
+ * The direct path could never work from a browser. It needed the backend to
+ * reach the cluster without a person present, and the cluster requires the
+ * usual interactive two-factor login, so the control was permanently disabled
+ * behind `TRAINING_LAUNCH_ENABLED`. That flag stays off.
+ *
+ * Kept rather than deleted because the module and its backend counterpart were
+ * validated together, and removing working code that a future non-interactive
+ * path might use is a larger change than leaving it unreferenced.
+ *
  * The infrastructure itself lives behind the backend endpoint — nothing here
  * touches ssh, rsync, or sbatch, and the browser never learns a cluster host,
  * path, or token. This module owns only the request-state rules:

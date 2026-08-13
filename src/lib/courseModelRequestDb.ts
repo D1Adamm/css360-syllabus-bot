@@ -97,6 +97,11 @@ export function parseCourseModelRequest(value: unknown): CourseModelRequest | nu
     ...(typeof record.launchError === 'string'
       ? { launchError: record.launchError }
       : {}),
+    // A pointer to the operational record, never the record itself. Everything
+    // about the run lives under `trainingRuns`.
+    ...(typeof record.currentRunId === 'string' && record.currentRunId.trim() !== ''
+      ? { currentRunId: record.currentRunId }
+      : {}),
   };
 }
 

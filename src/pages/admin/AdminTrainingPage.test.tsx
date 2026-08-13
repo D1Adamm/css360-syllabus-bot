@@ -49,27 +49,32 @@ vi.mock('../../lib/api', () => ({
 
 const fetchCourseModelRequest = vi.fn();
 const prepareTrainingDataForRequest = vi.fn();
-const launchTrainingForRequest = vi.fn();
-const fetchTrainingLaunchCapability = vi.fn();
+const queueTrainingForRequest = vi.fn();
+const fetchCourseTrainingRuns = vi.fn();
 
 vi.mock('../../lib/courseModelRequestDb', () => ({
   fetchCourseModelRequest: (...args: unknown[]) => fetchCourseModelRequest(...args),
 }));
 
-vi.mock('../../lib/launchTraining', async () => {
-  const actual = await vi.importActual<typeof import('../../lib/launchTraining')>(
-    '../../lib/launchTraining',
+vi.mock('../../lib/queueTraining', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/queueTraining')>(
+    '../../lib/queueTraining',
   );
   return {
     ...actual,
-    launchTrainingForRequest: (...args: unknown[]) => launchTrainingForRequest(...args),
+    queueTrainingForRequest: (...args: unknown[]) => queueTrainingForRequest(...args),
   };
 });
 
-vi.mock('../../lib/adminApi', () => ({
-  fetchTrainingLaunchCapability: (...args: unknown[]) =>
-    fetchTrainingLaunchCapability(...args),
-}));
+vi.mock('../../lib/trainingRunDb', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/trainingRunDb')>(
+    '../../lib/trainingRunDb',
+  );
+  return {
+    ...actual,
+    fetchCourseTrainingRuns: (...args: unknown[]) => fetchCourseTrainingRuns(...args),
+  };
+});
 
 vi.mock('../../lib/prepareTrainingData', async () => {
   const actual = await vi.importActual<typeof import('../../lib/prepareTrainingData')>(
@@ -89,9 +94,41 @@ vi.mock('../../lib/coursesDb', () => ({
 }));
 
 import { InsufficientApprovedExamplesError } from '../../lib/prepareTrainingData';
+import { DuplicateTrainingRunError } from '../../lib/trainingRunDb';
+import type { TrainingRun } from '../../types';
 import { AdminTrainingPage } from './AdminTrainingPage';
 
 const COURSE_ID = 'css-360-winter-2026-a7rp';
+
+const PREPARED_REQUEST = {
+  courseId: COURSE_ID,
+  status: 'preparing' as const,
+  requestedAt: '2026-08-11T10:00:00.000Z',
+  updatedAt: '2026-08-11T12:00:00.000Z',
+  approvedExampleCount: 42,
+  preparation: {
+    preparedAt: '2026-08-11T12:00:00.000Z',
+    sourceApprovedExampleCount: 42,
+    datasetRef: `exports/${COURSE_ID}`,
+    trainExamples: 38,
+    validationExamples: 4,
+    splitSeed: 360,
+  },
+};
+
+const QUEUED_RUN: TrainingRun = {
+  runId: 'run-20260812t120000z-0a1b2c',
+  courseId: COURSE_ID,
+  mode: 'full',
+  state: 'queued',
+  enqueuedAt: '2026-08-12T12:00:00.000Z',
+  updatedAt: '2026-08-12T12:00:00.000Z',
+  datasetRef: `exports/${COURSE_ID}`,
+  approvedExampleCount: 42,
+  trainExamples: 38,
+  validationExamples: 4,
+  attempt: 0,
+};
 
 function renderPage() {
   return render(<AdminTrainingPage />);
@@ -146,17 +183,8 @@ describe('AdminTrainingPage', () => {
     });
 
     fetchCourseModelRequest.mockResolvedValue(null);
-    fetchTrainingLaunchCapability.mockResolvedValue({ enabled: true, reason: '' });
-    launchTrainingForRequest.mockResolvedValue({
-      training: {
-        jobId: '9182736',
-        mode: 'full',
-        submittedAt: '2026-08-11T13:00:00.000Z',
-        datasetRef: `exports/${COURSE_ID}`,
-        trainExamples: 38,
-        validationExamples: 4,
-      },
-    });
+    fetchCourseTrainingRuns.mockResolvedValue([]);
+    queueTrainingForRequest.mockResolvedValue({ run: QUEUED_RUN });
     prepareTrainingDataForRequest.mockResolvedValue({
       preparation: {
         preparedAt: '2026-08-11T12:00:00.000Z',
@@ -407,7 +435,7 @@ describe('AdminTrainingPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('offers Start training only once data is prepared', async () => {
+  it('offers Queue training only once data is prepared', async () => {
     fetchCourseModelRequest.mockResolvedValue({
       courseId: COURSE_ID,
       status: 'requested',
@@ -419,36 +447,109 @@ describe('AdminTrainingPage', () => {
     renderPage();
     await screen.findByRole('list', { name: 'Model requests' });
 
-    expect(screen.queryByRole('button', { name: /Start training/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Queue training/i })).toBeNull();
   });
 
-  it('submits training for the prepared course and shows the job id', async () => {
-    fetchCourseModelRequest.mockResolvedValue({
-      courseId: COURSE_ID,
-      status: 'preparing',
-      requestedAt: '2026-08-11T10:00:00.000Z',
-      updatedAt: '2026-08-11T12:00:00.000Z',
-      approvedExampleCount: 42,
-      preparation: {
-        preparedAt: '2026-08-11T12:00:00.000Z',
-        sourceApprovedExampleCount: 42,
-        datasetRef: `exports/${COURSE_ID}`,
-        trainExamples: 38,
-        validationExamples: 4,
-        splitSeed: 360,
-      },
-    });
+  it('queues a run for the prepared course', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
 
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: /Start training/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Queue training/i }));
 
     await waitFor(() => {
-      expect(launchTrainingForRequest).toHaveBeenCalledWith(
+      expect(queueTrainingForRequest).toHaveBeenCalledWith(
         COURSE_ID,
         expect.objectContaining({ courseId: COURSE_ID, status: 'preparing' }),
       );
     });
-    expect(await screen.findByText(/Submitted job 9182736/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(new RegExp(`Queued full run ${QUEUED_RUN.runId}`)),
+    ).toBeInTheDocument();
+  });
+
+  it('no longer reaches the backend launch boundary', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Queue training/i }));
+
+    await waitFor(() => {
+      expect(queueTrainingForRequest).toHaveBeenCalled();
+    });
+    // Enqueueing is the whole of it: no submission endpoint, no job id.
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(within(requests).queryByRole('button', { name: /Start training/i })).toBeNull();
+    expect(requests.textContent ?? '').not.toMatch(/job \d|sbatch|ssh|slurm/i);
+  });
+
+  it('shows a queued run with its state and counts', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      ...PREPARED_REQUEST,
+      currentRunId: QUEUED_RUN.runId,
+    });
+    fetchCourseTrainingRuns.mockResolvedValue([QUEUED_RUN]);
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(within(requests).getByText(QUEUED_RUN.runId)).toBeInTheDocument();
+    expect(within(requests).getByText(/run queued/)).toBeInTheDocument();
+    expect(
+      within(requests).getByText(/38 train \/ 4 validation · queued/),
+    ).toBeInTheDocument();
+  });
+
+  it('shows who holds a claimed run and until when', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([
+      {
+        ...QUEUED_RUN,
+        state: 'claimed',
+        attempt: 1,
+        claim: {
+          owner: 'alice@tillicum',
+          claimedAt: '2026-08-12T12:05:00.000Z',
+          expiresAt: '2026-08-12T12:20:00.000Z',
+        },
+      },
+    ]);
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(within(requests).getByText(/held by alice@tillicum/)).toBeInTheDocument();
+    expect(within(requests).getByText(/attempt 1/)).toBeInTheDocument();
+  });
+
+  it('offers no second queue control while a run is outstanding', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([QUEUED_RUN]);
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(within(requests).queryByRole('button', { name: /Queue training/i })).toBeNull();
+  });
+
+  it('offers a fresh run once the last one finished', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([{ ...QUEUED_RUN, state: 'failed' }]);
+
+    renderPage();
+
+    expect(
+      await screen.findByRole('button', { name: /Queue training/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('reads each course queue separately from its request', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(fetchCourseTrainingRuns).toHaveBeenCalledWith(COURSE_ID);
+    });
   });
 
   it('shows a submitted job and offers no second start', async () => {
@@ -480,64 +581,33 @@ describe('AdminTrainingPage', () => {
     const requests = await screen.findByRole('list', { name: 'Model requests' });
     expect(within(requests).getByText('9182736')).toBeInTheDocument();
     expect(within(requests).getByText('training')).toBeInTheDocument();
-    // Duplicate launches are not offered.
-    expect(within(requests).queryByRole('button', { name: /Start training/i })).toBeNull();
+    // A course already training is not offered a run.
+    expect(within(requests).queryByRole('button', { name: /Queue training/i })).toBeNull();
   });
 
-  it('disables Start training when the backend cannot launch', async () => {
-    fetchTrainingLaunchCapability.mockResolvedValue({
-      enabled: false,
-      reason: 'Training launch is disabled on this backend.',
-    });
-    fetchCourseModelRequest.mockResolvedValue({
-      courseId: COURSE_ID,
-      status: 'preparing',
-      requestedAt: '2026-08-11T10:00:00.000Z',
-      updatedAt: '2026-08-11T12:00:00.000Z',
-      approvedExampleCount: 42,
-      preparation: {
-        preparedAt: '2026-08-11T12:00:00.000Z',
-        sourceApprovedExampleCount: 42,
-        datasetRef: `exports/${COURSE_ID}`,
-        trainExamples: 38,
-        validationExamples: 4,
-        splitSeed: 360,
-      },
-    });
+  it('surfaces a refused duplicate to the admin', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+    queueTrainingForRequest.mockRejectedValue(new DuplicateTrainingRunError());
 
     renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /Queue training/i }));
 
     expect(
-      await screen.findByText(/Training launch is disabled on this backend/),
+      await screen.findByText(/already queued or under way for this course/),
     ).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /Start training/i })).toBeDisabled();
   });
 
-  it('surfaces a launch failure to the admin', async () => {
-    fetchCourseModelRequest.mockResolvedValue({
-      courseId: COURSE_ID,
-      status: 'preparing',
-      requestedAt: '2026-08-11T10:00:00.000Z',
-      updatedAt: '2026-08-11T12:00:00.000Z',
-      approvedExampleCount: 42,
-      preparation: {
-        preparedAt: '2026-08-11T12:00:00.000Z',
-        sourceApprovedExampleCount: 42,
-        datasetRef: `exports/${COURSE_ID}`,
-        trainExamples: 38,
-        validationExamples: 4,
-        splitSeed: 360,
-      },
-    });
-    launchTrainingForRequest.mockRejectedValue(
-      new Error('Syncing training data failed: connection closed'),
+  it('surfaces a queueing failure to the admin', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+    queueTrainingForRequest.mockRejectedValue(
+      new Error('Firebase is unavailable right now.'),
     );
 
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: /Start training/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Queue training/i }));
 
     expect(
-      await screen.findByText(/Syncing training data failed/),
+      await screen.findByText(/Firebase is unavailable right now/),
     ).toBeInTheDocument();
   });
 

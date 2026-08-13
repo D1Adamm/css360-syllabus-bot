@@ -9,16 +9,13 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
 import { fetchCourseModelRequest } from '../../lib/courseModelRequestDb';
-import {
-  fetchTrainingLaunchCapability,
-  type TrainingLaunchCapability,
-} from '../../lib/adminApi';
-import { canLaunchTraining, launchTrainingForRequest } from '../../lib/launchTraining';
+import { canQueueTraining, queueTrainingForRequest } from '../../lib/queueTraining';
+import { fetchCourseTrainingRuns } from '../../lib/trainingRunDb';
 import {
   InsufficientApprovedExamplesError,
   prepareTrainingDataForRequest,
 } from '../../lib/prepareTrainingData';
-import type { CourseModelRequest } from '../../types';
+import type { CourseModelRequest, TrainingRun } from '../../types';
 import {
   ApiError,
   exportApprovedCourseSeeds,
@@ -201,6 +198,8 @@ interface RequestRow {
   courseId: string;
   name: string;
   request: CourseModelRequest;
+  /** This course's training runs, newest last. */
+  runs: TrainingRun[];
 }
 
 function requestTone(status: CourseModelRequest['status']) {
@@ -219,45 +218,47 @@ function requestTone(status: CourseModelRequest['status']) {
   }
 }
 
+/** Newest run first — that is the one an operator is asking about. */
+function latestRun(runs: TrainingRun[]): TrainingRun | null {
+  return runs.length > 0 ? runs[runs.length - 1]! : null;
+}
+
+function runTone(state: TrainingRun['state']) {
+  switch (state) {
+    case 'queued':
+      return 'info' as const;
+    case 'claimed':
+    case 'submitted':
+    case 'training':
+      return 'progress' as const;
+    case 'succeeded':
+      return 'success' as const;
+    case 'failed':
+      return 'danger' as const;
+    default:
+      return 'neutral' as const;
+  }
+}
+
 /**
- * Model requests professors have submitted.
+ * Model requests professors have submitted, and the runs queued for them.
  *
- * Read-only. There is no launch control here because there is no job-submission
- * endpoint — a request is a queue entry someone acts on outside the
- * application. Terminal requests are filtered out: what an operator needs is
- * the work still outstanding.
+ * Queueing is the whole of this page's involvement in training. It writes a run
+ * to `courses/{courseId}/trainingRuns` and stops — no connection is held open,
+ * nothing is submitted from here, and no job id is invented. The run is picked
+ * up later on the cluster by someone who has logged in the normal way.
+ *
+ * This replaced a Start training button that called the backend, which would
+ * have had to reach the cluster non-interactively. It could not, so the control
+ * was permanently disabled; a queue entry needs nothing interactive at all.
  */
 function OutstandingRequests() {
   const { state: courses } = useCourses();
   const [rows, setRows] = useState<RequestRow[] | null>(null);
   const [preparing, setPreparing] = useState<string | null>(null);
-  const [launching, setLaunching] = useState<string | null>(null);
+  const [queueing, setQueueing] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [reload, setReload] = useState(0);
-  const [capability, setCapability] = useState<TrainingLaunchCapability | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void fetchTrainingLaunchCapability()
-      .then((result) => {
-        if (!cancelled) {
-          setCapability(result);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCapability({
-            enabled: false,
-            reason: 'The backend could not be reached to check launch availability.',
-          });
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (courses.status !== 'ready') {
@@ -270,13 +271,19 @@ function OutstandingRequests() {
       courses.courses.map(async ({ courseId, metadata }) => {
         try {
           const request = await fetchCourseModelRequest(courseId);
-          return request
-            ? {
-                courseId,
-                name: formatCourseHeading(metadata.name, metadata.title),
-                request,
-              }
-            : null;
+          if (!request) {
+            return null;
+          }
+          // A course's queue is read separately from its request: the two are
+          // different records on purpose, and a queue that cannot be read must
+          // not hide the request.
+          const runs = await fetchCourseTrainingRuns(courseId).catch(() => []);
+          return {
+            courseId,
+            name: formatCourseHeading(metadata.name, metadata.title),
+            request,
+            runs,
+          };
         } catch {
           return null;
         }
@@ -326,24 +333,31 @@ function OutstandingRequests() {
     }
   }
 
-  /** Submits the job for one prepared request. */
-  async function launch(courseId: string, request: RequestRow['request']) {
-    setLaunching(courseId);
+  /**
+   * Writes a queued run for one prepared request.
+   *
+   * This is where the browser's durable responsibility ends. Nothing after this
+   * depends on the tab staying open.
+   */
+  async function queue(courseId: string, request: RequestRow['request']) {
+    setQueueing(courseId);
     setMessages((current) => ({ ...current, [courseId]: '' }));
 
     try {
-      const { training } = await launchTrainingForRequest(courseId, request);
+      const { run } = await queueTrainingForRequest(courseId, request);
       setMessages((current) => ({
         ...current,
-        [courseId]: `Submitted job ${training.jobId} (${training.mode}).`,
+        [courseId]:
+          `Queued ${run.mode} run ${run.runId}. It will be picked up the next ` +
+          'time the queue is run on the cluster.',
       }));
     } catch (error) {
       setMessages((current) => ({
         ...current,
-        [courseId]: error instanceof Error ? error.message : 'Launch failed.',
+        [courseId]: error instanceof Error ? error.message : 'Queueing failed.',
       }));
     } finally {
-      setLaunching(null);
+      setQueueing(null);
       setReload((current) => current + 1);
     }
   }
@@ -359,15 +373,9 @@ function OutstandingRequests() {
     <section className="ui-stack ui-stack--snug">
       <SectionHeader
         title="Model requests"
-        description="Submitted by professors. Acting on one is still a manual step."
+        description="Submitted by professors. Prepare the data, then queue a training run."
         divider
       />
-
-      {capability && !capability.enabled && (
-        <Callout tone="info" title="Starting training is unavailable here">
-          {capability.reason} Preparing data still works.
-        </Callout>
-      )}
 
       {rows === null ? (
         <p className="ui-text-muted" role="status" aria-live="polite">
@@ -421,6 +429,29 @@ function OutstandingRequests() {
                     {new Date(row.request.training.submittedAt).toLocaleString()}
                   </p>
                 )}
+                {(() => {
+                  const run = latestRun(row.runs);
+                  if (!run) {
+                    return null;
+                  }
+                  return (
+                    <p className="ui-text-xs ui-text-muted">
+                      Training run: <code>{run.runId}</code> · {run.state} ·{' '}
+                      {run.mode} · {run.trainExamples} train /{' '}
+                      {run.validationExamples} validation · queued{' '}
+                      {new Date(run.enqueuedAt).toLocaleString()}
+                      {run.attempt > 0
+                        ? ` · attempt ${run.attempt}`
+                        : ''}
+                      {run.claim
+                        ? ` · held by ${run.claim.owner} until ${new Date(
+                            run.claim.expiresAt,
+                          ).toLocaleString()}`
+                        : ''}
+                      {run.error ? ` · ${run.error}` : ''}
+                    </p>
+                  );
+                })()}
                 {row.request.preparationError && (
                   <p className="admin-row__error">
                     Last attempt: {row.request.preparationError}
@@ -444,6 +475,11 @@ function OutstandingRequests() {
                 <StatusPill tone={requestTone(row.request.status)}>
                   {row.request.status}
                 </StatusPill>
+                {latestRun(row.runs) && (
+                  <StatusPill tone={runTone(latestRun(row.runs)!.state)}>
+                    run {latestRun(row.runs)!.state}
+                  </StatusPill>
+                )}
                 {/* Only an outstanding, non-terminal request can be prepared.
                     Re-preparing after a change to the approved set is allowed —
                     the export and split are both idempotent overwrites. */}
@@ -456,7 +492,7 @@ function OutstandingRequests() {
                       onClick={() => void prepare(row.courseId)}
                       loading={preparing === row.courseId}
                       loadingLabel="Preparing…"
-                      disabled={preparing !== null || launching !== null}
+                      disabled={preparing !== null || queueing !== null}
                     >
                       {row.request.preparation
                         ? 'Re-prepare training data'
@@ -464,25 +500,19 @@ function OutstandingRequests() {
                     </Button>
                   )}
 
-                {/* Only a request whose data is prepared and which has no job
-                    yet can be launched. */}
-                {canLaunchTraining(row.request) && (
+                {/* Only a prepared request with no outstanding run can be
+                    queued. Nothing is submitted here; the run waits. */}
+                {canQueueTraining(row.request, row.runs) && (
                   <Button
                     size="sm"
                     variant="primary"
-                    onClick={() => void launch(row.courseId, row.request)}
-                    loading={launching === row.courseId}
-                    loadingLabel="Submitting…"
-                    disabled={
-                      preparing !== null ||
-                      launching !== null ||
-                      capability?.enabled !== true
-                    }
-                    title={
-                      capability?.enabled === false ? capability.reason : undefined
-                    }
+                    onClick={() => void queue(row.courseId, row.request)}
+                    loading={queueing === row.courseId}
+                    loadingLabel="Queueing…"
+                    disabled={preparing !== null || queueing !== null}
+                    title="Add a training run to this course's queue. It is picked up on the cluster later."
                   >
-                    Start training
+                    Queue training
                   </Button>
                 )}
               </div>
@@ -505,14 +535,15 @@ export function AdminTrainingPage() {
         description="Build a training dataset from approved examples, then split it into train and validation sets."
       />
 
-      <Callout tone="info" title="These two steps are real; job orchestration is not">
+      <Callout tone="info" title="What this page does, and where it stops">
         <strong>Create training dataset</strong> exports every approved example
         for a course and validates it. <strong>Prepare train/validation
         split</strong> then divides that dataset deterministically. Both write
-        real files on the backend. Everything after that — submitting a training
-        job, tracking it, promoting the result — still happens through the
-        scripts in <code>training/</code>. There is no endpoint for any of it,
-        and no dataset versioning, so nothing here pretends otherwise.
+        real files on the backend. <strong>Queue training</strong> then records a
+        run against the course and stops — the browser submits nothing and holds
+        nothing open. A run is picked up separately on the research cluster,
+        where the existing scripts in <code>training/</code> still own
+        submission, monitoring and promotion.
       </Callout>
 
       <OutstandingRequests />
@@ -548,12 +579,12 @@ export function AdminTrainingPage() {
       <section className="ui-stack ui-stack--snug">
         <SectionHeader
           title="Training jobs"
-          description="What this page will show once the backend can report it."
+          description="What this page will show once a run reports back."
           divider
         />
         <EmptyState
           title="No job tracking yet"
-          description="Submitting a run, watching its progress, and promoting the result are handled outside this application. See docs/frontend-backend-gaps.md for the endpoints this needs."
+          description="Queued runs appear against their course above. Watching a run's progress and promoting its result are still handled outside this application. See docs/frontend-backend-gaps.md for what that needs."
         />
       </section>
     </div>

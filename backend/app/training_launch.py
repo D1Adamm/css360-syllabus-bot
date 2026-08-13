@@ -1,5 +1,18 @@
 """Controlled boundary for submitting a QLoRA training job.
 
+DEPRECATED — superseded by the training queue
+---------------------------------------------
+Nothing in the application calls this any more. Administrators enqueue a run at
+`courses/{courseId}/trainingRuns` from the browser, and `training/
+run_training_queue.sh` claims it on Tillicum inside a session a person has
+already logged into normally. That removes the requirement this module could
+never satisfy: a non-interactive session to a cluster that only offers
+interactive logins.
+
+The module and its endpoints are left in place, still disabled. They were
+validated together with the launcher scripts, and TRAINING_LAUNCH_ENABLED
+remains off — enabling it is not part of the queue workflow.
+
 The browser never runs ssh, rsync, or sbatch. It calls this module, which
 validates everything it can locally and then shells out to the two scripts that
 already exist:

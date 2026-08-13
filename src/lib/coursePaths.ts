@@ -43,3 +43,35 @@ export function getCourseModelRequestPath(courseId: string): string {
   assertValidCourseId(courseId);
   return `courses/${courseId}/modelRequest`;
 }
+
+/**
+ * A course's training runs — the durable queue a cluster runner reads.
+ *
+ * Course-scoped like everything else here, so a runner asked for one course can
+ * only ever see that course's work, and operational state never has to be
+ * stored on the professor-facing request.
+ */
+export function getCourseTrainingRunsPath(courseId: string): string {
+  assertValidCourseId(courseId);
+  return `courses/${courseId}/trainingRuns`;
+}
+
+export function getCourseTrainingRunPath(courseId: string, runId: string): string {
+  assertValidTrainingRunId(runId);
+  return `${getCourseTrainingRunsPath(courseId)}/${runId}`;
+}
+
+/** Firebase keys cannot contain `.`, `$`, `#`, `[`, `]`, or `/`. */
+const TRAINING_RUN_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isValidTrainingRunId(runId: unknown): runId is string {
+  return typeof runId === 'string' && TRAINING_RUN_ID_PATTERN.test(runId);
+}
+
+export function assertValidTrainingRunId(runId: unknown): asserts runId is string {
+  if (!isValidTrainingRunId(runId)) {
+    throw new Error(
+      `Invalid training run id "${String(runId)}": must use lowercase letters, numbers, and hyphens only.`,
+    );
+  }
+}
