@@ -29,6 +29,15 @@ ADAPTER_WEIGHT_NAMES = (
     "adapter_model.bin",
     "adapter_model.pt",
 )
+# Historical course-agnostic Slurm names (pre course-isolation). Still recognized
+# for status / same-course active checks via qlora-job-<id>.env metadata.
+LEGACY_SLURM_JOB_NAMES = {
+    "smoke": "css360-qlora-smoke",
+    "full": "css360-qlora-train",
+}
+# Slurm truncates or rejects overly long names; keep a conservative ceiling.
+SLURM_JOB_NAME_MAX_LEN = 64
+_QLORA_JOB_NAME_RE = re.compile(r"^qlora-(smoke|train)-(.+)$")
 
 
 def validate_course_id(course_id: str) -> str:
@@ -269,6 +278,138 @@ def is_active_slurm_state(state: str) -> bool:
     return state.strip().upper() in {"PD", "PENDING", "R", "RUNNING", "CF", "CONFIGURING"}
 
 
+def _normalize_training_mode(mode: str) -> str:
+    mode_norm = mode.strip().lower()
+    if mode_norm not in {"smoke", "full"}:
+        raise ValueError("mode must be 'smoke' or 'full'")
+    return mode_norm
+
+
+def _mode_token(mode: str) -> str:
+    """Slurm name token: smoke stays smoke; full uses historical 'train'."""
+    mode_norm = _normalize_training_mode(mode)
+    return "smoke" if mode_norm == "smoke" else "train"
+
+
+def slurm_training_job_name(*, course_id: str, mode: str) -> str:
+    """Course-scoped Slurm job name (course id + mode).
+
+    Format: ``qlora-{smoke|train}-{courseId}``. Submitted via ``sbatch -J`` so
+    train.slurm / smoke.slurm can keep static ``#SBATCH --job-name`` defaults.
+    """
+    safe_course = validate_course_id(course_id)
+    token = _mode_token(mode)
+    name = f"qlora-{token}-{safe_course}"
+    if len(name) > SLURM_JOB_NAME_MAX_LEN:
+        raise ValueError(
+            f"Slurm job name exceeds {SLURM_JOB_NAME_MAX_LEN} characters: {name!r}"
+        )
+    return name
+
+
+def legacy_slurm_training_job_name(mode: str) -> str:
+    """Pre-isolation job name (course-agnostic)."""
+    return LEGACY_SLURM_JOB_NAMES[_normalize_training_mode(mode)]
+
+
+def is_qlora_training_job_name(name: str) -> bool:
+    """True for course-scoped or legacy QLoRA smoke/train Slurm names."""
+    stripped = name.strip()
+    if stripped in LEGACY_SLURM_JOB_NAMES.values():
+        return True
+    match = _QLORA_JOB_NAME_RE.fullmatch(stripped)
+    if not match:
+        return False
+    try:
+        validate_course_id(match.group(2))
+    except ValueError:
+        return False
+    return True
+
+
+def course_id_from_slurm_job_name(name: str) -> str | None:
+    """Extract course id from a course-scoped job name; None for legacy names."""
+    match = _QLORA_JOB_NAME_RE.fullmatch(name.strip())
+    if not match:
+        return None
+    try:
+        return validate_course_id(match.group(2))
+    except ValueError:
+        return None
+
+
+def log_prefix_for_slurm_job_name(name: str) -> str | None:
+    """Return ``smoke`` or ``train`` log-file prefix for a recognized job name."""
+    stripped = name.strip()
+    if stripped == LEGACY_SLURM_JOB_NAMES["smoke"] or stripped.startswith("qlora-smoke-"):
+        if is_qlora_training_job_name(stripped):
+            return "smoke"
+        return None
+    if stripped == LEGACY_SLURM_JOB_NAMES["full"] or stripped.startswith("qlora-train-"):
+        if is_qlora_training_job_name(stripped):
+            return "train"
+        return None
+    return None
+
+
+def read_course_id_from_job_meta(meta_path: Path) -> str | None:
+    """Read COURSE_ID from a ``qlora-job-<id>.env`` file if present."""
+    if not meta_path.is_file():
+        return None
+    try:
+        text = meta_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("COURSE_ID="):
+            raw = line.split("=", 1)[1].strip()
+            if not raw:
+                return None
+            try:
+                return validate_course_id(raw)
+            except ValueError:
+                return raw
+    return None
+
+
+def select_active_training_job_line(
+    lines: list[str] | tuple[str, ...],
+    *,
+    course_id: str,
+    mode: str,
+    meta_dir: Path | None = None,
+) -> dict[str, str] | None:
+    """Pick the first active squeue line that belongs to this course + mode.
+
+    Matches the course-scoped job name always. Legacy course-agnostic names only
+    match when ``qlora-job-<id>.env`` records the same COURSE_ID — so a CSS360
+    legacy job never blocks CSS490/CSS350.
+    """
+    safe_course = validate_course_id(course_id)
+    expected = slurm_training_job_name(course_id=safe_course, mode=mode)
+    legacy = legacy_slurm_training_job_name(mode)
+
+    for raw in lines:
+        parsed = parse_squeue_training_line(raw)
+        if parsed is None:
+            continue
+        if not is_active_slurm_state(parsed["state"]):
+            continue
+        name = parsed["name"]
+        if name == expected:
+            return parsed
+        if name != legacy:
+            continue
+        if meta_dir is None:
+            continue
+        meta_course = read_course_id_from_job_meta(
+            meta_dir / f"qlora-job-{parsed['job_id']}.env"
+        )
+        if meta_course == safe_course:
+            return parsed
+    return None
+
+
 def _cli_validate_course(args: argparse.Namespace) -> int:
     print(validate_course_id(args.course_id))
     return 0
@@ -320,6 +461,53 @@ def _cli_parse_squeue(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cli_slurm_job_name(args: argparse.Namespace) -> int:
+    print(slurm_training_job_name(course_id=args.course_id, mode=args.mode))
+    return 0
+
+
+def _cli_legacy_slurm_job_name(args: argparse.Namespace) -> int:
+    print(legacy_slurm_training_job_name(args.mode))
+    return 0
+
+
+def _cli_is_qlora_training_job_name(args: argparse.Namespace) -> int:
+    ok = is_qlora_training_job_name(args.name)
+    print("yes" if ok else "no")
+    return 0 if ok else 1
+
+
+def _cli_log_prefix_for_job_name(args: argparse.Namespace) -> int:
+    prefix = log_prefix_for_slurm_job_name(args.name)
+    if prefix is None:
+        raise ValueError(f"Not a recognized QLoRA training job name: {args.name!r}")
+    print(prefix)
+    return 0
+
+
+def _cli_select_active_training_job(args: argparse.Namespace) -> int:
+    lines = [line.rstrip("\n") for line in sys.stdin]
+    meta_dir = Path(args.meta_dir) if args.meta_dir else None
+    selected = select_active_training_job_line(
+        lines,
+        course_id=args.course_id,
+        mode=args.mode,
+        meta_dir=meta_dir,
+    )
+    if selected is None:
+        return 1
+    if args.field:
+        print(selected[args.field])
+    else:
+        # Reconstruct a stable squeue-style line for shell consumers.
+        print(
+            f"{selected['job_id']} {selected['name']} {selected['state']} "
+            f"{selected['node'] or '(null)'} {selected['elapsed'] or '0:00'} "
+            f"{selected['time_left'] or '0:00'}"
+        )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -368,6 +556,53 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
     )
     p.set_defaults(func=_cli_parse_squeue)
+
+    p = sub.add_parser(
+        "slurm-job-name",
+        help="Build course-scoped Slurm job name for smoke/full training",
+    )
+    p.add_argument("--course-id", required=True)
+    p.add_argument("--mode", choices=("smoke", "full"), required=True)
+    p.set_defaults(func=_cli_slurm_job_name)
+
+    p = sub.add_parser(
+        "legacy-slurm-job-name",
+        help="Historical course-agnostic Slurm job name for a mode",
+    )
+    p.add_argument("--mode", choices=("smoke", "full"), required=True)
+    p.set_defaults(func=_cli_legacy_slurm_job_name)
+
+    p = sub.add_parser(
+        "is-qlora-training-job-name",
+        help="Exit 0 if name is a recognized QLoRA smoke/train job name",
+    )
+    p.add_argument("name")
+    p.set_defaults(func=_cli_is_qlora_training_job_name)
+
+    p = sub.add_parser(
+        "log-prefix-for-job-name",
+        help="Print smoke|train log prefix for a recognized job name",
+    )
+    p.add_argument("name")
+    p.set_defaults(func=_cli_log_prefix_for_job_name)
+
+    p = sub.add_parser(
+        "select-active-training-job",
+        help="Read squeue lines on stdin; print the active line for course+mode",
+    )
+    p.add_argument("--course-id", required=True)
+    p.add_argument("--mode", choices=("smoke", "full"), required=True)
+    p.add_argument(
+        "--meta-dir",
+        default=None,
+        help="Directory with qlora-job-<id>.env (needed for legacy name matching)",
+    )
+    p.add_argument(
+        "--field",
+        choices=("job_id", "name", "state", "node", "elapsed", "time_left"),
+        default=None,
+    )
+    p.set_defaults(func=_cli_select_active_training_job)
 
     args = parser.parse_args(argv)
     try:

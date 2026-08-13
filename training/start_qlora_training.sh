@@ -49,25 +49,27 @@ helpers() {
   python3 "${HELPERS}" "$@"
 }
 
-is_active_state() {
-  case "$1" in
-    PD|PENDING|R|RUNNING|CF|CONFIGURING) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-find_active_job() {
-  local job_name="$1"
-  local line state
-  while IFS= read -r line; do
-    [[ -z "${line}" ]] && continue
-    state="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field state)"
-    if is_active_state "${state}"; then
-      printf '%s\n' "${line}"
-      return 0
-    fi
-  done < <(squeue -u "${USER}" -n "${job_name}" -h -o "%i %j %t %N %M %L" 2>/dev/null || true)
-  return 1
+# Return the first active squeue line for this course+mode (course-scoped name,
+# plus legacy names only when qlora-job-<id>.env COURSE_ID matches).
+find_active_job_for_course() {
+  local course_id="$1"
+  local mode="$2"
+  local job_name legacy_name selected
+  job_name="$(helpers slurm-job-name --course-id "${course_id}" --mode "${mode}")" \
+    || return 1
+  legacy_name="$(helpers legacy-slurm-job-name --mode "${mode}")" || return 1
+  selected="$(
+    {
+      squeue -u "${USER}" -n "${job_name}" -h -o "%i %j %t %N %M %L" 2>/dev/null || true
+      squeue -u "${USER}" -n "${legacy_name}" -h -o "%i %j %t %N %M %L" 2>/dev/null || true
+    } | helpers select-active-training-job \
+      --course-id "${course_id}" \
+      --mode "${mode}" \
+      --meta-dir "${REPO_ROOT}/training/logs"
+  )" || return 1
+  [[ -n "${selected}" ]] || return 1
+  printf '%s\n' "${selected}"
+  return 0
 }
 
 while [[ $# -gt 0 ]]; do
@@ -130,14 +132,15 @@ HF_TOKEN_PATH="/gpfs/projects/simswe/${USER}/huggingface/token"
 [[ -s "${HF_TOKEN_PATH}" ]] || die "Missing Hugging Face token at ${HF_TOKEN_PATH}"
 
 if [[ "${MODE}" == "smoke" ]]; then
-  JOB_NAME="css360-qlora-smoke"
   SLURM_SCRIPT="${REPO_ROOT}/training/smoke.slurm"
 else
-  JOB_NAME="css360-qlora-train"
   SLURM_SCRIPT="${REPO_ROOT}/training/train.slurm"
 fi
 
-if EXISTING="$(find_active_job "${JOB_NAME}")"; then
+JOB_NAME="$(helpers slurm-job-name --course-id "${COURSE_ID}" --mode "${MODE}")" \
+  || die "Could not build Slurm job name."
+
+if EXISTING="$(find_active_job_for_course "${COURSE_ID}" "${MODE}")"; then
   EXISTING_ID="$(printf '%s\n' "${EXISTING}" | helpers parse-squeue-line --field job_id)"
   EXISTING_STATE="$(printf '%s\n' "${EXISTING}" | helpers parse-squeue-line --field state)"
   echo "Existing active ${JOB_NAME} job found; will not submit another."
@@ -204,7 +207,9 @@ JOB_NAME=${JOB_NAME}
 SLURM_SCRIPT=${SLURM_SCRIPT}
 EOF
 
-SBATCH_OUT="$(sbatch "${SLURM_SCRIPT}")" || die "sbatch failed."
+# Override #SBATCH --job-name with a course-scoped name so CSS360 never collides
+# with CSS490/CSS350 active-job detection.
+SBATCH_OUT="$(sbatch -J "${JOB_NAME}" "${SLURM_SCRIPT}")" || die "sbatch failed."
 echo "${SBATCH_OUT}"
 if [[ -f "${DEPLOY_HELPERS}" ]]; then
   JOB_ID="$(printf '%s\n' "${SBATCH_OUT}" | python3 "${DEPLOY_HELPERS}" parse-sbatch-job-id)" \

@@ -10,6 +10,8 @@
 #   TRAIN_FILE, VAL_FILE, TRAINING_OUTPUT_DIR
 
 #SBATCH --job-name=css360-qlora-smoke
+# Default name only; start_qlora_training.sh overrides with sbatch -J
+# qlora-smoke-<courseId> for per-course isolation.
 #SBATCH --account=simswe
 #SBATCH --qos=debug
 #SBATCH --gpus=1

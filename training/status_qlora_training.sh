@@ -34,7 +34,8 @@ is_active_state() {
 
 show_job_line() {
   local line="$1"
-  local job_id name state node elapsed time_left meta out_dir
+  local job_id name state node elapsed time_left meta out_dir log_prefix
+  local COURSE_ID="" MODE="" TRAINING_OUTPUT_DIR=""
   job_id="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field job_id)"
   name="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field name)"
   state="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field state)"
@@ -45,7 +46,6 @@ show_job_line() {
   meta="${REPO_ROOT}/training/logs/qlora-job-${job_id}.env"
   if [[ -f "${meta}" ]]; then
     # shellcheck disable=SC1090
-    TRAINING_OUTPUT_DIR=""
     source "${meta}"
     out_dir="${TRAINING_OUTPUT_DIR:-}"
   fi
@@ -56,18 +56,17 @@ show_job_line() {
   echo "  Elapsed: ${elapsed:-unknown}"
   echo "  Time left: ${time_left:-unknown}"
   echo "  Node: ${node:-"(none yet)"}"
-  case "${name}" in
-    css360-qlora-smoke)
-      echo "  Logs:"
-      echo "    ${REPO_ROOT}/training/logs/smoke-${job_id}.out"
-      echo "    ${REPO_ROOT}/training/logs/smoke-${job_id}.err"
-      ;;
-    css360-qlora-train)
-      echo "  Logs:"
-      echo "    ${REPO_ROOT}/training/logs/train-${job_id}.out"
-      echo "    ${REPO_ROOT}/training/logs/train-${job_id}.err"
-      ;;
-  esac
+  if [[ -n "${COURSE_ID}" ]]; then
+    echo "  Course: ${COURSE_ID}"
+  fi
+  if [[ -n "${MODE}" ]]; then
+    echo "  Mode: ${MODE}"
+  fi
+  if log_prefix="$(helpers log-prefix-for-job-name "${name}" 2>/dev/null)"; then
+    echo "  Logs:"
+    echo "    ${REPO_ROOT}/training/logs/${log_prefix}-${job_id}.out"
+    echo "    ${REPO_ROOT}/training/logs/${log_prefix}-${job_id}.err"
+  fi
   if [[ -n "${out_dir}" ]]; then
     echo "  Output dir: ${out_dir}"
     echo "  Adapter: ${out_dir}/adapter"
@@ -92,20 +91,23 @@ ACTIVE=0
 echo "QLoRA training status (user=${USER})"
 echo
 
-for JOB_NAME in css360-qlora-smoke css360-qlora-train; do
-  while IFS= read -r line; do
-    [[ -z "${line}" ]] && continue
-    state="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field state)"
-    if is_active_state "${state}"; then
-      show_job_line "${line}"
-      echo
-      ACTIVE=1
-    fi
-  done < <(squeue -u "${USER}" -n "${JOB_NAME}" -h -o "%i %j %t %N %M %L" 2>/dev/null || true)
-done
+# Scan all user jobs; recognize course-scoped names and legacy css360-qlora-*.
+while IFS= read -r line; do
+  [[ -z "${line}" ]] && continue
+  name="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field name)"
+  if ! helpers is-qlora-training-job-name "${name}" >/dev/null 2>&1; then
+    continue
+  fi
+  state="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field state)"
+  if is_active_state "${state}"; then
+    show_job_line "${line}"
+    echo
+    ACTIVE=1
+  fi
+done < <(squeue -u "${USER}" -h -o "%i %j %t %N %M %L" 2>/dev/null || true)
 
 if [[ "${ACTIVE}" -eq 0 ]]; then
-  echo "No active css360-qlora-smoke or css360-qlora-train jobs."
+  echo "No active QLoRA smoke/train jobs."
   echo
 fi
 
