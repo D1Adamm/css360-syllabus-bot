@@ -73,3 +73,6 @@ backend/data/indexes/
 
 # Local backup
 local-artifact-backup/
+
+# Local Firebase migration snapshots
+backups/firebase/

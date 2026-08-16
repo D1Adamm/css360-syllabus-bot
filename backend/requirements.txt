@@ -5,3 +5,6 @@ python-multipart
 pypdf
 uvicorn[standard]
 pytest
+# PostgreSQL migration target only. Live routes still read/write Firebase, so
+# nothing imported by app.main needs this driver at runtime.
+psycopg[binary]
