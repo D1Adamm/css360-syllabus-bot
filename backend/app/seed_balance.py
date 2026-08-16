@@ -122,8 +122,16 @@ def scenario_requirement_remaining(
     *,
     accepted_seeds: list[dict[str, Any]],
     target_count: int,
+    existing_scenario_count: int = 0,
 ) -> int:
-    current = sum(
+    """How many more scenario-like seeds the run still owes.
+
+    `existing_scenario_count` carries the seeds a top-up is adding to. Balance
+    is a property of the course a student eventually sees, not of one run's
+    slice of it: a course that already holds nine scenario seeds does not need
+    the same thing again from the next forty.
+    """
+    current = max(0, existing_scenario_count) + sum(
         1
         for seed in accepted_seeds
         if str(seed.get("questionType", "")).strip().lower() in SCENARIO_LIKE_TYPES
@@ -160,11 +168,36 @@ def should_prefer_scenario_or_clarification(
     accepted_seeds: list[dict[str, Any]],
     remaining_slots: int,
     target_count: int,
+    existing_scenario_count: int = 0,
+    eligible_slots_remaining: int | None = None,
 ) -> bool:
+    """Whether the remaining work must now go to scenario-like questions.
+
+    Urgency-based rather than always-on, so a run spends its early slots on
+    whatever each fact suits best and converges on the minimum only when it
+    would otherwise miss it.
+
+    `eligible_slots_remaining` is what makes that urgency real. Only some facts
+    can carry a scenario — policy-shaped ones with conditions — and those tend
+    to rank high, so they are spent early. Measured against *total* slots the
+    deficit looks comfortable until the last stretch, by which point every
+    remaining fact is a contact detail or a deadline and the preference has
+    nothing left to apply to. Measured against the slots that could actually
+    take one, pressure is visible while those slots still exist.
+
+    On a top-up the deficit is course-wide — see `scenario_requirement_remaining`.
+    """
     if remaining_slots <= 0:
         return False
     required_remaining = scenario_requirement_remaining(
         accepted_seeds=accepted_seeds,
         target_count=target_count,
+        existing_scenario_count=existing_scenario_count,
     )
-    return required_remaining >= remaining_slots
+    if required_remaining <= 0:
+        return False
+
+    budget = remaining_slots
+    if eligible_slots_remaining is not None:
+        budget = min(budget, max(0, eligible_slots_remaining))
+    return required_remaining >= budget

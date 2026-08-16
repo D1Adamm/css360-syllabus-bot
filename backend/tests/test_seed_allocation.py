@@ -13,10 +13,13 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.seed_allocation import (
     MAX_SLOTS_PER_FACT,
+    SCENARIO_LIKE_STYLES,
     allocate_slots,
     compute_allocation_caps,
     compute_desired_slots,
     compute_ranking_score,
+    fact_supports_scenario_like_style,
+    suggest_question_styles,
 )
 from app.storage import LocalCourseArtifactStorage
 
@@ -673,6 +676,138 @@ class FactAllocationEndpointTests(unittest.TestCase):
             json={"targetCount": 50},
         )
         self.assertEqual(response.status_code, 404)
+
+
+class SingleSlotScenarioStyleTests(unittest.TestCase):
+    """The CSS 350 regression: scenario styles unreachable at one slot per fact.
+
+    Breadth-first allocation gives every fact exactly one slot whenever facts
+    are plentiful. Scenario-like styles are never the first entry in any branch,
+    so truncating to one slot dropped all of them — and the run's scenario
+    minimum became unreachable before the model was even asked.
+    """
+
+    ALL_KINDS = (
+        "contact",
+        "office_hours",
+        "deadline",
+        "late_work",
+        "attendance",
+        "policy",
+        "accommodation",
+        "grading",
+        "requirement",
+        "submission",
+        "communication",
+        "other",
+    )
+
+    @staticmethod
+    def _kind_fact(kind: str, complexity: int) -> dict:
+        return {"kind": kind, "complexity": complexity}
+
+    def test_scenario_style_survives_truncation_to_one_slot(self) -> None:
+        styles = suggest_question_styles(
+            self._kind_fact("late_work", 2), 1, prefer_scenario_like=True
+        )
+
+        self.assertEqual(styles, ["scenario"])
+
+    def test_default_behaviour_is_unchanged(self) -> None:
+        """Without the flag, allocation keeps producing exactly what it did."""
+        for kind in self.ALL_KINDS:
+            for complexity in (1, 2, 3, 4):
+                with self.subTest(kind=kind, complexity=complexity):
+                    styles = suggest_question_styles(
+                        self._kind_fact(kind, complexity), 1
+                    )
+                    self.assertEqual(len(styles), 1)
+                    self.assertNotIn(styles[0], SCENARIO_LIKE_STYLES)
+
+    def test_preference_never_invents_a_style_the_fact_did_not_earn(self) -> None:
+        """Simple lookups stay direct even when a run is starved of scenarios."""
+        for kind in ("contact", "office_hours"):
+            for complexity in (1, 2, 3, 4):
+                with self.subTest(kind=kind, complexity=complexity):
+                    styles = suggest_question_styles(
+                        self._kind_fact(kind, complexity), 1, prefer_scenario_like=True
+                    )
+                    self.assertEqual(styles, ["factual"])
+
+        simple_deadline = suggest_question_styles(
+            self._kind_fact("deadline", 1), 1, prefer_scenario_like=True
+        )
+        self.assertEqual(simple_deadline, ["factual"])
+
+    def test_communication_facts_stay_procedural(self) -> None:
+        styles = suggest_question_styles(
+            self._kind_fact("communication", 3), 1, prefer_scenario_like=True
+        )
+        self.assertEqual(styles, ["procedural"])
+
+    def test_some_kind_reaches_a_scenario_style_at_one_slot(self) -> None:
+        """The invariant whose absence let the regression ship.
+
+        It is not enough that individual kinds behave; at one slot per fact,
+        *something* has to be able to produce a scenario-like style, or the
+        minimum is arithmetically unreachable for every possible syllabus.
+        """
+        reachable = [
+            (kind, complexity)
+            for kind in self.ALL_KINDS
+            for complexity in (1, 2, 3, 4)
+            if any(
+                style in SCENARIO_LIKE_STYLES
+                for style in suggest_question_styles(
+                    self._kind_fact(kind, complexity), 1, prefer_scenario_like=True
+                )
+            )
+        ]
+
+        self.assertTrue(reachable)
+
+    def test_eligibility_helper_matches_what_the_styles_do(self) -> None:
+        self.assertTrue(
+            fact_supports_scenario_like_style(self._kind_fact("late_work", 2), 1)
+        )
+        self.assertTrue(
+            fact_supports_scenario_like_style(self._kind_fact("policy", 3), 1)
+        )
+        self.assertFalse(
+            fact_supports_scenario_like_style(self._kind_fact("contact", 1), 1)
+        )
+        self.assertFalse(
+            fact_supports_scenario_like_style(self._kind_fact("deadline", 1), 1)
+        )
+        self.assertFalse(
+            fact_supports_scenario_like_style(self._kind_fact("communication", 4), 1)
+        )
+
+    def test_multi_slot_facts_keep_every_style_they_earned(self) -> None:
+        """Promotion reorders; it must not drop the fact's other styles."""
+        styles = suggest_question_styles(
+            self._kind_fact("late_work", 3), 3, prefer_scenario_like=True
+        )
+
+        self.assertEqual(sorted(styles), ["exception", "policy", "scenario"])
+        self.assertIn(styles[0], SCENARIO_LIKE_STYLES)
+
+    def test_allocation_still_stores_unpromoted_styles(self) -> None:
+        """Allocation has no deficit knowledge, so its output is untouched."""
+        facts = [
+            _fact(
+                f"fact-{index:02d}",
+                kind="late_work",
+                complexity=2,
+                source_chunk_ids=[f"chunk-{index:03d}"],
+            )
+            for index in range(1, 6)
+        ]
+        allocation = allocate_slots(facts=facts, target_count=5)
+
+        for entry in allocation["allocations"]:
+            if entry["slotCount"] == 1:
+                self.assertNotIn(entry["suggestedStyles"][0], SCENARIO_LIKE_STYLES)
 
 
 if __name__ == "__main__":

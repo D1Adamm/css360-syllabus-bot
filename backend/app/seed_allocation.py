@@ -81,6 +81,11 @@ _POLICY_MULTI_KINDS = frozenset(
 )
 _RESOURCE_KINDS = frozenset({"resource"})
 
+# Styles that become a scenario/clarification questionType downstream. Kept
+# here rather than derived from the generator's map so allocation stays
+# independent of it.
+SCENARIO_LIKE_STYLES = frozenset({"scenario", "exception", "clarification"})
+
 
 def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, value))
@@ -137,8 +142,25 @@ def compute_ranking_score(fact: dict[str, Any]) -> float:
     return round(_clamp01(score), 4)
 
 
-def suggest_question_styles(fact: dict[str, Any], slot_count: int) -> list[str]:
-    """Suggest question styles justified by complexity / kind (not seeds)."""
+def suggest_question_styles(
+    fact: dict[str, Any],
+    slot_count: int,
+    *,
+    prefer_scenario_like: bool = False,
+) -> list[str]:
+    """Suggest question styles justified by complexity / kind (not seeds).
+
+    `prefer_scenario_like` reorders an already-earned scenario-like style to the
+    front so it survives truncation to `slot_count`. It never adds one: a fact
+    that did not qualify for `scenario`/`exception`/`clarification` below is not
+    given one here, because a style the evidence cannot support only produces a
+    candidate that validation will reject.
+
+    The reordering exists because scenario-like styles are never the first entry
+    in any branch. At one slot per fact — which is what breadth-first allocation
+    produces whenever facts are plentiful — truncation dropped every one of them,
+    making the run's scenario minimum unreachable no matter what the model did.
+    """
     if slot_count <= 0:
         return []
 
@@ -174,7 +196,31 @@ def suggest_question_styles(fact: dict[str, Any], slot_count: int) -> list[str]:
         if style not in seen:
             seen.add(style)
             ordered.append(style)
+
+    if prefer_scenario_like:
+        promoted = next(
+            (style for style in ordered if style in SCENARIO_LIKE_STYLES), None
+        )
+        if promoted is not None:
+            ordered = [promoted] + [
+                style for style in ordered if style != promoted
+            ]
+
     return ordered[: max(1, slot_count)]
+
+
+def fact_supports_scenario_like_style(fact: dict[str, Any], slot_count: int) -> bool:
+    """Whether this fact already earns a scenario-like style at this slot count.
+
+    The eligibility test the generator uses before promoting one, so preference
+    never becomes coercion.
+    """
+    return any(
+        style in SCENARIO_LIKE_STYLES
+        for style in suggest_question_styles(
+            fact, slot_count, prefer_scenario_like=True
+        )
+    )
 
 
 def compute_desired_slots(fact: dict[str, Any]) -> dict[str, Any]:

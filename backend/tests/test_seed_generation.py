@@ -1901,3 +1901,473 @@ class StarterRunCeilingTests(unittest.IsolatedAsyncioTestCase):
             + progress["validationCalls"],
         )
         self.assertIn(progress["status"], {"ready", "partial", "failed"})
+
+
+class ScenarioStyleReachabilityTests(unittest.TestCase):
+    """The prompt is what decides a seed's style, so test the prompt.
+
+    CSS 350 produced 48 `direct` and 2 `procedure` seeds out of 50 — not
+    because the model refused scenarios, but because every generation prompt
+    named exactly one allowed questionType and none of them was scenario-like.
+    """
+
+    def test_question_types_survive_truncation_at_one_slot(self) -> None:
+        from app.seed_generation import _question_types_for_styles
+
+        self.assertEqual(
+            _question_types_for_styles(["scenario"], slot_count=1), ["scenario"]
+        )
+        self.assertEqual(
+            _question_types_for_styles(["clarification"], slot_count=1),
+            ["clarification"],
+        )
+        self.assertEqual(
+            _question_types_for_styles(["exception"], slot_count=1), ["scenario"]
+        )
+
+    def test_a_promoted_fact_prompt_allows_a_scenario_type(self) -> None:
+        from app.seed_allocation import suggest_question_styles
+        from app.seed_generation import _build_fact_seed_prompt
+
+        fact = _mock_fact(
+            "fact-01",
+            statement="Late work may be submitted within 24 hours for half credit.",
+            kind="late_work",
+            complexity=3,
+        )
+        styles = suggest_question_styles(fact, 1, prefer_scenario_like=True)
+        prompt = _build_fact_seed_prompt(
+            fact=fact,
+            chunk_texts=["Late work may be submitted within 24 hours."],
+            count=1,
+            suggested_styles=styles,
+        )
+
+        self.assertIn("Allowed questionType values: scenario", prompt)
+
+    def test_an_ineligible_fact_prompt_stays_direct(self) -> None:
+        from app.seed_allocation import suggest_question_styles
+        from app.seed_generation import _build_fact_seed_prompt
+
+        fact = _mock_fact(
+            "fact-02",
+            statement="Office hours are Tuesdays at 2pm.",
+            kind="office_hours",
+            complexity=1,
+        )
+        styles = suggest_question_styles(fact, 1, prefer_scenario_like=True)
+        prompt = _build_fact_seed_prompt(
+            fact=fact,
+            chunk_texts=["Office hours are Tuesdays at 2pm."],
+            count=1,
+            suggested_styles=styles,
+        )
+
+        self.assertIn("Allowed questionType values: direct", prompt)
+        self.assertNotIn("scenario", prompt.split("Required JSON shape")[0].replace(
+            "direct|scenario|clarification|procedure|comparison", ""
+        ))
+
+
+class ScenarioBalanceRunTests(unittest.IsolatedAsyncioTestCase):
+    """End-to-end: a policy-heavy course must not report zero scenarios.
+
+    The model stub answers with whatever questionType the prompt allows, so
+    these tests measure what the run *asks for*. A stub that hardcoded
+    `scenario` would pass no matter how broken the prompt was.
+    """
+
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self._temp_dir.name)
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=root / "course_data",
+            index_dir=root / "indexes",
+        )
+        self.course_id = "css-350-winter-2026-scen"
+        chunks = [
+            _chunk(
+                f"chunk-{index:03d}",
+                "CSS 350 Syllabus",
+                f"Late policy {index}: work submitted after the deadline for "
+                f"unit {index} may receive half credit unless an extension "
+                "was arranged in advance. " * 3,
+                order=index,
+            )
+            for index in range(1, 41)
+        ]
+        self.storage.save_index(self.course_id, _index(self.course_id, chunks))
+        self._embed_patch = patch(
+            "app.seed_generation.embed_ollama_texts",
+            new=_orthogonal_embed,
+        )
+        self._embed_patch.start()
+
+    def tearDown(self) -> None:
+        self._embed_patch.stop()
+        self._temp_dir.cleanup()
+
+    def _policy_facts(self, count: int) -> list[dict]:
+        """Facts that already earn a scenario style: policy kinds, complexity 2.
+
+        Spread across the policy family because allocation caps slots per kind,
+        and a single-kind fixture would be testing that cap instead.
+        """
+        kinds = ["late_work", "attendance", "policy", "accommodation"]
+        return [
+            _mock_fact(
+                f"fact-{index:02d}",
+                statement=(
+                    f"Late policy {index}: work submitted after the deadline "
+                    f"for unit {index} may receive half credit unless an "
+                    "extension was arranged in advance."
+                ),
+                source_chunk_ids=[f"chunk-{index:03d}"],
+                kind=kinds[(index - 1) % len(kinds)],
+                complexity=2,
+            )
+            for index in range(1, count + 1)
+        ]
+
+    def _prompt_obedient_generation(self) -> AsyncMock:
+        """Return the first questionType the prompt actually permits."""
+        state = {"n": 0}
+
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            state["n"] += 1
+            n = state["n"]
+            match = re.search(r"Allowed questionType values: ([^\n]+)", prompt)
+            allowed = match.group(1).split(",")[0].strip() if match else "direct"
+            return {
+                "answer": json.dumps(
+                    {
+                        "seeds": [
+                            {
+                                "question": f"Distinct question number {n}?",
+                                "answer": (
+                                    f"Answer {n} with enough detail to pass checks."
+                                ),
+                                "category": f"Category {n % 7}",
+                                "questionType": allowed,
+                            }
+                        ]
+                    }
+                ),
+                "model": SEED_GENERATION_MODEL,
+            }
+
+        return _starter_ollama_side_effect(generate_side_effect=_fake_generate)
+
+    async def _run(self, facts: list[dict], **kwargs):
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        with patch(
+            "app.seed_generation.load_or_build_fact_inventory",
+            new=AsyncMock(return_value=_mock_inventory(facts)),
+        ):
+            with patch(
+                "app.seed_generation.generate_starter_ollama_completion",
+                new=self._prompt_obedient_generation(),
+            ):
+                return await generate_starter_seeds_for_course(
+                    course_id=self.course_id,
+                    storage=self.storage,
+                    **kwargs,
+                )
+
+    async def test_a_policy_heavy_run_reports_scenarios(self) -> None:
+        """The regression, in one assertion: this used to be 0."""
+        result = await self._run(self._policy_facts(30), target_count=30)
+        progress = result["progress"]
+
+        self.assertGreater(progress["scenarioOrClarificationActual"], 0)
+
+    async def test_scenario_seeds_carry_the_style_in_question_type(self) -> None:
+        result = await self._run(self._policy_facts(30), target_count=30)
+
+        scenario_seeds = [
+            seed
+            for seed in result["seeds"]
+            if seed["questionType"] in {"scenario", "clarification"}
+        ]
+        self.assertTrue(scenario_seeds)
+        self.assertEqual(
+            len(scenario_seeds),
+            result["progress"]["scenarioOrClarificationActual"],
+        )
+
+    async def test_ineligible_facts_are_never_forced_into_scenarios(self) -> None:
+        """A course of simple lookups reports zero, and that is correct."""
+        facts = [
+            _mock_fact(
+                f"fact-{index:02d}",
+                statement=f"Office hours for section {index} are Tuesdays at 2pm.",
+                source_chunk_ids=[f"chunk-{index:03d}"],
+                kind="office_hours",
+                complexity=1,
+            )
+            for index in range(1, 31)
+        ]
+        result = await self._run(facts, target_count=30)
+
+        self.assertEqual(result["progress"]["scenarioOrClarificationActual"], 0)
+        for seed in result["seeds"]:
+            self.assertEqual(seed["questionType"], "direct")
+
+    async def test_status_stays_count_based(self) -> None:
+        """Missing the scenario minimum must not reclassify a full run."""
+        facts = [
+            _mock_fact(
+                f"fact-{index:02d}",
+                statement=f"Office hours for section {index} are Tuesdays at 2pm.",
+                source_chunk_ids=[f"chunk-{index:03d}"],
+                kind="office_hours",
+                complexity=1,
+            )
+            for index in range(1, 11)
+        ]
+        result = await self._run(facts, target_count=10)
+        progress = result["progress"]
+
+        self.assertEqual(progress["finalCount"], 10)
+        self.assertEqual(progress["scenarioOrClarificationActual"], 0)
+        self.assertGreater(progress["scenarioOrClarificationMinimum"], 0)
+        self.assertEqual(progress["status"], "ready")
+
+
+class ScenarioEligibilityUrgencyTests(unittest.IsolatedAsyncioTestCase):
+    """The instrumented failure: eligible facts spent before urgency arrived.
+
+    Scenario-capable facts are policy-shaped and score highly, so allocation
+    puts them first. A run that waits for the deficit to rival *total* slots
+    starts preferring scenarios only in the final stretch, by which point every
+    remaining fact is an office-hours time or a contact address and preference
+    has nothing eligible left to apply to.
+
+    The fixture reproduces exactly that ordering: six scenario-capable facts at
+    the front, twenty-four lookups behind them.
+    """
+
+    ELIGIBLE_COUNT = 4
+    LOOKUP_COUNT = 40
+    TARGET = 40
+
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self._temp_dir.name)
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=root / "course_data",
+            index_dir=root / "indexes",
+        )
+        self.course_id = "css-350-winter-2026-urgn"
+        total = self.ELIGIBLE_COUNT + self.LOOKUP_COUNT
+        chunks = [
+            _chunk(
+                f"chunk-{index:03d}",
+                "CSS 350 Syllabus",
+                f"Item {index}: this section carries enough detail about unit "
+                f"{index} to serve as a usable evidence chunk for grading. " * 3,
+                order=index,
+            )
+            for index in range(1, total + 1)
+        ]
+        self.storage.save_index(self.course_id, _index(self.course_id, chunks))
+        self._embed_patch = patch(
+            "app.seed_generation.embed_ollama_texts",
+            new=_orthogonal_embed,
+        )
+        self._embed_patch.start()
+
+    def tearDown(self) -> None:
+        self._embed_patch.stop()
+        self._temp_dir.cleanup()
+
+    def _front_loaded_facts(self) -> list[dict]:
+        """Scenario-capable facts that rank above a tail of simple lookups."""
+        policy_kinds = ["late_work", "attendance", "policy", "accommodation"]
+        lookup_kinds = [
+            "office_hours",
+            "contact",
+            "deadline",
+            "grading",
+            "requirement",
+            "submission",
+            "communication",
+            "other",
+        ]
+        facts = [
+            _mock_fact(
+                f"fact-{index:02d}",
+                statement=(
+                    f"Policy {index}: work submitted after the deadline for "
+                    f"unit {index} may receive half credit unless an extension "
+                    "was arranged in advance."
+                ),
+                source_chunk_ids=[f"chunk-{index:03d}"],
+                kind=policy_kinds[(index - 1) % len(policy_kinds)],
+                complexity=2,
+                importance_score=0.95,
+                ask=0.95,
+                usefulness=0.95,
+            )
+            for index in range(1, self.ELIGIBLE_COUNT + 1)
+        ]
+        facts += [
+            _mock_fact(
+                f"fact-{index:02d}",
+                statement=(
+                    f"Office hours for section {index} are held Tuesdays at "
+                    "2pm in the advising suite."
+                ),
+                source_chunk_ids=[f"chunk-{index:03d}"],
+                kind=lookup_kinds[(index - 1) % len(lookup_kinds)],
+                complexity=1,
+                importance_score=0.6,
+                ask=0.55,
+                usefulness=0.6,
+            )
+            for index in range(
+                self.ELIGIBLE_COUNT + 1, self.ELIGIBLE_COUNT + self.LOOKUP_COUNT + 1
+            )
+        ]
+        return facts
+
+    def _prompt_obedient_generation(self) -> AsyncMock:
+        state = {"n": 0}
+
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            state["n"] += 1
+            n = state["n"]
+            match = re.search(r"Allowed questionType values: ([^\n]+)", prompt)
+            allowed = match.group(1).split(",")[0].strip() if match else "direct"
+            return {
+                "answer": json.dumps(
+                    {
+                        "seeds": [
+                            {
+                                "question": f"Distinct question number {n}?",
+                                "answer": f"Answer {n} with enough detail to pass.",
+                                "category": f"Category {n % 7}",
+                                "questionType": allowed,
+                            }
+                        ]
+                    }
+                ),
+                "model": SEED_GENERATION_MODEL,
+            }
+
+        return _starter_ollama_side_effect(generate_side_effect=_fake_generate)
+
+    async def _run(self, target_count: int):
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        with patch(
+            "app.seed_generation.load_or_build_fact_inventory",
+            new=AsyncMock(return_value=_mock_inventory(self._front_loaded_facts())),
+        ):
+            with patch(
+                "app.seed_generation.generate_starter_ollama_completion",
+                new=self._prompt_obedient_generation(),
+            ):
+                return await generate_starter_seeds_for_course(
+                    course_id=self.course_id,
+                    target_count=target_count,
+                    storage=self.storage,
+                )
+
+    def test_the_fixture_really_is_front_loaded(self) -> None:
+        """Guard the premise: eligible facts must rank ahead of the lookups."""
+        from app.seed_allocation import allocate_slots, fact_supports_scenario_like_style
+
+        allocation = allocate_slots(
+            facts=self._front_loaded_facts(), target_count=self.TARGET
+        )
+        facts_by_id = {
+            fact["factId"]: fact for fact in self._front_loaded_facts()
+        }
+        eligibility = [
+            fact_supports_scenario_like_style(
+                facts_by_id[entry["factId"]], max(1, entry["slotCount"])
+            )
+            for entry in allocation["allocations"]
+            if entry["slotCount"] > 0
+        ]
+
+        self.assertIn(True, eligibility)
+        self.assertIn(False, eligibility)
+        # Every eligible opportunity sits ahead of every ineligible one.
+        last_eligible = max(i for i, ok in enumerate(eligibility) if ok)
+        first_ineligible = min(i for i, ok in enumerate(eligibility) if not ok)
+        self.assertLess(last_eligible, first_ineligible)
+
+    async def test_preference_engages_while_eligible_slots_remain(self) -> None:
+        """The regression. Under slot-count urgency this was 0."""
+        result = await self._run(target_count=self.TARGET)
+        progress = result["progress"]
+
+        self.assertGreater(progress["scenarioOrClarificationActual"], 0)
+
+    async def test_old_urgency_would_have_waited_too_long(self) -> None:
+        """Pin the condition that made the old rule silent.
+
+        The deficit is smaller than the slots remaining, so urgency measured
+        against slot count would not fire until the run's final stretch — long
+        after the six eligible facts at the front were spent.
+        """
+        result = await self._run(target_count=self.TARGET)
+        progress = result["progress"]
+
+        self.assertLess(
+            progress["scenarioOrClarificationMinimum"],
+            progress["achievableCeiling"],
+        )
+        # Eligible capacity is scarcer than the deficit, which is precisely what
+        # slot-count urgency could not see.
+        self.assertLessEqual(
+            progress["scenarioOrClarificationAchievable"],
+            progress["scenarioOrClarificationMinimum"],
+        )
+        self.assertGreater(progress["scenarioOrClarificationActual"], 0)
+
+    async def test_scenarios_come_only_from_eligible_facts(self) -> None:
+        result = await self._run(target_count=self.TARGET)
+
+        scenario_seeds = [
+            seed
+            for seed in result["seeds"]
+            if seed["questionType"] in {"scenario", "clarification"}
+        ]
+        self.assertTrue(scenario_seeds)
+        # A fact can be drawn more than once (primary plus backfill), so the
+        # count is not bounded by the fact count — but the source is.
+        for seed in scenario_seeds:
+            self.assertIn(seed["factId"], {
+                f"fact-{index:02d}" for index in range(1, self.ELIGIBLE_COUNT + 1)
+            })
+
+    async def test_achievable_reports_a_structurally_unreachable_minimum(self) -> None:
+        """The advisory field: four capable facts cannot meet a minimum of 12."""
+        result = await self._run(target_count=self.TARGET)
+        progress = result["progress"]
+
+        self.assertGreater(progress["scenarioOrClarificationAchievable"], 0)
+        self.assertGreater(
+            progress["scenarioOrClarificationMinimum"],
+            progress["scenarioOrClarificationAchievable"],
+        )
+        # Advisory only.
+        self.assertIn(progress["status"], {"ready", "partial"})
+
+    async def test_status_is_unaffected_by_the_shortfall(self) -> None:
+        result = await self._run(target_count=self.TARGET)
+        progress = result["progress"]
+
+        self.assertEqual(
+            progress["status"],
+            resolve_starter_run_status(
+                target_count=self.TARGET,
+                final_count=progress["finalCount"],
+                saved_count=0,
+                save=False,
+            ),
+        )

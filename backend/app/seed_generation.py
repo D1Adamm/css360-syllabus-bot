@@ -29,11 +29,17 @@ from app.ollama import (
     is_ollama_timeout_error,
 )
 from app.fact_inventory_cache import load_or_build_fact_inventory
-from app.seed_allocation import MAX_SLOTS_PER_FACT, allocate_slots
+from app.seed_allocation import (
+    MAX_SLOTS_PER_FACT,
+    allocate_slots,
+    fact_supports_scenario_like_style,
+    suggest_question_styles,
+)
 from app.seed_balance import (
     compute_scenario_minimum,
     count_scenario_or_clarification,
     count_schedule_like,
+    should_prefer_scenario_or_clarification,
 )
 from app.seed_batching import (
     build_batch_fact_seed_prompt,
@@ -1185,6 +1191,9 @@ async def generate_starter_seeds_for_course(
     existing_fact_ids: set[str] = set()
     seen_questions: set[str] = set()
     accepted_questions: list[str] = []
+    # Scenario/clarification balance is measured over the course a student sees,
+    # so a top-up counts what is already stored, not just what it adds.
+    existing_scenario_count = 0
 
     if top_up:
         try:
@@ -1193,6 +1202,13 @@ async def generate_starter_seeds_for_course(
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         summary = summarize_existing_seed_examples(existing_payload)
         existing_count = int(summary["existingCount"])
+        existing_scenario_count = count_scenario_or_clarification(
+            [
+                record
+                for record in (existing_payload or {}).values()
+                if isinstance(record, dict)
+            ]
+        )
         gap = compute_top_up_gap(
             existing_count=existing_count, target_count=target_count
         )
@@ -1254,7 +1270,11 @@ async def generate_starter_seeds_for_course(
                     "scenarioOrClarificationMinimum": compute_scenario_minimum(
                         target_count
                     ),
-                    "scenarioOrClarificationActual": 0,
+                    # Nothing was generated, but the course still has whatever
+                    # balance it already had.
+                    "scenarioOrClarificationActual": existing_scenario_count,
+                    # No opportunities, so nothing can be added to it.
+                    "scenarioOrClarificationAchievable": existing_scenario_count,
                     "timeoutFailures": 0,
                     "finalCount": 0,
                     "savedCount": 0,
@@ -1449,7 +1469,43 @@ async def generate_starter_seeds_for_course(
 
     failed_facts: set[str] = set()
 
-    for fact, alloc, is_backfill in opportunities:
+    # What this run can generate, and what the whole course can hold once it
+    # does. On a top-up the second is the one balance is judged against.
+    achievable_ceiling = max(0, min(generation_limit, allocated_slots))
+    achievable_total_count = (
+        existing_count + achievable_ceiling if top_up else achievable_ceiling
+    )
+
+    # Which opportunities could carry a scenario at all, and how many of those
+    # are still ahead at each point in the run.
+    #
+    # Scenario-capable facts rank high and are therefore spent early, so the
+    # number that matters is not "slots left" but "slots left that could take
+    # one". A suffix count is an upper bound — a fact skipped later for missing
+    # chunk text or a hard failure still counts here — which errs toward
+    # preferring earlier, the safe direction.
+    opportunity_scenario_eligible = [
+        fact_supports_scenario_like_style(
+            fact, max(1, int(alloc.get("slotCount") or 1))
+        )
+        for fact, alloc, _ in opportunities
+    ]
+    eligible_remaining_from = [0] * (len(opportunities) + 1)
+    for index in range(len(opportunities) - 1, -1, -1):
+        eligible_remaining_from[index] = eligible_remaining_from[index + 1] + (
+            1 if opportunity_scenario_eligible[index] else 0
+        )
+
+    # Informational: the most scenario-like seeds this course could hold when
+    # the run finishes. Reported so a minimum the facts cannot reach reads as a
+    # property of the syllabus rather than a generation failure.
+    scenario_capacity = min(eligible_remaining_from[0], achievable_ceiling)
+    scenario_achievable = min(
+        existing_scenario_count + scenario_capacity,
+        achievable_total_count or (existing_scenario_count + scenario_capacity),
+    )
+
+    for opportunity_index, (fact, alloc, is_backfill) in enumerate(opportunities):
         if len(seeds) >= generation_limit or not _budget_remaining():
             break
 
@@ -1478,6 +1534,29 @@ async def generate_starter_seeds_for_course(
         accepted_before = len(seeds)
         hard_failure = False
 
+        # Styles the allocator chose, unless the course-wide scenario deficit
+        # now needs every remaining slot — and then only for a fact that had
+        # already earned a scenario-like style. A fact whose evidence cannot
+        # support one is left exactly as allocated.
+        slot_count = max(1, int(alloc.get("slotCount") or 1))
+        suggested_styles = list(alloc.get("suggestedStyles") or [])
+        # Slots left is measured against the ceiling, not the target. A run
+        # whose facts support 12 of a requested 30 has 12 chances, and judging
+        # urgency by the 30 means the deficit never looks pressing until the
+        # opportunities have already run out.
+        if opportunity_scenario_eligible[opportunity_index] and (
+            should_prefer_scenario_or_clarification(
+                accepted_seeds=seeds,
+                remaining_slots=achievable_ceiling - len(seeds),
+                target_count=achievable_total_count,
+                existing_scenario_count=existing_scenario_count,
+                eligible_slots_remaining=eligible_remaining_from[opportunity_index],
+            )
+        ):
+            suggested_styles = suggest_question_styles(
+                fact, slot_count, prefer_scenario_like=True
+            )
+
         # Safe retries: regenerate on rejectable candidates before failing the
         # fact. Timeouts / transport errors still fail the fact immediately.
         for _attempt in range(STARTER_FACT_GENERATION_ATTEMPTS):
@@ -1493,7 +1572,7 @@ async def generate_starter_seeds_for_course(
                     fact=fact,
                     chunk_texts=fact_chunk_texts,
                     count=1,
-                    suggested_styles=list(alloc.get("suggestedStyles") or []),
+                    suggested_styles=list(suggested_styles),
                 )
             except HTTPException as exc:
                 hard_failure = True
@@ -1674,7 +1753,9 @@ async def generate_starter_seeds_for_course(
     # answer without reading the code: a course whose syllabus supports eleven
     # examples and produced eleven looks identical, by count alone, to one whose
     # extractor was silently failing.
-    achievable_ceiling = max(0, min(generation_limit, allocated_slots))
+    #
+    # `achievable_ceiling` was computed before generation started, because the
+    # scenario balancing inside the loop needs it too.
     limiting_factor = resolve_limiting_factor(
         generation_limit=generation_limit,
         final_count=final_count,
@@ -1738,10 +1819,24 @@ async def generate_starter_seeds_for_course(
             # Against the ceiling, not the raw target. Asking for 15 scenario
             # questions out of a possible 11 slots is not a goal, it is a
             # contradiction — and it was reported as a goal.
+            #
+            # On a top-up both numbers are course-wide: the requirement covers
+            # the seeds the course will hold when the run finishes, and the
+            # actual counts the ones already stored alongside the new ones.
+            # Measuring a 41-seed top-up against only its own slice would call a
+            # course balanced that a student experiences as anything but.
             "scenarioOrClarificationMinimum": compute_scenario_minimum(
-                achievable_ceiling or generation_limit
+                achievable_total_count or generation_limit
             ),
-            "scenarioOrClarificationActual": count_scenario_or_clarification(seeds),
+            "scenarioOrClarificationActual": (
+                existing_scenario_count + count_scenario_or_clarification(seeds)
+            ),
+            # Advisory only, and deliberately not part of `status`: the most
+            # scenario-like seeds this course could hold, given how many of its
+            # facts can carry one. When this sits below the minimum, the
+            # shortfall is the syllabus's shape — a course of contact details
+            # and deadlines — not a run that underperformed.
+            "scenarioOrClarificationAchievable": scenario_achievable,
             "timeoutFailures": timeout_failures,
             "finalCount": final_count,
             "savedCount": saved_count,

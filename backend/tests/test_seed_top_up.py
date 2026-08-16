@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,7 @@ from app.firebase_seeds import (
     compute_top_up_gap,
     summarize_existing_seed_examples,
 )
+from app.seed_balance import compute_scenario_minimum
 from app.seed_dedupe import normalize_question_for_dedupe
 from app.seed_generation import (
     SEED_GENERATION_MODEL,
@@ -305,6 +307,148 @@ class TopUpGenerationTests(unittest.IsolatedAsyncioTestCase):
                 normalize_question_for_dedupe(seed["question"]),
                 normalize_question_for_dedupe("Existing locked question one?"),
             )
+
+    async def _run_top_up(self, existing: dict, *, target_count: int) -> dict:
+        """Top-up run whose model answers with the questionType it was allowed."""
+
+        async def _fake(prompt: str, **kwargs):
+            if VALIDATION_PROMPT_MARKER in prompt:
+                return {
+                    "answer": _passing_validation(),
+                    "model": SEED_GENERATION_MODEL,
+                }
+            match = re.search(r"Allowed questionType values: ([^\n]+)", prompt)
+            allowed = match.group(1).split(",")[0].strip() if match else "direct"
+            self._generated += 1
+            return {
+                "answer": json.dumps(
+                    {
+                        "seeds": [
+                            {
+                                "question": f"New distinct question {self._generated}?",
+                                "answer": (
+                                    f"New answer {self._generated} with enough "
+                                    "detail to pass validation checks."
+                                ),
+                                "category": f"Category {self._generated % 5}",
+                                "questionType": allowed,
+                            }
+                        ]
+                    }
+                ),
+                "model": SEED_GENERATION_MODEL,
+            }
+
+        self._generated = 0
+        with (
+            patch(
+                "app.seed_generation.fetch_course_seed_examples",
+                new=AsyncMock(return_value=existing),
+            ),
+            patch(
+                "app.seed_generation.generate_starter_ollama_completion",
+                new=AsyncMock(side_effect=_fake),
+            ),
+        ):
+            return await generate_starter_seeds_for_course(
+                course_id=self.course_id,
+                target_count=target_count,
+                save=False,
+                top_up=True,
+                storage=self.storage,
+            )
+
+    def _existing_seeds(self, count: int, *, question_type: str) -> dict:
+        return {
+            f"seed-{index}": {
+                "id": f"seed-{index}",
+                "question": f"Existing question {index}?",
+                "instruction": f"Existing question {index}?",
+                "answer": f"Existing answer {index} with enough detail.",
+                "response": f"Existing answer {index} with enough detail.",
+                "category": "policy",
+                "origin": "ai_generated",
+                "questionType": question_type,
+                "factId": f"existing-fact-{index:02d}",
+            }
+            for index in range(1, count + 1)
+        }
+
+    async def test_top_up_counts_scenarios_across_the_whole_course(self) -> None:
+        """Existing scenario seeds count toward the run's reported balance.
+
+        A top-up that reported only its own slice described a course nobody
+        had: the 9 seeds already stored were invisible to the metric while
+        `totalCount` and `status` counted them.
+        """
+        existing = self._existing_seeds(3, question_type="scenario")
+        result = await self._run_top_up(existing, target_count=8)
+        progress = result["progress"]
+
+        self.assertTrue(progress["topUp"])
+        self.assertEqual(progress["existingCount"], 3)
+        self.assertGreaterEqual(progress["scenarioOrClarificationActual"], 3)
+
+        new_scenarios = sum(
+            1
+            for seed in result["seeds"]
+            if seed["questionType"] in {"scenario", "clarification"}
+        )
+        self.assertEqual(
+            progress["scenarioOrClarificationActual"],
+            3 + new_scenarios,
+        )
+
+    async def test_top_up_requirement_covers_the_whole_course(self) -> None:
+        """The minimum is measured against existing + achievable, not the slice."""
+        existing = self._existing_seeds(3, question_type="direct")
+        result = await self._run_top_up(existing, target_count=8)
+        progress = result["progress"]
+
+        achievable_total = progress["existingCount"] + progress["achievableCeiling"]
+        self.assertEqual(
+            progress["scenarioOrClarificationMinimum"],
+            compute_scenario_minimum(achievable_total),
+        )
+        # The slice-only number this used to report.
+        self.assertNotEqual(progress["achievableCeiling"], achievable_total)
+
+    async def test_existing_scenarios_relieve_pressure_on_new_seeds(self) -> None:
+        """A course already carrying the balance does not need more of it."""
+        satisfied = await self._run_top_up(
+            self._existing_seeds(3, question_type="scenario"), target_count=8
+        )
+        starved = await self._run_top_up(
+            self._existing_seeds(3, question_type="direct"), target_count=8
+        )
+
+        def _new_scenarios(result: dict) -> int:
+            return sum(
+                1
+                for seed in result["seeds"]
+                if seed["questionType"] in {"scenario", "clarification"}
+            )
+
+        self.assertLessEqual(_new_scenarios(satisfied), _new_scenarios(starved))
+
+    async def test_noop_top_up_still_reports_existing_balance(self) -> None:
+        """Nothing generated, but the course's existing balance is not zero."""
+        existing = self._existing_seeds(5, question_type="scenario")
+        result = await self._run_top_up(existing, target_count=5)
+        progress = result["progress"]
+
+        self.assertEqual(progress["missingCount"], 0)
+        self.assertEqual(progress["finalCount"], 0)
+        self.assertEqual(progress["scenarioOrClarificationActual"], 5)
+
+    async def test_status_stays_count_based_on_a_top_up(self) -> None:
+        """Missing the scenario minimum must not change top-up readiness."""
+        existing = self._existing_seeds(5, question_type="direct")
+        result = await self._run_top_up(existing, target_count=5)
+        progress = result["progress"]
+
+        self.assertEqual(progress["totalCount"], 5)
+        self.assertEqual(progress["status"], "ready")
 
 
 if __name__ == "__main__":

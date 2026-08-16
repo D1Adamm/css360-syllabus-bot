@@ -485,14 +485,29 @@ class StarterSeedProgress(BaseModel):
         default=0,
         description=(
             "Scenario/clarification questions this run aimed for, measured "
-            "against achievableCeiling rather than targetCount so it can never "
-            "exceed the number of slots that exist."
+            "against the achievable course total rather than targetCount so it "
+            "can never exceed the number of slots that exist. On a top-up that "
+            "total is existingCount + achievableCeiling."
         ),
     )
     scenario_or_clarification_actual: int = Field(
         alias="scenarioOrClarificationActual",
         default=0,
-        description="Scenario/clarification questions the run actually accepted.",
+        description=(
+            "Scenario/clarification questions the course holds. On a top-up "
+            "this counts the existing seeds alongside the newly accepted ones, "
+            "matching how totalCount and status treat a top-up."
+        ),
+    )
+    scenario_or_clarification_achievable: int = Field(
+        alias="scenarioOrClarificationAchievable",
+        default=0,
+        description=(
+            "Most scenario/clarification questions this course could hold, "
+            "given how many of its facts can carry one. Advisory only: when it "
+            "sits below the minimum, the shortfall is the syllabus's shape, not "
+            "an underperforming run. Never affects status."
+        ),
     )
     timeout_failures: int = Field(alias="timeoutFailures", default=0)
     final_count: int = Field(alias="finalCount")
