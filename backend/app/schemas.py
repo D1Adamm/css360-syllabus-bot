@@ -405,8 +405,39 @@ class StarterSeedProgress(BaseModel):
     fact_extraction_calls: int = Field(alias="factExtractionCalls", default=0)
     fact_inventory_cached: bool = Field(alias="factInventoryCached", default=False)
     fact_count: int = Field(alias="factCount", default=0)
+    fact_inventory_batches: int = Field(
+        alias="factInventoryBatches",
+        default=0,
+        description="Syllabus batches the fact extractor was asked to read.",
+    )
+    fact_inventory_batch_failures: int = Field(
+        alias="factInventoryBatchFailures",
+        default=0,
+        description=(
+            "Batches that produced nothing because the call failed or the "
+            "response could not be parsed. Non-zero means part of the syllabus "
+            "was never read and every count below is short because of it."
+        ),
+    )
     allocated_fact_count: int = Field(alias="allocatedFactCount", default=0)
     allocated_slots: int = Field(alias="allocatedSlots", default=0)
+    achievable_ceiling: int = Field(
+        alias="achievableCeiling",
+        default=0,
+        description=(
+            "The most examples this run could have produced, given the facts "
+            "extracted and the diversity caps. Compare finalCount against this "
+            "before comparing it against targetCount."
+        ),
+    )
+    limiting_factor: str = Field(
+        alias="limitingFactor",
+        default="none",
+        description=(
+            "Why the run fell short: none, fact_inventory, allocation_caps, "
+            "call_budget, validation_rejections, or timeouts."
+        ),
+    )
     backfill_attempts: int = Field(alias="backfillAttempts", default=0)
     backfill_accepted: int = Field(alias="backfillAccepted", default=0)
     generation_calls: int = Field(alias="generationCalls")
@@ -452,6 +483,16 @@ class StarterSeedProgress(BaseModel):
     scenario_or_clarification_minimum: int = Field(
         alias="scenarioOrClarificationMinimum",
         default=0,
+        description=(
+            "Scenario/clarification questions this run aimed for, measured "
+            "against achievableCeiling rather than targetCount so it can never "
+            "exceed the number of slots that exist."
+        ),
+    )
+    scenario_or_clarification_actual: int = Field(
+        alias="scenarioOrClarificationActual",
+        default=0,
+        description="Scenario/clarification questions the run actually accepted.",
     )
     timeout_failures: int = Field(alias="timeoutFailures", default=0)
     final_count: int = Field(alias="finalCount")

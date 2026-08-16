@@ -29,8 +29,12 @@ from app.ollama import (
     is_ollama_timeout_error,
 )
 from app.fact_inventory_cache import load_or_build_fact_inventory
-from app.seed_allocation import allocate_slots
-from app.seed_balance import compute_scenario_minimum, count_schedule_like
+from app.seed_allocation import MAX_SLOTS_PER_FACT, allocate_slots
+from app.seed_balance import (
+    compute_scenario_minimum,
+    count_scenario_or_clarification,
+    count_schedule_like,
+)
 from app.seed_batching import (
     build_batch_fact_seed_prompt,
     build_batch_validation_prompt,
@@ -116,6 +120,57 @@ def _backfill_unused_slots(alloc: dict[str, Any]) -> int:
     desired = int(alloc.get("desiredSlots") or 0)
     slot_count = int(alloc.get("slotCount") or 0)
     return max(0, desired - slot_count)
+
+
+#: Why a run produced fewer examples than it was asked for.
+LIMIT_NONE = "none"
+#: The syllabus yielded too few distinct facts to fill the target.
+LIMIT_FACT_INVENTORY = "fact_inventory"
+#: Facts were available, but diversity caps refused to spend more slots on them.
+LIMIT_ALLOCATION_CAPS = "allocation_caps"
+#: The run ran out of model calls before it ran out of work.
+LIMIT_CALL_BUDGET = "call_budget"
+#: Enough slots, but too many candidates were rejected.
+LIMIT_VALIDATION_REJECTIONS = "validation_rejections"
+#: The model stopped answering.
+LIMIT_TIMEOUTS = "timeouts"
+
+
+def resolve_limiting_factor(
+    *,
+    generation_limit: int,
+    final_count: int,
+    allocated_slots: int,
+    fact_count: int,
+    timeout_failures: int,
+    ollama_calls: int,
+    max_total_calls: int,
+) -> str:
+    """Name the one thing that stopped this run reaching its target.
+
+    A count on its own does not say whether a short run means a thin syllabus, a
+    broken extractor, or an exhausted budget — and those need completely
+    different responses. The CSS 350 run reported nine examples out of fifty with
+    nothing to distinguish it from a course that only had nine facts' worth to
+    say.
+
+    First match wins, in order of what would have to be fixed first: a run that
+    timed out tells you nothing about its fact supply, and a run that ran out of
+    calls never found out how many slots it could have filled.
+    """
+    if final_count >= generation_limit:
+        return LIMIT_NONE
+    if timeout_failures > 0 and final_count == 0:
+        return LIMIT_TIMEOUTS
+    if max_total_calls > 0 and ollama_calls >= max_total_calls:
+        return LIMIT_CALL_BUDGET
+    if allocated_slots < generation_limit:
+        # Could the facts themselves have covered the target, at the most slots
+        # any one fact is ever allowed? If not, the inventory is the ceiling.
+        if fact_count * MAX_SLOTS_PER_FACT < generation_limit:
+            return LIMIT_FACT_INVENTORY
+        return LIMIT_ALLOCATION_CAPS
+    return LIMIT_VALIDATION_REJECTIONS
 
 
 def resolve_starter_run_status(
@@ -1165,8 +1220,13 @@ async def generate_starter_seeds_for_course(
                     "factExtractionCalls": 0,
                     "factInventoryCached": True,
                     "factCount": 0,
+                    "factInventoryBatches": 0,
+                    "factInventoryBatchFailures": 0,
                     "allocatedFactCount": 0,
                     "allocatedSlots": 0,
+                    # Nothing was asked for, so nothing limited it.
+                    "achievableCeiling": 0,
+                    "limitingFactor": LIMIT_NONE,
                     "backfillAttempts": 0,
                     "backfillAccepted": 0,
                     "generationCalls": 0,
@@ -1194,6 +1254,7 @@ async def generate_starter_seeds_for_course(
                     "scenarioOrClarificationMinimum": compute_scenario_minimum(
                         target_count
                     ),
+                    "scenarioOrClarificationActual": 0,
                     "timeoutFailures": 0,
                     "finalCount": 0,
                     "savedCount": 0,
@@ -1606,6 +1667,25 @@ async def generate_starter_seeds_for_course(
         save=save,
     )
 
+    # What this run could ever have produced, and what stopped it.
+    #
+    # `status` still means what it always did — anything short of the target is
+    # `partial`. These two say why, which is the part nobody could previously
+    # answer without reading the code: a course whose syllabus supports eleven
+    # examples and produced eleven looks identical, by count alone, to one whose
+    # extractor was silently failing.
+    achievable_ceiling = max(0, min(generation_limit, allocated_slots))
+    limiting_factor = resolve_limiting_factor(
+        generation_limit=generation_limit,
+        final_count=final_count,
+        allocated_slots=allocated_slots,
+        fact_count=fact_count,
+        timeout_failures=timeout_failures,
+        ollama_calls=ollama_calls,
+        max_total_calls=max_total_calls,
+    )
+    extraction_report = inventory.get("extraction") or {}
+
     result: dict[str, Any] = {
         "courseId": safe_course_id,
         "model": model_used,
@@ -1621,8 +1701,15 @@ async def generate_starter_seeds_for_course(
             "factExtractionCalls": fact_extraction_calls,
             "factInventoryCached": fact_inventory_cached,
             "factCount": fact_count,
+            "factInventoryBatches": int(extraction_report.get("batchCount") or 0),
+            "factInventoryBatchFailures": (
+                int(extraction_report.get("batchesParseFailed") or 0)
+                + int(extraction_report.get("batchesCallFailed") or 0)
+            ),
             "allocatedFactCount": allocated_fact_count,
             "allocatedSlots": allocated_slots,
+            "achievableCeiling": achievable_ceiling,
+            "limitingFactor": limiting_factor,
             "backfillAttempts": backfill_attempts,
             "backfillAccepted": backfill_accepted,
             "generationCalls": generation_calls,
@@ -1648,7 +1735,13 @@ async def generate_starter_seeds_for_course(
             "candidatesRejectedQualifierMismatch": candidates_rejected_qualifier_mismatch,
             "candidatesRejectedModalEscalation": candidates_rejected_modal_escalation,
             "scheduleCount": count_schedule_like(seeds),
-            "scenarioOrClarificationMinimum": compute_scenario_minimum(target_count),
+            # Against the ceiling, not the raw target. Asking for 15 scenario
+            # questions out of a possible 11 slots is not a goal, it is a
+            # contradiction — and it was reported as a goal.
+            "scenarioOrClarificationMinimum": compute_scenario_minimum(
+                achievable_ceiling or generation_limit
+            ),
+            "scenarioOrClarificationActual": count_scenario_or_clarification(seeds),
             "timeoutFailures": timeout_failures,
             "finalCount": final_count,
             "savedCount": saved_count,

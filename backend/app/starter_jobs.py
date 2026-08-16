@@ -238,6 +238,11 @@ async def run_auto_starter_seed_generation(course_id: str) -> None:
                 "finalCount": final_count,
                 "savedCount": saved_count,
                 "failedToSaveCount": failed_to_save,
+                # Why a short run was short, recorded where an operator reads it.
+                # Without these, "9 of 50" is the whole story, and a thin
+                # syllabus is indistinguishable from a broken extractor.
+                "achievableCeiling": int(progress.get("achievableCeiling", 0)),
+                "limitingFactor": str(progress.get("limitingFactor") or "none"),
                 "error": None,
                 "startedAt": started_at,
                 "completedAt": _utc_now(),

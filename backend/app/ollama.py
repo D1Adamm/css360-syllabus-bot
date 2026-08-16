@@ -16,7 +16,13 @@ DEFAULT_STARTER_OLLAMA_TIMEOUT_SECONDS = 300.0
 DEFAULT_STARTER_OLLAMA_RETRY_DELAY_SECONDS = 1.5
 DEFAULT_EMBED_MODEL = os.getenv("STARTER_EMBED_MODEL", "nomic-embed-text")
 
-DEFAULT_STARTER_INVENTORY_NUM_PREDICT = 1024
+# Fact extraction asks for a JSON array of facts, each carrying a verbatim
+# evidence quote, over a batch of up to DEFAULT_BATCH_CHAR_BUDGET characters of
+# syllabus. 1024 tokens was roughly half what a dense batch needs: the response
+# was cut mid-object, the JSON failed to parse, and the batch silently
+# contributed nothing. Only tokens the model actually emits cost time, so a
+# higher ceiling is free on batches that were already fitting.
+DEFAULT_STARTER_INVENTORY_NUM_PREDICT = 3072
 DEFAULT_STARTER_GENERATION_NUM_PREDICT = 384
 DEFAULT_STARTER_VALIDATION_NUM_PREDICT = 256
 
@@ -63,6 +69,21 @@ def get_starter_inventory_num_predict() -> int:
         "STARTER_INVENTORY_NUM_PREDICT",
         DEFAULT_STARTER_INVENTORY_NUM_PREDICT,
     )
+
+
+def get_starter_inventory_model() -> str:
+    """Model used for fact extraction only.
+
+    Extraction and generation are different jobs. Extraction reads syllabus text
+    and copies facts out of it; generation writes new questions. A larger model
+    is not obviously better at the first and costs real minutes on a CPU host,
+    where every starter call is serialized.
+
+    Defaults to SEED_GENERATION_MODEL, so setting nothing changes nothing.
+    Read at call time, not import time, so a run can be pointed at another model
+    without restarting the process.
+    """
+    return (os.getenv("STARTER_INVENTORY_MODEL") or "").strip() or SEED_GENERATION_MODEL
 
 
 def get_starter_generation_num_predict() -> int:

@@ -17,7 +17,12 @@ from typing import Any
 from app.storage import CourseArtifactStorage
 from app.syllabus_facts import build_fact_inventory
 
-FACT_INVENTORY_CACHE_VERSION = 1
+# 2: extraction reports per-batch outcomes, and the output budget that was
+# truncating extraction was raised. Inventories built before that are not just
+# missing the new field — they may be missing most of their facts, and a course
+# whose cache predates the fix would keep the degraded inventory forever. The
+# bump forces one rebuild per course.
+FACT_INVENTORY_CACHE_VERSION = 2
 
 
 def compute_index_fingerprint(raw_chunks: list[Any]) -> str:

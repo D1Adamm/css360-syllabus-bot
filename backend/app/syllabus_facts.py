@@ -18,7 +18,9 @@ Design notes:
 from __future__ import annotations
 
 import json
+import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import HTTPException
@@ -28,9 +30,12 @@ from app.ollama import (
     SEED_GENERATION_MODEL,
     embed_ollama_texts,
     generate_starter_ollama_completion,
+    get_starter_inventory_model,
     get_starter_inventory_num_predict,
 )
 from app.seed_similarity import cosine_similarity
+
+logger = logging.getLogger(__name__)
 
 FACT_EXTRACTION_PROMPT_MARKER = "You extract atomic student-facing facts from a syllabus."
 
@@ -1189,6 +1194,7 @@ def _finalize_inventory(
     dropped_count: int,
     max_facts: int,
     duplicates_removed: int = 0,
+    extraction: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     for fact in facts:
         calibrated = calibrate_importance(fact)
@@ -1250,7 +1256,65 @@ def _finalize_inventory(
         "countsByScope": counts_by_scope,
         "countsByKind": counts_by_kind,
         "countsBySeries": counts_by_series,
+        # How extraction itself went. `droppedCount` cannot carry this: a batch
+        # that failed outright drops nothing, so a broken run and a quiet one
+        # look identical without it.
+        "extraction": dict(extraction or new_extraction_report()),
     }
+
+
+#: One batch produced facts.
+BATCH_OUTCOME_OK = "ok"
+#: The model answered, and the answer held nothing usable.
+BATCH_OUTCOME_EMPTY = "empty"
+#: The answer was not valid JSON — in practice, truncated output.
+BATCH_OUTCOME_PARSE_FAILED = "parse_failed"
+#: The call itself failed: timeout, or the service refused.
+BATCH_OUTCOME_CALL_FAILED = "call_failed"
+
+BATCH_FAILURE_OUTCOMES = frozenset({BATCH_OUTCOME_PARSE_FAILED, BATCH_OUTCOME_CALL_FAILED})
+
+
+@dataclass(frozen=True)
+class BatchExtraction:
+    """What one extraction call produced, and what happened to it."""
+
+    facts: list[dict[str, Any]] = field(default_factory=list)
+    dropped: int = 0
+    outcome: str = BATCH_OUTCOME_OK
+    chunk_count: int = 0
+    prompt_chars: int = 0
+    answer_chars: int = 0
+
+    @property
+    def failed(self) -> bool:
+        return self.outcome in BATCH_FAILURE_OUTCOMES
+
+
+def new_extraction_report() -> dict[str, int]:
+    """Per-run tally of how extraction went, batch by batch."""
+    return {
+        "batchCount": 0,
+        "batchesOk": 0,
+        "batchesEmpty": 0,
+        "batchesParseFailed": 0,
+        "batchesCallFailed": 0,
+    }
+
+
+_BATCH_OUTCOME_COUNTER = {
+    BATCH_OUTCOME_OK: "batchesOk",
+    BATCH_OUTCOME_EMPTY: "batchesEmpty",
+    BATCH_OUTCOME_PARSE_FAILED: "batchesParseFailed",
+    BATCH_OUTCOME_CALL_FAILED: "batchesCallFailed",
+}
+
+
+def record_batch_outcome(report: dict[str, int], result: BatchExtraction) -> None:
+    report["batchCount"] = report.get("batchCount", 0) + 1
+    key = _BATCH_OUTCOME_COUNTER.get(result.outcome)
+    if key is not None:
+        report[key] = report.get(key, 0) + 1
 
 
 def _parse_facts_payload(raw: str) -> list[Any]:
@@ -1272,9 +1336,19 @@ async def _extract_facts_for_batch(
     chunk_lookup: dict[str, str],
     completion_fn,
     model: str,
-) -> tuple[list[dict[str, Any]], int]:
-    """Return (normalized facts, dropped_count) for one batch. Never raises."""
+) -> BatchExtraction:
+    """Extract facts from one batch. Never raises.
+
+    Reports *why* a batch produced nothing. It used to return an empty list for
+    a timeout, a truncated response and a genuinely factless batch alike, which
+    made a course whose extraction was half-failing indistinguishable from a
+    course with little to say — the run simply reported a small inventory and
+    carried on. Every downstream number is a function of the fact count, so that
+    silence set the ceiling for the whole run.
+    """
     prompt = build_fact_extraction_prompt(batch)
+    chunk_count = sum(len(group.get("chunks") or []) for group in batch)
+
     try:
         generation = await completion_fn(
             prompt,
@@ -1284,13 +1358,39 @@ async def _extract_facts_for_batch(
             num_predict=get_starter_inventory_num_predict(),
             stage="inventory",
         )
-    except HTTPException:
-        return [], 0
+    except HTTPException as exc:
+        logger.warning(
+            "Fact extraction call failed for a batch of %d chunk(s): %s",
+            chunk_count,
+            exc.detail,
+        )
+        return BatchExtraction(
+            outcome=BATCH_OUTCOME_CALL_FAILED,
+            chunk_count=chunk_count,
+            prompt_chars=len(prompt),
+        )
+
+    answer = generation.get("answer", "") or ""
 
     try:
-        raw_facts = _parse_facts_payload(generation.get("answer", ""))
+        raw_facts = _parse_facts_payload(answer)
     except json.JSONDecodeError:
-        return [], 0
+        # Almost always truncation: the model ran out of output budget partway
+        # through the JSON array. `answer_chars` is the signal that says so.
+        logger.warning(
+            "Fact extraction returned unparseable JSON for a batch of %d chunk(s) "
+            "(%d answer chars, ends with %r) — likely truncated output; "
+            "consider raising STARTER_INVENTORY_NUM_PREDICT.",
+            chunk_count,
+            len(answer),
+            answer.strip()[-40:],
+        )
+        return BatchExtraction(
+            outcome=BATCH_OUTCOME_PARSE_FAILED,
+            chunk_count=chunk_count,
+            prompt_chars=len(prompt),
+            answer_chars=len(answer),
+        )
 
     facts: list[dict[str, Any]] = []
     dropped = 0
@@ -1300,7 +1400,34 @@ async def _extract_facts_for_batch(
             dropped += 1
             continue
         facts.append(normalized)
-    return facts, dropped
+
+    if not facts:
+        # A well-formed answer with nothing usable in it. Different from a
+        # failure: the model read the batch and had nothing to report, or every
+        # candidate fact failed evidence verification.
+        logger.info(
+            "Fact extraction produced no usable facts for a batch of %d chunk(s) "
+            "(%d proposed, %d dropped by verification).",
+            chunk_count,
+            len(raw_facts),
+            dropped,
+        )
+        return BatchExtraction(
+            dropped=dropped,
+            outcome=BATCH_OUTCOME_EMPTY,
+            chunk_count=chunk_count,
+            prompt_chars=len(prompt),
+            answer_chars=len(answer),
+        )
+
+    return BatchExtraction(
+        facts=facts,
+        dropped=dropped,
+        outcome=BATCH_OUTCOME_OK,
+        chunk_count=chunk_count,
+        prompt_chars=len(prompt),
+        answer_chars=len(answer),
+    )
 
 
 async def _merge_and_finalize(
@@ -1313,6 +1440,7 @@ async def _merge_and_finalize(
     embed_fn,
     embed_model: str,
     semantic_threshold: float,
+    extraction: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     pre_merge_count = len(facts)
     merged = merge_facts(facts)
@@ -1330,6 +1458,7 @@ async def _merge_and_finalize(
         dropped_count=dropped_count,
         max_facts=max_facts,
         duplicates_removed=duplicates_removed,
+        extraction=extraction,
     )
 
 
@@ -1337,7 +1466,7 @@ async def build_fact_inventory(
     *,
     raw_chunks: list[Any],
     completion_fn=None,
-    model: str = SEED_GENERATION_MODEL,
+    model: str | None = None,
     max_facts: int = DEFAULT_MAX_FACTS,
     batch_char_budget: int = DEFAULT_BATCH_CHAR_BUDGET,
     embed_fn=None,
@@ -1347,22 +1476,30 @@ async def build_fact_inventory(
     """Build the global fact inventory for a course. Does NOT generate seeds.
 
     Returns a dict with facts[], factCount, countsByScope, countsByKind,
-    countsBySeries, droppedCount, duplicatesRemoved, fallbackUsed, and model.
+    countsBySeries, droppedCount, duplicatesRemoved, fallbackUsed, model, and
+    `extraction` — a per-batch tally of what the extractor actually managed.
     Deduplicates facts exactly, by containment, and semantically (via embeddings,
     fail-open). Falls back to deterministic heuristic extraction when the LLM fails
     or produces no verifiable facts.
+
+    `model` defaults to the configured inventory model rather than being bound at
+    import, so extraction can run on a different model from generation.
     """
     if completion_fn is None:
         completion_fn = generate_starter_ollama_completion
+    resolved_model = model or get_starter_inventory_model()
+
+    extraction = new_extraction_report()
 
     chunk_lookup = build_chunk_lookup(raw_chunks)
     if not chunk_lookup:
         return _finalize_inventory(
             [],
-            model=model,
+            model=resolved_model,
             fallback_used=False,
             dropped_count=0,
             max_facts=max_facts,
+            extraction=extraction,
         )
 
     groups = build_section_groups(raw_chunks)
@@ -1371,14 +1508,28 @@ async def build_fact_inventory(
     all_facts: list[dict[str, Any]] = []
     dropped_count = 0
     for batch in batches:
-        facts, dropped = await _extract_facts_for_batch(
+        result = await _extract_facts_for_batch(
             batch=batch,
             chunk_lookup=chunk_lookup,
             completion_fn=completion_fn,
-            model=model,
+            model=resolved_model,
         )
-        all_facts.extend(facts)
-        dropped_count += dropped
+        record_batch_outcome(extraction, result)
+        all_facts.extend(result.facts)
+        dropped_count += result.dropped
+
+    failed_batches = extraction["batchesParseFailed"] + extraction["batchesCallFailed"]
+    if failed_batches:
+        # Said once, at the level that matters: some of this syllabus was never
+        # read, and every count downstream is smaller because of it.
+        logger.warning(
+            "Fact extraction lost %d of %d batches for this course "
+            "(%d unparseable, %d call failures); the inventory is incomplete.",
+            failed_batches,
+            extraction["batchCount"],
+            extraction["batchesParseFailed"],
+            extraction["batchesCallFailed"],
+        )
 
     if all_facts:
         # Deterministic salvage recovers late-work / extension / exclusion policies
@@ -1392,13 +1543,14 @@ async def build_fact_inventory(
         )
         return await _merge_and_finalize(
             all_facts,
-            model=model,
+            model=resolved_model,
             fallback_used=False,
             dropped_count=dropped_count,
             max_facts=max_facts,
             embed_fn=embed_fn,
             embed_model=embed_model,
             semantic_threshold=semantic_threshold,
+            extraction=extraction,
         )
 
     fallback_facts = build_heuristic_fallback_inventory(
@@ -1413,11 +1565,12 @@ async def build_fact_inventory(
     )
     return await _merge_and_finalize(
         fallback_facts,
-        model=model,
+        model=resolved_model,
         fallback_used=True,
         dropped_count=dropped_count,
         max_facts=max_facts,
         embed_fn=embed_fn,
         embed_model=embed_model,
         semantic_threshold=semantic_threshold,
+        extraction=extraction,
     )

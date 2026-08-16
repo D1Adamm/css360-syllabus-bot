@@ -104,6 +104,20 @@ def count_schedule_like(seeds: list[dict[str, Any]]) -> int:
     return total
 
 
+def count_scenario_or_clarification(seeds: list[dict[str, Any]]) -> int:
+    """How many accepted seeds are scenario- or clarification-shaped.
+
+    The companion to `compute_scenario_minimum`. Reporting a minimum with no
+    corresponding actual meant nobody could tell whether it had been met — or,
+    as happened on a fact-starved run, that it was arithmetically unreachable.
+    """
+    return sum(
+        1
+        for seed in seeds
+        if str(seed.get("questionType", "")).strip().lower() in SCENARIO_LIKE_TYPES
+    )
+
+
 def scenario_requirement_remaining(
     *,
     accepted_seeds: list[dict[str, Any]],

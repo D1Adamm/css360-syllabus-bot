@@ -1665,3 +1665,239 @@ class StarterSeedEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn("Firebase is not configured", response.json()["detail"])
+
+
+class StarterRunCeilingTests(unittest.IsolatedAsyncioTestCase):
+    """A short run has to say why it was short.
+
+    Modelled on the CSS 350 regression: target 50, 140 eligible chunks, and an
+    inventory of 8 facts. Nine examples came out, and the run reported that as
+    "9 of 50" with nothing to distinguish a syllabus that had little to say from
+    an extractor that had silently dropped most of it.
+
+    The real allocator runs in these tests. Its arithmetic is the thing being
+    described — 8 facts can never fill 50 slots, whatever the target says — so
+    stubbing it would test the stub.
+    """
+
+    def setUp(self) -> None:
+        self._temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self._temp_dir.name)
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=root / "course_data",
+            index_dir=root / "indexes",
+        )
+        self.course_id = "css-350-winter-2026-drlb"
+        self.chunks = [
+            _chunk(
+                f"chunk-{index:03d}",
+                "CSS 350 Syllabus",
+                f"Policy {index}: coursework for unit {index} is described here "
+                f"in enough detail to be a usable evidence chunk. " * 3,
+                order=index,
+            )
+            for index in range(1, 21)
+        ]
+        self.storage.save_index(self.course_id, _index(self.course_id, self.chunks))
+        self._embed_patch = patch(
+            "app.seed_generation.embed_ollama_texts",
+            new=_orthogonal_embed,
+        )
+        self._embed_patch.start()
+
+    def tearDown(self) -> None:
+        self._embed_patch.stop()
+        self._temp_dir.cleanup()
+
+    def _facts(self, count: int) -> list[dict]:
+        kinds = ["late_work", "grading", "attendance", "exam", "policy", "contact"]
+        return [
+            _mock_fact(
+                f"fact-{index:02d}",
+                statement=(
+                    f"Policy {index}: coursework for unit {index} is described "
+                    "here in enough detail to be a usable evidence chunk."
+                ),
+                source_chunk_ids=[f"chunk-{index:03d}"],
+                kind=kinds[(index - 1) % len(kinds)],
+                complexity=1,
+            )
+            for index in range(1, count + 1)
+        ]
+
+    def _inventory_patch(self, facts: list[dict], *, extraction: dict | None = None):
+        inventory = _mock_inventory(facts)
+        if extraction is not None:
+            inventory["extraction"] = extraction
+        return patch(
+            "app.seed_generation.load_or_build_fact_inventory",
+            new=AsyncMock(return_value=inventory),
+        )
+
+    def _unique_generation(self) -> AsyncMock:
+        state = {"n": 0}
+
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            state["n"] += 1
+            n = state["n"]
+            question_type = "scenario" if n % 3 == 0 else "direct"
+            return {
+                "answer": json.dumps(
+                    {
+                        "seeds": [
+                            {
+                                "question": f"Distinct question number {n}?",
+                                "answer": f"Answer {n} with enough detail to pass.",
+                                "category": f"Category {n % 7}",
+                                "questionType": question_type,
+                            }
+                        ]
+                    }
+                ),
+                "model": SEED_GENERATION_MODEL,
+            }
+
+        return _starter_ollama_side_effect(generate_side_effect=_fake_generate)
+
+    async def _run(self, facts: list[dict], *, target: int, generate=None, **kwargs):
+        from app.seed_generation import generate_starter_seeds_for_course
+
+        with self._inventory_patch(facts, extraction=kwargs.pop("extraction", None)):
+            with patch(
+                "app.seed_generation.generate_starter_ollama_completion",
+                new=generate or self._unique_generation(),
+            ):
+                return await generate_starter_seeds_for_course(
+                    course_id=self.course_id,
+                    target_count=target,
+                    storage=self.storage,
+                    **kwargs,
+                )
+
+    async def test_a_fact_starved_run_names_the_inventory_as_the_limit(self) -> None:
+        result = await self._run(self._facts(8), target=50)
+        progress = result["progress"]
+
+        # The shape of the regression: the target was never reachable.
+        self.assertLess(progress["allocatedSlots"], 50)
+        self.assertEqual(progress["achievableCeiling"], progress["allocatedSlots"])
+        self.assertEqual(progress["limitingFactor"], "fact_inventory")
+        self.assertEqual(progress["status"], "partial")
+        self.assertLessEqual(progress["finalCount"], progress["allocatedSlots"])
+        self.assertEqual(len(result["seeds"]), progress["finalCount"])
+
+    async def test_the_ceiling_is_what_the_facts_could_ever_support(self) -> None:
+        """8 facts cannot exceed 8 × MAX_SLOTS_PER_FACT, whatever the target."""
+        from app.seed_allocation import MAX_SLOTS_PER_FACT
+
+        result = await self._run(self._facts(8), target=50)
+        progress = result["progress"]
+
+        self.assertLessEqual(progress["achievableCeiling"], 8 * MAX_SLOTS_PER_FACT)
+        self.assertGreater(progress["achievableCeiling"], 0)
+
+    async def test_the_scenario_minimum_cannot_exceed_the_ceiling(self) -> None:
+        """The reported 15-of-11 contradiction.
+
+        The minimum used to come from targetCount, so a run with 11 slots asked
+        for 15 scenario questions — a goal that could not be met by arithmetic,
+        stated as though it could.
+        """
+        result = await self._run(self._facts(8), target=50)
+        progress = result["progress"]
+
+        self.assertLessEqual(
+            progress["scenarioOrClarificationMinimum"],
+            progress["achievableCeiling"],
+        )
+        self.assertIn("scenarioOrClarificationActual", progress)
+        self.assertLessEqual(
+            progress["scenarioOrClarificationActual"], progress["finalCount"]
+        )
+
+    async def test_a_healthy_run_reports_no_limit(self) -> None:
+        result = await self._run(self._facts(20), target=5)
+        progress = result["progress"]
+
+        self.assertEqual(progress["finalCount"], 5)
+        self.assertEqual(progress["achievableCeiling"], 5)
+        self.assertEqual(progress["limitingFactor"], "none")
+        self.assertEqual(progress["status"], "ready")
+
+    async def test_a_rejection_limited_run_is_not_blamed_on_the_inventory(self) -> None:
+        """Plenty of facts, plenty of slots, and nothing survives validation."""
+        rejecting = _starter_ollama_side_effect(
+            generate_side_effect=self._passing_generation(),
+            validation_payload=_rejecting_validation_payload(),
+        )
+        result = await self._run(self._facts(20), target=5, generate=rejecting)
+        progress = result["progress"]
+
+        self.assertGreaterEqual(progress["allocatedSlots"], 5)
+        self.assertLess(progress["finalCount"], 5)
+        self.assertEqual(progress["limitingFactor"], "validation_rejections")
+
+    def _passing_generation(self):
+        state = {"n": 0}
+
+        async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
+            state["n"] += 1
+            n = state["n"]
+            return {
+                "answer": json.dumps(
+                    {
+                        "seeds": [
+                            {
+                                "question": f"Distinct question number {n}?",
+                                "answer": f"Answer {n} with enough detail to pass.",
+                                "category": f"Category {n % 7}",
+                                "questionType": "direct",
+                            }
+                        ]
+                    }
+                ),
+                "model": SEED_GENERATION_MODEL,
+            }
+
+        return _fake_generate
+
+    async def test_lost_extraction_batches_reach_the_run_report(self) -> None:
+        """The number that would have named this regression on day one."""
+        result = await self._run(
+            self._facts(8),
+            target=50,
+            extraction={
+                "batchCount": 23,
+                "batchesOk": 4,
+                "batchesEmpty": 0,
+                "batchesParseFailed": 19,
+                "batchesCallFailed": 0,
+            },
+        )
+        progress = result["progress"]
+
+        self.assertEqual(progress["factInventoryBatches"], 23)
+        self.assertEqual(progress["factInventoryBatchFailures"], 19)
+
+    async def test_an_inventory_without_the_new_report_still_runs(self) -> None:
+        """Inventories cached before this change carry no extraction block."""
+        result = await self._run(self._facts(8), target=50)
+        progress = result["progress"]
+
+        self.assertEqual(progress["factInventoryBatches"], 0)
+        self.assertEqual(progress["factInventoryBatchFailures"], 0)
+
+    async def test_established_invariants_still_hold(self) -> None:
+        result = await self._run(self._facts(20), target=5)
+        progress = result["progress"]
+
+        self.assertEqual(len(result["seeds"]), progress["finalCount"])
+        self.assertGreaterEqual(progress["allocatedSlots"], progress["finalCount"])
+        self.assertEqual(progress["candidatesAccepted"], progress["finalCount"])
+        self.assertEqual(
+            progress["ollamaCalls"],
+            progress["factExtractionCalls"]
+            + progress["generationCalls"]
+            + progress["validationCalls"],
+        )
+        self.assertIn(progress["status"], {"ready", "partial", "failed"})
