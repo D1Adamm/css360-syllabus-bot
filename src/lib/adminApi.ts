@@ -1,5 +1,22 @@
 import { ApiError, getApiBaseUrl } from './api';
 
+/**
+ * Request paths are RELATIVE to `VITE_API_BASE_URL`, which carries the `/api`
+ * prefix in deployment (`http://aiswe.uwb.edu/api`).
+ *
+ * So a backend route of `/api/courses/{id}/seeds` is written here as
+ * `/courses/{id}/seeds`. Writing the full backend path produced
+ * `…/api/api/courses/…`, which Nginx forwards unchanged and FastAPI has no
+ * route for — that 404 is what made Examples, Syllabus, and the admin panels
+ * report the backend as unavailable.
+ *
+ * Routes the backend also serves at the root (`/health`, `/rag/generate`) are
+ * written here without a prefix too. They compose to `/api/health`,
+ * `/api/rag/generate`, which the backend now serves as aliases — Nginx only
+ * forwards `location /api/`, so the root paths never reach it from a browser.
+ */
+
+
 export { ApiError } from './api';
 
 /**
@@ -62,7 +79,7 @@ export function fetchFineTunedHealth(): Promise<FineTunedHealth> {
 }
 
 export function fetchStarterGenerationStatus(): Promise<StarterGenerationStatus> {
-  return getJson<StarterGenerationStatus>('/api/starter-generation/status');
+  return getJson<StarterGenerationStatus>('/starter-generation/status');
 }
 
 /** The configured backend origin, shown only in admin diagnostics. */
@@ -130,7 +147,7 @@ export interface CourseChunksResponse {
 }
 
 export function fetchCourseChunks(courseId: string): Promise<CourseChunksResponse> {
-  return getJson<CourseChunksResponse>(`/api/courses/${courseId}/chunks`);
+  return getJson<CourseChunksResponse>(`/courses/${courseId}/chunks`);
 }
 
 export interface FactInventoryResponse {
@@ -151,7 +168,7 @@ export interface FactInventoryResponse {
  */
 export function fetchFactInventory(courseId: string): Promise<FactInventoryResponse> {
   return postJsonAdmin<FactInventoryResponse>(
-    `/api/courses/${courseId}/facts/inventory`,
+    `/courses/${courseId}/facts/inventory`,
     {},
   );
 }
@@ -166,7 +183,7 @@ export function runSeedQualityCheck(
   courseId: string,
 ): Promise<SeedQualityCheckResponse> {
   return postJsonAdmin<SeedQualityCheckResponse>(
-    `/api/courses/${courseId}/seeds/quality-check`,
+    `/courses/${courseId}/seeds/quality-check`,
     {},
   );
 }
@@ -190,7 +207,7 @@ export interface TrainingLaunchCapability {
 }
 
 export function fetchTrainingLaunchCapability(): Promise<TrainingLaunchCapability> {
-  return getJson<TrainingLaunchCapability>('/api/training/launch-capability');
+  return getJson<TrainingLaunchCapability>('/training/launch-capability');
 }
 
 export interface TrainingLaunchResponse {
@@ -207,7 +224,7 @@ export function launchCourseTraining(
   mode: 'smoke' | 'full' = 'full',
 ): Promise<TrainingLaunchResponse> {
   return postJsonAdmin<TrainingLaunchResponse>(
-    `/api/courses/${courseId}/training/launch`,
+    `/courses/${courseId}/training/launch`,
     { mode },
   );
 }

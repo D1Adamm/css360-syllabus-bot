@@ -26,7 +26,7 @@ describe('fetchCourseSyllabusText', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(
-      'http://127.0.0.1:8001/api/courses/css-430-summer-2026-ibce/syllabus/text',
+      'http://127.0.0.1:8001/courses/css-430-summer-2026-ibce/syllabus/text',
     );
     expect(options.method).toBe('GET');
     expect(result.courseId).toBe('css-430-summer-2026-ibce');

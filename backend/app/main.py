@@ -147,6 +147,19 @@ app.add_middleware(
 app.include_router(db_router)
 
 
+# Inference and health endpoints are served under BOTH their original paths
+# and an /api-prefixed alias.
+#
+# The deployed Nginx forwards only `location /api/` to uvicorn, so a route
+# mounted at the root — `/health`, `/rag/generate` — is unreachable from a
+# browser no matter what the frontend composes: `/health` hits the SPA, and
+# `/api/health` did not exist. The alias is the smallest fix that does not
+# require touching Nginx or the deployed VITE_API_BASE_URL.
+#
+# The original paths stay. Systemd health checks, the fine-tuned tunnel helper,
+# and local `curl localhost:8001/health` all use them, and this backend is
+# reachable directly on the VM as well as through the proxy.
+@app.get("/api/health")
 @app.get("/health")
 def health() -> dict[str, str]:
     return {
@@ -155,6 +168,7 @@ def health() -> dict[str, str]:
     }
 
 
+@app.post("/api/base-model/generate", response_model=BaseModelGenerateResponse)
 @app.post("/base-model/generate", response_model=BaseModelGenerateResponse)
 async def generate_base_model(
     request: BaseModelGenerateRequest,
@@ -178,6 +192,7 @@ async def generate_base_model(
     )
 
 
+@app.get("/api/fine-tuned/health", response_model=FineTunedHealthResponse)
 @app.get("/fine-tuned/health", response_model=FineTunedHealthResponse)
 async def fine_tuned_health() -> FineTunedHealthResponse:
     result = await check_finetuned_service_health()
@@ -191,6 +206,7 @@ async def fine_tuned_health() -> FineTunedHealthResponse:
     )
 
 
+@app.post("/api/fine-tuned/generate", response_model=FineTunedGenerateResponse)
 @app.post("/fine-tuned/generate", response_model=FineTunedGenerateResponse)
 async def generate_fine_tuned(
     request: FineTunedGenerateRequest,
@@ -216,6 +232,7 @@ async def generate_fine_tuned(
     )
 
 
+@app.post("/api/rag/generate", response_model=RagGenerateResponse)
 @app.post("/rag/generate", response_model=RagGenerateResponse)
 async def generate_rag_response(request: RagGenerateRequest) -> RagGenerateResponse:
     question = request.question.strip()
@@ -240,6 +257,7 @@ async def generate_rag_response(request: RagGenerateRequest) -> RagGenerateRespo
     )
 
 
+@app.post("/api/fine-tuned-rag/generate", response_model=FineTunedRagGenerateResponse)
 @app.post("/fine-tuned-rag/generate", response_model=FineTunedRagGenerateResponse)
 async def generate_fine_tuned_rag(
     request: FineTunedRagGenerateRequest,

@@ -8,7 +8,7 @@ describe('uploadCourseSyllabus', () => {
     vi.restoreAllMocks();
   });
 
-  it('sends a multipart form request to /api/courses/{courseId}/syllabus', async () => {
+  it('sends a multipart form request to /courses/{courseId}/syllabus', async () => {
     vi.stubEnv('VITE_API_BASE_URL', 'http://127.0.0.1:8001');
 
     const fetchMock = vi.fn().mockResolvedValue({
@@ -30,7 +30,7 @@ describe('uploadCourseSyllabus', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://127.0.0.1:8001/api/courses/course-alpha/syllabus');
+    expect(url).toBe('http://127.0.0.1:8001/courses/course-alpha/syllabus');
     expect(options.method).toBe('POST');
     expect(options.body).toBeInstanceOf(FormData);
     const formData = options.body as FormData;

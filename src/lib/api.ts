@@ -1,3 +1,19 @@
+/**
+ * Request paths are RELATIVE to `VITE_API_BASE_URL`, which carries the `/api`
+ * prefix in deployment (`http://aiswe.uwb.edu/api`).
+ *
+ * So a backend route of `/api/courses/{id}/seeds` is written here as
+ * `/courses/{id}/seeds`. Writing the full backend path produced
+ * `…/api/api/courses/…`, which Nginx forwards unchanged and FastAPI has no
+ * route for — that 404 is what made Examples, Syllabus, and the admin panels
+ * report the backend as unavailable.
+ *
+ * Routes the backend also serves at the root (`/health`, `/rag/generate`) are
+ * written here without a prefix too. They compose to `/api/health`,
+ * `/api/rag/generate`, which the backend now serves as aliases — Nginx only
+ * forwards `location /api/`, so the root paths never reach it from a browser.
+ */
+
 export interface BaseModelGenerateResponse {
   answer: string;
   model: string;
@@ -211,7 +227,7 @@ export async function fetchCourseSyllabusText(
   courseId: string,
 ): Promise<SyllabusTextResponse> {
   return getJson<SyllabusTextResponse>(
-    `/api/courses/${courseId}/syllabus/text`,
+    `/courses/${courseId}/syllabus/text`,
     'The backend could not load the syllabus text for this course.',
     'The service could not be reached.',
   );
@@ -235,7 +251,7 @@ export async function uploadCourseSyllabus(
   let response: Response;
 
   try {
-    response = await fetch(`${baseUrl}/api/courses/${courseId}/syllabus`, {
+    response = await fetch(`${baseUrl}/courses/${courseId}/syllabus`, {
       method: 'POST',
       body: formData,
     });
@@ -347,7 +363,7 @@ export async function listCourseSeeds(
   courseId: string,
 ): Promise<CourseSeedListResponse> {
   return getJson<CourseSeedListResponse>(
-    `/api/courses/${courseId}/seeds`,
+    `/courses/${courseId}/seeds`,
     'The backend could not load seed examples for this course.',
     'The service could not be reached.',
   );
@@ -364,7 +380,7 @@ export async function reviewCourseSeed(
   },
 ): Promise<SeedReviewResponse> {
   return postJson<SeedReviewResponse>(
-    `/api/courses/${courseId}/seeds/${encodeURIComponent(seedId)}/review`,
+    `/courses/${courseId}/seeds/${encodeURIComponent(seedId)}/review`,
     body,
     'The backend could not update the seed review status.',
     'The service could not be reached.',
@@ -375,7 +391,7 @@ export async function exportApprovedCourseSeeds(
   courseId: string,
 ): Promise<SeedExportApprovedResponse> {
   return postJson<SeedExportApprovedResponse>(
-    `/api/courses/${courseId}/seeds/export-approved`,
+    `/courses/${courseId}/seeds/export-approved`,
     {},
     'The backend could not export approved seeds.',
     'The service could not be reached.',
@@ -386,7 +402,7 @@ export async function getApprovedExportStatus(
   courseId: string,
 ): Promise<ApprovedExportStatusResponse> {
   return getJson<ApprovedExportStatusResponse>(
-    `/api/courses/${courseId}/seeds/approved-export-status`,
+    `/courses/${courseId}/seeds/approved-export-status`,
     'The backend could not check the approved export status.',
     'The service could not be reached.',
   );
@@ -396,7 +412,7 @@ export async function prepareTrainingSplit(
   courseId: string,
 ): Promise<PrepareTrainingSplitResponse> {
   return postJson<PrepareTrainingSplitResponse>(
-    `/api/courses/${courseId}/seeds/prepare-training-split`,
+    `/courses/${courseId}/seeds/prepare-training-split`,
     {},
     'The backend could not prepare the training split.',
     'The service could not be reached.',
@@ -436,7 +452,7 @@ export async function enqueueTrainingRun(
   body: EnqueueTrainingRunBody,
 ): Promise<EnqueueTrainingRunResponse> {
   return postJson<EnqueueTrainingRunResponse>(
-    `/api/courses/${encodeURIComponent(courseId)}/training-runs`,
+    `/courses/${encodeURIComponent(courseId)}/training-runs`,
     body,
     'The backend could not queue a training run.',
     'The service could not be reached.',

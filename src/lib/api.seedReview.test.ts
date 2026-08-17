@@ -25,7 +25,7 @@ describe('seed review API helpers', () => {
     const { listCourseSeeds } = await import('./api');
     const result = await listCourseSeeds('css-360-winter-2026-a7rp');
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8000/api/courses/css-360-winter-2026-a7rp/seeds',
+      'http://localhost:8000/courses/css-360-winter-2026-a7rp/seeds',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.count).toBe(1);
@@ -50,7 +50,7 @@ describe('seed review API helpers', () => {
       reviewStatus: 'approved',
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8000/api/courses/css-360-winter-2026-a7rp/seeds/seed-1/review',
+      'http://localhost:8000/courses/css-360-winter-2026-a7rp/seeds/seed-1/review',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ reviewStatus: 'approved' }),
@@ -70,7 +70,7 @@ describe('seed review API helpers', () => {
     const { exportApprovedCourseSeeds } = await import('./api');
     const result = await exportApprovedCourseSeeds('css-360-winter-2026-a7rp');
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8000/api/courses/css-360-winter-2026-a7rp/seeds/export-approved',
+      'http://localhost:8000/courses/css-360-winter-2026-a7rp/seeds/export-approved',
       expect.objectContaining({ method: 'POST' }),
     );
     expect(result.summary.approvedCount).toBe(2);
@@ -99,14 +99,14 @@ describe('seed review API helpers', () => {
     const { getApprovedExportStatus, prepareTrainingSplit } = await import('./api');
     const status = await getApprovedExportStatus('css-360-winter-2026-a7rp');
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8000/api/courses/css-360-winter-2026-a7rp/seeds/approved-export-status',
+      'http://localhost:8000/courses/css-360-winter-2026-a7rp/seeds/approved-export-status',
       expect.objectContaining({ method: 'GET' }),
     );
     expect(status.exists).toBe(true);
 
     const split = await prepareTrainingSplit('css-360-winter-2026-a7rp');
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8000/api/courses/css-360-winter-2026-a7rp/seeds/prepare-training-split',
+      'http://localhost:8000/courses/css-360-winter-2026-a7rp/seeds/prepare-training-split',
       expect.objectContaining({ method: 'POST' }),
     );
     expect(split.summary.trainExamples).toBe(48);
