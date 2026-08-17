@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
 from app.course_rag import generate_course_rag_answer
+from app.db_routes import router as db_router
 from app.finetuned_client import (
     check_finetuned_service_health,
     generate_finetuned_response,
@@ -124,6 +125,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# PostgreSQL-backed routes, mounted alongside the Firebase ones under /api/db.
+# Nothing above changes: Firebase remains the system of record, and these exist
+# so the frontend can be pointed at PostgreSQL one entity at a time. Importing
+# the router does not open a connection — an unset DATABASE_URL only surfaces
+# when an /api/db route is actually called.
+app.include_router(db_router)
 
 
 @app.get("/health")

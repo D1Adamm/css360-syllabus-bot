@@ -1,0 +1,740 @@
+"""Repository SQL, driven by a recording fake connection.
+
+No PostgreSQL server is involved. What these check is the part that is wrong or
+right before any server sees it: that every statement is course-scoped, that no
+caller-supplied value is ever interpolated into SQL text, that DELETEs name both
+keys, and that the conflict guards for model requests and training runs are
+written as conditional writes rather than read-then-write.
+
+The fake is deliberately dumb — it records statements and hands back queued
+rows. It is not a database and cannot tell you a query returns the right
+answer; `db/schema.sql` and the VM smoke test cover that.
+"""
+
+from __future__ import annotations
+
+import unittest
+from datetime import datetime, timezone
+from typing import Any
+
+from app import db_courses, db_evaluations, db_model_requests, db_models
+from app import db_seeds, db_training_runs
+
+UTC_NOON = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
+COURSE = "css-350-spring-2026-n3h9"
+OTHER_COURSE = "css-360-winter-2026-a7rp"
+
+
+class FakeCursor:
+    def __init__(self, connection: "FakeConnection") -> None:
+        self._connection = connection
+        self._rows: list[dict[str, Any]] = []
+        self.rowcount = 0
+
+    def __enter__(self) -> "FakeCursor":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def execute(self, sql: str, params: Any = None) -> None:
+        self._connection.statements.append((" ".join(sql.split()), params))
+        result = self._connection.next_result()
+        if isinstance(result, int):
+            self._rows = []
+            self.rowcount = result
+        else:
+            self._rows = list(result)
+            self.rowcount = len(self._rows)
+
+    def fetchone(self) -> dict[str, Any] | None:
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return list(self._rows)
+
+
+class FakeConnection:
+    """Records statements; returns queued results in order."""
+
+    def __init__(self, results: list[Any] | None = None) -> None:
+        self.statements: list[tuple[str, Any]] = []
+        self._results = list(results or [])
+
+    def cursor(self) -> FakeCursor:
+        return FakeCursor(self)
+
+    def next_result(self) -> Any:
+        return self._results.pop(0) if self._results else []
+
+    # Convenience accessors for assertions.
+    @property
+    def sql(self) -> list[str]:
+        return [statement for statement, _ in self.statements]
+
+    @property
+    def params(self) -> list[Any]:
+        return [parameters for _, parameters in self.statements]
+
+    def all_text(self) -> str:
+        return " || ".join(self.sql)
+
+    def params_for(self, prefix: str) -> Any:
+        """Parameters of the first statement starting with `prefix`.
+
+        Repositories re-read a row before and after writing it, so the write is
+        not at a fixed index; addressing it by statement keeps these tests from
+        breaking when a read is added.
+        """
+        for statement, parameters in self.statements:
+            if statement.startswith(prefix):
+                return parameters
+        raise AssertionError(f"No statement starting with {prefix!r} was executed.")
+
+
+def seed_row(**overrides: Any) -> dict[str, Any]:
+    row = {
+        "seed_id": "-Oseed001",
+        "course_id": COURSE,
+        "instruction": "Q?",
+        "response": "A.",
+        "category": "general",
+        "source_section": "General",
+        "difficulty": "Medium",
+        "directly_answered": True,
+        "origin": "ai_generated",
+        "notes": None,
+        "created_at": UTC_NOON,
+        "status": "generated",
+        "question_type": "direct",
+        "source_chunk_ids": ["chunk-001"],
+        "validation": None,
+        "review_status": "generated",
+        "review_notes": None,
+        "reviewed_at": None,
+        "fact_id": None,
+        "evidence_quote": None,
+        "normalized_question_key": None,
+        "original_question": None,
+        "original_answer": None,
+        "was_edited": False,
+    }
+    row.update(overrides)
+    return row
+
+
+class CourseScopingTests(unittest.TestCase):
+    """Every read and write names the course. This is the isolation guarantee."""
+
+    def test_seed_reads_and_writes_are_course_scoped(self) -> None:
+        cases = [
+            (lambda c: db_seeds.list_seeds(c, COURSE), [[]]),
+            (lambda c: db_seeds.get_seed(c, COURSE, "-Oseed001"), [[]]),
+            (lambda c: db_seeds.count_seeds_by_review_status(c, COURSE), [[]]),
+            (lambda c: db_seeds.delete_seed(c, COURSE, "-Oseed001"), [1]),
+        ]
+        for call, results in cases:
+            connection = FakeConnection(results)
+            call(connection)
+            for statement in connection.sql:
+                self.assertIn("course_id = %s", statement)
+
+    def test_delete_seed_binds_course_and_seed_together(self) -> None:
+        connection = FakeConnection([1])
+        db_seeds.delete_seed(connection, COURSE, "-Oseed001")
+
+        statement, params = connection.statements[0]
+        self.assertIn("DELETE FROM seed_examples", statement)
+        self.assertIn("WHERE course_id = %s AND seed_id = %s", statement)
+        self.assertEqual(params, (COURSE, "-Oseed001"))
+
+    def test_delete_evaluation_binds_course_and_evaluation_together(self) -> None:
+        connection = FakeConnection([1])
+        db_evaluations.delete_evaluation(connection, COURSE, "-Oeval001")
+
+        statement, params = connection.statements[0]
+        self.assertIn("WHERE course_id = %s AND evaluation_id = %s", statement)
+        self.assertEqual(params, (COURSE, "-Oeval001"))
+
+    def test_bulk_evaluation_delete_is_never_unscoped(self) -> None:
+        connection = FakeConnection([3])
+        deleted = db_evaluations.delete_all_evaluations(connection, COURSE)
+
+        statement, params = connection.statements[0]
+        self.assertEqual(
+            statement, "DELETE FROM evaluations WHERE course_id = %s"
+        )
+        self.assertEqual(params, (COURSE,))
+        self.assertEqual(deleted, 3)
+
+    def test_a_seed_id_from_another_course_returns_nothing(self) -> None:
+        """The id alone is never enough; the pair is the key."""
+        connection = FakeConnection([[]])
+        found = db_seeds.get_seed(connection, OTHER_COURSE, "-Oseed001")
+
+        self.assertIsNone(found)
+        self.assertEqual(connection.params[0], (OTHER_COURSE, "-Oseed001"))
+
+    def test_invalid_course_ids_never_reach_a_statement(self) -> None:
+        connection = FakeConnection()
+        for bad in ("CSS 350", "../etc", "css_350", "-leading", ""):
+            with self.assertRaises(ValueError):
+                db_seeds.list_seeds(connection, bad)
+        self.assertEqual(connection.statements, [])
+
+
+class ParameterizationTests(unittest.TestCase):
+    """Values are bound; only column names this layer owns reach SQL text."""
+
+    def test_update_seed_binds_values_and_never_interpolates_them(self) -> None:
+        connection = FakeConnection([[seed_row()], 1, [seed_row(category="grading")]])
+        db_seeds.update_seed(
+            connection,
+            COURSE,
+            "-Oseed001",
+            {"category": "grading'; DROP TABLE seed_examples; --"},
+        )
+
+        update = next(s for s in connection.sql if s.startswith("UPDATE"))
+        self.assertNotIn("DROP TABLE", update)
+        self.assertIn("category = %(category)s", update)
+        parameters = connection.params[1]
+        self.assertEqual(
+            parameters["category"], "grading'; DROP TABLE seed_examples; --"
+        )
+
+    def test_a_field_outside_the_allowlist_cannot_name_a_column(self) -> None:
+        connection = FakeConnection([[seed_row()], [seed_row()]])
+        db_seeds.update_seed(
+            connection,
+            COURSE,
+            "-Oseed001",
+            {"course_id": OTHER_COURSE, "seed_id": "x", "notARealField": 1},
+        )
+
+        # Nothing was assignable, so no UPDATE ran at all.
+        self.assertFalse([s for s in connection.sql if s.startswith("UPDATE")])
+
+    def test_a_patch_cannot_move_a_seed_to_another_course(self) -> None:
+        connection = FakeConnection([[seed_row()], 1, [seed_row()]])
+        db_seeds.update_seed(
+            connection, COURSE, "-Oseed001", {"courseId": OTHER_COURSE, "notes": "n"}
+        )
+
+        update = next(s for s in connection.sql if s.startswith("UPDATE"))
+        self.assertNotIn("course_id =", update.split("WHERE")[0])
+        self.assertEqual(connection.params_for("UPDATE")["course_id"], COURSE)
+
+    def test_course_patch_binds_every_value(self) -> None:
+        connection = FakeConnection([[{"course_id": COURSE}], 1, [], []])
+        db_courses.update_course(connection, COURSE, {"chunkCount": 42})
+
+        update = next(s for s in connection.sql if s.startswith("UPDATE"))
+        self.assertIn("chunk_count = %(chunk_count)s", update)
+        self.assertNotIn("42", update)
+
+
+class SeedWriteTests(unittest.TestCase):
+    def test_create_seed_requires_text_under_either_name(self) -> None:
+        connection = FakeConnection()
+        with self.assertRaises(ValueError):
+            db_seeds.create_seed(connection, COURSE, {"question": "Q?"})
+        self.assertEqual(connection.statements, [])
+
+    def test_create_seed_accepts_the_dual_names(self) -> None:
+        connection = FakeConnection([1, [seed_row()]])
+        db_seeds.create_seed(connection, COURSE, {"question": "Q?", "answer": "A."})
+
+        insert = connection.sql[0]
+        self.assertIn("INSERT INTO seed_examples", insert)
+        parameters = connection.params[0]
+        self.assertEqual(parameters["instruction"], "Q?")
+        self.assertEqual(parameters["response"], "A.")
+        self.assertEqual(parameters["course_id"], COURSE)
+
+    def test_created_seeds_get_a_non_firebase_id(self) -> None:
+        """Imported push ids are real references; new rows must not mimic them."""
+        connection = FakeConnection([1, [seed_row()]])
+        db_seeds.create_seed(connection, COURSE, {"question": "Q?", "answer": "A."})
+
+        seed_id = connection.params[0]["seed_id"]
+        self.assertTrue(seed_id.startswith("seed-"))
+        self.assertFalse(seed_id.startswith("-O"))
+
+    def test_jsonb_values_are_wrapped_for_the_driver(self) -> None:
+        from psycopg.types.json import Json
+
+        connection = FakeConnection([1, [seed_row()]])
+        db_seeds.create_seed(
+            connection,
+            COURSE,
+            {
+                "question": "Q?",
+                "answer": "A.",
+                "sourceChunkIds": ["chunk-001"],
+                "validation": {"score": 0.9},
+            },
+        )
+
+        parameters = connection.params[0]
+        self.assertIsInstance(parameters["source_chunk_ids"], Json)
+        self.assertIsInstance(parameters["validation"], Json)
+        # Plain columns stay plain.
+        self.assertIsInstance(parameters["instruction"], str)
+
+    def test_review_reuses_the_shared_provenance_helper(self) -> None:
+        """Editing text must snapshot the original, exactly as Firebase review does."""
+        edited = seed_row(instruction="New?", original_question="Q?")
+        connection = FakeConnection([[seed_row()], [seed_row()], 1, [edited]])
+        db_seeds.review_seed(
+            connection,
+            COURSE,
+            "-Oseed001",
+            review_status="approved",
+            question="New?",
+            answer="A.",
+        )
+
+        parameters = connection.params_for("UPDATE")
+        self.assertEqual(parameters["instruction"], "New?")
+        self.assertEqual(parameters["original_question"], "Q?")
+        self.assertTrue(parameters["was_edited"])
+        self.assertEqual(parameters["review_status"], "approved")
+
+    def test_review_of_a_missing_seed_returns_none_without_writing(self) -> None:
+        connection = FakeConnection([[]])
+        result = db_seeds.review_seed(
+            connection, COURSE, "missing", review_status="approved"
+        )
+        self.assertIsNone(result)
+        self.assertFalse([s for s in connection.sql if s.startswith("UPDATE")])
+
+    def test_review_status_counts_fall_back_to_legacy_status(self) -> None:
+        connection = FakeConnection([[{"bucket": "approved", "total": 12}]])
+        counts = db_seeds.count_seeds_by_review_status(connection, COURSE)
+
+        self.assertIn("COALESCE(review_status, status, 'generated')", connection.sql[0])
+        self.assertEqual(counts, {"approved": 12})
+
+
+class CourseWriteTests(unittest.TestCase):
+    def test_create_course_refuses_a_duplicate_via_the_database(self) -> None:
+        connection = FakeConnection([0])
+        with self.assertRaises(db_courses.CourseAlreadyExistsError):
+            db_courses.create_course(
+                connection,
+                COURSE,
+                {
+                    "name": "CSS 350",
+                    "title": "Management",
+                    "term": "Spring 2026",
+                    "instructorName": "K. Champion",
+                },
+            )
+        self.assertIn("ON CONFLICT (course_id) DO NOTHING", connection.sql[0])
+
+    def test_update_of_a_missing_course_returns_none(self) -> None:
+        connection = FakeConnection([[]])
+        self.assertIsNone(
+            db_courses.update_course(connection, COURSE, {"chunkCount": 5})
+        )
+
+    def test_starter_generation_upsert_merges_rather_than_replaces(self) -> None:
+        connection = FakeConnection([1, []])
+        db_courses.upsert_starter_seed_generation(
+            connection, COURSE, {"status": "generating"}
+        )
+
+        statement = connection.sql[0]
+        self.assertIn("INSERT INTO starter_seed_generation", statement)
+        self.assertIn("ON CONFLICT (course_id) DO UPDATE SET status", statement)
+        # Only the field sent is touched; counts written earlier survive.
+        self.assertNotIn("target_count", statement)
+
+    def test_metadata_nests_starter_generation_when_a_row_exists(self) -> None:
+        course_row = {
+            "course_id": COURSE,
+            "name": "CSS 350",
+            "title": "Management",
+            "term": "Spring 2026",
+            "instructor_name": "K. Champion",
+            "created_at": UTC_NOON,
+            "syllabus_status": "indexed",
+            "syllabus_file_name": None,
+            "syllabus_type": None,
+            "chunk_count": 180,
+        }
+        starter = {
+            "course_id": COURSE,
+            "status": "ready",
+            "target_count": 50,
+            "final_count": 50,
+            "saved_count": 50,
+            "failed_to_save_count": 0,
+            "error": None,
+            "started_at": UTC_NOON,
+            "completed_at": UTC_NOON,
+        }
+        connection = FakeConnection([[course_row], [starter]])
+        course = db_courses.get_course(connection, COURSE)
+
+        self.assertEqual(course["courseId"], COURSE)
+        self.assertEqual(
+            course["metadata"]["starterSeedGeneration"]["status"], "ready"
+        )
+
+    def test_metadata_omits_starter_generation_when_absent(self) -> None:
+        course_row = {
+            "course_id": COURSE,
+            "name": "CSS 350",
+            "title": "Management",
+            "term": "Spring 2026",
+            "instructor_name": "K. Champion",
+            "created_at": UTC_NOON,
+            "syllabus_status": "none",
+            "syllabus_file_name": None,
+            "syllabus_type": None,
+            "chunk_count": 0,
+        }
+        connection = FakeConnection([[course_row], []])
+        course = db_courses.get_course(connection, COURSE)
+
+        self.assertNotIn("starterSeedGeneration", course["metadata"])
+
+
+class ModelRepositoryTests(unittest.TestCase):
+    VERSION_ROW = {
+        "course_id": OTHER_COURSE,
+        "version": "v1",
+        "base_model": "meta-llama/Llama-3.2-3B-Instruct",
+        "training_example_count": 54,
+        "status": "ready",
+        "deployment": "offline",
+        "artifact_ref": "css-360-qlora/adapter",
+        "created_at": UTC_NOON,
+        "updated_at": UTC_NOON,
+        "notes": None,
+    }
+
+    def test_registry_nests_versions_keyed_by_version(self) -> None:
+        connection = FakeConnection(
+            [[{"course_id": OTHER_COURSE, "current_version": "v1"}], [self.VERSION_ROW]]
+        )
+        registry = db_models.get_model_registry(connection, OTHER_COURSE)
+
+        self.assertEqual(registry["currentVersion"], "v1")
+        self.assertEqual(set(registry["versions"]), {"v1"})
+        self.assertEqual(registry["versions"]["v1"]["trainingExampleCount"], 54)
+
+    def test_no_model_row_means_no_registry(self) -> None:
+        connection = FakeConnection([[]])
+        self.assertIsNone(db_models.get_model_registry(connection, OTHER_COURSE))
+
+    def test_a_pointer_with_no_versions_is_not_a_registry(self) -> None:
+        connection = FakeConnection(
+            [[{"course_id": OTHER_COURSE, "current_version": "v1"}], []]
+        )
+        self.assertIsNone(db_models.get_model_registry(connection, OTHER_COURSE))
+
+    def test_registering_a_version_does_not_promote_it_by_default(self) -> None:
+        connection = FakeConnection([1, [], []])
+        db_models.upsert_model_version(
+            connection,
+            OTHER_COURSE,
+            {
+                "version": "v2",
+                "baseModel": "meta-llama/Llama-3.2-3B-Instruct",
+                "status": "ready",
+                "artifactRef": "css-360-qlora/adapter-v2",
+                "createdAt": UTC_NOON.isoformat(),
+            },
+        )
+        self.assertFalse(
+            [s for s in connection.sql if "INSERT INTO course_models" in s]
+        )
+
+    def test_promotion_is_explicit(self) -> None:
+        connection = FakeConnection([1, 1, [], []])
+        db_models.upsert_model_version(
+            connection,
+            OTHER_COURSE,
+            {
+                "version": "v2",
+                "baseModel": "m",
+                "status": "ready",
+                "artifactRef": "a",
+                "createdAt": UTC_NOON.isoformat(),
+            },
+            set_current=True,
+        )
+        self.assertTrue(
+            [s for s in connection.sql if "INSERT INTO course_models" in s]
+        )
+
+    def test_cannot_point_at_a_version_the_course_does_not_have(self) -> None:
+        connection = FakeConnection([[]])
+        self.assertIsNone(
+            db_models.set_current_version(connection, OTHER_COURSE, "v9")
+        )
+
+
+class ModelRequestRepositoryTests(unittest.TestCase):
+    def test_create_guards_against_a_second_active_request(self) -> None:
+        connection = FakeConnection([0])
+        with self.assertRaises(db_model_requests.ActiveModelRequestError):
+            db_model_requests.create_model_request(connection, COURSE, 54)
+
+        statement = connection.sql[0]
+        self.assertIn("WHERE NOT EXISTS", statement)
+        self.assertIn("status = ANY(%(active_statuses)s)", statement)
+        self.assertEqual(
+            connection.params[0]["active_statuses"],
+            ["requested", "preparing", "training"],
+        )
+
+    def test_terminal_statuses_do_not_block_a_new_request(self) -> None:
+        self.assertNotIn("ready", db_model_requests.ACTIVE_STATUSES)
+        self.assertNotIn("failed", db_model_requests.ACTIVE_STATUSES)
+
+    def test_update_merges_and_stamps_updated_at(self) -> None:
+        existing = {
+            "course_id": COURSE,
+            "status": "requested",
+            "requested_at": UTC_NOON,
+            "updated_at": UTC_NOON,
+            "approved_example_count": 54,
+            "failure_message": None,
+            "preparation": None,
+            "preparation_error": None,
+            "training": None,
+            "launch_error": None,
+            "current_run_id": None,
+        }
+        connection = FakeConnection([[existing], 1, [existing]])
+        db_model_requests.update_model_request(
+            connection, COURSE, {"status": "preparing"}
+        )
+
+        update = next(s for s in connection.sql if s.startswith("UPDATE"))
+        self.assertIn("status = %(status)s", update)
+        self.assertIn("updated_at = %(updated_at)s", update)
+        # requestedAt and the approved count are never touched by a merge.
+        self.assertNotIn("requested_at =", update)
+        self.assertNotIn("approved_example_count =", update)
+
+    def test_nested_blocks_are_wrapped_as_jsonb(self) -> None:
+        from psycopg.types.json import Json
+
+        existing = {
+            "course_id": COURSE,
+            "status": "requested",
+            "requested_at": UTC_NOON,
+            "updated_at": UTC_NOON,
+            "approved_example_count": 54,
+            "failure_message": None,
+            "preparation": None,
+            "preparation_error": None,
+            "training": None,
+            "launch_error": None,
+            "current_run_id": None,
+        }
+        connection = FakeConnection([[existing], 1, [existing]])
+        db_model_requests.update_model_request(
+            connection, COURSE, {"preparation": {"datasetRef": "exports/x"}}
+        )
+        self.assertIsInstance(connection.params_for("UPDATE")["preparation"], Json)
+
+    def test_update_of_a_missing_request_returns_none(self) -> None:
+        connection = FakeConnection([[]])
+        self.assertIsNone(
+            db_model_requests.update_model_request(connection, COURSE, {"status": "ready"})
+        )
+
+
+def _queued_run_row(**overrides: Any) -> dict[str, Any]:
+    row = {
+        "run_id": "run-1",
+        "course_id": COURSE,
+        "mode": "full",
+        "state": "queued",
+        "enqueued_at": UTC_NOON,
+        "updated_at": UTC_NOON,
+        "dataset_ref": "exports/x",
+        "approved_example_count": 0,
+        "train_examples": 0,
+        "validation_examples": 0,
+        "attempt": 0,
+        "job_id": None,
+        "claim_owner": None,
+        "claim_claimed_at": None,
+        "claim_expires_at": None,
+        "error": None,
+    }
+    row.update(overrides)
+    return row
+
+
+class TrainingRunRepositoryTests(unittest.TestCase):
+    def test_enqueue_guards_against_a_second_active_run(self) -> None:
+        connection = FakeConnection([0])
+        with self.assertRaises(db_training_runs.ActiveTrainingRunError):
+            db_training_runs.enqueue_training_run(
+                connection, COURSE, mode="full", dataset_ref="exports/x"
+            )
+
+        statement = connection.sql[0]
+        self.assertIn("WHERE NOT EXISTS", statement)
+        self.assertIn("NOT (state = ANY(%(terminal_states)s))", statement)
+        self.assertEqual(
+            connection.params[0]["terminal_states"], ["succeeded", "failed"]
+        )
+
+    def test_enqueue_never_invents_a_job_id(self) -> None:
+        connection = FakeConnection([1, [_queued_run_row()]])
+        db_training_runs.enqueue_training_run(
+            connection, COURSE, mode="smoke", dataset_ref="exports/x"
+        )
+        parameters = connection.params[0]
+        self.assertNotIn("job_id", parameters)
+        self.assertEqual(parameters["state"], "queued")
+        self.assertEqual(parameters["attempt"], 0)
+
+    def test_enqueue_rejects_an_unknown_mode(self) -> None:
+        connection = FakeConnection()
+        with self.assertRaises(ValueError):
+            db_training_runs.enqueue_training_run(
+                connection, COURSE, mode="turbo", dataset_ref="exports/x"
+            )
+        self.assertEqual(connection.statements, [])
+
+    def test_a_nested_claim_patch_flattens_to_columns(self) -> None:
+        run_row = {
+            "run_id": "run-1",
+            "course_id": COURSE,
+            "mode": "full",
+            "state": "queued",
+            "enqueued_at": UTC_NOON,
+            "updated_at": UTC_NOON,
+            "dataset_ref": "exports/x",
+            "approved_example_count": 0,
+            "train_examples": 0,
+            "validation_examples": 0,
+            "attempt": 0,
+            "job_id": None,
+            "claim_owner": None,
+            "claim_claimed_at": None,
+            "claim_expires_at": None,
+            "error": None,
+        }
+        connection = FakeConnection([[run_row], 1, [run_row]])
+        db_training_runs.update_training_run(
+            connection,
+            COURSE,
+            "run-1",
+            {
+                "state": "claimed",
+                "claim": {
+                    "owner": "runner-1",
+                    "claimedAt": UTC_NOON.isoformat(),
+                    "expiresAt": UTC_NOON.isoformat(),
+                },
+            },
+        )
+
+        parameters = connection.params_for("UPDATE")
+        self.assertEqual(parameters["claim_owner"], "runner-1")
+        self.assertEqual(parameters["state"], "claimed")
+
+    def test_releasing_a_claim_clears_all_three_columns(self) -> None:
+        run_row = {
+            "run_id": "run-1",
+            "course_id": COURSE,
+            "mode": "full",
+            "state": "claimed",
+            "enqueued_at": UTC_NOON,
+            "updated_at": UTC_NOON,
+            "dataset_ref": "exports/x",
+            "approved_example_count": 0,
+            "train_examples": 0,
+            "validation_examples": 0,
+            "attempt": 1,
+            "job_id": None,
+            "claim_owner": "runner-1",
+            "claim_claimed_at": UTC_NOON,
+            "claim_expires_at": UTC_NOON,
+            "error": None,
+        }
+        connection = FakeConnection([[run_row], 1, [run_row]])
+        db_training_runs.update_training_run(
+            connection, COURSE, "run-1", {"claim": None}
+        )
+
+        parameters = connection.params_for("UPDATE")
+        self.assertIsNone(parameters["claim_owner"])
+        self.assertIsNone(parameters["claim_claimed_at"])
+        self.assertIsNone(parameters["claim_expires_at"])
+
+    def test_run_update_is_keyed_by_course_and_run(self) -> None:
+        run_row = {
+            "run_id": "run-1",
+            "course_id": COURSE,
+            "mode": "full",
+            "state": "queued",
+            "enqueued_at": UTC_NOON,
+            "updated_at": UTC_NOON,
+            "dataset_ref": "exports/x",
+            "approved_example_count": 0,
+            "train_examples": 0,
+            "validation_examples": 0,
+            "attempt": 0,
+            "job_id": None,
+            "claim_owner": None,
+            "claim_claimed_at": None,
+            "claim_expires_at": None,
+            "error": None,
+        }
+        connection = FakeConnection([[run_row], 1, [run_row]])
+        db_training_runs.update_training_run(
+            connection, COURSE, "run-1", {"state": "training"}
+        )
+
+        update = next(s for s in connection.sql if s.startswith("UPDATE"))
+        self.assertIn(
+            "WHERE course_id = %(course_id)s AND run_id = %(run_id)s", update
+        )
+
+    def test_active_run_lookup_excludes_terminal_states(self) -> None:
+        connection = FakeConnection([[]])
+        db_training_runs.find_active_training_run(connection, COURSE)
+
+        statement = connection.sql[0]
+        self.assertIn("NOT (state = ANY(%s))", statement)
+        self.assertEqual(connection.params[0], (COURSE, ["succeeded", "failed"]))
+
+
+class OrderingTests(unittest.TestCase):
+    """Ordering matches the Firebase parsers so a cutover changes no list."""
+
+    def test_courses_sort_newest_first_then_by_id(self) -> None:
+        connection = FakeConnection([[]])
+        db_courses.list_courses(connection)
+        self.assertIn("ORDER BY created_at DESC, course_id ASC", connection.sql[0])
+
+    def test_seeds_sort_newest_first_with_undated_last(self) -> None:
+        connection = FakeConnection([[]])
+        db_seeds.list_seeds(connection, COURSE)
+        self.assertIn("ORDER BY created_at DESC NULLS LAST", connection.sql[0])
+
+    def test_evaluations_sort_newest_first(self) -> None:
+        connection = FakeConnection([[]])
+        db_evaluations.list_evaluations(connection, COURSE)
+        self.assertIn("ORDER BY created_at DESC", connection.sql[0])
+
+    def test_training_runs_sort_oldest_first(self) -> None:
+        connection = FakeConnection([[]])
+        db_training_runs.list_training_runs(connection, COURSE)
+        self.assertIn("ORDER BY enqueued_at ASC", connection.sql[0])
+
+
+if __name__ == "__main__":
+    unittest.main()
