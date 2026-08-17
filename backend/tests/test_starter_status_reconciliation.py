@@ -543,3 +543,138 @@ class TopUpRouteReconciliationTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
+
+
+class FirebaseNetworkIsolationTests(unittest.TestCase):
+    """No backend test may reach the real Firebase database.
+
+    `backend/.env` carries a working FIREBASE_DATABASE_URL, so an unstubbed path
+    does not fail — it succeeds, against production. That is how a suite run
+    kept recreating `courses/css-360-summer-2026-demo`: the generate-starter
+    route stubbed seed persistence but not the starter-status reconciliation
+    that follows it, and the reconciliation's read and write both went out.
+
+    These pin the guard in `tests/conftest.py` rather than any one caller.
+    """
+
+    def setUp(self) -> None:
+        from fastapi.testclient import TestClient
+
+        from app.main import app
+        from app.starter_jobs import clear_active_starter_jobs_for_tests
+
+        clear_active_starter_jobs_for_tests()
+        self.client = TestClient(app)
+
+    def test_the_guard_blocks_an_external_request(self) -> None:
+        """The guard must actually fire, or everything below proves nothing."""
+        import asyncio
+
+        import httpx
+
+        from conftest import ExternalRequestBlocked
+
+        async def _attempt() -> None:
+            async with httpx.AsyncClient() as client:
+                await client.get(
+                    "https://example-default-rtdb.firebaseio.com/courses.json"
+                )
+
+        with self.assertRaises(ExternalRequestBlocked) as caught:
+            asyncio.run(_attempt())
+        self.assertIn("firebaseio.com", str(caught.exception))
+
+    def test_local_requests_are_still_allowed(self) -> None:
+        """Ollama and the fine-tuned tunnel are loopback; they must pass."""
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+
+    def test_firebase_is_unconfigured_during_tests(self) -> None:
+        from app.firebase_seeds import (
+            FirebaseConfigurationError,
+            get_firebase_database_url,
+        )
+
+        with self.assertRaises(FirebaseConfigurationError):
+            get_firebase_database_url()
+
+    def test_generate_starter_with_save_makes_no_external_request(self) -> None:
+        """The exact leaking path, with nothing but the guard protecting it.
+
+        Reconciliation is deliberately NOT stubbed here: the assertion is that
+        the whole route completes without a request leaving the machine.
+        """
+        run_result = {
+            "courseId": COURSE,
+            "model": "qwen3:8b",
+            "targetCount": 50,
+            "seeds": [],
+            "progress": {
+                "eligibleChunks": 0,
+                "selectedChunks": 0,
+                "chunksProcessed": 0,
+                "chunksSkipped": 0,
+                "generationCalls": 0,
+                "validationCalls": 0,
+                "ollamaCalls": 0,
+                "candidatesGenerated": 0,
+                "candidatesValidated": 0,
+                "candidatesAccepted": 0,
+                "candidatesRejected": 0,
+                "duplicatesRemoved": 0,
+                "finalCount": 0,
+            },
+            "persistence": {
+                "generatedCount": 0,
+                "savedCount": 0,
+                "alreadyExistingCount": 0,
+                "failedToSaveCount": 0,
+            },
+        }
+
+        with patch(
+            "app.main.generate_starter_seeds_for_course",
+            new=AsyncMock(return_value=run_result),
+        ):
+            for path in ("/seeds/generate-starter", "/seeds/top-up"):
+                with self.subTest(path=path):
+                    response = self.client.post(
+                        f"/api/courses/{COURSE}{path}",
+                        json={"targetCount": 50, "save": True},
+                    )
+                    self.assertEqual(response.status_code, 200)
+
+    def test_reconciliation_without_firebase_config_writes_nothing(self) -> None:
+        """Unconfigured Firebase must be a no-op, not an error and not a write."""
+        import asyncio
+
+        applied = asyncio.run(
+            reconcile_starter_seed_generation(COURSE, target_count=50)
+        )
+        self.assertIsNone(applied)
+
+    def test_auto_job_makes_no_external_request(self) -> None:
+        import asyncio
+
+        from app.starter_jobs import (
+            _active_starter_jobs,
+            run_auto_starter_seed_generation,
+        )
+
+        _active_starter_jobs.add(COURSE)
+        with (
+            patch.dict(os.environ, {"AUTO_STARTER_SEED_GENERATION": "true"}),
+            patch("app.starter_jobs.get_starter_auto_generate_count", return_value=3),
+            patch(
+                "app.starter_jobs.generate_starter_seeds_for_course",
+                new=AsyncMock(
+                    return_value={
+                        "progress": {"finalCount": 3},
+                        "persistence": {"savedCount": 3, "failedToSaveCount": 0},
+                    }
+                ),
+            ),
+        ):
+            asyncio.run(run_auto_starter_seed_generation(COURSE))
+
+        self.assertNotIn(COURSE, _active_starter_jobs)

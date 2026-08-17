@@ -1618,6 +1618,14 @@ class StarterSeedEndpointTests(unittest.TestCase):
                     }
                 ),
             ),
+            # A save=true run also reconciles starter status afterwards, which
+            # reads seedExamples and writes metadata. Stubbing persistence alone
+            # left that second Firebase round trip live, and it recreated this
+            # course in the real database on every suite run.
+            patch(
+                "app.main.reconcile_starter_seed_generation",
+                new=AsyncMock(return_value=None),
+            ) as mock_reconcile,
         ):
             response = self.client.post(
                 self.url,
@@ -1628,6 +1636,9 @@ class StarterSeedEndpointTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["persistence"]["savedCount"], 1)
         self.assertEqual(body["persistence"]["generatedCount"], 1)
+        # The route must still reconcile; the point is that it is stubbed here,
+        # not that it stopped happening.
+        mock_reconcile.assert_awaited_once()
 
     def test_endpoint_save_true_missing_firebase_configuration(self) -> None:
         async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
