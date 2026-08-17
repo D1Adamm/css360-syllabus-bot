@@ -863,3 +863,37 @@ class TrainingLaunchResponse(BaseModel):
     submitted_at: str = Field(alias="submittedAt")
     train_count: int = Field(alias="trainCount")
     validation_count: int = Field(alias="validationCount")
+
+
+class EnqueueTrainingRunRequest(BaseModel):
+    """Queue one prepared dataset for training."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    mode: str = Field(default="full", description="smoke | full")
+    dataset_ref: str = Field(alias="datasetRef", min_length=1)
+    approved_example_count: int = Field(
+        default=0, alias="approvedExampleCount", ge=0
+    )
+    train_examples: int = Field(default=0, alias="trainExamples", ge=0)
+    validation_examples: int = Field(default=0, alias="validationExamples", ge=0)
+
+
+class EnqueueTrainingRunResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    run_id: str = Field(alias="runId")
+    run: dict[str, Any]
+    mirrored_to_postgres: bool = Field(
+        alias="mirroredToPostgres",
+        description=(
+            "False when the run was queued in Firebase — and so will be picked "
+            "up by the cluster — but could not be recorded in PostgreSQL, which "
+            "is what the training list reads. Never reported as a plain success."
+        ),
+    )
+    warning: str | None = Field(
+        default=None,
+        description="Set only when mirroredToPostgres is false.",
+    )

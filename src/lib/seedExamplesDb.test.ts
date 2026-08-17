@@ -1,29 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SeedExample } from '../types';
 
-const { refMock, onValueMock, removeMock } = vi.hoisted(() => ({
-  refMock: vi.fn((db: unknown, path: string) => ({ path, db })),
-  onValueMock: vi.fn(),
-  removeMock: vi.fn(async () => undefined),
+const dbApiMock = vi.hoisted(() => ({
+  listSeeds: vi.fn(),
+  createSeed: vi.fn(),
+  updateSeed: vi.fn(),
+  deleteSeed: vi.fn(async () => ({ courseId: 'x', deleted: 1 })),
 }));
 
-vi.mock('./firebase', () => ({
-  app: {},
-  database: { name: 'mock-db' },
-}));
-
-vi.mock('firebase/database', () => ({
-  ref: refMock,
-  onValue: onValueMock,
-  push: vi.fn(() => ({ key: 'generated-id' })),
-  set: vi.fn(async () => undefined),
-  remove: removeMock,
-  update: vi.fn(async () => undefined),
-}));
+vi.mock('./dbApi', () => dbApiMock);
 
 import {
   deleteAllUserSeedExamples,
-  parseSeedExamplesFromSnapshot,
+  parseSeedExampleList,
   subscribeToSeedExamples,
 } from './seedExamplesDb';
 
@@ -33,8 +22,8 @@ describe('seedExamplesDb AI-aware parsing', () => {
   });
 
   it('parses mixed user, prototype, and AI-generated snapshot records', () => {
-    const seeds = parseSeedExamplesFromSnapshot({
-      'user-1': {
+    const seeds = parseSeedExampleList([
+      {
         id: 'user-1',
         instruction: 'User question?',
         response: 'User answer.',
@@ -45,7 +34,8 @@ describe('seedExamplesDb AI-aware parsing', () => {
         origin: 'user',
         createdAt: '2026-07-02T00:00:00.000Z',
       },
-      'ai-push': {
+      {
+        id: 'ai-push',
         question: 'AI question?',
         answer: 'AI answer with enough detail.',
         category: 'grading',
@@ -63,11 +53,12 @@ describe('seedExamplesDb AI-aware parsing', () => {
           reason: 'Grounded.',
         },
       },
-      malformed: {
+      {
+        id: 'malformed',
         origin: 'ai_generated',
         question: '',
       },
-    });
+    ] as never);
 
     expect(seeds).toHaveLength(2);
     expect(seeds.map((seed) => seed.origin).sort()).toEqual(['ai_generated', 'user']);
@@ -77,19 +68,23 @@ describe('seedExamplesDb AI-aware parsing', () => {
     );
   });
 
-  it('subscribes using the course-specific Firebase path', () => {
-    onValueMock.mockReturnValue(() => undefined);
+  it('lists seeds for the course it was given', async () => {
+    dbApiMock.listSeeds.mockResolvedValue({
+      courseId: 'css-360-summer-2026-89m4',
+      count: 0,
+      seeds: [],
+      reviewStatusCounts: {},
+    });
 
-    subscribeToSeedExamples(
+    const unsubscribe = subscribeToSeedExamples(
       'css-360-summer-2026-89m4',
       () => undefined,
       () => undefined,
     );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    unsubscribe();
 
-    expect(refMock).toHaveBeenCalledWith(
-      expect.anything(),
-      'courses/css-360-summer-2026-89m4/seedExamples',
-    );
+    expect(dbApiMock.listSeeds).toHaveBeenCalledWith('css-360-summer-2026-89m4');
   });
 
   it('deleteAllUserSeedExamples deletes only user seeds', async () => {
@@ -128,10 +123,12 @@ describe('seedExamplesDb AI-aware parsing', () => {
 
     await deleteAllUserSeedExamples('css-360-summer-2026-89m4', seeds);
 
-    expect(removeMock).toHaveBeenCalledTimes(1);
-    expect(removeMock).toHaveBeenCalledWith({
-      path: 'courses/css-360-summer-2026-89m4/seedExamples/user-1',
-      db: expect.anything(),
-    });
+    // Only the student's own example goes, and it is deleted by course and id
+    // together — an id alone is never enough to reach another course's record.
+    expect(dbApiMock.deleteSeed).toHaveBeenCalledTimes(1);
+    expect(dbApiMock.deleteSeed).toHaveBeenCalledWith(
+      'css-360-summer-2026-89m4',
+      'user-1',
+    );
   });
 });

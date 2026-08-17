@@ -1,17 +1,24 @@
-import {
-  get,
-  onValue,
-  ref,
-  set,
-  update,
-  type Unsubscribe,
-} from 'firebase/database';
 import type { CourseMetadata, SyllabusStatus } from '../types';
-import { assertValidCourseId, isValidCourseId } from './courseId';
-import { COURSES_ROOT_PATH, getCourseMetadataPath } from './coursePaths';
-import { database } from './firebase';
+import { assertValidCourseId } from './courseId';
+import * as dbApi from './dbApi';
+import { pollingSubscription, type Unsubscribe } from './pollingSubscription';
 
-/** Course picker list item: metadata plus the Firebase child key as courseId. */
+/**
+ * Course metadata, now read from PostgreSQL through FastAPI.
+ *
+ * The module keeps the shape it had when it spoke to Firebase —
+ * `subscribeToCourses(onData, onError)` returning an unsubscribe — so the hooks
+ * and pages above it did not have to change. What changed is underneath: a
+ * realtime listener became a fetch, because a course list only changes when
+ * someone on this system creates or edits a course.
+ *
+ * `isCourseMetadata` still runs over what the API returns. The backend is ours
+ * and its response model is typed, but this is the guard that decides whether a
+ * professor sees their course or a blank picker, and it costs nothing to keep
+ * validating at the boundary.
+ */
+
+/** Course picker list item: metadata plus the course id. */
 export interface CourseListItem {
   courseId: string;
   metadata: CourseMetadata;
@@ -55,81 +62,6 @@ export function isCourseMetadata(value: unknown): value is CourseMetadata {
   );
 }
 
-export function getCourseMetadataRef(courseId: string) {
-  return ref(database, getCourseMetadataPath(courseId));
-}
-
-export async function createCourseMetadata(
-  courseId: string,
-  metadata: CourseMetadata,
-): Promise<void> {
-  assertValidCourseId(courseId);
-
-  const stored: CourseMetadata = {
-    ...metadata,
-    createdAt: metadata.createdAt || new Date().toISOString(),
-    syllabusFileName: metadata.syllabusFileName ?? null,
-    syllabusType: metadata.syllabusType ?? null,
-    chunkCount: metadata.chunkCount ?? 0,
-  };
-
-  await set(getCourseMetadataRef(courseId), stored);
-}
-
-export async function getCourseMetadata(courseId: string): Promise<CourseMetadata | null> {
-  assertValidCourseId(courseId);
-
-  const snapshot = await get(getCourseMetadataRef(courseId));
-  if (!snapshot.exists()) {
-    return null;
-  }
-
-  const value = snapshot.val();
-  return isCourseMetadata(value) ? value : null;
-}
-
-export function subscribeToCourseMetadata(
-  courseId: string,
-  onData: (metadata: CourseMetadata | null) => void,
-  onError?: (message: string) => void,
-): Unsubscribe {
-  assertValidCourseId(courseId);
-
-  return onValue(
-    getCourseMetadataRef(courseId),
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onData(null);
-        return;
-      }
-
-      const value = snapshot.val();
-      onData(isCourseMetadata(value) ? value : null);
-    },
-    (error) => {
-      onError?.(error.message);
-    },
-  );
-}
-
-export async function updateCourseMetadata(
-  courseId: string,
-  updates: Partial<CourseMetadata>,
-): Promise<void> {
-  assertValidCourseId(courseId);
-  await update(getCourseMetadataRef(courseId), updates);
-}
-
-export async function courseExists(courseId: string): Promise<boolean> {
-  assertValidCourseId(courseId);
-  const snapshot = await get(getCourseMetadataRef(courseId));
-  return snapshot.exists();
-}
-
-export function getCoursesRef() {
-  return ref(database, COURSES_ROOT_PATH);
-}
-
 export function sortCoursesNewestFirst(courses: CourseListItem[]): CourseListItem[] {
   return [...courses].sort((left, right) => {
     const leftTime = Date.parse(left.metadata.createdAt);
@@ -152,53 +84,111 @@ export function sortCoursesNewestFirst(courses: CourseListItem[]): CourseListIte
   });
 }
 
-/**
- * Transform a `courses` RTDB snapshot value into validated CourseListItem entries.
- * Only children with a valid courseId and metadata object are included.
- */
-export function parseCoursesSnapshot(value: unknown): CourseListItem[] {
-  if (!value || typeof value !== 'object') {
-    return [];
-  }
-
+/** Keep only entries the UI can actually render, newest first. */
+export function parseCourseList(courses: dbApi.DbCourseRecord[]): CourseListItem[] {
   const items: CourseListItem[] = [];
 
-  for (const [courseId, courseNode] of Object.entries(value as Record<string, unknown>)) {
-    if (!isValidCourseId(courseId) || !courseNode || typeof courseNode !== 'object') {
+  for (const entry of courses) {
+    if (typeof entry?.courseId !== 'string' || !isCourseMetadata(entry.metadata)) {
       continue;
     }
-
-    const metadata = (courseNode as Record<string, unknown>).metadata;
-    if (!isCourseMetadata(metadata)) {
-      continue;
-    }
-
-    items.push({ courseId, metadata });
+    items.push({ courseId: entry.courseId, metadata: entry.metadata });
   }
 
   return sortCoursesNewestFirst(items);
 }
 
+export async function createCourseMetadata(
+  courseId: string,
+  metadata: CourseMetadata,
+): Promise<void> {
+  assertValidCourseId(courseId);
+
+  await dbApi.createCourse({
+    courseId,
+    ...metadata,
+    createdAt: metadata.createdAt || new Date().toISOString(),
+    syllabusFileName: metadata.syllabusFileName ?? null,
+    syllabusType: metadata.syllabusType ?? null,
+    chunkCount: metadata.chunkCount ?? 0,
+  });
+}
+
+export async function getCourseMetadata(courseId: string): Promise<CourseMetadata | null> {
+  assertValidCourseId(courseId);
+
+  try {
+    const course = await dbApi.getCourse(courseId);
+    return isCourseMetadata(course.metadata) ? course.metadata : null;
+  } catch (error) {
+    // A missing course is an answer, not a failure. Anything else is a real
+    // read error and must not be reported as "no such course".
+    if (error instanceof Error && 'status' in error && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 /**
- * Subscribe to all courses under `courses` for the course picker.
- * Does not load seed examples or evaluations—only child metadata.
+ * Statuses that mean the starter-generation job is still working.
+ *
+ * The job runs in the backend and writes its progress where this metadata comes
+ * from, so a professor watching the page has no other way to learn it finished.
+ * These two are the only reason this subscription ever polls.
+ */
+const ACTIVE_STARTER_STATUSES = new Set(['queued', 'generating']);
+
+function starterGenerationIsRunning(metadata: CourseMetadata | null): boolean {
+  const status = metadata?.starterSeedGeneration?.status;
+  return typeof status === 'string' && ACTIVE_STARTER_STATUSES.has(status);
+}
+
+export function subscribeToCourseMetadata(
+  courseId: string,
+  onData: (metadata: CourseMetadata | null) => void,
+  onError?: (message: string) => void,
+): Unsubscribe {
+  assertValidCourseId(courseId);
+
+  return pollingSubscription<CourseMetadata | null>({
+    fetcher: () => getCourseMetadata(courseId),
+    onData,
+    onError,
+    // Poll only while examples are actually being generated. `ready`,
+    // `partial`, and `failed` are all terminal, and a course sitting in one of
+    // them is static data that would otherwise be re-fetched forever.
+    shouldPoll: starterGenerationIsRunning,
+  });
+}
+
+export async function courseExists(courseId: string): Promise<boolean> {
+  assertValidCourseId(courseId);
+  return (await getCourseMetadata(courseId)) !== null;
+}
+
+export async function updateCourseMetadata(
+  courseId: string,
+  updates: Partial<CourseMetadata>,
+): Promise<void> {
+  assertValidCourseId(courseId);
+  await dbApi.updateCourse(courseId, updates);
+}
+
+/**
+ * All courses for the picker.
+ *
+ * Fetched once per mount rather than watched. A course appearing while a
+ * professor stares at the list is not a scenario worth a polling timer; the
+ * pages that create one navigate straight to it.
  */
 export function subscribeToCourses(
   onData: (courses: CourseListItem[]) => void,
   onError?: (message: string) => void,
 ): Unsubscribe {
-  return onValue(
-    getCoursesRef(),
-    (snapshot) => {
-      if (!snapshot.exists()) {
-        onData([]);
-        return;
-      }
-
-      onData(parseCoursesSnapshot(snapshot.val()));
-    },
-    (error) => {
-      onError?.(error.message);
-    },
-  );
+  return pollingSubscription<CourseListItem[]>({
+    fetcher: async () => parseCourseList((await dbApi.listCourses()).courses),
+    onData,
+    onError,
+  });
 }

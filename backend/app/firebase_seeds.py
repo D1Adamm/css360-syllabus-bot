@@ -400,3 +400,37 @@ async def patch_course_seed_example(
             detail=f"Firebase update failed with HTTP {response.status_code}.",
         )
     return stored
+
+
+async def delete_course_seed_example(course_id: str, seed_id: str) -> None:
+    """Delete courses/{courseId}/seedExamples/{seedId}.
+
+    Added for the PostgreSQL cutover: a seed deleted through the `/api/db`
+    routes must also leave Firebase, or the training export and the generation
+    deduplicator would keep seeing a record the professor removed.
+    """
+    safe_course_id = assert_valid_course_id(course_id)
+    cleaned_id = str(seed_id).strip()
+    if not cleaned_id:
+        raise HTTPException(status_code=422, detail="seedId must not be empty.")
+
+    url = _request_url(course_seed_example_path(safe_course_id, cleaned_id))
+    try:
+        async with httpx.AsyncClient(timeout=FIREBASE_REQUEST_TIMEOUT_SECONDS) as client:
+            response = await client.delete(url)
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Firebase request timed out while deleting a seed example.",
+        ) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Firebase is unavailable while deleting seed examples.",
+        ) from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Firebase delete failed with HTTP {response.status_code}.",
+        )

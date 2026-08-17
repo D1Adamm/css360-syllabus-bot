@@ -402,3 +402,43 @@ export async function prepareTrainingSplit(
     'The service could not be reached.',
   );
 }
+
+export interface EnqueueTrainingRunBody {
+  mode?: string;
+  datasetRef: string;
+  approvedExampleCount?: number;
+  trainExamples?: number;
+  validationExamples?: number;
+}
+
+export interface EnqueueTrainingRunResponse {
+  courseId: string;
+  runId: string;
+  run: Record<string, unknown>;
+  /**
+   * False when the run was queued for the cluster but could not be recorded in
+   * PostgreSQL, which is what the training list reads. The caller must surface
+   * this rather than treating the request as a plain success.
+   */
+  mirroredToPostgres: boolean;
+  warning?: string | null;
+}
+
+/**
+ * Queue a prepared dataset for training.
+ *
+ * Operational, not persistence: the backend writes the Firebase queue the
+ * Tillicum runner claims from, then mirrors the run into PostgreSQL. The
+ * browser no longer touches Firebase for this.
+ */
+export async function enqueueTrainingRun(
+  courseId: string,
+  body: EnqueueTrainingRunBody,
+): Promise<EnqueueTrainingRunResponse> {
+  return postJson<EnqueueTrainingRunResponse>(
+    `/api/courses/${encodeURIComponent(courseId)}/training-runs`,
+    body,
+    'The backend could not queue a training run.',
+    'The service could not be reached.',
+  );
+}

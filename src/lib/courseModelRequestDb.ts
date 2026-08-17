@@ -1,11 +1,5 @@
-import {
-  get,
-  onValue,
-  ref,
-  runTransaction,
-  update,
-  type Unsubscribe,
-} from 'firebase/database';
+import * as dbApi from './dbApi';
+import { pollingSubscription, type Unsubscribe } from './pollingSubscription';
 import type {
   CourseModelRequest,
   CourseModelRequestPreparation,
@@ -13,8 +7,6 @@ import type {
   CourseModelRequestTraining,
 } from '../types';
 import { assertValidCourseId } from './courseId';
-import { getCourseModelRequestPath } from './coursePaths';
-import { database } from './firebase';
 
 /**
  * Course model requests at `courses/{courseId}/modelRequest`.
@@ -169,18 +161,36 @@ function parsePreparation(value: unknown): CourseModelRequestPreparation | null 
   };
 }
 
-export function getCourseModelRequestRef(courseId: string) {
-  assertValidCourseId(courseId);
-  return ref(database, getCourseModelRequestPath(courseId));
-}
-
+/**
+ * The model request for one course, or null when there is none.
+ *
+ * Read from PostgreSQL through FastAPI. A 404 is "never requested", which the
+ * professor page renders as an offer to request one — quite different from a
+ * read failure, which must not put that button in front of someone whose
+ * request is already running.
+ */
 export async function fetchCourseModelRequest(
   courseId: string,
 ): Promise<CourseModelRequest | null> {
-  const snapshot = await get(getCourseModelRequestRef(courseId));
-  return snapshot.exists() ? parseCourseModelRequest(snapshot.val()) : null;
+  assertValidCourseId(courseId);
+
+  try {
+    return parseCourseModelRequest(await dbApi.getModelRequest(courseId));
+  } catch (error) {
+    if (error instanceof Error && 'status' in error && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
+/**
+ * Watches a request while it is still outstanding.
+ *
+ * Preparation and training are driven by an administrator and a cluster, so a
+ * professor's page has no other way to learn that its state moved. Polling
+ * stops at `ready` and `failed` — the two states nothing follows.
+ */
 export function subscribeToCourseModelRequest(
   courseId: string,
   onData: (request: CourseModelRequest | null) => void,
@@ -188,15 +198,12 @@ export function subscribeToCourseModelRequest(
 ): Unsubscribe {
   assertValidCourseId(courseId);
 
-  return onValue(
-    getCourseModelRequestRef(courseId),
-    (snapshot) => {
-      onData(snapshot.exists() ? parseCourseModelRequest(snapshot.val()) : null);
-    },
-    (error) => {
-      onError?.(error.message);
-    },
-  );
+  return pollingSubscription<CourseModelRequest | null>({
+    fetcher: () => fetchCourseModelRequest(courseId),
+    onData,
+    onError,
+    shouldPoll: (request) => isActiveRequest(request),
+  });
 }
 
 export class DuplicateModelRequestError extends Error {
@@ -209,10 +216,11 @@ export class DuplicateModelRequestError extends Error {
 /**
  * Creates a request, refusing if one is already outstanding.
  *
- * Uses a transaction rather than read-then-write: a professor double-clicking,
- * or two browser tabs open on the same course, would otherwise both read "no
- * request" and both write one. The transaction aborts when the current value is
- * already an active request, so exactly one write wins.
+ * The guard moved into the database with the record. The backend inserts only
+ * when no active request exists for the course, evaluated at write time, so a
+ * professor double-clicking or two tabs racing still produce exactly one
+ * request — the same guarantee the Firebase transaction gave, enforced a layer
+ * lower. A refused create comes back as 409.
  */
 export async function createCourseModelRequest(
   courseId: string,
@@ -220,32 +228,22 @@ export async function createCourseModelRequest(
 ): Promise<CourseModelRequest> {
   assertValidCourseId(courseId);
 
-  const now = new Date().toISOString();
-  const request: CourseModelRequest = {
-    courseId,
-    status: 'requested',
-    requestedAt: now,
-    updatedAt: now,
-    approvedExampleCount: Math.max(0, Math.trunc(approvedExampleCount)),
-  };
-
-  const result = await runTransaction(
-    getCourseModelRequestRef(courseId),
-    (current: unknown) => {
-      const existing = parseCourseModelRequest(current);
-      if (isActiveRequest(existing)) {
-        // Abort: leave the existing request exactly as it is.
-        return undefined;
-      }
-      return request;
-    },
-  );
-
-  if (!result.committed) {
-    throw new DuplicateModelRequestError();
+  try {
+    const created = await dbApi.createModelRequest(
+      courseId,
+      Math.max(0, Math.trunc(approvedExampleCount)),
+    );
+    const parsed = parseCourseModelRequest(created);
+    if (!parsed) {
+      throw new Error('The backend returned an unreadable model request.');
+    }
+    return parsed;
+  } catch (error) {
+    if (error instanceof Error && 'status' in error && error.status === 409) {
+      throw new DuplicateModelRequestError();
+    }
+    throw error;
   }
-
-  return request;
 }
 
 /**
@@ -260,8 +258,5 @@ export async function updateCourseModelRequest(
   patch: Partial<CourseModelRequest>,
 ): Promise<void> {
   assertValidCourseId(courseId);
-  await update(getCourseModelRequestRef(courseId), {
-    ...patch,
-    updatedAt: new Date().toISOString(),
-  });
+  await dbApi.updateModelRequest(courseId, patch);
 }

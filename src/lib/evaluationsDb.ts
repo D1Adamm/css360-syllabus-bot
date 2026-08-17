@@ -1,79 +1,72 @@
-import { onValue, push, ref, remove, set, type Unsubscribe } from 'firebase/database';
 import type { EvaluationRecord } from '../types';
 import { isEvaluationRecord } from '../utils/evaluationUtils';
 import { assertValidCourseId } from './courseId';
-import { getCourseEvaluationPath, getCourseEvaluationsPath } from './coursePaths';
-import { database } from './firebase';
+import * as dbApi from './dbApi';
+import { pollingSubscription, type Unsubscribe } from './pollingSubscription';
 
-export function getCourseEvaluationsRef(courseId: string) {
-  return ref(database, getCourseEvaluationsPath(courseId));
-}
+/**
+ * Evaluations, now read and written through FastAPI against PostgreSQL.
+ *
+ * `isEvaluationRecord` still filters what arrives. Records written before free
+ * text questions existed are missing fields the aggregation reads, and dropping
+ * them here is what keeps the comparison charts from counting a partial record.
+ */
 
-export function getCourseEvaluationRef(courseId: string, evaluationId: string) {
-  return ref(database, getCourseEvaluationPath(courseId, evaluationId));
-}
-
-export function parseEvaluationsFromSnapshot(data: unknown): EvaluationRecord[] {
-  if (!data || typeof data !== 'object') {
-    return [];
-  }
-
-  return Object.values(data)
+export function parseEvaluationList(evaluations: unknown[]): EvaluationRecord[] {
+  return evaluations
     .filter(isEvaluationRecord)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
-/** Subscribe to courses/{courseId}/evaluations. */
+export async function fetchEvaluations(courseId: string): Promise<EvaluationRecord[]> {
+  assertValidCourseId(courseId);
+  return parseEvaluationList((await dbApi.listEvaluations(courseId)).evaluations);
+}
+
 export function subscribeToEvaluations(
   courseId: string,
   onData: (evaluations: EvaluationRecord[]) => void,
-  onError: (message: string) => void,
+  onError?: (message: string) => void,
 ): Unsubscribe {
   assertValidCourseId(courseId);
-  const evaluationsRef = getCourseEvaluationsRef(courseId);
 
-  return onValue(
-    evaluationsRef,
-    (snapshot) => {
-      onData(parseEvaluationsFromSnapshot(snapshot.val()));
-    },
-    (error) => {
-      onError(error.message);
-    },
-  );
+  return pollingSubscription<EvaluationRecord[]>({
+    fetcher: () => fetchEvaluations(courseId),
+    onData,
+    onError,
+  });
 }
 
-/** Create an evaluation under courses/{courseId}/evaluations. */
 export async function createEvaluation(
   courseId: string,
   evaluation: EvaluationRecord,
 ): Promise<EvaluationRecord> {
   assertValidCourseId(courseId);
-  const evaluationRef = push(getCourseEvaluationsRef(courseId));
-  const storedEvaluation: EvaluationRecord = {
-    ...evaluation,
-    id: evaluationRef.key ?? evaluation.id,
-    createdAt: evaluation.createdAt ?? new Date().toISOString(),
-  };
 
-  await set(evaluationRef, storedEvaluation);
-  return storedEvaluation;
+  return dbApi.createEvaluation(courseId, {
+    ...evaluation,
+    createdAt: evaluation.createdAt ?? new Date().toISOString(),
+  });
 }
 
-/** Delete an evaluation from courses/{courseId}/evaluations/{evaluationId}. */
 export async function deleteEvaluation(
   courseId: string,
   evaluationId: string,
 ): Promise<void> {
   assertValidCourseId(courseId);
-  await remove(getCourseEvaluationRef(courseId, evaluationId));
+  await dbApi.deleteEvaluation(courseId, evaluationId);
 }
 
+/**
+ * Clear every evaluation for one course.
+ *
+ * One request rather than a delete per record: the backend deletes by course
+ * id, so a slow connection can no longer leave a course half-cleared.
+ */
 export async function deleteAllEvaluations(
   courseId: string,
-  evaluations: EvaluationRecord[],
+  _evaluations?: EvaluationRecord[],
 ): Promise<void> {
-  await Promise.all(
-    evaluations.map((evaluation) => deleteEvaluation(courseId, evaluation.id)),
-  );
+  assertValidCourseId(courseId);
+  await dbApi.deleteAllEvaluations(courseId);
 }

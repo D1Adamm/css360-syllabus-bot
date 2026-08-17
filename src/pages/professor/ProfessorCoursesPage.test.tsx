@@ -7,10 +7,6 @@ import type { CourseMetadata } from '../../types';
 
 const subscribeToCoursesMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../lib/firebase', () => ({
-  app: {},
-  database: { name: 'mock-db' },
-}));
 
 vi.mock('../../lib/coursesDb', () => ({
   subscribeToCourses: subscribeToCoursesMock,

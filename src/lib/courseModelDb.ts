@@ -1,4 +1,5 @@
-import { get, onValue, ref, type Unsubscribe } from 'firebase/database';
+import * as dbApi from './dbApi';
+import { pollingSubscription, type Unsubscribe } from './pollingSubscription';
 import type {
   CourseModelDeploymentStatus,
   CourseModelRegistry,
@@ -6,15 +7,13 @@ import type {
   CourseModelVersion,
 } from '../types';
 import { assertValidCourseId } from './courseId';
-import { getCourseModelPath } from './coursePaths';
-import { database } from './firebase';
 
 /**
- * Reads the per-course model registry from `courses/{courseId}/model`.
+ * Reads the per-course model registry from PostgreSQL through FastAPI.
  *
- * Course-scoped exactly like metadata, examples, and evaluations: the path is
- * built from a validated course id, so one course can never read another's
- * record.
+ * Course-scoped exactly like metadata, examples, and evaluations: the request
+ * path is built from a validated course id and the backend keys every query on
+ * it, so one course can never read another's record.
  *
  * Read-only from the application. Records are written by whoever trains and
  * promotes a model — see `scripts/register_course_model.py`. Nothing in the UI
@@ -124,16 +123,25 @@ export function getCurrentVersion(
   return registry.versions[registry.currentVersion] ?? null;
 }
 
-export function getCourseModelRef(courseId: string) {
-  assertValidCourseId(courseId);
-  return ref(database, getCourseModelPath(courseId));
-}
-
+/**
+ * The registry for one course, or null when it has none.
+ *
+ * A 404 means "no model", which is a real answer and must not surface as a
+ * read failure — the page says something different for each.
+ */
 export async function fetchCourseModel(
   courseId: string,
 ): Promise<CourseModelRegistry | null> {
-  const snapshot = await get(getCourseModelRef(courseId));
-  return snapshot.exists() ? parseCourseModelRegistry(snapshot.val()) : null;
+  assertValidCourseId(courseId);
+
+  try {
+    return parseCourseModelRegistry(await dbApi.getCourseModel(courseId));
+  } catch (error) {
+    if (error instanceof Error && 'status' in error && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export function subscribeToCourseModel(
@@ -143,13 +151,11 @@ export function subscribeToCourseModel(
 ): Unsubscribe {
   assertValidCourseId(courseId);
 
-  return onValue(
-    getCourseModelRef(courseId),
-    (snapshot) => {
-      onData(snapshot.exists() ? parseCourseModelRegistry(snapshot.val()) : null);
-    },
-    (error) => {
-      onError?.(error.message);
-    },
-  );
+  // A registered model changes when someone trains and promotes one, which is
+  // not something that happens while a professor watches this page.
+  return pollingSubscription<CourseModelRegistry | null>({
+    fetcher: () => fetchCourseModel(courseId),
+    onData,
+    onError,
+  });
 }

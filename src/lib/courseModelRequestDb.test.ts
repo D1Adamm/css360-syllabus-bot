@@ -1,23 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./firebase', () => ({ database: {}, app: {} }));
+const createModelRequestMock = vi.fn();
+const getModelRequestMock = vi.fn();
+const updateModelRequestMock = vi.fn();
 
-const runTransactionMock = vi.fn();
-
-vi.mock('firebase/database', () => ({
-  ref: (_db: unknown, path: string) => ({ path }),
-  get: vi.fn(),
-  onValue: vi.fn(),
-  runTransaction: (...args: unknown[]) => runTransactionMock(...args),
+// Model requests are persisted through FastAPI into PostgreSQL. The
+// one-active-request guard moved into the database with the record, so the
+// duplicate case arrives as a 409 rather than an aborted transaction.
+vi.mock('./dbApi', () => ({
+  createModelRequest: (...args: unknown[]) => createModelRequestMock(...args),
+  getModelRequest: (...args: unknown[]) => getModelRequestMock(...args),
+  updateModelRequest: (...args: unknown[]) => updateModelRequestMock(...args),
 }));
 
 import {
   createCourseModelRequest,
   DuplicateModelRequestError,
+  fetchCourseModelRequest,
   isActiveRequest,
   parseCourseModelRequest,
 } from './courseModelRequestDb';
-import { getCourseModelRequestPath } from './coursePaths';
+import { ApiError } from './api';
 
 const COURSE_A = 'css-490-spring-2026-cgvl';
 const COURSE_B = 'css-350-winter-2026-drlb';
@@ -30,18 +33,16 @@ const STORED = {
   approvedExampleCount: 42,
 };
 
-/** Runs the transaction updater against `current` and reports the outcome. */
-function transactionResult(current: unknown) {
-  const updater = runTransactionMock.mock.calls[0][1] as (value: unknown) => unknown;
-  return updater(current);
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
-  runTransactionMock.mockImplementation(async (_ref, updater) => ({
-    committed: updater(null) !== undefined,
-    snapshot: null,
-  }));
+  // The backend echoes back the record it stored.
+  createModelRequestMock.mockImplementation(
+    async (courseId: string, approvedExampleCount: number) => ({
+      ...STORED,
+      courseId,
+      approvedExampleCount,
+    }),
+  );
 });
 
 describe('parseCourseModelRequest', () => {
@@ -92,15 +93,13 @@ describe('isActiveRequest', () => {
 });
 
 describe('createCourseModelRequest', () => {
-  it('writes to the requesting course’s own path', async () => {
+  it('requests through the API for that course only', async () => {
     await createCourseModelRequest(COURSE_A, 42);
 
-    expect(runTransactionMock.mock.calls[0][0]).toEqual({
-      path: getCourseModelRequestPath(COURSE_A),
-    });
-    expect(getCourseModelRequestPath(COURSE_A)).toBe(`courses/${COURSE_A}/modelRequest`);
-    expect(getCourseModelRequestPath(COURSE_B)).not.toBe(
-      getCourseModelRequestPath(COURSE_A),
+    expect(createModelRequestMock).toHaveBeenCalledWith(COURSE_A, 42);
+    expect(createModelRequestMock).not.toHaveBeenCalledWith(
+      COURSE_B,
+      expect.anything(),
     );
   });
 
@@ -110,48 +109,60 @@ describe('createCourseModelRequest', () => {
     expect(request.courseId).toBe(COURSE_A);
     expect(request.status).toBe('requested');
     expect(request.approvedExampleCount).toBe(42);
-    expect(request.requestedAt).toBe(request.updatedAt);
   });
 
-  it('writes when nothing exists yet', () => {
-    void createCourseModelRequest(COURSE_A, 42);
-    expect(transactionResult(null)).toMatchObject({ status: 'requested' });
-  });
-
-  it('aborts rather than overwriting an outstanding request', async () => {
-    void createCourseModelRequest(COURSE_A, 42);
-
-    // A second attempt while work is outstanding must leave the record alone.
-    for (const status of ['requested', 'preparing', 'training'] as const) {
-      expect(transactionResult({ ...STORED, status })).toBeUndefined();
-    }
-  });
-
-  it('allows a new request after a terminal one', () => {
-    void createCourseModelRequest(COURSE_A, 42);
-
-    for (const status of ['ready', 'failed'] as const) {
-      expect(transactionResult({ ...STORED, status })).toMatchObject({
-        status: 'requested',
-      });
-    }
-  });
-
-  it('surfaces a duplicate as a typed error when the transaction aborts', async () => {
-    runTransactionMock.mockResolvedValue({ committed: false, snapshot: null });
+  it('surfaces a duplicate as a typed error when the backend refuses', async () => {
+    // The guard is now a conditional insert; a refused create is a 409.
+    createModelRequestMock.mockRejectedValue(
+      new ApiError('Course already has an outstanding model request.', 409),
+    );
 
     await expect(createCourseModelRequest(COURSE_A, 42)).rejects.toBeInstanceOf(
       DuplicateModelRequestError,
     );
   });
 
-  it('refuses an unsafe course id before touching the database', async () => {
+  it('lets a real failure through rather than calling it a duplicate', async () => {
+    createModelRequestMock.mockRejectedValue(new ApiError('Service unavailable', 503));
+
+    await expect(createCourseModelRequest(COURSE_A, 42)).rejects.not.toBeInstanceOf(
+      DuplicateModelRequestError,
+    );
+  });
+
+  it('refuses an unsafe course id before touching the backend', async () => {
     await expect(createCourseModelRequest('Bad_Id', 1)).rejects.toThrow();
-    expect(runTransactionMock).not.toHaveBeenCalled();
+    expect(createModelRequestMock).not.toHaveBeenCalled();
   });
 
   it('normalises a nonsense approved count', async () => {
-    expect((await createCourseModelRequest(COURSE_A, -5)).approvedExampleCount).toBe(0);
-    expect((await createCourseModelRequest(COURSE_A, 4.7)).approvedExampleCount).toBe(4);
+    await createCourseModelRequest(COURSE_A, -5);
+    expect(createModelRequestMock).toHaveBeenLastCalledWith(COURSE_A, 0);
+
+    await createCourseModelRequest(COURSE_A, 4.7);
+    expect(createModelRequestMock).toHaveBeenLastCalledWith(COURSE_A, 4);
+  });
+});
+
+describe('fetchCourseModelRequest', () => {
+  it('reads the request for that course', async () => {
+    getModelRequestMock.mockResolvedValue(STORED);
+
+    const request = await fetchCourseModelRequest(COURSE_A);
+
+    expect(getModelRequestMock).toHaveBeenCalledWith(COURSE_A);
+    expect(request?.status).toBe('requested');
+  });
+
+  it('reports a course that never requested one as null, not an error', async () => {
+    getModelRequestMock.mockRejectedValue(new ApiError('not found', 404));
+
+    await expect(fetchCourseModelRequest(COURSE_A)).resolves.toBeNull();
+  });
+
+  it('lets a read failure surface rather than claiming nothing was requested', async () => {
+    getModelRequestMock.mockRejectedValue(new ApiError('Service unavailable', 503));
+
+    await expect(fetchCourseModelRequest(COURSE_A)).rejects.toThrow();
   });
 });

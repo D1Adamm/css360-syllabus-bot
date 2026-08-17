@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException
 from app import db_courses, db_evaluations, db_model_requests, db_models
 from app import db_seeds, db_training_runs
 from app.course_id import assert_valid_course_id
+from app.db_sync import mirror_seed_delete_to_firebase, mirror_seed_to_firebase
 from app.db import db_connection, translate_db_errors
 from app.db_schemas import (
     CourseCreateRequest,
@@ -232,7 +233,9 @@ def get_course_seed(course_id: str, seed_id: str) -> SeedResponse:
 @router.post(
     "/courses/{course_id}/seeds", response_model=SeedResponse, status_code=201
 )
-def create_course_seed(course_id: str, request: SeedCreateRequest) -> SeedResponse:
+async def create_course_seed(
+    course_id: str, request: SeedCreateRequest
+) -> SeedResponse:
     safe_course_id = _safe_course_id(course_id)
     payload = _patch_fields(request)
 
@@ -247,6 +250,9 @@ def create_course_seed(course_id: str, request: SeedCreateRequest) -> SeedRespon
         created = _run("creating a seed", work)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # Firebase still backs the training export and the generation
+    # deduplicator, so a seed created here has to reach it as well.
+    await mirror_seed_to_firebase(safe_course_id, created)
     return SeedResponse(
         courseId=safe_course_id, seedId=created["id"], seed=created
     )
@@ -314,7 +320,7 @@ def review_course_seed(
 
 
 @router.delete("/courses/{course_id}/seeds/{seed_id}", response_model=DeleteResponse)
-def delete_course_seed(course_id: str, seed_id: str) -> DeleteResponse:
+async def delete_course_seed(course_id: str, seed_id: str) -> DeleteResponse:
     safe_course_id = _safe_course_id(course_id)
     deleted = _run(
         "deleting a seed",
@@ -322,6 +328,7 @@ def delete_course_seed(course_id: str, seed_id: str) -> DeleteResponse:
     )
     if not deleted:
         raise HTTPException(status_code=404, detail=f'Seed "{seed_id}" was not found.')
+    await mirror_seed_delete_to_firebase(safe_course_id, seed_id)
     return DeleteResponse(courseId=safe_course_id, deleted=1)
 
 

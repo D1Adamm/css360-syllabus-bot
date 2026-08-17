@@ -1,20 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./firebase', () => ({ database: {}, app: {} }));
+const listTrainingRunsMock = vi.fn();
 
-const runTransactionMock = vi.fn();
-const getMock = vi.fn();
-
-vi.mock('firebase/database', () => ({
-  ref: (_db: unknown, path: string) => ({ path }),
-  get: (...args: unknown[]) => getMock(...args),
-  onValue: vi.fn(),
-  runTransaction: (...args: unknown[]) => runTransactionMock(...args),
+// Reads come from PostgreSQL through FastAPI; only the queue write is Firebase.
+vi.mock('./dbApi', () => ({
+  listTrainingRuns: (...args: unknown[]) => listTrainingRunsMock(...args),
 }));
 
 import {
-  DuplicateTrainingRunError,
-  enqueueTrainingRun,
   fetchCourseTrainingRuns,
   findActiveTrainingRun,
   generateTrainingRunId,
@@ -22,11 +15,9 @@ import {
   parseTrainingRun,
   parseTrainingRuns,
 } from './trainingRunDb';
-import { getCourseModelPath, getCourseTrainingRunsPath } from './coursePaths';
 
 const COURSE_A = 'css-490-spring-2026-cgvl';
 const COURSE_B = 'css-350-winter-2026-drlb';
-const CSS_360 = 'css-360-winter-2026-a7rp';
 
 const STORED = {
   courseId: COURSE_A,
@@ -41,27 +32,11 @@ const STORED = {
   attempt: 0,
 };
 
-const INPUT = {
-  mode: 'full' as const,
-  datasetRef: `exports/${COURSE_A}`,
-  approvedExampleCount: 42,
-  trainExamples: 38,
-  validationExamples: 4,
-};
 
-/** What the enqueue transaction would write over `current`. */
-function transactionResult(current: unknown) {
-  const updater = runTransactionMock.mock.calls[0][1] as (value: unknown) => unknown;
-  return updater(current);
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  runTransactionMock.mockImplementation(async (_ref, updater) => ({
-    committed: updater(null) !== undefined,
-    snapshot: null,
-  }));
-  getMock.mockResolvedValue({ exists: () => false, val: () => null });
+  listTrainingRunsMock.mockResolvedValue({ courseId: COURSE_A, count: 0, runs: [] });
 });
 
 describe('parseTrainingRun', () => {
@@ -162,115 +137,35 @@ describe('generateTrainingRunId', () => {
   });
 });
 
-describe('enqueueTrainingRun', () => {
-  it('writes one queued run for that course', async () => {
-    const run = await enqueueTrainingRun(COURSE_A, INPUT);
+describe('course isolation', () => {
+  it('reads only the course it was given', async () => {
+    await fetchCourseTrainingRuns(COURSE_B);
 
-    expect(runTransactionMock).toHaveBeenCalledTimes(1);
-    expect(runTransactionMock.mock.calls[0][0]).toEqual({
-      path: getCourseTrainingRunsPath(COURSE_A),
-    });
-    expect(run.state).toBe('queued');
-    expect(run.courseId).toBe(COURSE_A);
-    expect(run.attempt).toBe(0);
-    expect(run.trainExamples).toBe(38);
-  });
-
-  it('invents no job id and claims nothing', async () => {
-    const run = await enqueueTrainingRun(COURSE_A, INPUT);
-    const written = (transactionResult(null) as Record<string, unknown>)[run.runId];
-
-    expect(run.claim).toBeUndefined();
-    expect(Object.keys(written as object)).not.toContain('jobId');
-    expect(JSON.stringify(written)).not.toMatch(/job/i);
-  });
-
-  it('refuses when this course already has an outstanding run', async () => {
-    runTransactionMock.mockImplementation(async (_ref, updater) => ({
-      committed: updater({ 'run-1': { ...STORED, state: 'claimed' } }) !== undefined,
-      snapshot: null,
-    }));
-
-    await expect(enqueueTrainingRun(COURSE_A, INPUT)).rejects.toBeInstanceOf(
-      DuplicateTrainingRunError,
-    );
-  });
-
-  it('allows a new run once every earlier one finished', async () => {
-    runTransactionMock.mockImplementation(async (_ref, updater) => ({
-      committed:
-        updater({
-          'run-1': { ...STORED, state: 'succeeded' },
-          'run-2': { ...STORED, state: 'failed' },
-        }) !== undefined,
-      snapshot: null,
-    }));
-
-    await expect(enqueueTrainingRun(COURSE_A, INPUT)).resolves.toBeTruthy();
-  });
-
-  it('keeps the runs that are already there', async () => {
-    const run = await enqueueTrainingRun(COURSE_A, INPUT);
-    const next = transactionResult({ 'run-old': { ...STORED, state: 'succeeded' } }) as
-      | Record<string, unknown>
-      | undefined;
-
-    expect(Object.keys(next ?? {})).toEqual(['run-old', run.runId]);
-  });
-
-  it('rejects an unknown mode', async () => {
-    await expect(
-      enqueueTrainingRun(COURSE_A, { ...INPUT, mode: 'gigantic' as never }),
-    ).rejects.toThrow(/Unknown training mode/);
+    expect(listTrainingRunsMock).toHaveBeenCalledWith(COURSE_B);
+    expect(listTrainingRunsMock).not.toHaveBeenCalledWith(COURSE_A);
   });
 
   it('rejects a course id that could escape its own path', async () => {
-    for (const bad of ['', '../etc', 'CSS-360', 'a/b', 'x$y']) {
-      await expect(enqueueTrainingRun(bad, INPUT)).rejects.toThrow(/Invalid courseId/);
+    for (const bad of ['../css-360', 'CSS 360', 'css_360', '']) {
+      await expect(fetchCourseTrainingRuns(bad)).rejects.toThrow(/Invalid courseId/);
     }
-    expect(runTransactionMock).not.toHaveBeenCalled();
-  });
-});
-
-describe('course isolation', () => {
-  it('scopes every read and write to one course', async () => {
-    await enqueueTrainingRun(COURSE_A, INPUT);
-    await fetchCourseTrainingRuns(COURSE_B);
-
-    expect(runTransactionMock.mock.calls[0][0]).toEqual({
-      path: `courses/${COURSE_A}/trainingRuns`,
-    });
-    expect(getMock.mock.calls[0][0]).toEqual({
-      path: `courses/${COURSE_B}/trainingRuns`,
-    });
+    expect(listTrainingRunsMock).not.toHaveBeenCalled();
   });
 
-  it("one course's outstanding run does not block another", async () => {
-    // Course A is busy; the transaction for course B sees only B's own node.
-    runTransactionMock.mockImplementation(async (ref, updater) => {
-      const value =
-        (ref as { path: string }).path === `courses/${COURSE_A}/trainingRuns`
-          ? { 'run-1': { ...STORED, state: 'claimed' } }
-          : null;
-      return { committed: updater(value) !== undefined, snapshot: null };
+  it('shows a run the backend queued, keyed by its run id', async () => {
+    // Proof that a newly enqueued run is visible through the PostgreSQL read
+    // path: the queue write happens in FastAPI, and this is what the admin
+    // page sees afterwards.
+    listTrainingRunsMock.mockResolvedValue({
+      courseId: COURSE_A,
+      count: 1,
+      runs: [{ ...STORED, runId: 'run-20260812t100000z-abc123' }],
     });
 
-    await expect(enqueueTrainingRun(COURSE_A, INPUT)).rejects.toBeInstanceOf(
-      DuplicateTrainingRunError,
-    );
-    await expect(
-      enqueueTrainingRun(COURSE_B, { ...INPUT, datasetRef: `exports/${COURSE_B}` }),
-    ).resolves.toBeTruthy();
-  });
+    const runs = await fetchCourseTrainingRuns(COURSE_A);
 
-  it('never touches the CSS 360 model registry', async () => {
-    await enqueueTrainingRun(CSS_360, { ...INPUT, datasetRef: `exports/${CSS_360}` });
-
-    const paths = [
-      ...runTransactionMock.mock.calls.map((call) => (call[0] as { path: string }).path),
-      ...getMock.mock.calls.map((call) => (call[0] as { path: string }).path),
-    ];
-    expect(paths).toEqual([`courses/${CSS_360}/trainingRuns`]);
-    expect(paths).not.toContain(getCourseModelPath(CSS_360));
+    expect(runs).toHaveLength(1);
+    expect(runs[0].runId).toBe('run-20260812t100000z-abc123');
+    expect(runs[0].state).toBe('queued');
   });
 });

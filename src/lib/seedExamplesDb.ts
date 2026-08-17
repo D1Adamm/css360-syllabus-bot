@@ -1,81 +1,67 @@
-import {
-  onValue,
-  push,
-  ref,
-  remove,
-  set,
-  update,
-  type Unsubscribe,
-} from 'firebase/database';
 import type { SeedExample } from '../types';
 import { normalizeSeedExample } from '../utils/seedDataUtils';
 import { assertValidCourseId } from './courseId';
-import { getCourseSeedExamplePath, getCourseSeedExamplesPath } from './coursePaths';
-import { database } from './firebase';
+import * as dbApi from './dbApi';
+import { pollingSubscription, type Unsubscribe } from './pollingSubscription';
 
-export function getCourseSeedExamplesRef(courseId: string) {
-  return ref(database, getCourseSeedExamplesPath(courseId));
-}
+/**
+ * Seed examples, now read and written through FastAPI against PostgreSQL.
+ *
+ * `normalizeSeedExample` still runs over every record. The API returns both
+ * name pairs (instruction/question, response/answer) exactly as Firebase did,
+ * and that normalizer is what the seed table, the review queue, and the export
+ * screens all agree on — running it here means the cutover changed the source
+ * of the records and nothing about their shape.
+ */
 
-export function getCourseSeedExampleRef(courseId: string, exampleId: string) {
-  return ref(database, getCourseSeedExamplePath(courseId, exampleId));
-}
+export function parseSeedExampleList(seeds: dbApi.DbSeedRecord[]): SeedExample[] {
+  const normalized: SeedExample[] = [];
 
-export function parseSeedExamplesFromSnapshot(data: unknown): SeedExample[] {
-  if (!data || typeof data !== 'object') {
-    return [];
-  }
-
-  const seeds: SeedExample[] = [];
-
-  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
-    const normalized = normalizeSeedExample(value, key);
-    if (normalized) {
-      seeds.push(normalized);
+  for (const seed of seeds) {
+    const parsed = normalizeSeedExample(seed, seed?.id);
+    if (parsed) {
+      normalized.push(parsed);
     }
   }
 
-  return seeds.sort((left, right) => {
+  // The API already orders newest first; sorting again keeps this independent
+  // of that promise, exactly as the Firebase version did.
+  return normalized.sort((left, right) => {
     const leftTime = left.createdAt ?? '';
     const rightTime = right.createdAt ?? '';
     return rightTime.localeCompare(leftTime);
   });
 }
 
-/** Subscribe to courses/{courseId}/seedExamples. */
+export async function fetchSeedExamples(courseId: string): Promise<SeedExample[]> {
+  assertValidCourseId(courseId);
+  return parseSeedExampleList((await dbApi.listSeeds(courseId)).seeds);
+}
+
 export function subscribeToSeedExamples(
   courseId: string,
   onData: (seeds: SeedExample[]) => void,
-  onError: (message: string) => void,
+  onError?: (message: string) => void,
 ): Unsubscribe {
   assertValidCourseId(courseId);
-  const seedsRef = getCourseSeedExamplesRef(courseId);
 
-  return onValue(
-    seedsRef,
-    (snapshot) => {
-      onData(parseSeedExamplesFromSnapshot(snapshot.val()));
-    },
-    (error) => {
-      onError(error.message);
-    },
-  );
+  return pollingSubscription<SeedExample[]>({
+    fetcher: () => fetchSeedExamples(courseId),
+    onData,
+    onError,
+  });
 }
 
-/** Create a seed example under courses/{courseId}/seedExamples. */
 export async function createSeedExample(
   courseId: string,
   seed: SeedExample,
 ): Promise<void> {
   assertValidCourseId(courseId);
-  const seedRef = push(getCourseSeedExamplesRef(courseId));
-  const storedSeed: SeedExample = {
-    ...seed,
-    id: seedRef.key ?? seed.id,
-    createdAt: seed.createdAt ?? new Date().toISOString(),
-  };
 
-  await set(seedRef, storedSeed);
+  await dbApi.createSeed(courseId, {
+    ...seed,
+    createdAt: seed.createdAt ?? new Date().toISOString(),
+  });
 }
 
 export async function updateSeedExample(
@@ -84,16 +70,15 @@ export async function updateSeedExample(
   updates: Partial<SeedExample>,
 ): Promise<void> {
   assertValidCourseId(courseId);
-  await update(getCourseSeedExampleRef(courseId, exampleId), updates);
+  await dbApi.updateSeed(courseId, exampleId, updates);
 }
 
-/** Delete a seed example from courses/{courseId}/seedExamples/{exampleId}. */
 export async function deleteSeedExample(
   courseId: string,
   exampleId: string,
 ): Promise<void> {
   assertValidCourseId(courseId);
-  await remove(getCourseSeedExampleRef(courseId, exampleId));
+  await dbApi.deleteSeed(courseId, exampleId);
 }
 
 export async function deleteAllSeedExamples(

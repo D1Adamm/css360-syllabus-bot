@@ -15,10 +15,6 @@ const {
   updateCourseMetadataMock: vi.fn(),
 }));
 
-vi.mock('../../lib/firebase', () => ({
-  app: {},
-  database: { name: 'mock-db' },
-}));
 
 vi.mock('../../lib/createCourse', () => ({
   createCourse: createCourseMock,

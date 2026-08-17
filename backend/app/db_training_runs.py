@@ -267,3 +267,63 @@ def update_training_run(
         )
 
     return get_training_run(conn, safe_course_id, run_id)
+
+
+def upsert_training_run(
+    conn: Any,
+    course_id: str,
+    run_id: str,
+    record: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Store a run under an id chosen elsewhere, creating or refreshing it.
+
+    Used to mirror a run that Firebase has already accepted. Deliberately not
+    `enqueue_training_run`: that one guards against a second active run, and
+    re-running the guard here could refuse a run the queue has already taken —
+    leaving the cluster holding work the UI would never show.
+
+    The duplicate decision belongs to whichever store owns the queue. Today
+    that is Firebase.
+    """
+    safe_course_id = assert_valid_course_id(course_id)
+
+    parameters = {
+        "run_id": run_id,
+        "course_id": safe_course_id,
+        "mode": record["mode"],
+        "state": record["state"],
+        "enqueued_at": record["enqueuedAt"],
+        "updated_at": record.get("updatedAt") or record["enqueuedAt"],
+        "dataset_ref": record.get("datasetRef") or "",
+        "approved_example_count": max(0, as_int(record.get("approvedExampleCount"))),
+        "train_examples": max(0, as_int(record.get("trainExamples"))),
+        "validation_examples": max(0, as_int(record.get("validationExamples"))),
+        "attempt": max(0, as_int(record.get("attempt"))),
+        "job_id": optional_string(record.get("jobId")),
+        "error": optional_string(record.get("error")),
+    }
+
+    columns = list(parameters)
+    placeholders = ", ".join(f"%({column})s" for column in columns)
+    updates = ", ".join(
+        f"{column} = EXCLUDED.{column}"
+        for column in columns
+        if column not in ("course_id", "run_id")
+    )
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            INSERT INTO training_runs ({", ".join(columns)})
+            VALUES ({placeholders})
+            ON CONFLICT (course_id, run_id) DO UPDATE SET {updates}
+            """,
+            parameters,
+        )
+
+    stored = get_training_run(conn, safe_course_id, run_id)
+    if stored is None:  # pragma: no cover - defensive
+        raise ActiveTrainingRunError(
+            f'The mirrored training run "{run_id}" could not be read back.'
+        )
+    return stored

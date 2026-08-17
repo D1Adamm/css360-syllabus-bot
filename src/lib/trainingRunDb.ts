@@ -1,10 +1,5 @@
-import {
-  get,
-  onValue,
-  ref,
-  runTransaction,
-  type Unsubscribe,
-} from 'firebase/database';
+import * as dbApi from './dbApi';
+import { pollingSubscription, type Unsubscribe } from './pollingSubscription';
 import type {
   TrainingMode,
   TrainingRun,
@@ -12,8 +7,6 @@ import type {
   TrainingRunState,
 } from '../types';
 import { assertValidCourseId } from './courseId';
-import { getCourseTrainingRunsPath } from './coursePaths';
-import { database } from './firebase';
 
 /**
  * Training runs at `courses/{courseId}/trainingRuns/{runId}`.
@@ -150,16 +143,30 @@ export function findActiveTrainingRun(runs: TrainingRun[]): TrainingRun | null {
   return runs.find(isActiveTrainingRun) ?? null;
 }
 
-export function getCourseTrainingRunsRef(courseId: string) {
-  assertValidCourseId(courseId);
-  return ref(database, getCourseTrainingRunsPath(courseId));
-}
-
+/**
+ * Runs for one course, read from PostgreSQL through FastAPI.
+ *
+ * Reads moved off Firebase with the rest of the application's state. The queue
+ * is still written to Firebase, because the cluster runner claims work there —
+ * see `trainingQueueFirebase.ts` — and the backend mirrors each run into
+ * PostgreSQL so this read shows it.
+ */
 export async function fetchCourseTrainingRuns(courseId: string): Promise<TrainingRun[]> {
-  const snapshot = await get(getCourseTrainingRunsRef(courseId));
-  return snapshot.exists() ? parseTrainingRuns(snapshot.val()) : [];
+  assertValidCourseId(courseId);
+  const response = await dbApi.listTrainingRuns(courseId);
+  return parseTrainingRuns(
+    Object.fromEntries(response.runs.map((run) => [run.runId, run])),
+  );
 }
 
+/**
+ * Watches a course's runs while any of them is still outstanding.
+ *
+ * This is the one screen where polling earns its place: a queued run is picked
+ * up by a runner on another machine, so nothing in this browser knows when the
+ * state changes. Polling stops as soon as every run is terminal, which is the
+ * normal resting state of the page.
+ */
 export function subscribeToCourseTrainingRuns(
   courseId: string,
   onData: (runs: TrainingRun[]) => void,
@@ -167,15 +174,12 @@ export function subscribeToCourseTrainingRuns(
 ): Unsubscribe {
   assertValidCourseId(courseId);
 
-  return onValue(
-    getCourseTrainingRunsRef(courseId),
-    (snapshot) => {
-      onData(snapshot.exists() ? parseTrainingRuns(snapshot.val()) : []);
-    },
-    (error) => {
-      onError?.(error.message);
-    },
-  );
+  return pollingSubscription<TrainingRun[]>({
+    fetcher: () => fetchCourseTrainingRuns(courseId),
+    onData,
+    onError,
+    shouldPoll: (runs) => findActiveTrainingRun(runs) !== null,
+  });
 }
 
 export class DuplicateTrainingRunError extends Error {
@@ -203,79 +207,11 @@ export function generateTrainingRunId(now: Date = new Date()): string {
   return `run-${stamp.toLowerCase()}-${suffix}`;
 }
 
-export interface EnqueueTrainingRunInput {
-  mode: TrainingMode;
-  datasetRef: string;
-  approvedExampleCount: number;
-  trainExamples: number;
-  validationExamples: number;
-}
-
-/**
- * Writes one `queued` run, refusing if this course already has an active one.
+/*
+ * Queueing lives in `trainingQueueFirebase.ts`, not here.
  *
- * The transaction runs over the course's whole `trainingRuns` node rather than
- * a single run, because the thing being guarded is a property of the set: "no
- * two runs for this course may be outstanding at once". A read-then-write would
- * let a double-clicked button, or two admin tabs, both see an empty queue and
- * both enqueue. The transaction aborts when it sees an active run, so exactly
- * one write wins and the loser is told why.
- *
- * No job id is invented here, and none is stored. Only the cluster can produce
- * one, and a placeholder would make an unsubmitted run look submitted.
+ * It is the one browser write still going to Firebase, because the cluster
+ * runner claims work from there. Callers import it from that module directly:
+ * re-exporting it would make this persistence module depend on the
+ * orchestration one, which already depends on these parsers.
  */
-export async function enqueueTrainingRun(
-  courseId: string,
-  input: EnqueueTrainingRunInput,
-): Promise<TrainingRun> {
-  assertValidCourseId(courseId);
-
-  if (!MODES.includes(input.mode)) {
-    throw new Error(`Unknown training mode: ${input.mode}`);
-  }
-
-  const now = new Date();
-  const timestamp = now.toISOString();
-  const runId = generateTrainingRunId(now);
-
-  const run: TrainingRun = {
-    runId,
-    courseId,
-    mode: input.mode,
-    state: 'queued',
-    enqueuedAt: timestamp,
-    updatedAt: timestamp,
-    datasetRef: input.datasetRef,
-    approvedExampleCount: asCount(input.approvedExampleCount),
-    trainExamples: asCount(input.trainExamples),
-    validationExamples: asCount(input.validationExamples),
-    // No runner has taken it yet. The runner increments this as it claims.
-    attempt: 0,
-  };
-
-  // `runId` is the key; storing it inside the record too would be a second copy
-  // that could disagree with the key after a manual edit.
-  const { runId: _runId, ...stored } = run;
-  void _runId;
-
-  const result = await runTransaction(
-    getCourseTrainingRunsRef(courseId),
-    (current: unknown) => {
-      if (findActiveTrainingRun(parseTrainingRuns(current)) !== null) {
-        // Abort: leave the existing queue exactly as it is.
-        return undefined;
-      }
-
-      const existing =
-        current && typeof current === 'object' ? (current as Record<string, unknown>) : {};
-
-      return { ...existing, [runId]: stored };
-    },
-  );
-
-  if (!result.committed) {
-    throw new DuplicateTrainingRunError();
-  }
-
-  return run;
-}

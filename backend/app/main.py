@@ -1,3 +1,4 @@
+import logging
 import os
 
 # Load backend/.env before other app modules read configuration.
@@ -21,6 +22,8 @@ from app.finetuned_rag import generate_course_finetuned_rag_answer
 from app.ollama import generate_base_model_response
 from app.schemas import (
     BaseModelGenerateRequest,
+    EnqueueTrainingRunRequest,
+    EnqueueTrainingRunResponse,
     BaseModelGenerateResponse,
     FineTunedGenerateRequest,
     FineTunedGenerateResponse,
@@ -69,6 +72,13 @@ from app.schemas import (
     TrainingLaunchRequest,
     TrainingLaunchResponse,
 )
+from app.db import db_connection, translate_db_errors
+from app.db_sync import sync_course_from_firebase
+from app.db_training_runs import upsert_training_run
+from app.firebase_training_runs import (
+    ActiveTrainingRunError,
+    enqueue_training_run as enqueue_training_run_to_firebase,
+)
 from app.firebase_metadata import reconcile_starter_seed_generation
 from app.firebase_seeds import (
     FirebaseConfigurationError,
@@ -107,6 +117,8 @@ from app.training_launch import (
     describe_capability,
     launch_training,
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Syllabus Model Lab Backend")
 
@@ -473,6 +485,10 @@ async def generate_course_starter_seeds(
             safe_course_id,
             target_count=result["targetCount"],
         )
+        # This route persists seeds to Firebase. The browser reads PostgreSQL,
+        # so without this a professor would run generation and reload onto the
+        # state from before it. Best-effort: the seeds are already durable.
+        await sync_course_from_firebase(safe_course_id)
 
     persistence = None
     if result.get("persistence") is not None:
@@ -525,6 +541,9 @@ async def top_up_course_starter_seeds(
             safe_course_id,
             target_count=result["targetCount"],
         )
+        # Same reason as generate-starter: the seeds this just added live in
+        # Firebase, and the page that shows them reads PostgreSQL.
+        await sync_course_from_firebase(safe_course_id)
 
     persistence = None
     if result.get("persistence") is not None:
@@ -538,6 +557,92 @@ async def top_up_course_starter_seeds(
         progress=StarterSeedProgress(**result["progress"]),
         persistence=persistence,
         localSnapshotPath=result.get("localSnapshotPath"),
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/training-runs",
+    response_model=EnqueueTrainingRunResponse,
+    status_code=201,
+)
+async def enqueue_course_training_run(
+    course_id: str,
+    request: EnqueueTrainingRunRequest,
+) -> EnqueueTrainingRunResponse:
+    """Queue one training run, in Firebase and then PostgreSQL.
+
+    The browser used to write Firebase itself. It no longer can, but the queue
+    could not simply move: `scripts/lib/training_queue.py` on Tillicum claims
+    work from Firebase with an ETag compare-and-set and knows nothing about this
+    backend or PostgreSQL.
+
+    Order matters and is deliberate.
+
+    Firebase goes first because it owns the duplicate decision. It is the store
+    the cluster reads, so it is the only place where "this course already has an
+    active run" can be decided without a window in which the cluster sees a run
+    the guard has not counted. Writing PostgreSQL first would mean a failed
+    Firebase write left a queued run visible in the UI that no runner would ever
+    take — the worse of the two failures, because it looks like success.
+
+    PostgreSQL is then mirrored under the same run id, so the admin page — which
+    reads PostgreSQL — shows the run it just queued.
+
+    If the mirror fails, the response still succeeds, because the run really is
+    queued and Tillicum really will take it; telling the caller otherwise would
+    invite a retry that the Firebase guard would then refuse. Instead the
+    response says so explicitly through `mirroredToPostgres` and `warning`, and
+    the admin page surfaces it. A later successful sync repairs the copy.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        queued = await enqueue_training_run_to_firebase(
+            course_id=safe_course_id,
+            mode=request.mode,
+            dataset_ref=request.dataset_ref,
+            approved_example_count=request.approved_example_count,
+            train_examples=request.train_examples,
+            validation_examples=request.validation_examples,
+        )
+    except ActiveTrainingRunError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FirebaseConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    run_id = queued["runId"]
+    record = queued["record"]
+
+    mirrored = True
+    warning: str | None = None
+    try:
+        with db_connection() as connection:
+            upsert_training_run(connection, safe_course_id, run_id, record)
+    except Exception:  # noqa: BLE001 - the queue write already succeeded
+        logger.exception(
+            "Queued training run %s for %s in Firebase but could not mirror it "
+            "to PostgreSQL",
+            run_id,
+            safe_course_id,
+        )
+        mirrored = False
+        warning = (
+            "The run was queued and the cluster can pick it up, but this "
+            "backend could not record it in PostgreSQL, so it may not appear "
+            "in the training list until the next refresh from Firebase."
+        )
+
+    return EnqueueTrainingRunResponse(
+        courseId=safe_course_id,
+        runId=run_id,
+        run={**record, "runId": run_id},
+        mirroredToPostgres=mirrored,
+        warning=warning,
     )
 
 
@@ -758,6 +863,9 @@ async def review_course_seed(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     stored = await patch_course_seed_example(safe_course_id, seed_id, updated)
+    # The review landed in Firebase, which is what `export_approved_seeds`
+    # reads. PostgreSQL is what the review page reads, so it has to follow.
+    await sync_course_from_firebase(safe_course_id)
     return SeedReviewResponse(
         courseId=safe_course_id,
         seedId=seed_id,

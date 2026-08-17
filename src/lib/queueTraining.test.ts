@@ -11,23 +11,22 @@ vi.mock('./trainingRunDb', async () => {
   );
   return {
     ...actual,
-    enqueueTrainingRun: (...args: unknown[]) => enqueueTrainingRun(...args),
     fetchCourseTrainingRuns: (...args: unknown[]) => fetchCourseTrainingRuns(...args),
+  };
+});
+
+// Queueing now goes through the backend, which writes the Firebase queue the
+// cluster claims from and mirrors the run into PostgreSQL.
+vi.mock('./api', async () => {
+  const actual = await vi.importActual<typeof import('./api')>('./api');
+  return {
+    ...actual,
+    enqueueTrainingRun: (...args: unknown[]) => enqueueTrainingRun(...args),
   };
 });
 
 vi.mock('./courseModelRequestDb', () => ({
   updateCourseModelRequest: (...args: unknown[]) => updateCourseModelRequest(...args),
-}));
-
-// The data layer imports Firebase through `./firebase`; the real module needs
-// browser env vars that a unit test has no business providing.
-vi.mock('./firebase', () => ({ database: {}, app: {} }));
-vi.mock('firebase/database', () => ({
-  ref: (_db: unknown, path: string) => ({ path }),
-  get: vi.fn(),
-  onValue: vi.fn(),
-  runTransaction: vi.fn(),
 }));
 
 import { DuplicateTrainingRunError } from './trainingRunDb';
@@ -72,7 +71,13 @@ const QUEUED_RUN: TrainingRun = {
 beforeEach(() => {
   vi.clearAllMocks();
   fetchCourseTrainingRuns.mockResolvedValue([]);
-  enqueueTrainingRun.mockResolvedValue(QUEUED_RUN);
+  enqueueTrainingRun.mockResolvedValue({
+    courseId: COURSE_490,
+    runId: QUEUED_RUN.runId,
+    run: QUEUED_RUN,
+    mirroredToPostgres: true,
+    warning: null,
+  });
   updateCourseModelRequest.mockResolvedValue(undefined);
 });
 
@@ -173,5 +178,64 @@ describe('queueTrainingForRequest', () => {
       /Invalid courseId/,
     );
     expect(fetchCourseTrainingRuns).not.toHaveBeenCalled();
+  });
+});
+
+describe('the queue write goes through FastAPI, never Firebase', () => {
+  it('calls the backend enqueue endpoint', async () => {
+    await queueTrainingForRequest(COURSE_490, PREPARED);
+
+    // The browser no longer writes the Firebase queue itself; the backend does,
+    // and it mirrors the run into PostgreSQL in the same request.
+    expect(enqueueTrainingRun).toHaveBeenCalledTimes(1);
+    expect(enqueueTrainingRun.mock.calls[0][0]).toBe(COURSE_490);
+  });
+
+  it('reports a duplicate the backend refused as the typed error', async () => {
+    const { ApiError } = await import('./api');
+    enqueueTrainingRun.mockRejectedValue(
+      new ApiError('Course already has an active training run.', 409),
+    );
+
+    await expect(queueTrainingForRequest(COURSE_490, PREPARED)).rejects.toBeInstanceOf(
+      DuplicateTrainingRunError,
+    );
+    expect(updateCourseModelRequest).not.toHaveBeenCalled();
+  });
+
+  it('lets a real backend failure through rather than calling it a duplicate', async () => {
+    const { ApiError } = await import('./api');
+    enqueueTrainingRun.mockRejectedValue(new ApiError('Service unavailable', 503));
+
+    await expect(
+      queueTrainingForRequest(COURSE_490, PREPARED),
+    ).rejects.not.toBeInstanceOf(DuplicateTrainingRunError);
+  });
+
+  it('passes through a known-stale PostgreSQL mirror instead of implying success', async () => {
+    /*
+     * The split-brain case. The cluster has the run; PostgreSQL — which the
+     * training list reads — does not. The caller has to be able to say that,
+     * so the result carries it rather than looking like an ordinary success.
+     */
+    enqueueTrainingRun.mockResolvedValue({
+      courseId: COURSE_490,
+      runId: QUEUED_RUN.runId,
+      run: QUEUED_RUN,
+      mirroredToPostgres: false,
+      warning: 'Queued for the cluster but not recorded in PostgreSQL.',
+    });
+
+    const result = await queueTrainingForRequest(COURSE_490, PREPARED);
+
+    expect(result.mirroredToPostgres).toBe(false);
+    expect(result.warning).toContain('not recorded in PostgreSQL');
+  });
+
+  it('reports the mirror as healthy on a normal queue', async () => {
+    const result = await queueTrainingForRequest(COURSE_490, PREPARED);
+
+    expect(result.mirroredToPostgres).toBe(true);
+    expect(result.warning).toBeNull();
   });
 });

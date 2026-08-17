@@ -1,11 +1,12 @@
 import { assertValidCourseId } from './courseId';
 import { updateCourseModelRequest } from './courseModelRequestDb';
+import { ApiError, enqueueTrainingRun } from './api';
 import {
   DuplicateTrainingRunError,
-  enqueueTrainingRun,
   fetchCourseTrainingRuns,
   findActiveTrainingRun,
 } from './trainingRunDb';
+import type { TrainingRun as TrainingRunType } from '../types';
 import type { CourseModelRequest, TrainingMode, TrainingRun } from '../types';
 
 /**
@@ -52,6 +53,13 @@ export function canQueueTraining(
 
 export interface QueueTrainingResult {
   run: TrainingRun;
+  /**
+   * False when the cluster has the run but PostgreSQL does not. The admin page
+   * reads PostgreSQL, so this is the difference between "queued" and "queued
+   * and visible" — the caller has to say so rather than imply success.
+   */
+  mirroredToPostgres: boolean;
+  warning: string | null;
 }
 
 export async function queueTrainingForRequest(
@@ -73,15 +81,27 @@ export async function queueTrainingForRequest(
     throw new DuplicateTrainingRunError();
   }
 
-  const run = await enqueueTrainingRun(courseId, {
-    mode,
-    // The reference the preparation stage recorded, not anything absolute a
-    // machine reported.
-    datasetRef: request.preparation.datasetRef,
-    approvedExampleCount: request.preparation.sourceApprovedExampleCount,
-    trainExamples: request.preparation.trainExamples,
-    validationExamples: request.preparation.validationExamples,
-  });
+  let queued;
+  try {
+    queued = await enqueueTrainingRun(courseId, {
+      mode,
+      // The reference the preparation stage recorded, not anything absolute a
+      // machine reported.
+      datasetRef: request.preparation.datasetRef,
+      approvedExampleCount: request.preparation.sourceApprovedExampleCount,
+      trainExamples: request.preparation.trainExamples,
+      validationExamples: request.preparation.validationExamples,
+    });
+  } catch (error) {
+    // The backend refuses a second outstanding run with 409, the same rule the
+    // browser used to enforce itself.
+    if (error instanceof ApiError && error.status === 409) {
+      throw new DuplicateTrainingRunError();
+    }
+    throw error;
+  }
+
+  const run = { ...(queued.run as object), runId: queued.runId } as TrainingRunType;
 
   /*
    * Point the request at the run.
@@ -95,5 +115,9 @@ export async function queueTrainingForRequest(
     launchError: '',
   });
 
-  return { run };
+  return {
+    run,
+    mirroredToPostgres: queued.mirroredToPostgres,
+    warning: queued.warning ?? null,
+  };
 }

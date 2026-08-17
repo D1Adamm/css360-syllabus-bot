@@ -28,20 +28,7 @@ const {
   deleteAllEvaluationsMock: vi.fn(),
 }));
 
-vi.mock('../lib/firebase', () => ({
-  app: {},
-  database: { name: 'mock-db' },
-}));
 
-vi.mock('firebase/database', () => ({
-  ref: vi.fn(),
-  onValue: vi.fn(() => () => undefined),
-  push: vi.fn(() => ({ key: 'generated-id' })),
-  set: vi.fn(async () => undefined),
-  remove: vi.fn(async () => undefined),
-  get: vi.fn(async () => ({ exists: () => false, val: () => null })),
-  update: vi.fn(async () => undefined),
-}));
 
 vi.mock('../lib/seedExamplesDb', async () => {
   const actual = await vi.importActual<typeof import('../lib/seedExamplesDb')>(

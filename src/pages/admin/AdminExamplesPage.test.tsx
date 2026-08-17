@@ -9,10 +9,6 @@ import { AdminExamplesPage } from './AdminExamplesPage';
 
 const subscribeToSeedExamplesMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../lib/firebase', () => ({
-  app: {},
-  database: { name: 'mock-db' },
-}));
 
 vi.mock('../../lib/seedExamplesDb', () => ({
   subscribeToSeedExamples: subscribeToSeedExamplesMock,
