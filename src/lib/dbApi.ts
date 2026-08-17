@@ -10,7 +10,7 @@ import type {
 import { ApiError, getApiBaseUrl } from './api';
 
 /**
- * Typed client for the PostgreSQL-backed `/api/db` routes.
+ * Typed client for the PostgreSQL-backed `/api/db` backend routes.
  *
  * One place, not a fetch per component. It reuses `getApiBaseUrl` and the
  * `ApiError` shape from `api.ts` so failures surface exactly as they already do
@@ -95,8 +95,22 @@ function send<T>(
   );
 }
 
+/**
+ * Paths are relative to `VITE_API_BASE_URL`, which already carries the `/api`
+ * prefix in deployment (`http://aiswe.uwb.edu/api`).
+ *
+ * So these start at `/db`, not `/api/db`. Writing the full backend path here
+ * produced `…/api/api/db/courses` against the VM and every persistence request
+ * 404'd. The backend routes are unchanged and still mounted at `/api/db`; it is
+ * only the half the client contributes that belongs below.
+ *
+ * Every course-scoped endpoint is built from `coursePath`, so this is the one
+ * place the prefix is decided.
+ */
+const DB_ROOT = '/db';
+
 function coursePath(courseId: string): string {
-  return `/api/db/courses/${encodeURIComponent(courseId)}`;
+  return `${DB_ROOT}/courses/${encodeURIComponent(courseId)}`;
 }
 
 /* ------------------------------------------------------------------------ *
@@ -115,7 +129,7 @@ export interface DbCourseListResponse {
 
 export function listCourses(): Promise<DbCourseListResponse> {
   return get<DbCourseListResponse>(
-    '/api/db/courses',
+    `${DB_ROOT}/courses`,
     'The backend could not load the course list.',
   );
 }
@@ -134,7 +148,7 @@ export interface CreateCourseBody extends Omit<CourseMetadata, 'starterSeedGener
 export function createCourse(body: CreateCourseBody): Promise<DbCourseRecord> {
   return send<DbCourseRecord>(
     'POST',
-    '/api/db/courses',
+    `${DB_ROOT}/courses`,
     body,
     'The backend could not create the course.',
   );
