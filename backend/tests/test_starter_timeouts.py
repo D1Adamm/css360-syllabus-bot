@@ -287,6 +287,20 @@ class StarterJobTimeoutFailureTests(unittest.IsolatedAsyncioTestCase):
                 "app.starter_jobs.best_effort_patch_starter_seed_generation",
                 new=AsyncMock(side_effect=_capture_patch),
             ),
+            # The failure path now reconciles counts before writing `failed`;
+            # stub the reads and the metadata write so this stays offline.
+            patch(
+                "app.firebase_metadata.fetch_course_seed_examples",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "app.firebase_metadata.read_starter_seed_generation",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.firebase_metadata.best_effort_patch_starter_seed_generation",
+                new=AsyncMock(side_effect=_capture_patch),
+            ),
             patch(
                 "app.starter_jobs.generate_starter_seeds_for_course",
                 new=AsyncMock(

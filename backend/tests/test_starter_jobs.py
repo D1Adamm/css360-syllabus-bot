@@ -156,6 +156,25 @@ class StarterJobQueueTests(unittest.IsolatedAsyncioTestCase):
                 "app.starter_jobs.best_effort_patch_starter_seed_generation",
                 new=AsyncMock(side_effect=_capture_patch),
             ),
+            # Reconciliation reads the course's real seed count and writes
+            # through firebase_metadata; stub both so this stays offline.
+            patch(
+                "app.firebase_metadata.fetch_course_seed_examples",
+                new=AsyncMock(
+                    return_value={
+                        f"-Oseed{index}": {"question": "Q?"}
+                        for index in range(3)
+                    }
+                ),
+            ),
+            patch(
+                "app.firebase_metadata.read_starter_seed_generation",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.firebase_metadata.best_effort_patch_starter_seed_generation",
+                new=AsyncMock(side_effect=_capture_patch),
+            ),
             patch(
                 "app.starter_jobs.generate_starter_seeds_for_course",
                 new=AsyncMock(
@@ -196,6 +215,25 @@ class StarterJobQueueTests(unittest.IsolatedAsyncioTestCase):
                 "app.starter_jobs.best_effort_patch_starter_seed_generation",
                 new=AsyncMock(side_effect=_capture_patch),
             ),
+            # Reconciliation reads the course's real seed count and writes
+            # through firebase_metadata; stub both so this stays offline.
+            patch(
+                "app.firebase_metadata.fetch_course_seed_examples",
+                new=AsyncMock(
+                    return_value={
+                        f"-Oseed{index}": {"question": "Q?"}
+                        for index in range(2)
+                    }
+                ),
+            ),
+            patch(
+                "app.firebase_metadata.read_starter_seed_generation",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.firebase_metadata.best_effort_patch_starter_seed_generation",
+                new=AsyncMock(side_effect=_capture_patch),
+            ),
             patch(
                 "app.starter_jobs.generate_starter_seeds_for_course",
                 new=AsyncMock(
@@ -231,6 +269,25 @@ class StarterJobQueueTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch(
                 "app.starter_jobs.best_effort_patch_starter_seed_generation",
+                new=AsyncMock(side_effect=_capture_patch),
+            ),
+            # Reconciliation reads the course's real seed count and writes
+            # through firebase_metadata; stub both so this stays offline.
+            patch(
+                "app.firebase_metadata.fetch_course_seed_examples",
+                new=AsyncMock(
+                    return_value={
+                        f"-Oseed{index}": {"question": "Q?"}
+                        for index in range(0)
+                    }
+                ),
+            ),
+            patch(
+                "app.firebase_metadata.read_starter_seed_generation",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.firebase_metadata.best_effort_patch_starter_seed_generation",
                 new=AsyncMock(side_effect=_capture_patch),
             ),
             patch(

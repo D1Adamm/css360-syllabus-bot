@@ -69,6 +69,7 @@ from app.schemas import (
     TrainingLaunchRequest,
     TrainingLaunchResponse,
 )
+from app.firebase_metadata import reconcile_starter_seed_generation
 from app.firebase_seeds import (
     FirebaseConfigurationError,
     course_seed_example_path,
@@ -464,6 +465,15 @@ async def generate_course_starter_seeds(
             top_up=request.top_up,
         )
 
+    # This route persisted seeds and, until now, left starterSeedGeneration
+    # describing whichever earlier run wrote it. Best-effort: a metadata write
+    # that fails must not fail a request whose seeds are already saved.
+    if request.save:
+        await reconcile_starter_seed_generation(
+            safe_course_id,
+            target_count=result["targetCount"],
+        )
+
     persistence = None
     if result.get("persistence") is not None:
         persistence = StarterSeedPersistence(**result["persistence"])
@@ -506,6 +516,14 @@ async def top_up_course_starter_seeds(
             save=body.save,
             force_refresh=body.force_refresh,
             top_up=True,
+        )
+
+    # The gap this route just closed is exactly what went unrecorded before: a
+    # course topped up to its target kept reporting the first run's shortfall.
+    if body.save:
+        await reconcile_starter_seed_generation(
+            safe_course_id,
+            target_count=result["targetCount"],
         )
 
     persistence = None

@@ -13,6 +13,7 @@ from app.course_id import assert_valid_course_id
 from app.firebase_metadata import (
     best_effort_patch_starter_seed_generation,
     read_starter_seed_generation_status,
+    reconcile_starter_seed_generation,
 )
 from app.ollama_coordination import (
     end_starter_job,
@@ -225,29 +226,47 @@ async def run_auto_starter_seed_generation(course_id: str) -> None:
         final_count = int(progress.get("finalCount", 0))
         saved_count = int(persistence.get("savedCount", 0))
         failed_to_save = int(persistence.get("failedToSaveCount", 0))
-        terminal = _resolve_terminal_status(
-            target_count=target_count,
-            final_count=final_count,
-            saved_count=saved_count,
-        )
-        await best_effort_patch_starter_seed_generation(
+        # Why a short run was short, recorded where an operator reads it.
+        # Without these, "9 of 50" is the whole story, and a thin syllabus is
+        # indistinguishable from a broken extractor.
+        run_detail = {
+            "achievableCeiling": int(progress.get("achievableCeiling", 0)),
+            "limitingFactor": str(progress.get("limitingFactor") or "none"),
+        }
+
+        # Describe the course, not this run. A later top-up adds seeds through a
+        # different route, and a record built only from one run's tally goes
+        # stale the moment that happens.
+        reconciled = await reconcile_starter_seed_generation(
             safe_course_id,
-            {
-                "status": terminal,
-                "targetCount": target_count,
-                "finalCount": final_count,
-                "savedCount": saved_count,
-                "failedToSaveCount": failed_to_save,
-                # Why a short run was short, recorded where an operator reads it.
-                # Without these, "9 of 50" is the whole story, and a thin
-                # syllabus is indistinguishable from a broken extractor.
-                "achievableCeiling": int(progress.get("achievableCeiling", 0)),
-                "limitingFactor": str(progress.get("limitingFactor") or "none"),
-                "error": None,
-                "startedAt": started_at,
-                "completedAt": _utc_now(),
-            },
+            target_count=target_count,
+            started_at=started_at,
+            failed_to_save_count=failed_to_save,
+            extra=run_detail,
         )
+
+        if reconciled is None:
+            # Firebase could not be counted. Fall back to exactly what this job
+            # wrote before reconciliation existed rather than guess.
+            terminal = _resolve_terminal_status(
+                target_count=target_count,
+                final_count=final_count,
+                saved_count=saved_count,
+            )
+            await best_effort_patch_starter_seed_generation(
+                safe_course_id,
+                {
+                    "status": terminal,
+                    "targetCount": target_count,
+                    "finalCount": final_count,
+                    "savedCount": saved_count,
+                    "failedToSaveCount": failed_to_save,
+                    **run_detail,
+                    "error": None,
+                    "startedAt": started_at,
+                    "completedAt": _utc_now(),
+                },
+            )
     except Exception as exc:  # noqa: BLE001 - background job must not crash the server
         logger.exception(
             "Automatic starter seed generation failed for course %s",
@@ -257,19 +276,35 @@ async def run_auto_starter_seed_generation(course_id: str) -> None:
             error_text = str(exc.detail)
         else:
             error_text = str(exc)
-        await best_effort_patch_starter_seed_generation(
+
+        # The run failed, and it stays failed — that is what an operator needs
+        # to see. The counts are still reconciled, because "this run failed" and
+        # "this course has no seeds" are different facts and writing zeros
+        # asserted both. A partially successful run that then crashed really
+        # does hold the seeds it saved.
+        reconciled = await reconcile_starter_seed_generation(
             safe_course_id,
-            {
-                "status": "failed",
-                "targetCount": target_count,
-                "finalCount": 0,
-                "savedCount": 0,
-                "failedToSaveCount": 0,
-                "error": error_text[:500],
-                "startedAt": started_at,
-                "completedAt": _utc_now(),
-            },
+            target_count=target_count,
+            started_at=started_at,
+            failed_to_save_count=0,
+            error=error_text[:500],
+            force_status="failed",
         )
+
+        if reconciled is None:
+            await best_effort_patch_starter_seed_generation(
+                safe_course_id,
+                {
+                    "status": "failed",
+                    "targetCount": target_count,
+                    "finalCount": 0,
+                    "savedCount": 0,
+                    "failedToSaveCount": 0,
+                    "error": error_text[:500],
+                    "startedAt": started_at,
+                    "completedAt": _utc_now(),
+                },
+            )
     finally:
         _active_starter_jobs.discard(safe_course_id)
         await end_starter_job(course_id=safe_course_id)
