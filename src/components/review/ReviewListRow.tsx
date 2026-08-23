@@ -42,15 +42,6 @@ export interface ReviewListRowProps {
   onReject: (seedId: string) => void;
 }
 
-/** Enough of the answer to recognise it without opening the row. */
-const PREVIEW_LENGTH = 160;
-
-function preview(text: string): string {
-  return text.length > PREVIEW_LENGTH
-    ? `${text.slice(0, PREVIEW_LENGTH).trimEnd()}…`
-    : text;
-}
-
 /**
  * One example as a row in the fast review list.
  *
@@ -62,8 +53,10 @@ function preview(text: string): string {
  *
  * Collapsed still shows the question, the status and the actions — a row you
  * cannot act on without expanding it is a row that has not saved anyone any
- * time. Expanding adds the full answer and the syllabus evidence, which is
- * what "is this actually right" needs.
+ * time. It also shows the answer in full: the answer is the thing being
+ * approved, and a professor cannot judge a sentence they can only see the
+ * first line of. Collapsing hides the supporting material — the syllabus
+ * evidence and the edit history — not the decision itself.
  */
 export function ReviewListRow({
   example,
@@ -245,9 +238,7 @@ export function ReviewListRow({
         <>
           <p className="review-row__question">{question}</p>
 
-          <p className={expanded ? 'review-row__answer' : 'review-row__answer-preview'}>
-            {expanded ? answer : preview(answer)}
-          </p>
+          <p className="review-row__answer">{answer}</p>
 
           {expanded && evidence && (
             <figure className="review-row__evidence">

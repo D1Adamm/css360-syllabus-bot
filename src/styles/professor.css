@@ -646,17 +646,17 @@
   color: var(--ink-900);
 }
 
-.review-row__answer,
-.review-row__answer-preview {
+/* The answer is never clipped: no clamp, no fixed height, no ellipsis. A row
+   grows to whatever its answer needs, because the answer is what is being
+   approved. */
+.review-row__answer {
   margin: 0;
   max-width: var(--measure);
   font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
   color: var(--ink-700);
-}
-
-.review-row__answer {
   white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .review-row__evidence {

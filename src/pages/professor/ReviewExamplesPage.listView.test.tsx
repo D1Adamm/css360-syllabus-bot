@@ -289,11 +289,18 @@ describe('ReviewExamplesPage list view', () => {
   });
 
   describe('expand and collapse', () => {
-    it('collapses to a preview and expands to the full answer and evidence', async () => {
+    it('collapses the supporting evidence, never the answer itself', async () => {
       renderPage();
       await screen.findByText('Can I submit late?');
 
       const row = rowFor('Can I submit late?');
+      // The answer is the thing being approved, so it reads in full collapsed.
+      expect(
+        within(row).getByText(
+          'Late work may be submitted within 24 hours for a 10% penalty.',
+        ),
+      ).toBeInTheDocument();
+      // The syllabus quote is supporting material and waits for an expand.
       expect(
         within(row).queryByText(
           'Late work is accepted for 24 hours at a 10% penalty.',
@@ -311,6 +318,50 @@ describe('ReviewExamplesPage list view', () => {
           'Late work is accepted for 24 hours at a 10% penalty.',
         ),
       ).toBeInTheDocument();
+    });
+
+    it('renders a long answer whole, collapsed and expanded alike', async () => {
+      const longAnswer = Array.from(
+        { length: 12 },
+        (_, i) =>
+          `Sentence ${i + 1} of the late-work policy, spelled out at the kind of ` +
+          'length a generated answer actually reaches in practice.',
+      ).join(' ');
+
+      loadSeeds([
+        {
+          id: 'seed-long',
+          question: 'What exactly is the late work policy?',
+          answer: longAnswer,
+          category: 'Late work',
+          reviewStatus: 'generated',
+          origin: 'ai_generated',
+        },
+      ]);
+
+      renderPage();
+      await screen.findByText('What exactly is the late work policy?');
+
+      const paragraph = document.querySelector('.review-row__answer');
+      expect(paragraph).not.toBeNull();
+
+      // Every character, collapsed. No slice, no ellipsis.
+      expect(paragraph).toHaveTextContent(longAnswer);
+      expect(paragraph?.textContent).toBe(longAnswer);
+      expect(paragraph?.textContent).not.toMatch(/…|\.\.\./);
+
+      // Nothing clips it either: no clamp, no fixed height, no hidden overflow.
+      const styles = getComputedStyle(paragraph as Element);
+      expect(styles.getPropertyValue('-webkit-line-clamp')).toBe('');
+      expect(styles.getPropertyValue('line-clamp')).toBe('');
+      expect(['', 'visible']).toContain(styles.overflow);
+      expect(['', 'none', 'auto']).toContain(styles.maxHeight);
+      expect(['', 'auto']).toContain(styles.height);
+
+      fireEvent.click(screen.getByRole('button', { name: /^Expand example 1/ }));
+      expect(
+        document.querySelector('.review-row__answer')?.textContent,
+      ).toBe(longAnswer);
     });
 
     it('expands and collapses one example without touching the others', async () => {
