@@ -100,18 +100,41 @@ export interface ReviewDraft {
   reviewNotes?: string;
 }
 
+/** Outcome of a bulk review run. Failures are reported, never hidden. */
+export interface BulkReviewResult {
+  succeeded: string[];
+  failed: string[];
+}
+
+/**
+ * How many review requests are in flight at once during a bulk action.
+ *
+ * Selecting fifty examples must not become fifty simultaneous requests: the
+ * backend writes each one to Postgres, and a burst is how a review session
+ * turns into a pile of timeouts. Four keeps a batch of fifty comfortably
+ * quick while staying polite.
+ */
+export const BULK_REVIEW_CONCURRENCY = 4;
+
 export interface UseExampleReviewResult {
   examples: CourseSeedReviewRecord[];
   counts: ExampleCounts;
   loading: boolean;
   error: string | null;
   busyId: string | null;
+  /** True while a bulk action is running. */
+  bulkBusy: boolean;
   actionMessage: string | null;
   actionFailed: boolean;
   reload: () => Promise<void>;
-  approve: (seedId: string) => Promise<void>;
-  reject: (seedId: string) => Promise<void>;
-  saveEdit: (seedId: string, draft: ReviewDraft) => Promise<void>;
+  /** Resolves true when the write landed; false when it failed and rolled back. */
+  approve: (seedId: string) => Promise<boolean>;
+  reject: (seedId: string) => Promise<boolean>;
+  saveEdit: (seedId: string, draft: ReviewDraft) => Promise<boolean>;
+  reviewMany: (
+    seedIds: string[],
+    reviewStatus: Extract<SeedReviewStatus, 'approved' | 'rejected'>,
+  ) => Promise<BulkReviewResult>;
 }
 
 export function useExampleReview(courseId: string): UseExampleReviewResult {
@@ -119,6 +142,7 @@ export function useExampleReview(courseId: string): UseExampleReviewResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionFailed, setActionFailed] = useState(false);
 
@@ -157,7 +181,7 @@ export function useExampleReview(courseId: string): UseExampleReviewResult {
         reviewNotes?: string;
       },
       successMessage: string,
-    ) => {
+    ): Promise<boolean> => {
       setBusyId(seedId);
       setActionMessage(null);
       setActionFailed(false);
@@ -209,6 +233,7 @@ export function useExampleReview(courseId: string): UseExampleReviewResult {
           mergeReviewedSeed(current, seedId, response.seed, reviewStatus),
         );
         setActionMessage(successMessage);
+        return true;
       } catch (err) {
         setExamples(snapshot);
         setActionFailed(true);
@@ -217,6 +242,7 @@ export function useExampleReview(courseId: string): UseExampleReviewResult {
             ? err.message
             : 'That change could not be saved. Try again in a moment.',
         );
+        return false;
       } finally {
         setBusyId(null);
       }
@@ -262,17 +288,97 @@ export function useExampleReview(courseId: string): UseExampleReviewResult {
     [applyReviewAction],
   );
 
+  /*
+   * Bulk approve / reject.
+   *
+   * Deliberately not optimistic. A single review can afford to move the card
+   * out of the queue immediately and roll back if the write fails, because the
+   * professor is looking straight at it. Fifty cannot: showing forty-eight
+   * successes and two silent reversions is exactly the failure mode that makes
+   * a professor trust a count that isn't real. So each example is updated only
+   * once its own write has come back, and the summary states both numbers.
+   */
+  const reviewMany = useCallback(
+    async (
+      seedIds: string[],
+      reviewStatus: Extract<SeedReviewStatus, 'approved' | 'rejected'>,
+    ): Promise<BulkReviewResult> => {
+      const ids = seedIds.map((id) => String(id || '').trim()).filter(Boolean);
+      const result: BulkReviewResult = { succeeded: [], failed: [] };
+      if (ids.length === 0) {
+        return result;
+      }
+
+      setBulkBusy(true);
+      setActionMessage(null);
+      setActionFailed(false);
+
+      try {
+        for (let start = 0; start < ids.length; start += BULK_REVIEW_CONCURRENCY) {
+          const batch = ids.slice(start, start + BULK_REVIEW_CONCURRENCY);
+          const settled = await Promise.all(
+            batch.map(async (seedId) => {
+              try {
+                const response = await reviewCourseSeed(courseId, seedId, {
+                  reviewStatus,
+                });
+                return { seedId, seed: response.seed };
+              } catch {
+                return { seedId, seed: null };
+              }
+            }),
+          );
+
+          for (const outcome of settled) {
+            if (outcome.seed) {
+              result.succeeded.push(outcome.seedId);
+              setExamples((current) =>
+                mergeReviewedSeed(
+                  current,
+                  outcome.seedId,
+                  outcome.seed as CourseSeedReviewRecord,
+                  reviewStatus,
+                ),
+              );
+            } else {
+              result.failed.push(outcome.seedId);
+            }
+          }
+        }
+      } finally {
+        setBulkBusy(false);
+      }
+
+      const verb = reviewStatus === 'approved' ? 'approved' : 'rejected';
+      const done = result.succeeded.length;
+      const failed = result.failed.length;
+      setActionFailed(failed > 0);
+      setActionMessage(
+        failed === 0
+          ? `${done} ${done === 1 ? 'example' : 'examples'} ${verb}.`
+          : `${done} ${verb}. ${failed} could not be saved and ${
+              failed === 1 ? 'is' : 'are'
+            } unchanged.`,
+      );
+
+      return result;
+    },
+    [courseId],
+  );
+
   return {
     examples,
     counts,
     loading,
     error,
     busyId,
+    bulkBusy,
     actionMessage,
     actionFailed,
     reload,
     approve,
     reject,
     saveEdit,
+    reviewMany,
   };
 }

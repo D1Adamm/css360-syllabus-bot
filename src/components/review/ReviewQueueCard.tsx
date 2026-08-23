@@ -9,6 +9,11 @@ import {
   resolveExampleStatus,
 } from '../../lib/exampleCounts';
 import type { ReviewDraft } from '../../hooks/useExampleReview';
+import {
+  exampleSourceLabel,
+  reviewStatusLabel,
+  reviewStatusTone,
+} from './reviewLabels';
 
 export interface ReviewQueueCardProps {
   example: CourseSeedReviewRecord;
@@ -16,19 +21,6 @@ export interface ReviewQueueCardProps {
   onApprove: (seedId: string) => void;
   onReject: (seedId: string) => void;
   onSaveEdit: (seedId: string, draft: ReviewDraft) => void;
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  generated: 'Awaiting review',
-  approved: 'Approved',
-  rejected: 'Rejected',
-  edited: 'Edited',
-};
-
-function sourceLabel(example: CourseSeedReviewRecord): string {
-  return String(example.origin || '').trim() === 'user'
-    ? 'Student submitted'
-    : 'AI generated';
 }
 
 /**
@@ -83,20 +75,10 @@ export function ReviewQueueCard({
     <article className="review-card">
       <header className="review-card__header">
         <div className="review-card__labels">
-          <StatusPill
-            tone={
-              status === 'approved'
-                ? 'success'
-                : status === 'rejected'
-                  ? 'danger'
-                  : status === 'edited'
-                    ? 'info'
-                    : 'warning'
-            }
-          >
-            {STATUS_LABEL[status] ?? 'Awaiting review'}
+          <StatusPill tone={reviewStatusTone(status)}>
+            {reviewStatusLabel(status)}
           </StatusPill>
-          <span className="review-card__source">{sourceLabel(example)}</span>
+          <span className="review-card__source">{exampleSourceLabel(example)}</span>
           {category && <span className="review-card__category">{category}</span>}
           {wasEdited && status !== 'edited' && (
             <StatusPill tone="neutral" dot={false}>

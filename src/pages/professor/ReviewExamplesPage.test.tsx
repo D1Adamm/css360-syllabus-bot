@@ -94,6 +94,17 @@ function renderPage() {
   );
 }
 
+/**
+ * Card view is no longer the default; list view is.
+ *
+ * These tests are the card-view suite and keep asserting card behaviour, so
+ * they switch to it explicitly rather than being rewritten into list tests.
+ * List view has its own file.
+ */
+function switchToCardView() {
+  fireEvent.click(screen.getByRole('button', { name: 'Card view' }));
+}
+
 /** The count badge rendered inside a filter tab. */
 function countOnTab(label: string): string {
   const tab = screen.getByRole('tab', { name: new RegExp(`^${label}`) });
@@ -198,6 +209,7 @@ describe('ReviewExamplesPage', () => {
   it('approves a seed via the review endpoint', async () => {
     renderPage();
     await screen.findByText('Can I submit late?');
+    switchToCardView();
     const approveButtons = screen.getAllByRole('button', { name: 'Approve' });
     fireEvent.click(approveButtons[0]);
     await waitFor(() => {
@@ -212,6 +224,7 @@ describe('ReviewExamplesPage', () => {
   it('removes approved seed from Generated filter and updates counts immediately', async () => {
     renderPage();
     await screen.findByText('Can I submit late?');
+    switchToCardView();
     fireEvent.click(screen.getByRole('tab', { name: /^Awaiting review/ }));
     expect(screen.getByText('Can I submit late?')).toBeInTheDocument();
     expect(countOnTab('Awaiting review')).toBe('1');
@@ -258,6 +271,7 @@ describe('ReviewExamplesPage', () => {
 
     renderPage();
     await screen.findByText('Can I submit late?');
+    switchToCardView();
     fireEvent.click(screen.getByRole('tab', { name: /^Awaiting review/ }));
     expect(countOnTab('Awaiting review')).toBe('2');
 
@@ -329,6 +343,7 @@ describe('ReviewExamplesPage', () => {
     await waitFor(() => {
       expect(countOnTab('Edited')).toBe('1');
     });
+    switchToCardView();
     fireEvent.click(screen.getByRole('tab', { name: /^Edited/ }));
     expect(screen.getByText('How does grading work?')).toBeInTheDocument();
     expect(countOnTab('Edited')).toBe('1');
@@ -361,6 +376,7 @@ describe('ReviewExamplesPage', () => {
   it('filters by approved status', async () => {
     renderPage();
     await screen.findByText('Can I submit late?');
+    switchToCardView();
     expect(screen.getByText('1 of 1')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: /^Approved/ }));
@@ -393,6 +409,7 @@ describe('ReviewExamplesPage', () => {
 
     renderPage();
     await screen.findByText('Can I submit late?');
+    switchToCardView();
     expect(screen.getByText('1 of 2')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Previous/ })).toBeDisabled();
 

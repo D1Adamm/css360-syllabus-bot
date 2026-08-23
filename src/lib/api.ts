@@ -293,6 +293,8 @@ export interface CourseSeedReviewRecord {
   evidenceQuote?: string | null;
   sourceChunkIds?: string[] | null;
   origin?: string | null;
+  /** Punctuation/case-normalised question, written at generation time. */
+  normalizedQuestionKey?: string | null;
   status?: string | null;
   reviewStatus?: string | null;
   reviewNotes?: string | null;
