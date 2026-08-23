@@ -1,19 +1,19 @@
 # Seed Dataset Export
 
 > **Legacy / not used by current QLoRA training.**  
-> Prefer approved Firebase export via `backend/scripts/prepare_qlora_dataset.py`
+> Prefer the approved export via `backend/scripts/prepare_qlora_dataset.py`
 > (see `training/README.md`).
 
-This document describes the read-only local export script used to combine prototype seed examples and student-created Firebase examples for later review and fine-tuning preparation.
+This document describes the read-only local export script used to combine prototype seed examples with a course's stored examples for later review and fine-tuning preparation.
 
-This step **only prepares data**. It does **not** train or fine-tune a model, and it does **not** modify or delete Firebase data.
+This step **only prepares data**. It does **not** train or fine-tune a model, and it does **not** modify or delete stored course data.
 
 ## What the export includes
 
 The script combines:
 
 1. Prototype examples from `src/data/seedData.json`
-2. Student-created examples from Firebase Realtime Database path `seedExamples`
+2. The course's stored examples, read through `GET /api/db/courses/{courseId}/seeds`
 
 Each exported record preserves useful fields such as:
 
@@ -64,7 +64,7 @@ python3 scripts/export_seed_dataset.py
 
 No extra Python packages are required. The script uses the Python standard library only.
 
-If Firebase is unavailable, the script still exports prototype examples and prints a warning for the skipped Firebase data.
+If the backend is unavailable, the script still exports prototype examples and prints a warning for the skipped stored data.
 
 ## Required environment variables
 
@@ -72,36 +72,31 @@ The script reads environment variables from the shell and from a local `.env` fi
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `FIREBASE_DATABASE_URL` | Preferred for scripts | Firebase Realtime Database URL |
-| `VITE_FIREBASE_DATABASE_URL` | Fallback | Same value used by the frontend if `FIREBASE_DATABASE_URL` is not set |
-| `FIREBASE_AUTH_TOKEN` | Only if rules require auth | Firebase auth token for read-only REST access |
+| `EXPORT_COURSE_ID` | Yes | Which course's seeds to export — seeds are course-scoped, so there is no unscoped read |
+| `API_BASE_URL` | Preferred for scripts | Backend origin, e.g. `http://127.0.0.1:8001` |
+| `VITE_API_BASE_URL` | Fallback | The same value the frontend uses, if `API_BASE_URL` is not set |
 
 Example `.env` values:
 
 ```bash
-FIREBASE_DATABASE_URL=https://your-project-default-rtdb.firebaseio.com
-# Optional, only if database rules require authentication:
-# FIREBASE_AUTH_TOKEN=your-read-token
+EXPORT_COURSE_ID=css-360-winter-2026-a7rp
+API_BASE_URL=http://127.0.0.1:8001
 ```
 
-You can copy the database URL from the existing frontend Firebase configuration in `.env.example`.
+## Backend access assumptions
 
-## Firebase access assumptions
-
-The script uses a **read-only** Firebase Realtime Database REST request:
+The script makes one **read-only** request through FastAPI:
 
 ```text
-GET {FIREBASE_DATABASE_URL}/seedExamples.json
+GET {API_BASE_URL}/api/db/courses/{EXPORT_COURSE_ID}/seeds
 ```
 
 Behavior:
 
-- If database rules allow public reads, no auth token is needed.
-- If authentication is required, set `FIREBASE_AUTH_TOKEN`.
-- The script never writes to Firebase.
+- It talks to the backend, never to PostgreSQL, so it needs no database
+  credentials and none can leak through it.
+- The script never writes.
 - Credentials are not hardcoded and should not be committed.
-
-If your project is temporarily using public read access for classroom prototyping, document that assumption in your deployment notes and tighten rules before production use.
 
 ## Review workflow
 

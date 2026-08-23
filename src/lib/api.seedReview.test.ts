@@ -17,7 +17,6 @@ describe('seed review API helpers', () => {
       json: async () => ({
         courseId: 'css-360-winter-2026-a7rp',
         count: 1,
-        firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples',
         seeds: [{ id: 's1', question: 'Q?', answer: 'A', reviewStatus: 'generated' }],
       }),
     });
@@ -29,9 +28,7 @@ describe('seed review API helpers', () => {
       expect.objectContaining({ method: 'GET' }),
     );
     expect(result.count).toBe(1);
-    expect(result.firebasePath).toBe(
-      'courses/css-360-winter-2026-a7rp/seedExamples',
-    );
+    expect(result.seeds[0].id).toBe('s1');
   });
 
   it('posts review updates for a seed', async () => {
@@ -40,7 +37,6 @@ describe('seed review API helpers', () => {
       json: async () => ({
         courseId: 'css-360-winter-2026-a7rp',
         seedId: 'seed-1',
-        firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples/seed-1',
         seed: { id: 'seed-1', reviewStatus: 'approved' },
       }),
     });

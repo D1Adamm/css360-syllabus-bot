@@ -6,9 +6,8 @@ shape is still moving; flattening them would mean a schema migration every time
 a field is added, and neither is ever queried by field.
 
 The one-active-request-per-course rule from `createCourseModelRequest` is kept.
-The frontend enforces it with a Firebase transaction; here the same guarantee
-comes from a conditional INSERT that only fires when no active row exists, so
-two concurrent requests cannot both see an empty slot.
+The guarantee comes from a conditional INSERT that only fires when no active
+row exists, so two concurrent requests cannot both see an empty slot.
 """
 
 from __future__ import annotations

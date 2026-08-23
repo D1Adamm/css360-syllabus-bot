@@ -1,7 +1,12 @@
 """Phase 8 local export of reviewed/approved fine-tuning examples.
 
-Writes under data/exports/{courseId}/ and never invents a second Firebase path.
-Firebase remains courses/{courseId}/seedExamples only.
+Writes under data/exports/{courseId}/. Reads nothing itself: the seeds are
+handed in by the caller, which loads them from the `seed_examples` table.
+
+Older summaries and snapshots in data/exports/ carry a `firebasePath` key
+naming the Realtime Database node the seeds used to live in. It is not written
+any more — there is no such node — but the existing files are historical
+records of exports that really happened and are deliberately left alone.
 """
 
 from __future__ import annotations
@@ -203,7 +208,6 @@ def export_approved_seeds(
         "exportPath": str(finetune_path),
         "skippedCount": skipped,
         "reviewStatusCounts": by_status,
-        "firebasePath": f"courses/{course_id}/seedExamples",
         "files": {
             "finetuneJsonl": str(finetune_path),
             "metadataJson": str(metadata_path),
@@ -233,7 +237,6 @@ def write_generation_snapshot(
     payload = {
         "courseId": course_id,
         "savedAt": datetime.now(timezone.utc).isoformat(),
-        "firebasePath": f"courses/{course_id}/seedExamples",
         "progress": progress or {},
         "seedCount": len(seeds),
         "seeds": [metadata_record(seed) for seed in seeds],

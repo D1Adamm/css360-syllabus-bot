@@ -1,15 +1,20 @@
 """Unit tests for the durable training queue and the Tillicum runner.
 
-Nothing here touches the network, Slurm, or the cluster: the HTTP transport is
-injected, so every request the queue would make is inspected instead of sent.
+The queue now lives in PostgreSQL and the runner reaches it through the
+backend's `/api/training-queue` router. Nothing here touches the network,
+Slurm, or the cluster: the HTTP transport is injected, so every request the
+queue would make is inspected instead of sent, and the endpoints it would hit
+are served by an in-memory stand-in.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
+import urllib.parse
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -40,7 +45,8 @@ COURSE_A = "css-490-spring-2026-cgvl"
 COURSE_B = "css-350-winter-2026-drlb"
 NOW = datetime(2026, 8, 12, 18, 0, 0, tzinfo=timezone.utc)
 
-DATABASE_URL = "https://example-default-rtdb.firebaseio.com"
+API_BASE_URL = "https://backend.example.test"
+WORKER_TOKEN = "test-worker-token"
 
 
 def make_run_record(
@@ -122,99 +128,276 @@ def boom_launcher(command: list[str], cwd: Path) -> "runner.LauncherResult":
     raise AssertionError(f"launcher must not be called: {command} cwd={cwd}")
 
 
-class FakeFirebase:
-    """An in-memory database that behaves like the REST API's ETag contract.
+class FakeQueueApi:
+    """An in-memory stand-in for the backend's `/api/training-queue` router.
 
-    The ETag changes on every write, which is exactly the property a claim
-    depends on: a runner holding a stale tag must be refused.
+    The queue moved from a database the runner wrote directly to an HTTP API in
+    front of PostgreSQL, and this models that API rather than the store behind
+    it. What it has to get right is the contract the runner programs against:
+    which runs `/pending` offers, that `/claim` hands out at most one and only
+    to the first caller, and that a submission moves the run and the model
+    request together.
+
+    `claim` is served the way the real endpoint is — pick the oldest eligible
+    run, mark it claimed, return it — because that is what a single
+    `SELECT ... FOR UPDATE SKIP LOCKED` plus its UPDATE amounts to from the
+    caller's side. The real atomicity is asserted against the SQL itself, in
+    the backend suite.
     """
 
-    def __init__(self, tree: dict | None = None) -> None:
-        self.tree: dict = tree or {}
-        self.versions: dict[str, int] = {}
-        self.requests: list[tuple[str, str]] = []
+    def __init__(
+        self,
+        *,
+        runs: dict | None = None,
+        requests: dict | None = None,
+    ) -> None:
+        # {courseId: {runId: record}}
+        self.runs: dict = runs or {}
+        # {courseId: record}
+        self.model_requests: dict = requests or {}
+        self.calls: list[tuple[str, str]] = []
         self.writes: list[tuple[str, str, object]] = []
+        self.model_versions: list[dict] = []
+        self.token_seen: list[str] = []
 
-    # -- path helpers ----------------------------------------------------- #
-    def _path_from_url(self, url: str) -> tuple[str, str]:
-        without_base = url[len(DATABASE_URL) + 1 :]
-        path, _, query = without_base.partition("?")
-        return path[: -len(".json")], query
+    # -- accessors used by tests ------------------------------------------ #
+    def run(self, course_id: str, run_id: str) -> dict | None:
+        return self.runs.get(course_id, {}).get(run_id)
 
-    def _read(self, path: str):
-        node = self.tree
-        for part in [segment for segment in path.split("/") if segment]:
-            if not isinstance(node, dict) or part not in node:
-                return None
-            node = node[part]
-        return node
+    def request(self, course_id: str) -> dict | None:
+        return self.model_requests.get(course_id)
 
-    def _write(self, path: str, value) -> None:
-        parts = [segment for segment in path.split("/") if segment]
-        node = self.tree
-        for part in parts[:-1]:
-            node = node.setdefault(part, {})
-        if value is None:
-            node.pop(parts[-1], None)
+    def set_run(self, course_id: str, run_id: str, record: dict | None) -> None:
+        course = self.runs.setdefault(course_id, {})
+        if record is None:
+            course.pop(run_id, None)
         else:
-            node[parts[-1]] = value
-        self.versions[path] = self.versions.get(path, 0) + 1
+            course[run_id] = record
 
-    def etag(self, path: str) -> str:
-        return f'"v{self.versions.get(path, 0)}"'
+    def set_request(self, course_id: str, record: dict) -> None:
+        self.model_requests[course_id] = record
 
-    # -- transport -------------------------------------------------------- #
+    # -- queue semantics --------------------------------------------------- #
+    def _claimable(self, course_ids: list | None, now: datetime) -> list[tuple[str, str, dict]]:
+        found = []
+        for course_id, runs in self.runs.items():
+            if course_ids is not None and course_id not in course_ids:
+                continue
+            for run_id, record in runs.items():
+                parsed = queue_module.parse_run(run_id, record)
+                if parsed is not None and queue_module.is_claimable(parsed, now):
+                    found.append((course_id, run_id, record))
+        return sorted(found, key=lambda item: item[2].get("enqueuedAt", ""))
+
+    def _api_record(self, course_id: str, run_id: str) -> dict:
+        return {**self.runs[course_id][run_id], "runId": run_id}
+
+    def _merge_request(self, course_id: str, patch: dict) -> dict:
+        current = dict(self.model_requests.get(course_id) or {})
+        for key, value in patch.items():
+            if value is None:
+                current.pop(key, None)
+            else:
+                current[key] = value
+        self.model_requests[course_id] = current
+        self.writes.append(("request", course_id, dict(patch)))
+        return current
+
+    def _merge_run(self, course_id: str, run_id: str, patch: dict) -> dict:
+        current = dict(self.runs[course_id][run_id])
+        for key, value in patch.items():
+            if value is None:
+                current.pop(key, None)
+            else:
+                current[key] = value
+        self.runs[course_id][run_id] = current
+        self.writes.append(("run", f"{course_id}/{run_id}", dict(patch)))
+        return current
+
+    # -- transport --------------------------------------------------------- #
     def transport(self, method: str, url: str, body: bytes | None, headers: dict):
-        path, query = self._path_from_url(url)
-        self.requests.append((method, path))
+        assert url.startswith(API_BASE_URL + queue_module.QUEUE_PREFIX), url
+        self.token_seen.append(headers.get(queue_module.WORKER_TOKEN_HEADER, ""))
 
-        if method == "GET":
-            value = self._read(path)
-            if query.startswith("shallow=true") and isinstance(value, dict):
-                value = {key: True for key in value}
-            response_headers = {}
-            if headers.get("X-Firebase-ETag") == "true":
-                response_headers["etag"] = self.etag(path)
-            return queue_module.HttpResponse(
-                status=200,
-                headers=response_headers,
-                body=json.dumps(value),
-            )
-
+        rest = url[len(API_BASE_URL) + len(queue_module.QUEUE_PREFIX) :]
+        path, _, query = rest.partition("?")
+        self.calls.append((method, path + (f"?{query}" if query else "")))
         payload = json.loads(body.decode("utf-8")) if body else None
 
-        if method == "PUT":
-            expected = headers.get("if-match")
-            if expected is not None and expected != self.etag(path):
-                return queue_module.HttpResponse(status=412, headers={}, body="null")
-            self._write(path, payload)
-            self.writes.append((method, path, payload))
+        def ok(value):
             return queue_module.HttpResponse(
-                status=200, headers={}, body=json.dumps(payload)
+                status=200, headers={}, body=json.dumps(value)
             )
 
-        if method == "PATCH":
-            current = self._read(path)
-            merged = dict(current) if isinstance(current, dict) else {}
-            for key, value in (payload or {}).items():
-                if value is None:
-                    merged.pop(key, None)
-                else:
-                    merged[key] = value
-            self._write(path, merged)
-            self.writes.append((method, path, payload))
+        def error(status: int, detail: str):
             return queue_module.HttpResponse(
-                status=200, headers={}, body=json.dumps(payload)
+                status=status, headers={}, body=json.dumps({"detail": detail})
             )
 
-        raise AssertionError(f"Unexpected method {method}")
+        if method == "GET" and path == "/pending":
+            course_ids = None
+            if query:
+                course_ids = [urllib.parse.parse_qs(query)["course_id"][0]]
+            runs = [
+                self._api_record(course_id, run_id)
+                for course_id, run_id, _ in self._claimable(course_ids, self.now)
+            ]
+            return ok({"count": len(runs), "runs": runs})
+
+        if method == "POST" and path == "/claim":
+            course_ids = payload.get("courseIds")
+            lease = int(payload.get("leaseSeconds") or queue_module.DEFAULT_LEASE_SECONDS)
+            candidates = self._claimable(course_ids, self.now)
+            if not candidates:
+                return ok({"claimed": False, "run": None})
+            course_id, run_id, record = candidates[0]
+            self._merge_run(
+                course_id,
+                run_id,
+                {
+                    "state": "claimed",
+                    "attempt": int(record.get("attempt", 0)) + 1,
+                    "updatedAt": queue_module.iso(self.now),
+                    "claim": {
+                        "owner": payload["owner"],
+                        "claimedAt": queue_module.iso(self.now),
+                        "expiresAt": queue_module.iso(
+                            self.now + timedelta(seconds=lease)
+                        ),
+                    },
+                },
+            )
+            return ok({"claimed": True, "run": self._api_record(course_id, run_id)})
+
+        parts = [segment for segment in path.split("/") if segment]
+
+        if method == "POST" and len(parts) == 3 and parts[0] == "courses" and parts[2] == "model-versions":
+            course_id = parts[1]
+            version = payload.get("version") or f"v{len(self.model_versions) + 1}"
+            self.model_versions.append({"courseId": course_id, **payload, "version": version})
+            if payload.get("status") == "ready":
+                self._merge_request(
+                    course_id,
+                    {"status": "ready", "failureMessage": None, "launchError": None},
+                )
+            return ok(
+                {
+                    "courseId": course_id,
+                    "version": version,
+                    "currentVersion": version,
+                    "requestStatus": "ready" if payload.get("status") == "ready" else None,
+                }
+            )
+
+        if method == "POST" and len(parts) == 5 and parts[0] == "courses" and parts[2] == "runs":
+            course_id, run_id, action = parts[1], parts[3], parts[4]
+            if self.run(course_id, run_id) is None:
+                return error(404, f'Training run "{run_id}" was not found.')
+
+            if action == "release":
+                patch = {
+                    "state": "queued",
+                    "updatedAt": queue_module.iso(self.now),
+                    "claim": None,
+                }
+                if payload.get("error") is not None:
+                    patch["error"] = payload["error"]
+                self._merge_run(course_id, run_id, patch)
+                return ok(self._api_record(course_id, run_id))
+
+            if action == "submitted":
+                job_id = payload["jobId"]
+                submitted_at = queue_module.iso(self.now)
+                run = self._merge_run(
+                    course_id,
+                    run_id,
+                    {
+                        "state": "submitted",
+                        "updatedAt": submitted_at,
+                        "jobId": job_id,
+                        "trainExamples": int(payload.get("trainExamples", 0)),
+                        "validationExamples": int(payload.get("validationExamples", 0)),
+                        "claim": None,
+                        "error": None,
+                    },
+                )
+                self._merge_request(
+                    course_id,
+                    {
+                        "status": "training",
+                        "updatedAt": submitted_at,
+                        "currentRunId": run_id,
+                        "launchError": None,
+                        "training": {
+                            "jobId": job_id,
+                            "mode": run["mode"],
+                            "submittedAt": submitted_at,
+                            "datasetRef": run.get("datasetRef", ""),
+                            "trainExamples": int(payload.get("trainExamples", 0)),
+                            "validationExamples": int(payload.get("validationExamples", 0)),
+                        },
+                    },
+                )
+                return ok(
+                    {
+                        "run": self._api_record(course_id, run_id),
+                        "requestStatus": "training",
+                    }
+                )
+
+            if action == "submission-failed":
+                self._merge_run(
+                    course_id,
+                    run_id,
+                    {
+                        "state": "queued",
+                        "updatedAt": queue_module.iso(self.now),
+                        "claim": None,
+                        "error": payload["error"],
+                    },
+                )
+                self._merge_request(
+                    course_id,
+                    {
+                        "launchError": payload["error"],
+                        "updatedAt": queue_module.iso(self.now),
+                        "currentRunId": run_id,
+                    },
+                )
+                return ok(self._api_record(course_id, run_id))
+
+            if action == "failed":
+                self._merge_run(
+                    course_id,
+                    run_id,
+                    {
+                        "state": "failed",
+                        "updatedAt": queue_module.iso(self.now),
+                        "claim": None,
+                        "error": payload["error"],
+                    },
+                )
+                self._merge_request(
+                    course_id,
+                    {
+                        "status": "failed",
+                        "failureMessage": "Training did not finish successfully.",
+                        "launchError": payload["error"],
+                    },
+                )
+                return ok(self._api_record(course_id, run_id))
+
+        raise AssertionError(f"Unexpected request {method} {path}")
+
+    #: The clock the fake stamps leases with. Tests move it to exercise expiry.
+    now = NOW
 
 
-def build_queue(fake: FakeFirebase) -> "queue_module.TrainingQueue":
+def build_queue(fake: FakeQueueApi) -> "queue_module.TrainingQueue":
     return queue_module.TrainingQueue(
-        queue_module.FirebaseRest(
-            database_url=DATABASE_URL,
-            auth_token=None,
+        queue_module.TrainingQueueApi(
+            base_url=API_BASE_URL,
+            worker_token=WORKER_TOKEN,
             transport=fake.transport,
         )
     )
@@ -277,9 +460,7 @@ class SelectionTests(unittest.TestCase):
 
 class ClaimTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.fake = FakeFirebase(
-            {"courses": {COURSE_A: {"trainingRuns": {"run-1": make_run_record()}}}}
-        )
+        self.fake = FakeQueueApi(runs={COURSE_A: {"run-1": make_run_record()}})
         self.queue = build_queue(self.fake)
 
     def test_claim_writes_a_lease_and_increments_the_attempt(self) -> None:
@@ -295,43 +476,67 @@ class ClaimTests(unittest.TestCase):
             queue_module.iso(NOW + timedelta(seconds=queue_module.DEFAULT_LEASE_SECONDS)),
         )
 
-    def test_claim_is_a_conditional_write(self) -> None:
+    def test_claim_is_one_request_scoped_to_the_course(self) -> None:
+        """No read-then-write pair to lose a race in.
+
+        The old claim was a conditional PUT that had to be retried on a stale
+        tag. This is a single POST; the backend chooses and locks the row.
+        """
         run = self.queue.list_runs(COURSE_A)[0]
         self.queue.claim(COURSE_A, run, owner="alice@tillicum", now=NOW)
 
-        method, path, _ = self.fake.writes[-1]
-        self.assertEqual(method, "PUT")
-        self.assertEqual(path, f"courses/{COURSE_A}/trainingRuns/run-1")
+        claims = [call for call in self.fake.calls if call == ("POST", "/claim")]
+        self.assertEqual(len(claims), 1)
+
+        kind, target, patch = self.fake.writes[-1]
+        self.assertEqual(kind, "run")
+        self.assertEqual(target, f"{COURSE_A}/run-1")
+        self.assertEqual(patch["claim"]["owner"], "alice@tillicum")
 
     def test_second_runner_cannot_take_an_actively_claimed_run(self) -> None:
+        """Exactly one worker gets the run; the other is told there is none."""
         run = self.queue.list_runs(COURSE_A)[0]
         self.queue.claim(COURSE_A, run, owner="alice@tillicum", now=NOW)
 
         # Bob still holds the pre-claim view of the run, as a racing runner would.
         with self.assertRaises(queue_module.ClaimConflict):
-            self.queue.claim(COURSE_A, run, owner="bob@tillicum", now=NOW + timedelta(seconds=1))
+            self.queue.claim(
+                COURSE_A, run, owner="bob@tillicum", now=NOW + timedelta(seconds=1)
+            )
 
-        stored = self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+        stored = self.fake.run(COURSE_A, "run-1")
         self.assertEqual(stored["claim"]["owner"], "alice@tillicum")
         self.assertEqual(stored["attempt"], 1)
 
-    def test_a_stale_etag_loses_the_race(self) -> None:
-        """Two runners reading simultaneously: only the first write may land."""
-        path = f"courses/{COURSE_A}/trainingRuns/run-1"
-        client = self.queue.client
-        _, alice_etag = client.get_with_etag(path)
-        _, bob_etag = client.get_with_etag(path)
-        self.assertEqual(alice_etag, bob_etag)
+    def test_two_runners_reading_simultaneously_still_yield_one_claim(self) -> None:
+        """Both see the same queued run; only one of them ends up holding it.
 
-        client.put_if_match(path, make_run_record(state="claimed"), alice_etag)
+        This is the case the old compare-and-set had to detect after the fact
+        and retry. Here the losing worker simply gets `claimed: false` on its
+        own request, so there is nothing to retry and no second lease.
+        """
+        alice_view = self.queue.list_runs(COURSE_A)[0]
+        bob_view = self.queue.list_runs(COURSE_A)[0]
+        self.assertEqual(alice_view.run_id, bob_view.run_id)
+
+        self.queue.claim(COURSE_A, alice_view, owner="alice@tillicum", now=NOW)
         with self.assertRaises(queue_module.ClaimConflict):
-            client.put_if_match(path, make_run_record(state="claimed"), bob_etag)
+            self.queue.claim(COURSE_A, bob_view, owner="bob@tillicum", now=NOW)
+
+        stored = self.fake.run(COURSE_A, "run-1")
+        self.assertEqual(stored["claim"]["owner"], "alice@tillicum")
+        # One claim, one increment. Two would mean two runners believed they held it.
+        self.assertEqual(stored["attempt"], 1)
 
     def test_expired_lease_can_be_reclaimed(self) -> None:
+        """A runner that died mid-job must not strand its run forever."""
         run = self.queue.list_runs(COURSE_A)[0]
-        self.queue.claim(COURSE_A, run, owner="alice@tillicum", lease_seconds=60, now=NOW)
+        self.queue.claim(
+            COURSE_A, run, owner="alice@tillicum", lease_seconds=60, now=NOW
+        )
 
         later = NOW + timedelta(seconds=61)
+        self.fake.now = later
         stale = self.queue.list_runs(COURSE_A)[0]
         self.assertTrue(queue_module.is_claimable(stale, later))
 
@@ -340,34 +545,33 @@ class ClaimTests(unittest.TestCase):
         # The retry is visible rather than silent.
         self.assertEqual(reclaimed.attempt, 2)
 
-    def test_a_live_lease_is_not_claimable(self) -> None:
+    def test_a_live_lease_is_not_offered_to_anyone_else(self) -> None:
         run = self.queue.list_runs(COURSE_A)[0]
-        self.queue.claim(COURSE_A, run, owner="alice@tillicum", lease_seconds=600, now=NOW)
+        self.queue.claim(
+            COURSE_A, run, owner="alice@tillicum", lease_seconds=600, now=NOW
+        )
 
-        held = self.queue.list_runs(COURSE_A)[0]
-        self.assertFalse(queue_module.is_claimable(held, NOW + timedelta(seconds=599)))
+        self.fake.now = NOW + timedelta(seconds=599)
+        self.assertEqual(self.queue.list_runs(COURSE_A), [])
+        self.assertEqual(
+            self.queue.discover_claimable(now=self.fake.now, course_ids=[COURSE_A]), []
+        )
 
     def test_release_clears_the_lease(self) -> None:
         run = self.queue.list_runs(COURSE_A)[0]
         claimed = self.queue.claim(COURSE_A, run, owner="alice@tillicum", now=NOW)
         self.queue.release(COURSE_A, claimed, now=NOW)
 
-        stored = self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+        stored = self.fake.run(COURSE_A, "run-1")
         self.assertEqual(stored["state"], "queued")
         self.assertNotIn("claim", stored)
 
 
 class RecordSubmissionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.fake = FakeFirebase(
-            {
-                "courses": {
-                    COURSE_A: {
-                        "trainingRuns": {"run-1": make_run_record()},
-                        "modelRequest": make_request_record(),
-                    }
-                }
-            }
+        self.fake = FakeQueueApi(
+            runs={COURSE_A: {"run-1": make_run_record()}},
+            requests={COURSE_A: make_request_record()},
         )
         self.queue = build_queue(self.fake)
 
@@ -385,12 +589,12 @@ class RecordSubmissionTests(unittest.TestCase):
 
         self.assertEqual(submitted.state, "submitted")
         self.assertEqual(submitted.job_id, "9182736")
-        stored = self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+        stored = self.fake.run(COURSE_A, "run-1")
         self.assertEqual(stored["state"], "submitted")
         self.assertEqual(stored["jobId"], "9182736")
         self.assertNotIn("claim", stored)
 
-        request = self.fake._read(f"courses/{COURSE_A}/modelRequest")
+        request = self.fake.request(COURSE_A)
         self.assertEqual(request["status"], "training")
         self.assertEqual(request["training"]["jobId"], "9182736")
         self.assertEqual(request["currentRunId"], "run-1")
@@ -399,16 +603,24 @@ class RecordSubmissionTests(unittest.TestCase):
 
         run_write = next(
             payload
-            for method, path, payload in self.fake.writes
-            if method == "PATCH" and path.endswith("trainingRuns/run-1")
+            for kind, target, payload in self.fake.writes
+            if kind == "run" and target.endswith("/run-1") and "jobId" in payload
         )
         request_write = next(
             payload
-            for method, path, payload in self.fake.writes
-            if method == "PATCH" and path.endswith("modelRequest")
+            for kind, _target, payload in self.fake.writes
+            if kind == "request" and payload.get("status") == "training"
         )
         self.assertEqual(run_write["jobId"], "9182736")
         self.assertEqual(request_write["status"], "training")
+
+        # Both landed in one call, so neither can be seen without the other.
+        submissions = [
+            call
+            for call in self.fake.calls
+            if call[1].endswith("/submitted")
+        ]
+        self.assertEqual(len(submissions), 1)
 
     def test_refuses_to_mark_training_without_a_real_job_id(self) -> None:
         run = self.queue.list_runs(COURSE_A)[0]
@@ -416,7 +628,7 @@ class RecordSubmissionTests(unittest.TestCase):
             self.queue.record_submission(
                 COURSE_A, run, job_id="", train_count=38, validation_count=4, now=NOW
             )
-        request = self.fake._read(f"courses/{COURSE_A}/modelRequest")
+        request = self.fake.request(COURSE_A)
         self.assertEqual(request["status"], "preparing")
         self.assertNotIn("training", request)
 
@@ -429,11 +641,11 @@ class RecordSubmissionTests(unittest.TestCase):
             COURSE_A, claimed, error="sbatch: error: Invalid account", now=NOW
         )
 
-        stored = self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+        stored = self.fake.run(COURSE_A, "run-1")
         self.assertEqual(stored["state"], "queued")
         self.assertEqual(stored["error"], "sbatch: error: Invalid account")
 
-        request = self.fake._read(f"courses/{COURSE_A}/modelRequest")
+        request = self.fake.request(COURSE_A)
         self.assertEqual(request["status"], "preparing")
         self.assertEqual(request["launchError"], "sbatch: error: Invalid account")
         self.assertNotIn("failureMessage", request)
@@ -442,12 +654,10 @@ class RecordSubmissionTests(unittest.TestCase):
 
 class CourseIsolationTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.fake = FakeFirebase(
-            {
-                "courses": {
-                    COURSE_A: {"trainingRuns": {"run-a": make_run_record(COURSE_A)}},
-                    COURSE_B: {"trainingRuns": {"run-b": make_run_record(COURSE_B)}},
-                }
+        self.fake = FakeQueueApi(
+            runs={
+                COURSE_A: {"run-a": make_run_record(COURSE_A)},
+                COURSE_B: {"run-b": make_run_record(COURSE_B)},
             }
         )
         self.queue = build_queue(self.fake)
@@ -460,44 +670,40 @@ class CourseIsolationTests(unittest.TestCase):
     def test_limiting_to_one_course_reads_no_other(self) -> None:
         found = self.queue.discover_claimable(now=NOW, course_ids=[COURSE_B])
         self.assertEqual([course for course, _ in found], [COURSE_B])
-        for _, path in self.fake.requests:
+        for _, path in self.fake.calls:
             self.assertNotIn(COURSE_A, path)
 
     def test_claiming_one_course_leaves_the_other_untouched(self) -> None:
         run = self.queue.list_runs(COURSE_A)[0]
         self.queue.claim(COURSE_A, run, owner="alice@tillicum", now=NOW)
 
-        untouched = self.fake._read(f"courses/{COURSE_B}/trainingRuns/run-b")
+        untouched = self.fake.run(COURSE_B, "run-b")
         self.assertEqual(untouched, make_run_record(COURSE_B))
-        for _, path, _ in self.fake.writes:
-            self.assertNotIn(COURSE_B, path)
+        for _, target, _ in self.fake.writes:
+            self.assertNotIn(COURSE_B, target)
 
-    def test_a_bad_course_id_never_reaches_a_path(self) -> None:
+    def test_a_bad_course_id_never_reaches_a_url(self) -> None:
         for bad in ("", "../etc", "CSS-360", "a/b", "x$y"):
             with self.assertRaises(queue_module.TrainingQueueError):
-                queue_module.course_training_runs_path(bad)
+                queue_module.validate_course_id(bad)
 
     def test_recording_a_submission_does_not_touch_another_course(self) -> None:
-        self.fake._write(
-            f"courses/{COURSE_A}/modelRequest", make_request_record(COURSE_A, current_run_id="run-a")
-        )
-        self.fake._write(
-            f"courses/{COURSE_B}/modelRequest", make_request_record(COURSE_B, current_run_id="run-b")
-        )
+        self.fake.set_request(COURSE_A, make_request_record(COURSE_A, current_run_id="run-a"))
+        self.fake.set_request(COURSE_B, make_request_record(COURSE_B, current_run_id="run-b"))
         run = self.queue.list_runs(COURSE_A)[0]
         claimed = self.queue.claim(COURSE_A, run, owner="alice@tillicum", now=NOW)
         self.queue.record_submission(
             COURSE_A, claimed, job_id="1001", train_count=38, validation_count=4, now=NOW
         )
 
-        other_run = self.fake._read(f"courses/{COURSE_B}/trainingRuns/run-b")
-        other_request = self.fake._read(f"courses/{COURSE_B}/modelRequest")
+        other_run = self.fake.run(COURSE_B, "run-b")
+        other_request = self.fake.request(COURSE_B)
         self.assertEqual(other_run["state"], "queued")
         self.assertNotIn("jobId", other_run)
         self.assertEqual(other_request["status"], "preparing")
         self.assertNotIn("training", other_request)
-        for _method, path, _payload in self.fake.writes:
-            self.assertNotIn(COURSE_B, path)
+        for _kind, target, _payload in self.fake.writes:
+            self.assertNotIn(COURSE_B, target)
 
 
 def _prepared_export(root: Path, course_id: str, *, train: int = 38, validation: int = 4) -> None:
@@ -527,15 +733,9 @@ class RunnerTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         _prepared_export(self.root, COURSE_A)
-        self.fake = FakeFirebase(
-            {
-                "courses": {
-                    COURSE_A: {
-                        "trainingRuns": {"run-1": make_run_record()},
-                        "modelRequest": make_request_record(),
-                    }
-                }
-            }
+        self.fake = FakeQueueApi(
+            runs={COURSE_A: {"run-1": make_run_record()}},
+            requests={COURSE_A: make_request_record()},
         )
         self.queue = build_queue(self.fake)
         self.launcher = FakeLauncher()
@@ -567,10 +767,10 @@ class RunnerTests(unittest.TestCase):
         return code, buffer.getvalue()
 
     def _request(self) -> dict:
-        return self.fake._read(f"courses/{COURSE_A}/modelRequest")
+        return self.fake.request(COURSE_A)
 
     def _run_record(self) -> dict:
-        return self.fake._read(f"courses/{COURSE_A}/trainingRuns/run-1")
+        return self.fake.run(COURSE_A, "run-1")
 
     def test_successful_submission_invokes_the_existing_launcher(self) -> None:
         code, output = self._run_once()
@@ -662,10 +862,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self._run_record()["jobId"], "9182736")
 
     def test_a_queued_run_that_already_has_a_job_id_is_not_launched(self) -> None:
-        self.fake._write(
-            f"courses/{COURSE_A}/trainingRuns/run-1",
-            make_run_record(job_id="225122"),
-        )
+        self.fake.set_run(COURSE_A, "run-1", make_run_record(job_id="225122"))
         code, output = self._run_once()
 
         self.assertEqual(code, 0)
@@ -674,19 +871,16 @@ class RunnerTests(unittest.TestCase):
 
     def test_submitting_one_course_leaves_another_untouched(self) -> None:
         _prepared_export(self.root, COURSE_B)
-        self.fake._write(
-            f"courses/{COURSE_B}/trainingRuns/run-b", make_run_record(COURSE_B)
-        )
-        self.fake._write(
-            f"courses/{COURSE_B}/modelRequest",
-            make_request_record(COURSE_B, current_run_id="run-b"),
+        self.fake.set_run(COURSE_B, "run-b", make_run_record(COURSE_B))
+        self.fake.set_request(
+            COURSE_B, make_request_record(COURSE_B, current_run_id="run-b")
         )
 
         code, _ = self._run_once(course_ids=[COURSE_A])
         self.assertEqual(code, 0)
 
-        other_run = self.fake._read(f"courses/{COURSE_B}/trainingRuns/run-b")
-        other_request = self.fake._read(f"courses/{COURSE_B}/modelRequest")
+        other_run = self.fake.run(COURSE_B, "run-b")
+        other_request = self.fake.request(COURSE_B)
         self.assertEqual(other_run["state"], "queued")
         self.assertNotIn("jobId", other_run)
         self.assertEqual(other_request["status"], "preparing")
@@ -700,7 +894,7 @@ class RunnerTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(self.fake.writes, [])
-        self.assertEqual({method for method, _ in self.fake.requests}, {"GET"})
+        self.assertEqual({method for method, _ in self.fake.calls}, {"GET"})
         stored = self._run_record()
         self.assertEqual(stored["state"], "queued")
         self.assertEqual(stored["attempt"], 0)
@@ -760,16 +954,14 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.fake.writes, [])
 
     def test_reports_a_count_that_disagrees_with_the_prepared_data(self) -> None:
-        self.fake._write(
-            f"courses/{COURSE_A}/trainingRuns/run-1", make_run_record(train=999)
-        )
+        self.fake.set_run(COURSE_A, "run-1", make_run_record(train=999))
         _, output = self._run_once()
         self.assertIn("999", output)
         self.assertIn("Warning:", output)
         self.assertEqual(self._run_record()["jobId"], "9182736")
 
     def test_says_so_when_the_queue_is_empty(self) -> None:
-        self.fake._write(f"courses/{COURSE_A}/trainingRuns", {})
+        self.fake.runs[COURSE_A] = {}
         code, output = self._run_once(launcher=boom_launcher)
 
         self.assertEqual(code, 0)
@@ -777,8 +969,9 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.fake.writes, [])
 
     def test_a_run_held_by_another_runner_is_left_alone(self) -> None:
-        self.fake._write(
-            f"courses/{COURSE_A}/trainingRuns/run-1",
+        self.fake.set_run(
+            COURSE_A,
+            "run-1",
             make_run_record(
                 state="claimed",
                 claim={
@@ -795,9 +988,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.fake.writes, [])
 
     def test_a_smoke_run_reports_the_smoke_command(self) -> None:
-        self.fake._write(
-            f"courses/{COURSE_A}/trainingRuns/run-1", make_run_record(mode="smoke")
-        )
+        self.fake.set_run(COURSE_A, "run-1", make_run_record(mode="smoke"))
         _, output = self._run_once()
         self.assertIn(f"--course {COURSE_A} --smoke --yes", output)
         self.assertIn(f"qlora-smoke-{COURSE_A}", output)
@@ -827,6 +1018,155 @@ class RunnerTests(unittest.TestCase):
         )
         self.assertEqual(runner.parse_launcher_job_id("Job ID: 225122\n"), "225122")
         self.assertIsNone(runner.parse_launcher_job_id("nope\n"))
+
+
+class WorkerConfigurationTests(unittest.TestCase):
+    """What the runner needs on Tillicum, and what it must no longer need.
+
+    The migration's promise on this side is negative as much as positive: the
+    worker gets a URL and a token, and nothing about Firebase remains — no
+    database URL, no auth token, no REST paths, no module to install.
+    """
+
+    def setUp(self) -> None:
+        self._saved = {
+            name: os.environ.get(name)
+            for name in (
+                "TRAINING_API_BASE_URL",
+                "VITE_API_BASE_URL",
+                "TRAINING_WORKER_TOKEN",
+            )
+        }
+        for name in self._saved:
+            os.environ.pop(name, None)
+
+    def tearDown(self) -> None:
+        for name, value in self._saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+    def test_no_firebase_variable_is_read_anywhere_in_the_worker(self) -> None:
+        for path in TILLICUM_RUNTIME_FILES + (
+            REPO_ROOT / "scripts" / "register_course_model.py",
+        ):
+            source = path.read_text(encoding="utf-8").lower()
+            with self.subTest(path=path.name):
+                self.assertNotIn("firebase", source)
+
+    def test_the_worker_starts_from_a_url_and_a_token(self) -> None:
+        os.environ["TRAINING_API_BASE_URL"] = API_BASE_URL
+        os.environ["TRAINING_WORKER_TOKEN"] = WORKER_TOKEN
+
+        self.assertEqual(queue_module.training_api_base_url(), API_BASE_URL)
+        self.assertEqual(queue_module.training_worker_token(), WORKER_TOKEN)
+
+    def test_a_missing_url_says_what_to_set(self) -> None:
+        with self.assertRaises(queue_module.TrainingQueueError) as caught:
+            queue_module.training_api_base_url()
+        self.assertIn("TRAINING_API_BASE_URL", str(caught.exception))
+
+    def test_a_missing_token_says_what_to_set(self) -> None:
+        with self.assertRaises(queue_module.TrainingQueueError) as caught:
+            queue_module.training_worker_token()
+        self.assertIn("TRAINING_WORKER_TOKEN", str(caught.exception))
+
+    def test_every_request_carries_the_worker_token(self) -> None:
+        fake = FakeQueueApi(runs={COURSE_A: {"run-1": make_run_record()}})
+        queue = build_queue(fake)
+        run = queue.list_runs(COURSE_A)[0]
+        queue.claim(COURSE_A, run, owner="alice@tillicum", now=NOW)
+
+        self.assertTrue(fake.token_seen)
+        self.assertEqual(set(fake.token_seen), {WORKER_TOKEN})
+
+    def test_a_rejected_token_is_reported_clearly(self) -> None:
+        def refusing(method, url, body, headers):
+            return queue_module.HttpResponse(
+                status=401, headers={}, body=json.dumps({"detail": "nope"})
+            )
+
+        queue = queue_module.TrainingQueue(
+            queue_module.TrainingQueueApi(
+                base_url=API_BASE_URL,
+                worker_token="wrong",
+                transport=refusing,
+            )
+        )
+        with self.assertRaises(queue_module.TrainingQueueError) as caught:
+            queue.list_runs(COURSE_A)
+        self.assertIn("TRAINING_WORKER_TOKEN", str(caught.exception))
+
+
+class TrainingFailureAndRegistrationTests(unittest.TestCase):
+    """What happens after the launcher: a failed job, or a finished model."""
+
+    def setUp(self) -> None:
+        self.fake = FakeQueueApi(
+            runs={COURSE_A: {"run-1": make_run_record(state="training", job_id="9182736")}},
+            requests={COURSE_A: make_request_record(status="training")},
+        )
+        self.queue = build_queue(self.fake)
+
+    def test_failed_training_is_terminal_and_visible_to_the_professor(self) -> None:
+        run = queue_module.parse_run("run-1", self.fake.run(COURSE_A, "run-1"))
+        assert run is not None
+        failed = self.queue.record_training_failure(
+            COURSE_A, run, error="CUDA out of memory"
+        )
+
+        self.assertEqual(failed.state, "failed")
+        stored = self.fake.run(COURSE_A, "run-1")
+        self.assertEqual(stored["error"], "CUDA out of memory")
+
+        request = self.fake.request(COURSE_A)
+        self.assertEqual(request["status"], "failed")
+        # Professor-facing text is not the raw operator error.
+        self.assertIn("failureMessage", request)
+        self.assertNotIn("CUDA", request["failureMessage"])
+        self.assertEqual(request["launchError"], "CUDA out of memory")
+
+    def test_a_failed_run_frees_the_course_for_another_run(self) -> None:
+        run = queue_module.parse_run("run-1", self.fake.run(COURSE_A, "run-1"))
+        assert run is not None
+        failed = self.queue.record_training_failure(COURSE_A, run, error="died")
+        self.assertTrue(failed.is_terminal)
+
+    def test_registering_a_model_marks_the_request_ready(self) -> None:
+        result = self.queue.register_model_version(
+            COURSE_A,
+            base_model="meta-llama/Llama-3.2-3B-Instruct",
+            training_example_count=42,
+            artifact_ref="css-490-qlora/adapter",
+            run_id="run-1",
+        )
+
+        self.assertEqual(result["courseId"], COURSE_A)
+        self.assertEqual(result["version"], "v1")
+        self.assertEqual(self.fake.request(COURSE_A)["status"], "ready")
+
+    def test_a_model_is_registered_only_against_its_own_course(self) -> None:
+        self.queue.register_model_version(
+            COURSE_A,
+            base_model="meta-llama/Llama-3.2-3B-Instruct",
+            training_example_count=42,
+            artifact_ref="css-490-qlora/adapter",
+        )
+        self.assertEqual(
+            [entry["courseId"] for entry in self.fake.model_versions], [COURSE_A]
+        )
+        self.assertIsNone(self.fake.request(COURSE_B))
+
+    def test_a_bad_course_id_never_reaches_a_registration_url(self) -> None:
+        for bad in ("", "../etc", "CSS-360", "a/b"):
+            with self.assertRaises(queue_module.TrainingQueueError):
+                self.queue.register_model_version(
+                    bad,
+                    base_model="m",
+                    training_example_count=1,
+                    artifact_ref="x/adapter",
+                )
 
 
 class CliTests(unittest.TestCase):

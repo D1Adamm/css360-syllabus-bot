@@ -1,22 +1,29 @@
 """PostgreSQL repository for the per-course training run queue.
 
-Matches `TrainingRun` exactly. The claim is the one shape that differs between
-storage and API: the schema keeps `claim_owner`/`claim_claimed_at`/
-`claim_expires_at` as columns because a lease gets queried — who holds this, has
-it expired — while the API nests them as `claim`, because that is what
-`parseTrainingRun` reads. A claim missing any of the three is reported as no
-claim at all, matching `parseClaim`: a lease without an owner or an expiry
-cannot be reasoned about.
+This is the durable queue the cluster runner claims work from. Matches
+`TrainingRun` exactly. The claim is the one shape that differs between storage
+and API: the schema keeps `claim_owner`/`claim_claimed_at`/`claim_expires_at`
+as columns because a lease gets queried — who holds this, has it expired —
+while the API nests them as `claim`, because that is what `parseTrainingRun`
+reads. A claim missing any of the three is reported as no claim at all,
+matching `parseClaim`: a lease without an owner or an expiry cannot be reasoned
+about.
 
-Nothing here changes training orchestration. The runner on the cluster still
-reads the Firebase queue; these functions exist so the same queue can be served
-from PostgreSQL after a cutover.
+Two runners are kept apart by `claim_next_training_run`, which selects one
+eligible row `FOR UPDATE SKIP LOCKED` and stamps the lease in the same
+statement pair. A second runner arriving mid-claim does not block on the locked
+row and does not see it: it skips straight past to the next eligible run, or
+finds none. The transaction is deliberately short — it covers choosing and
+stamping, and nothing else. Training itself happens long after it has
+committed, which is why the lease has an expiry rather than a held lock: a
+runner that dies mid-job releases nothing, and the expiry is what lets the work
+be taken again instead of being stranded forever.
 """
 
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from app.course_id import assert_valid_course_id
@@ -34,6 +41,34 @@ RUN_STATES = ("queued", "claimed", "submitted", "training", "succeeded", "failed
 TERMINAL_RUN_STATES = ("succeeded", "failed")
 
 MODES = ("smoke", "full")
+
+# How long a claim is held before another worker may retake it. Matches the
+# runner's own default so a lease means the same thing on both sides.
+DEFAULT_LEASE_SECONDS = 900
+
+# What a worker is allowed to take.
+#
+#   - `job_id IS NULL`: a real scheduler id means a submission already
+#     happened. That run is never taken again, whatever its state says.
+#   - `queued`: nobody has it.
+#   - `claimed` past its expiry: whoever had it is not coming back. A NULL
+#     expiry counts as expired — a lease nothing can reason about is worse
+#     stranded than retaken, and the second claim still has to win the lock.
+#   - `course_ids` NULL means every course; otherwise exactly those.
+#
+# Written once and shared by the read-only listing and the claim so the two can
+# never drift into disagreeing about what is claimable.
+CLAIMABLE_PREDICATE = """
+    job_id IS NULL
+    AND (
+        state = 'queued'
+        OR (
+            state = 'claimed'
+            AND (claim_expires_at IS NULL OR claim_expires_at <= %(now)s)
+        )
+    )
+    AND (%(course_ids)s::text[] IS NULL OR course_id = ANY(%(course_ids)s::text[]))
+"""
 
 RUN_PATCH_COLUMNS = {
     "state": "state",
@@ -161,10 +196,10 @@ def enqueue_training_run(
 ) -> dict[str, Any]:
     """Queue one run, refusing while this course has an active one.
 
-    The guard is the property `enqueueTrainingRun` protects with a Firebase
-    transaction over the whole node: no two runs for one course outstanding at
-    once. Here it is a conditional INSERT evaluated at write time, so a
-    double-clicked button or two admin tabs cannot both win.
+    The guarded property is that no two runs for one course are outstanding at
+    once. It is a conditional INSERT evaluated at write time, so a
+    double-clicked button or two admin tabs cannot both win — the loser matches
+    no rows and gets `ActiveTrainingRunError`, which the route turns into a 409.
 
     No job id is invented. Only the cluster produces one, and a placeholder
     would make an unsubmitted run look submitted.
@@ -269,61 +304,203 @@ def update_training_run(
     return get_training_run(conn, safe_course_id, run_id)
 
 
-def upsert_training_run(
+# --------------------------------------------------------------------------- #
+# Worker-facing queue operations
+#
+# Everything below is what a runner calls, and each one is a single short
+# transaction. None of them is held open across the work they describe.
+# --------------------------------------------------------------------------- #
+
+
+def claimable_training_runs(
     conn: Any,
-    course_id: str,
-    run_id: str,
-    record: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Store a run under an id chosen elsewhere, creating or refreshing it.
+    *,
+    now: datetime | None = None,
+    course_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Runs a worker could take right now, oldest first. Read-only.
 
-    Used to mirror a run that Firebase has already accepted. Deliberately not
-    `enqueue_training_run`: that one guards against a second active run, and
-    re-running the guard here could refuse a run the queue has already taken —
-    leaving the cluster holding work the UI would never show.
-
-    The duplicate decision belongs to whichever store owns the queue. Today
-    that is Firebase.
+    Exists for `--dry-run`, which must be safe to point at the live queue: it
+    shows what would be claimed while claiming nothing another runner could
+    have had.
     """
-    safe_course_id = assert_valid_course_id(course_id)
-
-    parameters = {
-        "run_id": run_id,
-        "course_id": safe_course_id,
-        "mode": record["mode"],
-        "state": record["state"],
-        "enqueued_at": record["enqueuedAt"],
-        "updated_at": record.get("updatedAt") or record["enqueuedAt"],
-        "dataset_ref": record.get("datasetRef") or "",
-        "approved_example_count": max(0, as_int(record.get("approvedExampleCount"))),
-        "train_examples": max(0, as_int(record.get("trainExamples"))),
-        "validation_examples": max(0, as_int(record.get("validationExamples"))),
-        "attempt": max(0, as_int(record.get("attempt"))),
-        "job_id": optional_string(record.get("jobId")),
-        "error": optional_string(record.get("error")),
-    }
-
-    columns = list(parameters)
-    placeholders = ", ".join(f"%({column})s" for column in columns)
-    updates = ", ".join(
-        f"{column} = EXCLUDED.{column}"
-        for column in columns
-        if column not in ("course_id", "run_id")
+    moment = now or datetime.now(timezone.utc)
+    safe_course_ids = (
+        [assert_valid_course_id(course_id) for course_id in course_ids]
+        if course_ids is not None
+        else None
     )
 
     with conn.cursor() as cursor:
         cursor.execute(
             f"""
-            INSERT INTO training_runs ({", ".join(columns)})
-            VALUES ({placeholders})
-            ON CONFLICT (course_id, run_id) DO UPDATE SET {updates}
+            SELECT {RUN_COLUMNS} FROM training_runs
+            WHERE {CLAIMABLE_PREDICATE}
+            ORDER BY enqueued_at ASC, run_id ASC
             """,
-            parameters,
+            {"now": moment, "course_ids": safe_course_ids},
+        )
+        rows = cursor.fetchall()
+    return [map_training_run(row) for row in rows]
+
+
+def claim_next_training_run(
+    conn: Any,
+    *,
+    owner: str,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    now: datetime | None = None,
+    course_ids: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Atomically take exactly one eligible run, or return None.
+
+    `FOR UPDATE SKIP LOCKED` is the whole guarantee. The row is locked by the
+    SELECT, so a second worker running the identical statement at the same
+    moment cannot see it and cannot wait for it — it skips to the next eligible
+    run. The UPDATE that stamps the lease runs against the row already held, so
+    no third party can slip between choosing and claiming.
+
+    `attempt` goes up on every claim, including one that follows an expired
+    lease. A run that keeps being retaken this way is then visible as one that
+    keeps being retried, rather than one that quietly vanished.
+    """
+    cleaned_owner = (owner or "").strip()
+    if not cleaned_owner:
+        raise ValueError("A claim needs a non-empty owner.")
+    if lease_seconds <= 0:
+        raise ValueError("lease_seconds must be positive.")
+
+    moment = now or datetime.now(timezone.utc)
+    safe_course_ids = (
+        [assert_valid_course_id(course_id) for course_id in course_ids]
+        if course_ids is not None
+        else None
+    )
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT course_id, run_id FROM training_runs
+            WHERE {CLAIMABLE_PREDICATE}
+            ORDER BY enqueued_at ASC, run_id ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+            """,
+            {"now": moment, "course_ids": safe_course_ids},
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+
+        cursor.execute(
+            """
+            UPDATE training_runs SET
+                state = 'claimed',
+                attempt = attempt + 1,
+                updated_at = %(now)s,
+                claim_owner = %(owner)s,
+                claim_claimed_at = %(now)s,
+                claim_expires_at = %(expires_at)s
+            WHERE course_id = %(course_id)s AND run_id = %(run_id)s
+            """,
+            {
+                "now": moment,
+                "owner": cleaned_owner,
+                "expires_at": moment + timedelta(seconds=lease_seconds),
+                "course_id": row["course_id"],
+                "run_id": row["run_id"],
+            },
         )
 
-    stored = get_training_run(conn, safe_course_id, run_id)
-    if stored is None:  # pragma: no cover - defensive
-        raise ActiveTrainingRunError(
-            f'The mirrored training run "{run_id}" could not be read back.'
-        )
-    return stored
+    return get_training_run(conn, row["course_id"], row["run_id"])
+
+
+def release_training_run(
+    conn: Any,
+    course_id: str,
+    run_id: str,
+    *,
+    error: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Put a claimed run back on the queue, clearing its lease.
+
+    Used when a runner finishes without submitting anything. Leaving it
+    `claimed` would make it wait out a lease for no reason, and marking it
+    failed would be untrue — nothing was attempted.
+    """
+    moment = now or datetime.now(timezone.utc)
+    patch: dict[str, Any] = {
+        "state": "queued",
+        "updatedAt": moment.isoformat(),
+        "claim": None,
+    }
+    if error is not None:
+        patch["error"] = error
+    return update_training_run(conn, course_id, run_id, patch)
+
+
+def fail_training_run(
+    conn: Any,
+    course_id: str,
+    run_id: str,
+    *,
+    error: str,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Mark a run terminally failed and release its lease.
+
+    Terminal on purpose: this is what a worker reports when training itself
+    failed, as opposed to a submission that never happened. `TERMINAL_RUN_STATES`
+    includes `failed`, so the course is free to queue another run.
+    """
+    moment = now or datetime.now(timezone.utc)
+    return update_training_run(
+        conn,
+        course_id,
+        run_id,
+        {
+            "state": "failed",
+            "updatedAt": moment.isoformat(),
+            "error": error,
+            "claim": None,
+        },
+    )
+
+
+def mark_training_run_submitted(
+    conn: Any,
+    course_id: str,
+    run_id: str,
+    *,
+    job_id: str,
+    train_examples: int,
+    validation_examples: int,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Record a real scheduler job id against a claimed run.
+
+    The lease is cleared: the job exists on the cluster now, and nothing about
+    it depends on this runner staying alive. `is_claimable` refuses anything
+    carrying a `job_id`, so a submitted run is not retaken even though it is
+    no longer leased.
+    """
+    moment = now or datetime.now(timezone.utc)
+    cleaned_job_id = (job_id or "").strip()
+    if not cleaned_job_id:
+        raise ValueError("A submitted run needs a job id.")
+
+    return update_training_run(
+        conn,
+        course_id,
+        run_id,
+        {
+            "state": "submitted",
+            "updatedAt": moment.isoformat(),
+            "jobId": cleaned_job_id,
+            "trainExamples": max(0, as_int(train_examples)),
+            "validationExamples": max(0, as_int(validation_examples)),
+            "error": None,
+            "claim": None,
+        },
+    )

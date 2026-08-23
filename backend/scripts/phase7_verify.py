@@ -19,7 +19,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.fact_inventory_cache import load_or_build_fact_inventory  # noqa: E402
-from app.firebase_seeds import course_seed_examples_path  # noqa: E402
 from app.seed_allocation import allocate_slots  # noqa: E402
 from app.seed_generation import generate_starter_seeds_for_course  # noqa: E402
 from app.storage import LocalCourseArtifactStorage, get_course_artifact_storage  # noqa: E402
@@ -138,7 +137,8 @@ def isolation_paths(course_id: str, storage: LocalCourseArtifactStorage) -> dict
         "indexExists": index_path.is_file(),
         "factsCachePath": str(facts_path),
         "factsCacheExists": facts_path.is_file(),
-        "firebaseSeedExamplesPath": course_seed_examples_path(course_id),
+        # Seeds are course-scoped by the primary key, not by a path.
+        "seedScope": f"seed_examples.course_id = {course_id}",
     }
 
 

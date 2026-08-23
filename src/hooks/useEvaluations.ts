@@ -61,7 +61,7 @@ export function useEvaluations(): UseEvaluationsResult {
         const message =
           caughtError instanceof Error
             ? caughtError.message
-            : 'Could not save the evaluation to Firebase.';
+            : 'Could not save the evaluation.';
         setSaveError(message);
         throw caughtError;
       } finally {
@@ -81,7 +81,7 @@ export function useEvaluations(): UseEvaluationsResult {
         const message =
           caughtError instanceof Error
             ? caughtError.message
-            : 'Could not delete the evaluation from Firebase.';
+            : 'Could not delete the evaluation.';
         setSaveError(message);
         throw caughtError;
       }
@@ -98,7 +98,7 @@ export function useEvaluations(): UseEvaluationsResult {
       const message =
         caughtError instanceof Error
           ? caughtError.message
-          : 'Could not delete all evaluations from Firebase.';
+          : 'Could not delete all evaluations.';
       setSaveError(message);
       throw caughtError;
     }

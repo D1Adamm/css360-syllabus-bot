@@ -1,7 +1,7 @@
 """API-layer tests for the PostgreSQL-backed `/api/db` routes.
 
 The repositories are patched out, so these need no PostgreSQL server and no
-Firebase network access. What they cover is the layer above the SQL: response
+network access at all. What they cover is the layer above the SQL: response
 shapes the frontend will consume, status codes for missing and conflicting
 records, course-id validation, and that a driver failure becomes a 503 whose
 body carries no connection string.
@@ -9,6 +9,7 @@ body carries no connection string.
 
 from __future__ import annotations
 
+import json
 import unittest
 from contextlib import contextmanager
 from typing import Any
@@ -685,16 +686,27 @@ class DatabaseFailureTests(DbRouteTestCase):
         self.assertIn("DATABASE_URL", response.json()["detail"])
 
 
-class ParallelDeploymentTests(unittest.TestCase):
-    """The live Firebase surface must be untouched by any of this."""
+class RouteCompositionTests(unittest.TestCase):
+    """Both seed surfaces stay mounted, and both read the same table.
+
+    `/api/courses/{id}/seeds` is the operational review surface and
+    `/api/db/courses/{id}/seeds` the persistence one. They differ in response
+    shape, not in store — keeping both is a compatibility decision, not a
+    second copy of the data.
+    """
 
     def setUp(self) -> None:
         self.client = TestClient(app)
 
-    def test_firebase_seed_route_still_exists_separately(self) -> None:
+    def test_both_seed_routes_are_still_mounted(self) -> None:
         spec = self.client.get("/openapi.json").json()["paths"]
         self.assertIn("/api/courses/{course_id}/seeds", spec)
         self.assertIn("/api/db/courses/{course_id}/seeds", spec)
+
+    def test_no_route_advertises_a_firebase_path_field(self) -> None:
+        """`firebasePath` named a node that no longer exists."""
+        spec = self.client.get("/openapi.json").json()
+        self.assertNotIn("firebasePath", json.dumps(spec))
 
     def test_db_routes_are_all_under_the_db_prefix(self) -> None:
         spec = self.client.get("/openapi.json").json()["paths"]

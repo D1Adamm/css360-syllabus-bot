@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listTrainingRunsMock = vi.fn();
 
-// Reads come from PostgreSQL through FastAPI; only the queue write is Firebase.
+// Reads and writes both go to PostgreSQL through FastAPI.
 vi.mock('./dbApi', () => ({
   listTrainingRuns: (...args: unknown[]) => listTrainingRunsMock(...args),
 }));
@@ -131,7 +131,7 @@ describe('generateTrainingRunId', () => {
     const late = generateTrainingRunId(new Date('2026-08-12T11:00:00.000Z'));
 
     expect(early).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
-    // Firebase keys cannot contain any of these.
+    // Safe as a path segment and as a record key everywhere it is used.
     expect(early).not.toMatch(/[.$#[\]/]/);
     expect(early < late).toBe(true);
   });

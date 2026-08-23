@@ -6,13 +6,6 @@ import {
   isValidCourseId,
   slugifyCourseIdPart,
 } from './courseId';
-import {
-  getCourseEvaluationPath,
-  getCourseEvaluationsPath,
-  getCourseMetadataPath,
-  getCourseSeedExamplePath,
-  getCourseSeedExamplesPath,
-} from './coursePaths';
 
 describe('isValidCourseId', () => {
   it('accepts valid course ids', () => {
@@ -89,37 +82,5 @@ describe('generateCourseId', () => {
     expect(courseId.startsWith('-')).toBe(false);
     expect(courseId.endsWith('-')).toBe(false);
     expect(isValidCourseId(courseId)).toBe(true);
-  });
-});
-
-describe('course Firebase paths', () => {
-  const courseId = 'css360-default';
-
-  it('builds the metadata path', () => {
-    expect(getCourseMetadataPath(courseId)).toBe('courses/css360-default/metadata');
-  });
-
-  it('builds seed-example paths', () => {
-    expect(getCourseSeedExamplesPath(courseId)).toBe(
-      'courses/css360-default/seedExamples',
-    );
-    expect(getCourseSeedExamplePath(courseId, 'seed-1')).toBe(
-      'courses/css360-default/seedExamples/seed-1',
-    );
-  });
-
-  it('builds evaluation paths', () => {
-    expect(getCourseEvaluationsPath(courseId)).toBe(
-      'courses/css360-default/evaluations',
-    );
-    expect(getCourseEvaluationPath(courseId, 'eval-1')).toBe(
-      'courses/css360-default/evaluations/eval-1',
-    );
-  });
-
-  it('validates courseId before constructing paths', () => {
-    expect(() => getCourseMetadataPath('../evil')).toThrow(/Invalid courseId/);
-    expect(() => getCourseSeedExamplesPath('Bad')).toThrow(/Invalid courseId/);
-    expect(() => getCourseEvaluationsPath('x/y')).toThrow(/Invalid courseId/);
   });
 });

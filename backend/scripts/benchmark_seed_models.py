@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare qwen3:4b vs qwen3:8b on the same 10 allocated facts.
 
-Does not save seeds to Firebase or change SEED_GENERATION_MODEL.
+Does not save seeds or change SEED_GENERATION_MODEL.
 
 Usage (from repo root):
 
@@ -44,7 +44,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Offline seed-generation model benchmark "
-            "(same facts, no Firebase writes)."
+            "(same facts, nothing persisted)."
         )
     )
     parser.add_argument(

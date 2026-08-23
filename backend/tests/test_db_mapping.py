@@ -200,7 +200,7 @@ class SeedMappingTests(unittest.TestCase):
         self.assertEqual(seed["response"], seed["answer"])
         self.assertEqual(seed["instruction"], "Can I get an extension?")
 
-    def test_preserves_the_firebase_push_id(self) -> None:
+    def test_preserves_an_imported_push_id(self) -> None:
         self.assertEqual(map_seed(self.ROW)["id"], "-Ozt97PxVXZ6vRu7v4F0")
 
     def test_jsonb_columns_round_trip_as_objects(self) -> None:

@@ -43,7 +43,7 @@ is load-bearing and covered by tests.
 
 ## Current state
 
-- Courses are separated by `courseId` under Firebase `courses/{courseId}/...`
+- Courses are separated by `courseId`; every PostgreSQL table is keyed by it
 - Each course has its own syllabus artifacts, example questions, evaluations, and
   retrieval index
 - Syllabus artifacts and indexes are stored **locally** by the FastAPI backend
@@ -57,18 +57,21 @@ persistence — the UI is complete, states plainly what is missing, and writes
 nothing. See **[docs/frontend-backend-gaps.md](docs/frontend-backend-gaps.md)**
 for the exact endpoints each one needs.
 
-Legacy root-level Firebase nodes (`seedExamples/`, `evaluations/`) may still
-exist from earlier prototypes. The live UI does not read or write them. They can
-be deleted manually in the Firebase console after confirming nothing external
-depends on them; this repository never deletes Firebase data automatically.
+This application previously stored course data in Firebase Realtime Database.
+It no longer does: PostgreSQL is the only live database, and neither the
+frontend, the backend, nor the training worker needs Firebase configuration to
+start. The historical snapshot and the one-time importer
+(`backend/scripts/import_firebase_snapshot.py`) are kept deliberately so the
+migration can be replayed or audited; nothing in the running system reaches
+them.
 
 ## Architecture
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React 19 + TypeScript + Vite, Firebase Hosting |
+| Frontend | React 19 + TypeScript + Vite, served by Nginx on the UWB VM |
 | Design system | Design tokens + UI primitives in `src/components/ui`, self-hosted Inter and Source Serif 4 |
-| Course data | Firebase Realtime Database (`courses/{courseId}/metadata\|seedExamples\|evaluations`) |
+| Course data | PostgreSQL (`courses`, `seed_examples`, `evaluations`, `course_models`, `model_requests`, `training_runs`) |
 | Backend | FastAPI |
 | Generation | Ollama `llama3.2:3b` |
 | Embeddings | Ollama `nomic-embed-text` |
@@ -138,7 +141,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 npm run dev
 ```
 
-Configure frontend env (`.env`) with Firebase settings and:
+Configure frontend env (`.env.local`) with:
 
 ```bash
 VITE_API_BASE_URL=http://127.0.0.1:8001
@@ -165,7 +168,7 @@ pytest
 
 | Route | Description |
 |-------|-------------|
-| `/` | Course picker (lists Firebase courses) |
+| `/` | Course picker (lists courses from PostgreSQL) |
 | `/create-course` | Create a course and optionally upload a syllabus |
 | `/architecture` | Architecture overview |
 | `/course/:courseId/home` | Course home |
@@ -179,17 +182,22 @@ pytest
 
 ## Data locations
 
-### Firebase Realtime Database
+### PostgreSQL
 
-```
-courses/
-  {courseId}/
-    metadata/
-    seedExamples/
-    evaluations/
-```
+Every table is course-scoped and reached only through FastAPI. Schema:
+`backend/db/schema.sql`.
 
-### Local backend artifacts (not in Firebase)
+| Table | Holds |
+|-------|-------|
+| `courses` | Course metadata |
+| `starter_seed_generation` | Automatic starter-seed run state per course |
+| `seed_examples` | Example questions and their review state |
+| `evaluations` | Student evaluations |
+| `course_models`, `course_model_versions` | The per-course model registry |
+| `model_requests` | The professor-facing model request lifecycle |
+| `training_runs` | The training queue Tillicum claims from |
+
+### Local backend artifacts (not in the database)
 
 | Path | Purpose |
 |------|---------|
@@ -211,11 +219,11 @@ courses/
 - No enrolment, join codes, or class rosters
 - No fine-tuning requests, training job tracking, or model versioning
 - Syllabus artifacts and indexes are local disk only (not GCP yet)
-- Root-level legacy Firebase `seedExamples` / `evaluations` data is not auto-migrated or auto-deleted
+- The archived Firebase snapshot is retained; nothing deletes it automatically
 
 ## Privacy and ethics
 
-- Contributed questions and evaluations are stored in the configured Firebase project under `courses/{courseId}/...`
+- Contributed questions and evaluations are stored in PostgreSQL, scoped by `courseId`
 - Student contributions are anonymous: no name or identifier is collected or stored
 - Avoid entering sensitive personal information into contributed questions or evaluation notes
 - Live reasoning models can still hallucinate; use syllabus sources and instructor judgment
@@ -236,7 +244,7 @@ courses/
 │   │   └── …                 # Feature components by area
 │   ├── context/              # Course, role, and comparison-run providers
 │   ├── data/                 # Example questions fixture
-│   ├── hooks/                # Course-scoped Firebase and API hooks
+│   ├── hooks/                # Course-scoped API hooks
 │   ├── lib/                  # API clients, error mapping, route builders
 │   ├── pages/{student,professor,admin}/
 │   ├── shell/                # App shell, navigation, dev role switcher

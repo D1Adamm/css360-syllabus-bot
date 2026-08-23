@@ -1,9 +1,9 @@
-"""PostgreSQL connection configuration for the Firebase migration target.
+"""PostgreSQL connection configuration.
 
-None of the pre-existing Firebase routes read from here. Live reads and writes
-still go to Firebase Realtime Database; this module is the one place that knows
-how to reach PostgreSQL, used by the migration importer and by the parallel
-`/api/db` routes that exist so the frontend can be cut over later.
+The one place that knows how to reach the database. Every route, repository,
+and background job goes through `db_connection`, which is what makes "one
+request, one transaction" a property of the app rather than a convention each
+caller has to remember.
 
 Credentials come from DATABASE_URL only — never from a literal in the tree, and
 never in an error message or log line: a psycopg connection error can carry the

@@ -221,7 +221,7 @@ describe('failure handling', () => {
 
   it('still reports the original failure when recording it also fails', async () => {
     launchCourseTraining.mockRejectedValue(new Error('submission blew up'));
-    updateCourseModelRequest.mockRejectedValue(new Error('firebase down'));
+    updateCourseModelRequest.mockRejectedValue(new Error('the database is down'));
 
     await expect(launchTrainingForRequest(COURSE_490, PREPARED)).rejects.toThrow(
       'submission blew up',

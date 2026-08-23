@@ -311,7 +311,6 @@ export interface CourseSeedReviewRecord {
 export interface CourseSeedListResponse {
   courseId: string;
   count: number;
-  firebasePath: string;
   seeds: CourseSeedReviewRecord[];
 }
 
@@ -319,7 +318,6 @@ export interface SeedReviewResponse {
   courseId: string;
   seedId: string;
   seed: CourseSeedReviewRecord;
-  firebasePath: string;
 }
 
 export interface SeedExportApprovedResponse {
@@ -333,7 +331,6 @@ export interface SeedExportApprovedResponse {
     skippedCount?: number;
     existingCount?: number;
     files?: Record<string, string>;
-    firebasePath?: string;
     [key: string]: unknown;
   };
 }
@@ -431,21 +428,16 @@ export interface EnqueueTrainingRunResponse {
   courseId: string;
   runId: string;
   run: Record<string, unknown>;
-  /**
-   * False when the run was queued for the cluster but could not be recorded in
-   * PostgreSQL, which is what the training list reads. The caller must surface
-   * this rather than treating the request as a plain success.
-   */
-  mirroredToPostgres: boolean;
-  warning?: string | null;
 }
 
 /**
  * Queue a prepared dataset for training.
  *
- * Operational, not persistence: the backend writes the Firebase queue the
- * Tillicum runner claims from, then mirrors the run into PostgreSQL. The
- * browser no longer touches Firebase for this.
+ * One write to one store. The backend inserts the run into PostgreSQL inside a
+ * transaction, so a 201 here means the run is durable and the admin training
+ * list — which reads the same table — will show it on the very next read. The
+ * Tillicum runner claims from that table too, so there is no second copy that
+ * could disagree with this one.
  */
 export async function enqueueTrainingRun(
   courseId: string,

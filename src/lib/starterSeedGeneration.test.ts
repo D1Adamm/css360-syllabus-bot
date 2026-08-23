@@ -126,7 +126,7 @@ describe('describeStarterGeneration', () => {
     expect(message?.detail).toMatch(/syllabus is saved/i);
     expect(message?.detail).toMatch(/administrator/i);
     expect(`${message?.title} ${message?.detail}`).not.toMatch(
-      /ollama|model|token|timeout|http|firebase|traceback|exception|\.edu/i,
+      /ollama|model|token|timeout|http|postgres|traceback|exception|\.edu/i,
     );
   });
 

@@ -124,7 +124,7 @@ This can happen when:
 
 - you are preparing against a prototype-only export in one environment
 - a student example has not been exported yet
-- an ID was removed from Firebase
+- an ID was removed from the database
 
 Re-run export and preparation locally once the example is available in `data/exports/seed-dataset-combined.json`.
 

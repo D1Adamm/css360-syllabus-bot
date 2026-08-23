@@ -15,7 +15,7 @@ ollama pull llama3.2:3b
 
 ## Run
 
-Copy `.env.example` to `.env` and set values (including `FIREBASE_DATABASE_URL` for seed persistence). The backend loads `backend/.env` automatically on startup.
+Copy `.env.example` to `.env` and set values. `DATABASE_URL` is required — it is the only database the application uses. Set `TRAINING_WORKER_TOKEN` too if the Tillicum training queue is in use; without it the `/api/training-queue` endpoints refuse every request. The backend loads `backend/.env` automatically on startup.
 
 ```bash
 source .venv/bin/activate

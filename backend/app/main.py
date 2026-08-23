@@ -14,6 +14,7 @@ from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
 from app.course_rag import generate_course_rag_answer
 from app.db_routes import router as db_router
+from app.training_queue_routes import router as training_queue_router
 from app.finetuned_client import (
     check_finetuned_service_health,
     generate_finetuned_response,
@@ -73,20 +74,13 @@ from app.schemas import (
     TrainingLaunchResponse,
 )
 from app.db import db_connection, translate_db_errors
-from app.db_sync import sync_course_from_firebase
-from app.db_training_runs import upsert_training_run
-from app.firebase_training_runs import (
+from app.db_courses import course_exists
+from app.db_seeds import list_seeds, review_seed
+from app.db_training_runs import (
     ActiveTrainingRunError,
-    enqueue_training_run as enqueue_training_run_to_firebase,
+    enqueue_training_run,
 )
-from app.firebase_metadata import reconcile_starter_seed_generation
-from app.firebase_seeds import (
-    FirebaseConfigurationError,
-    course_seed_example_path,
-    course_seed_examples_path,
-    fetch_course_seed_examples,
-    patch_course_seed_example,
-)
+from app.starter_status import reconcile_starter_seed_generation
 from app.seed_dataset_quality import inspect_seed_dataset
 from app.seed_export import FinetuneJsonlValidationError, export_approved_seeds
 from app.seed_split import (
@@ -95,7 +89,7 @@ from app.seed_split import (
     approved_export_status,
     prepare_training_split,
 )
-from app.seed_review import REVIEW_STATUSES, apply_seed_review, resolve_review_status
+from app.seed_review import REVIEW_STATUSES, resolve_review_status
 from app.seed_allocation import allocate_slots
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
 from app.fact_inventory_cache import load_or_build_fact_inventory
@@ -139,12 +133,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# PostgreSQL-backed routes, mounted alongside the Firebase ones under /api/db.
-# Nothing above changes: Firebase remains the system of record, and these exist
-# so the frontend can be pointed at PostgreSQL one entity at a time. Importing
-# the router does not open a connection — an unset DATABASE_URL only surfaces
-# when an /api/db route is actually called.
+# The application's persistence routes. PostgreSQL is the system of record for
+# everything the browser reads or writes, and these are what it talks to.
+# Importing the router does not open a connection — an unset DATABASE_URL only
+# surfaces when an /api/db route is actually called.
 app.include_router(db_router)
+
+# The queue the Tillicum runner claims work from. Separate router because it
+# has a different caller and a different credential: a shared worker token
+# rather than the browser's ordinary access. See training_queue_routes.
+app.include_router(training_queue_router)
 
 
 # Inference and health endpoints are served under BOTH their original paths
@@ -430,7 +428,7 @@ async def generate_course_seeds(
 ) -> SeedGenerateResponse:
     """Temporary endpoint for testing AI seed generation from one chunk.
 
-    Does not persist seeds to Firebase or trigger course creation.
+    Does not persist seeds or trigger course creation.
     """
     try:
         safe_course_id = assert_valid_course_id(course_id)
@@ -477,7 +475,7 @@ async def generate_course_starter_seeds(
 ) -> StarterSeedGenerateResponse:
     """Temporary endpoint for course-level starter seed generation.
 
-    Set save=true to persist accepted validated seeds to Firebase.
+    Set save=true to persist accepted validated seeds.
     Does not trigger course creation.
     """
     try:
@@ -496,17 +494,14 @@ async def generate_course_starter_seeds(
         )
 
     # This route persisted seeds and, until now, left starterSeedGeneration
-    # describing whichever earlier run wrote it. Best-effort: a metadata write
-    # that fails must not fail a request whose seeds are already saved.
+    # describing whichever earlier run wrote it. Reconciliation derives the
+    # record from the course's real seed count instead. Best-effort: a status
+    # write that fails must not fail a request whose seeds are already saved.
     if request.save:
         await reconcile_starter_seed_generation(
             safe_course_id,
             target_count=result["targetCount"],
         )
-        # This route persists seeds to Firebase. The browser reads PostgreSQL,
-        # so without this a professor would run generation and reload onto the
-        # state from before it. Best-effort: the seeds are already durable.
-        await sync_course_from_firebase(safe_course_id)
 
     persistence = None
     if result.get("persistence") is not None:
@@ -531,11 +526,11 @@ async def top_up_course_starter_seeds(
     course_id: str,
     request: StarterSeedTopUpRequest | None = None,
 ) -> StarterSeedGenerateResponse:
-    """Fill the gap to targetCount without regenerating existing Firebase seeds.
+    """Fill the gap to targetCount without regenerating the course's seeds.
 
-    Reads courses/{courseId}/seedExamples, computes missingCount, generates only
-    that many new accepted seeds, dedupes against existing questions, and saves
-    only the new ones when save=true (default).
+    Reads the course's stored seeds, computes missingCount, generates only that
+    many new accepted seeds, dedupes against existing questions, and saves only
+    the new ones when save=true (default).
     """
     try:
         safe_course_id = assert_valid_course_id(course_id)
@@ -559,9 +554,6 @@ async def top_up_course_starter_seeds(
             safe_course_id,
             target_count=result["targetCount"],
         )
-        # Same reason as generate-starter: the seeds this just added live in
-        # Firebase, and the page that shows them reads PostgreSQL.
-        await sync_course_from_firebase(safe_course_id)
 
     persistence = None
     if result.get("persistence") is not None:
@@ -583,84 +575,57 @@ async def top_up_course_starter_seeds(
     response_model=EnqueueTrainingRunResponse,
     status_code=201,
 )
-async def enqueue_course_training_run(
+def enqueue_course_training_run(
     course_id: str,
     request: EnqueueTrainingRunRequest,
 ) -> EnqueueTrainingRunResponse:
-    """Queue one training run, in Firebase and then PostgreSQL.
+    """Queue one training run in PostgreSQL.
 
-    The browser used to write Firebase itself. It no longer can, but the queue
-    could not simply move: `scripts/lib/training_queue.py` on Tillicum claims
-    work from Firebase with an ETag compare-and-set and knows nothing about this
-    backend or PostgreSQL.
+    One write, one transaction, one store. The run is durable and visible to
+    the admin queue the instant this returns 201 — which is the property the
+    previous two-store version could not offer: it wrote the queue first and
+    mirrored afterwards, so a professor could click Queue training, get a
+    success, reload the page that reads PostgreSQL, and find nothing there.
 
-    Order matters and is deliberate.
-
-    Firebase goes first because it owns the duplicate decision. It is the store
-    the cluster reads, so it is the only place where "this course already has an
-    active run" can be decided without a window in which the cluster sees a run
-    the guard has not counted. Writing PostgreSQL first would mean a failed
-    Firebase write left a queued run visible in the UI that no runner would ever
-    take — the worse of the two failures, because it looks like success.
-
-    PostgreSQL is then mirrored under the same run id, so the admin page — which
-    reads PostgreSQL — shows the run it just queued.
-
-    If the mirror fails, the response still succeeds, because the run really is
-    queued and Tillicum really will take it; telling the caller otherwise would
-    invite a retry that the Firebase guard would then refuse. Instead the
-    response says so explicitly through `mirroredToPostgres` and `warning`, and
-    the admin page surfaces it. A later successful sync repairs the copy.
+    The duplicate guard is a conditional INSERT inside the same transaction
+    (see `db_training_runs.enqueue_training_run`), so two admins clicking at the
+    same moment cannot both win: the loser's INSERT matches no rows and it gets
+    a 409. That is also what makes a retry safe — a second attempt after a
+    timeout is refused rather than queueing the same work twice.
     """
     try:
         safe_course_id = assert_valid_course_id(course_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    try:
-        queued = await enqueue_training_run_to_firebase(
-            course_id=safe_course_id,
+    def work(connection):
+        if not course_exists(connection, safe_course_id):
+            raise HTTPException(
+                status_code=404, detail=f'Course "{safe_course_id}" was not found.'
+            )
+        return enqueue_training_run(
+            connection,
+            safe_course_id,
             mode=request.mode,
             dataset_ref=request.dataset_ref,
             approved_example_count=request.approved_example_count,
             train_examples=request.train_examples,
             validation_examples=request.validation_examples,
         )
+
+    try:
+        with translate_db_errors("queueing a training run"):
+            with db_connection() as connection:
+                created = work(connection)
     except ActiveTrainingRunError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except FirebaseConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    run_id = queued["runId"]
-    record = queued["record"]
-
-    mirrored = True
-    warning: str | None = None
-    try:
-        with db_connection() as connection:
-            upsert_training_run(connection, safe_course_id, run_id, record)
-    except Exception:  # noqa: BLE001 - the queue write already succeeded
-        logger.exception(
-            "Queued training run %s for %s in Firebase but could not mirror it "
-            "to PostgreSQL",
-            run_id,
-            safe_course_id,
-        )
-        mirrored = False
-        warning = (
-            "The run was queued and the cluster can pick it up, but this "
-            "backend could not record it in PostgreSQL, so it may not appear "
-            "in the training list until the next refresh from Firebase."
-        )
 
     return EnqueueTrainingRunResponse(
         courseId=safe_course_id,
-        runId=run_id,
-        run={**record, "runId": run_id},
-        mirroredToPostgres=mirrored,
-        warning=warning,
+        runId=created["runId"],
+        run=created,
     )
 
 
@@ -802,15 +767,17 @@ async def get_course_fact_allocation(
     )
 
 
-def _seed_records_from_firebase_payload(payload: dict) -> list[dict]:
-    records: list[dict] = []
-    for seed_id, raw in payload.items():
-        if not isinstance(raw, dict):
-            continue
-        record = dict(raw)
-        record.setdefault("id", seed_id)
-        records.append(record)
-    return records
+def _course_seed_records(course_id: str) -> list[dict]:
+    """Every stored seed for one course, newest first.
+
+    One connection, one read, course-scoped by the repository. Replaces the
+    node fetch these routes used to do: the shape they consume — a list of
+    records each carrying its own `id` — is unchanged, so review, quality
+    inspection, and the training export all kept their parsing.
+    """
+    with translate_db_errors("loading course seeds"):
+        with db_connection() as connection:
+            return list_seeds(connection, course_id)
 
 
 @app.get(
@@ -818,22 +785,16 @@ def _seed_records_from_firebase_payload(payload: dict) -> list[dict]:
     response_model=CourseSeedListResponse,
 )
 async def list_course_seeds(course_id: str) -> CourseSeedListResponse:
-    """List Firebase seedExamples for review (course-scoped path only)."""
+    """List one course's stored seeds for review."""
     try:
         safe_course_id = assert_valid_course_id(course_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    try:
-        payload = await fetch_course_seed_examples(safe_course_id)
-    except FirebaseConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    seeds = _seed_records_from_firebase_payload(payload)
+    seeds = _course_seed_records(safe_course_id)
     return CourseSeedListResponse(
         courseId=safe_course_id,
         count=len(seeds),
-        firebasePath=course_seed_examples_path(safe_course_id),
         seeds=[SeedReviewRecord(**seed) for seed in seeds],
     )
 
@@ -860,35 +821,35 @@ async def review_course_seed(
             detail=f"reviewStatus must be one of {sorted(REVIEW_STATUSES)}.",
         )
 
-    try:
-        payload = await fetch_course_seed_examples(safe_course_id)
-    except FirebaseConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    existing = payload.get(seed_id)
-    if not isinstance(existing, dict):
-        raise HTTPException(status_code=404, detail=f'Seed "{seed_id}" was not found.')
-
-    try:
-        updated = apply_seed_review(
-            {**existing, "id": seed_id},
+    # `review_seed` applies the same `apply_seed_review` rules the `/api/db`
+    # route uses, so the two paths cannot drift apart on provenance: the first
+    # edit snapshots originalQuestion/originalAnswer, `edited` survives a later
+    # approval, and grounding fields are preserved either way.
+    def work(connection):
+        return review_seed(
+            connection,
+            safe_course_id,
+            seed_id,
             review_status=status,
             question=body.question,
             answer=body.answer,
             review_notes=body.review_notes,
         )
+
+    try:
+        with translate_db_errors("reviewing a seed"):
+            with db_connection() as connection:
+                stored = work(connection)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    stored = await patch_course_seed_example(safe_course_id, seed_id, updated)
-    # The review landed in Firebase, which is what `export_approved_seeds`
-    # reads. PostgreSQL is what the review page reads, so it has to follow.
-    await sync_course_from_firebase(safe_course_id)
+    if stored is None:
+        raise HTTPException(status_code=404, detail=f'Seed "{seed_id}" was not found.')
+
     return SeedReviewResponse(
         courseId=safe_course_id,
         seedId=seed_id,
         seed=SeedReviewRecord(**stored),
-        firebasePath=course_seed_example_path(safe_course_id, seed_id),
     )
 
 
@@ -900,19 +861,14 @@ async def quality_check_course_seeds(
     course_id: str,
     body: SeedQualityCheckRequest | None = None,
 ) -> SeedQualityCheckResponse:
-    """Inspect course seedExamples for coverage and quality flags."""
+    """Inspect a course's stored seeds for coverage and quality flags."""
     try:
         safe_course_id = assert_valid_course_id(course_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     request = body or SeedQualityCheckRequest()
-    try:
-        payload = await fetch_course_seed_examples(safe_course_id)
-    except FirebaseConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    seeds = _seed_records_from_firebase_payload(payload)
+    seeds = _course_seed_records(safe_course_id)
     if request.review_statuses:
         allowed = {
             item.strip().lower()
@@ -924,11 +880,7 @@ async def quality_check_course_seeds(
         ]
 
     report = inspect_seed_dataset(seeds)
-    return SeedQualityCheckResponse(
-        courseId=safe_course_id,
-        firebasePath=course_seed_examples_path(safe_course_id),
-        report=report,
-    )
+    return SeedQualityCheckResponse(courseId=safe_course_id, report=report)
 
 
 @app.post(
@@ -946,12 +898,7 @@ async def export_approved_course_seeds(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    try:
-        payload = await fetch_course_seed_examples(safe_course_id)
-    except FirebaseConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    seeds = _seed_records_from_firebase_payload(payload)
+    seeds = _course_seed_records(safe_course_id)
     try:
         summary = export_approved_seeds(course_id=safe_course_id, seeds=seeds)
     except FinetuneJsonlValidationError as exc:

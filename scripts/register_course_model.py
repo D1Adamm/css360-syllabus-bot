@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Register a trained course model in the per-course model registry.
 
-The registry lives at ``courses/{courseId}/model`` in the Realtime Database,
-alongside that course's metadata, examples, and evaluations. It records that a
-model was produced for a course and what it was produced from. It is the only
-thing the UI consults to answer "does this course have a model" — the shared
-inference service's health endpoint cannot answer that, because it reports what
-is loaded, not whose.
+The registry lives in PostgreSQL, in ``course_models`` and
+``course_model_versions``, alongside that course's metadata, examples, and
+evaluations. It records that a model was produced for a course and what it was
+produced from. It is the only thing the UI consults to answer "does this course
+have a model" — the shared inference service's health endpoint cannot answer
+that, because it reports what is loaded, not whose.
+
+This script runs on the cluster, which is not on the database's network, so it
+writes through the backend's ``/api/training-queue/courses/{courseId}/
+model-versions`` endpoint rather than holding a connection of its own. Set
+TRAINING_API_BASE_URL and TRAINING_WORKER_TOKEN, the same two variables the
+queue runner uses.
 
 Two facts are stored separately and must stay that way:
 
@@ -19,6 +25,10 @@ The artifact reference is stored relative (``css-360-qlora/adapter``) rather
 than as the absolute promote-script destination, which embeds a cluster home
 directory and a username. Admin surfaces show the reference; professor surfaces
 never do.
+
+The course a version lands on is the one named in the URL, and the rows are
+keyed by it. There is no request this script can make that attaches a CSS 360
+adapter to CSS 350.
 
 This script only writes the record. It does not train, promote, or deploy
 anything.
@@ -39,103 +49,23 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
-import urllib.error
-import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "lib"))
 
-COURSE_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+from training_queue import (  # noqa: E402  (path set above)
+    TrainingQueueError,
+    build_queue,
+    load_env_file,
+)
+
 VERSION_PATTERN = re.compile(r"^v(\d+)$")
 
 MODEL_STATUSES = ("ready", "training", "failed")
 DEPLOYMENT_STATUSES = ("online", "offline", "unknown")
-
-
-def load_env_file() -> None:
-    """Read .env.local / .env the same way the other scripts do."""
-    for name in (".env.local", ".env"):
-        path = PROJECT_ROOT / name
-        if not path.exists():
-            continue
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            os.environ.setdefault(key.strip(), value.strip())
-
-
-def assert_valid_course_id(course_id: str) -> str:
-    """Mirror the backend's validation so a bad id cannot reach a path."""
-    candidate = (course_id or "").strip()
-    if (
-        not candidate
-        or not COURSE_ID_PATTERN.match(candidate)
-        or ".." in candidate
-        or "/" in candidate
-    ):
-        raise SystemExit(f"Invalid courseId: {course_id!r}")
-    return candidate
-
-
-def firebase_database_url() -> str:
-    url = (
-        os.environ.get("FIREBASE_DATABASE_URL")
-        or os.environ.get("VITE_FIREBASE_DATABASE_URL")
-        or ""
-    ).strip().rstrip("/")
-    if not url:
-        raise SystemExit(
-            "Missing Firebase database URL. Set FIREBASE_DATABASE_URL or "
-            "VITE_FIREBASE_DATABASE_URL in your environment or .env.local."
-        )
-    return url
-
-
-def request_url(path: str) -> str:
-    url = f"{firebase_database_url()}/{path}.json"
-    token = (os.environ.get("FIREBASE_AUTH_TOKEN") or "").strip()
-    return f"{url}?auth={token}" if token else url
-
-
-def http_json(url: str, *, method: str, payload: Any | None = None) -> Any:
-    data = None if payload is None else json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(url, data=data, method=method)
-    if data is not None:
-        request.add_header("Content-Type", "application/json")
-
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            body = response.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        raise SystemExit(f"Firebase returned HTTP {exc.code}: {exc.reason}") from exc
-    except urllib.error.URLError as exc:
-        raise SystemExit(f"Could not reach Firebase: {exc.reason}") from exc
-
-    return json.loads(body) if body and body != "null" else None
-
-
-def next_version(existing: dict[str, Any] | None) -> str:
-    """`v1`, then `v2`, … — the smallest scheme that still orders."""
-    if not existing:
-        return "v1"
-
-    versions = existing.get("versions")
-    if not isinstance(versions, dict) or not versions:
-        return "v1"
-
-    highest = 0
-    for key in versions:
-        match = VERSION_PATTERN.match(str(key))
-        if match:
-            highest = max(highest, int(match.group(1)))
-    return f"v{highest + 1}"
 
 
 def parse_args() -> argparse.Namespace:
@@ -154,6 +84,13 @@ def parse_args() -> argparse.Namespace:
         "--version",
         help="Override the version key. Defaults to the next unused vN.",
     )
+    parser.add_argument(
+        "--run-id",
+        help=(
+            "Training run this model came from. When given with --status ready, "
+            "the run is marked succeeded and the model request becomes ready."
+        ),
+    )
     parser.add_argument("--notes", default=None)
     parser.add_argument(
         "--dry-run",
@@ -164,63 +101,67 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    load_env_file()
+    load_env_file(PROJECT_ROOT)
     args = parse_args()
 
-    course_id = assert_valid_course_id(args.course_id)
     if args.training_examples < 0:
         raise SystemExit("--training-examples must not be negative")
-    if not args.artifact_ref.strip():
+
+    artifact_ref = args.artifact_ref.strip()
+    if not artifact_ref:
         raise SystemExit("--artifact-ref must not be empty")
-    if args.artifact_ref.strip().startswith("/"):
+    if artifact_ref.startswith("/"):
         raise SystemExit(
             "--artifact-ref must be relative. An absolute path embeds a cluster "
             "home directory and a username, which must not be stored."
         )
-
-    model_path = f"courses/{course_id}/model"
-    existing = http_json(request_url(model_path), method="GET")
-
-    version_key = args.version or next_version(existing)
-    if not VERSION_PATTERN.match(version_key):
-        raise SystemExit(f"Version must look like v1, v2, …: {version_key!r}")
-
-    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    if args.version and not VERSION_PATTERN.match(args.version):
+        raise SystemExit(f"Version must look like v1, v2, …: {args.version!r}")
 
     record = {
-        "version": version_key,
         "baseModel": args.base_model,
         "trainingExampleCount": args.training_examples,
         "status": args.status,
         "deployment": args.deployment,
-        "artifactRef": args.artifact_ref.strip(),
-        "createdAt": now,
-        "updatedAt": now,
+        "artifactRef": artifact_ref,
     }
+    if args.version:
+        record["version"] = args.version
     if args.notes:
         record["notes"] = args.notes
+    if args.run_id:
+        record["runId"] = args.run_id
 
-    print(f"course:  {course_id}")
-    print(f"path:    {model_path}/versions/{version_key}")
+    print(f"course:  {args.course_id}")
     print(json.dumps(record, indent=2))
 
     if args.dry_run:
         print("\n(dry run — nothing written)")
         return 0
 
-    # PATCH so an existing version history is preserved rather than replaced.
-    http_json(
-        request_url(f"{model_path}/versions/{version_key}"),
-        method="PATCH",
-        payload=record,
-    )
-    http_json(
-        request_url(model_path),
-        method="PATCH",
-        payload={"currentVersion": version_key},
-    )
+    try:
+        queue = build_queue()
+        result = queue.register_model_version(
+            args.course_id,
+            base_model=args.base_model,
+            training_example_count=args.training_examples,
+            artifact_ref=artifact_ref,
+            status=args.status,
+            deployment=args.deployment,
+            version=args.version,
+            notes=args.notes,
+            run_id=args.run_id,
+        )
+    except TrainingQueueError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
 
-    print(f"\nRegistered {course_id} model {version_key} (current).")
+    version = result.get("version")
+    current = result.get("currentVersion")
+    request_status = result.get("requestStatus")
+
+    print(f"\nRegistered {args.course_id} model {version} (current: {current}).")
+    if request_status:
+        print(f"modelRequest.status={request_status}")
     return 0
 
 

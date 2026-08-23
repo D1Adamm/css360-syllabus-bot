@@ -23,14 +23,14 @@ const ALL_CONTEXTS: ErrorContext[] = [
  * these cases fails.
  */
 const FORBIDDEN =
-  /fastapi|uvicorn|firebase|ollama|vite_|finetuned_service_url|\.env|localhost|127\.0\.0\.1|tillicum|slurm|traceback/i;
+  /fastapi|uvicorn|postgres|database_url|ollama|vite_|finetuned_service_url|\.env|localhost|127\.0\.0\.1|tillicum|slurm|traceback/i;
 
 const LEAKY_ERRORS: unknown[] = [
   new ApiError('Could not reach the backend. Make sure the FastAPI server is running.'),
   new ApiError('API base URL is not configured. Set VITE_API_BASE_URL in your .env file.'),
   new ApiError('FINETUNED_SERVICE_URL is not set.', 500),
   new ApiError('Ollama returned an error', 502),
-  new Error('Firebase permission denied'),
+  new Error('PostgreSQL permission denied for relation seed_examples'),
   new Error('connect ECONNREFUSED 127.0.0.1:8001'),
   'Slurm job failed on tillicum',
 ];
@@ -68,10 +68,10 @@ describe('toUserMessage', () => {
 
   it('suppresses a 4xx message that names infrastructure', () => {
     const result = toUserMessage(
-      new ApiError('Firebase rejected the write', 400),
+      new ApiError('PostgreSQL rejected the write', 400),
       { audience: 'professor', context: 'example-save' },
     );
-    expect(result.message).not.toMatch(/firebase/i);
+    expect(result.message).not.toMatch(/postgres/i);
   });
 
   it('suppresses a 4xx message that carries a filesystem path', () => {

@@ -38,8 +38,12 @@ export interface UserFacingError {
 const TECHNICAL_MARKERS = [
   'fastapi',
   'uvicorn',
-  'firebase',
   'ollama',
+  // The store's name is infrastructure to a student the same way the old one
+  // was: backend 503s say "PostgreSQL is unavailable while …", and that is not
+  // a sentence a professor should read on their own course page.
+  'postgres',
+  'database_url',
   'vite_',
   'finetuned_service_url',
   'env file',

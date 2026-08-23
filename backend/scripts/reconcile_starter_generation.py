@@ -1,7 +1,6 @@
-"""Repair stale starterSeedGeneration records from the real seed count.
+"""Repair stale starter_seed_generation rows from the real seed count.
 
-Reads only `courses/{courseId}/seedExamples` and
-`courses/{courseId}/metadata/starterSeedGeneration`, and writes only the latter.
+Reads `seed_examples` and `starter_seed_generation`, and writes only the latter.
 It never creates, edits, or deletes a seed, and never runs generation — so it is
 safe on a live course and cannot change what a professor has to review.
 
@@ -12,8 +11,7 @@ Usage:
     --target-count N   fallback target when the course has no recorded one
                        (an existing targetCount always wins)
 
-Needs FIREBASE_DATABASE_URL (and FIREBASE_AUTH_TOKEN if rules require it) in
-backend/.env, exactly like the running backend.
+Needs DATABASE_URL in backend/.env, exactly like the running backend.
 """
 
 from __future__ import annotations
@@ -27,8 +25,8 @@ from typing import Any, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.course_id import is_valid_course_id  # noqa: E402
-from app.firebase_metadata import (  # noqa: E402
-    count_course_seed_examples,
+from app.seed_persistence import count_course_seed_examples  # noqa: E402
+from app.starter_status import (  # noqa: E402
     read_starter_seed_generation,
     reconcile_starter_seed_generation,
     resolve_reconciled_starter_status,

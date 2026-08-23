@@ -74,5 +74,7 @@ backend/data/indexes/
 # Local backup
 local-artifact-backup/
 
-# Local Firebase migration snapshots
+# Archived Firebase snapshots kept for the one-time PostgreSQL import
+# (backend/scripts/import_firebase_snapshot.py). Never committed; never deleted
+# by anything in this repository.
 backups/firebase/

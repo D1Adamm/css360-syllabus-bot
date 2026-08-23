@@ -1,7 +1,8 @@
 """Request/response models for the PostgreSQL-backed `/api/db` routes.
 
 Separate from `schemas.py` so the parallel layer can be read — and later
-removed or promoted — without picking it out of the live Firebase models.
+removed or promoted — without picking it out of the operational models in
+`app/schemas.py`.
 
 Response records use `extra="allow"`, the same choice `SeedReviewRecord`
 already makes: the repositories emit the camelCase records the frontend types
@@ -37,6 +38,10 @@ class StarterSeedGenerationRecord(DbRecord):
     error: str | None = None
     started_at: str | None = Field(default=None, alias="startedAt")
     completed_at: str | None = Field(default=None, alias="completedAt")
+    # Operator diagnostics: what this course's syllabus could ever have
+    # supported, and what stopped the run short of it.
+    achievable_ceiling: int | None = Field(default=None, alias="achievableCeiling")
+    limiting_factor: str | None = Field(default=None, alias="limitingFactor")
 
 
 class CourseMetadataRecord(DbRecord):
@@ -109,6 +114,10 @@ class StarterSeedGenerationUpdateRequest(BaseModel):
     error: str | None = None
     started_at: str | None = Field(default=None, alias="startedAt")
     completed_at: str | None = Field(default=None, alias="completedAt")
+    achievable_ceiling: int | None = Field(
+        default=None, alias="achievableCeiling", ge=0
+    )
+    limiting_factor: str | None = Field(default=None, alias="limitingFactor")
 
 
 class StarterSeedGenerationResponse(BaseModel):

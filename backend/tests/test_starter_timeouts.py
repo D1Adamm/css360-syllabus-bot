@@ -290,15 +290,15 @@ class StarterJobTimeoutFailureTests(unittest.IsolatedAsyncioTestCase):
             # The failure path now reconciles counts before writing `failed`;
             # stub the reads and the metadata write so this stays offline.
             patch(
-                "app.firebase_metadata.fetch_course_seed_examples",
-                new=AsyncMock(return_value={}),
+                "app.starter_status.count_course_seed_examples",
+                new=AsyncMock(return_value=0),
             ),
             patch(
-                "app.firebase_metadata.read_starter_seed_generation",
+                "app.starter_status.read_starter_seed_generation",
                 new=AsyncMock(return_value=None),
             ),
             patch(
-                "app.firebase_metadata.best_effort_patch_starter_seed_generation",
+                "app.starter_status.best_effort_patch_starter_seed_generation",
                 new=AsyncMock(side_effect=_capture_patch),
             ),
             patch(

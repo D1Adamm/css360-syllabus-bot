@@ -2,34 +2,40 @@
 
 Why this exists
 ---------------
-`backend/.env` holds a real FIREBASE_DATABASE_URL, and pytest loads it like the
-running backend does. Every Firebase helper is therefore fully configured while
-tests run, so any code path a test forgets to stub reaches the live database —
-silently, because the starter-status writes are deliberately best-effort and
-swallow their own failures.
+`backend/.env` holds real credentials, and pytest loads it exactly like the
+running backend does. Anything a test forgets to stub is therefore fully
+configured while the suite runs, and reaches the real thing — silently, because
+several status writes are deliberately best-effort and swallow their own
+failures.
 
 That is not hypothetical. A route test posting `save: true` to
 `/seeds/generate-starter` stubbed seed persistence but not the starter-status
-reconciliation that runs after it, and every full-suite run recreated
-`courses/css-360-summer-2026-demo/metadata` in production.
+reconciliation that runs after it, and every full-suite run rewrote a live
+course's record.
 
-The guard is at the network boundary — httpx's `send`, the single point every
-request passes through — rather than at any helper. Stubbing helpers only ever
-covers the paths someone remembered; this covers the ones nobody did, including
+The guards are at the boundaries, not at any helper. Stubbing helpers only ever
+covers the paths someone remembered; these cover the ones nobody did, including
 paths added later.
 
-Two layers, deliberately
-------------------------
-1. `block_external_http` fails any request to a non-local host. Loud, and it
-   names the URL, so a future leak is a failing test rather than a write to
-   production.
-2. `firebase_unconfigured_by_default` removes the Firebase credentials from the
-   environment, so helpers raise `FirebaseConfigurationError` before building a
-   request at all. Tests that want configured behavior set the variable
-   themselves, which several already do.
+Three layers, deliberately
+--------------------------
+1. `block_external_http` fails any HTTP request to a non-local host. Loud, and
+   it names the URL, so a future leak is a failing test rather than a write to
+   production. This is what would catch the training worker's queue client if
+   it were ever exercised unstubbed.
+2. `postgres_unconfigured_by_default` removes DATABASE_URL, so `app.db.connect`
+   raises `DatabaseConfigurationError` before psycopg opens a socket. Nothing
+   in the suite talks to a real database; repository behaviour is tested
+   against the recording fake in `test_db_repositories.py`, and route
+   behaviour by patching `db_connection`.
+3. `training_worker_unconfigured_by_default` removes TRAINING_WORKER_TOKEN, so
+   the queue router refuses with 503 unless a test sets one. A test that means
+   to exercise an authenticated queue call says so.
 
-Layer 2 alone would be enough today. Layer 1 is what keeps it true: it fails
-even if a test sets a real URL, and it catches anything that is not Firebase.
+Firebase used to need a layer of its own here. It no longer does: there is no
+Firebase code left in the runtime tree to configure, and no test mocks it. The
+one module that still parses a Firebase export — `app/firebase_snapshot.py` —
+reads a JSON file and opens no connection at all.
 """
 
 from __future__ import annotations
@@ -52,7 +58,8 @@ ALLOWED_HOSTS = frozenset(
     }
 )
 
-FIREBASE_ENV_VARS = ("FIREBASE_DATABASE_URL", "FIREBASE_AUTH_TOKEN")
+DATABASE_ENV_VARS = ("DATABASE_URL",)
+TRAINING_WORKER_ENV_VARS = ("TRAINING_WORKER_TOKEN",)
 
 
 class ExternalRequestBlocked(AssertionError):
@@ -65,11 +72,9 @@ def _assert_local(request: Any) -> None:
         raise ExternalRequestBlocked(
             f"A test tried to reach {request.method} {request.url}.\n"
             "Backend tests must not make external requests. Stub the boundary "
-            "the code under test actually uses — for Firebase that is "
-            "app.firebase_seeds.fetch_course_seed_examples / "
-            "save_course_seed_example, or "
-            "app.firebase_metadata.best_effort_patch_starter_seed_generation — "
-            "and remember that a route may write status after the work it does."
+            "the code under test actually uses — for storage that is "
+            "app.db.db_connection (or the repository function above it), and "
+            "remember that a route may write status after the work it does."
         )
 
 
@@ -97,12 +102,25 @@ def block_external_http(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def firebase_unconfigured_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Run every test as though Firebase were not configured.
+def postgres_unconfigured_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every test as though PostgreSQL were not configured.
 
-    Production code is unchanged: an unset FIREBASE_DATABASE_URL is a state the
-    helpers already handle, and handle the same way in production. A test that
-    wants configured behavior sets the variable itself.
+    Production code is unchanged: an unset DATABASE_URL is a state `app.db`
+    already handles, and handles the same way in production — a 503 that names
+    what to set. A test that wants storage behaviour patches `db_connection`
+    with a fake, which is both faster and honest about what it is asserting.
     """
-    for name in FIREBASE_ENV_VARS:
+    for name in DATABASE_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def training_worker_unconfigured_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every test as though the training worker token were unset.
+
+    The queue router then refuses with 503, which is the deployed behaviour for
+    an unconfigured backend. A test exercising an authenticated queue call sets
+    the variable itself.
+    """
+    for name in TRAINING_WORKER_ENV_VARS:
         monkeypatch.delenv(name, raising=False)

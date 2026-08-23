@@ -1,346 +1,236 @@
-"""The operational training-run enqueue: Firebase queue first, PostgreSQL after.
+"""The operational training-run enqueue: one write, one store, immediately visible.
 
-The browser used to write the Firebase queue itself. It no longer can, but the
-queue could not move: `scripts/lib/training_queue.py` on Tillicum claims work
-from Firebase with an ETag compare-and-set. So the backend now writes both, in a
-fixed order, and says so when only one of them landed.
+This route is the fix for a specific consistency bug. It used to write a queue
+in one store and mirror the run into PostgreSQL afterwards, and the admin
+training list reads PostgreSQL — so a professor could click Queue training, get
+a success, reload, and find nothing. The window was real and the response
+carried a `mirroredToPostgres` flag to admit it.
 
-Firebase is stubbed at the httpx boundary — the same place `conftest.py` blocks
-real requests — so these exercise the actual URL, headers, and payload the
-runner will read, without touching a database.
+There is no window now, and no flag. The insert and the duplicate guard are the
+same statement in the same transaction, so a 201 means the run is durable and
+the next read of `training_runs` — by the admin page or by the cluster runner —
+will see it.
+
+No database is involved here. The repository's SQL is asserted statement by
+statement in `test_db_repositories.py`; what these cover is the route's
+contract: what it returns, which failures map to which status, and that a
+duplicate is refused rather than queued twice.
 """
 
 from __future__ import annotations
 
-import json
-import os
 import unittest
-from typing import Any
-from unittest.mock import AsyncMock, patch
+from contextlib import contextmanager
+from typing import Any, Iterator
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.firebase_training_runs import (
-    ActiveTrainingRunError,
-    build_run_record,
-    enqueue_training_run,
-)
+from app.db_training_runs import ActiveTrainingRunError
 from app.main import app
 
 COURSE = "css-360-winter-2026-a7rp"
-RUNS_URL_FRAGMENT = f"courses/{COURSE}/trainingRuns.json"
+OTHER_COURSE = "css-350-spring-2026-n3h9"
 
-TERMINAL_RUN = {
-    "courseId": COURSE,
+BODY = {
     "mode": "full",
-    "state": "succeeded",
-    "enqueuedAt": "2026-08-01T00:00:00+00:00",
+    "datasetRef": f"exports/{COURSE}",
+    "approvedExampleCount": 54,
+    "trainExamples": 48,
+    "validationExamples": 6,
 }
 
-ACTIVE_RUN = {**TERMINAL_RUN, "state": "queued"}
+
+def _queued_run(course_id: str = COURSE, run_id: str = "run-20260813t120000z-a1b2c3"):
+    return {
+        "runId": run_id,
+        "courseId": course_id,
+        "mode": "full",
+        "state": "queued",
+        "enqueuedAt": "2026-08-13T12:00:00+00:00",
+        "updatedAt": "2026-08-13T12:00:00+00:00",
+        "datasetRef": f"exports/{course_id}",
+        "approvedExampleCount": 54,
+        "trainExamples": 48,
+        "validationExamples": 6,
+        "attempt": 0,
+    }
 
 
-class FakeResponse:
-    def __init__(self, status_code: int, payload: Any = None, etag: str = 'W/"e1"'):
-        self.status_code = status_code
-        self._payload = payload
-        self.headers = {"ETag": etag}
-
-    def json(self) -> Any:
-        return self._payload
-
-
-class FakeFirebaseClient:
-    """Records the GET/PUT pair the compare-and-set performs."""
-
-    def __init__(self, *, current: Any = None, put_statuses: list[int] | None = None):
-        self.current = current
-        self.put_statuses = put_statuses or [200]
-        self.gets: list[tuple[str, dict]] = []
-        self.puts: list[tuple[str, Any, dict]] = []
-
-    async def __aenter__(self) -> "FakeFirebaseClient":
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def get(self, url: str, headers: dict | None = None) -> FakeResponse:
-        self.gets.append((url, headers or {}))
-        return FakeResponse(200, self.current)
-
-    async def put(
-        self, url: str, json: Any = None, headers: dict | None = None
-    ) -> FakeResponse:
-        self.puts.append((url, json, headers or {}))
-        status = self.put_statuses[min(len(self.puts) - 1, len(self.put_statuses) - 1)]
-        if status == 200:
-            self.current = json
-        return FakeResponse(status, json)
-
-
-def _with_firebase(client: FakeFirebaseClient):
-    return patch(
-        "app.firebase_training_runs.httpx.AsyncClient", return_value=client
-    )
-
-
-def _configured():
-    return patch.dict(
-        os.environ,
-        {"FIREBASE_DATABASE_URL": "https://example-default-rtdb.firebaseio.com"},
-    )
-
-
-class FirebaseQueuePayloadTests(unittest.IsolatedAsyncioTestCase):
-    """1. The queue payload is exactly what Tillicum parses."""
-
-    def test_record_carries_every_field_the_runner_requires(self) -> None:
-        record = build_run_record(
-            course_id=COURSE,
-            mode="full",
-            dataset_ref=f"exports/{COURSE}",
-            approved_example_count=54,
-            train_examples=48,
-            validation_examples=6,
-            enqueued_at="2026-08-20T10:00:00+00:00",
-        )
-
-        # `parse_run` rejects a record missing any of these four.
-        for required in ("courseId", "state", "mode", "enqueuedAt"):
-            self.assertIn(required, record)
-
-        self.assertEqual(record["state"], "queued")
-        self.assertEqual(record["attempt"], 0)
-        self.assertEqual(record["datasetRef"], f"exports/{COURSE}")
-        self.assertEqual(record["approvedExampleCount"], 54)
-
-    def test_record_omits_run_id_and_job_id(self) -> None:
-        """The key is the id, and only the cluster produces a job id."""
-        record = build_run_record(
-            course_id=COURSE,
-            mode="smoke",
-            dataset_ref="exports/x",
-            approved_example_count=0,
-            train_examples=0,
-            validation_examples=0,
-            enqueued_at="2026-08-20T10:00:00+00:00",
-        )
-
-        self.assertNotIn("runId", record)
-        self.assertNotIn("jobId", record)
-        self.assertNotIn("claim", record)
-
-    async def test_writes_to_the_course_scoped_queue_node(self) -> None:
-        fake = FakeFirebaseClient(current=None)
-
-        with _configured(), _with_firebase(fake):
-            queued = await enqueue_training_run(
-                course_id=COURSE, mode="full", dataset_ref=f"exports/{COURSE}"
-            )
-
-        self.assertIn(RUNS_URL_FRAGMENT, fake.puts[0][0])
-        # The run is stored under its own id, alongside whatever was there.
-        self.assertEqual(list(fake.puts[0][1]), [queued["runId"]])
-
-    async def test_uses_compare_and_set_headers(self) -> None:
-        fake = FakeFirebaseClient(current=None)
-
-        with _configured(), _with_firebase(fake):
-            await enqueue_training_run(
-                course_id=COURSE, mode="full", dataset_ref="exports/x"
-            )
-
-        self.assertEqual(fake.gets[0][1].get("X-Firebase-ETag"), "true")
-        self.assertEqual(fake.puts[0][2].get("if-match"), 'W/"e1"')
-
-    async def test_run_id_matches_the_pattern_the_runner_validates(self) -> None:
-        import re
-
-        fake = FakeFirebaseClient(current=None)
-        with _configured(), _with_firebase(fake):
-            queued = await enqueue_training_run(
-                course_id=COURSE, mode="full", dataset_ref="exports/x"
-            )
-
-        # RUN_ID_PATTERN in scripts/lib/training_queue.py.
-        self.assertRegex(queued["runId"], re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$"))
-
-    async def test_existing_runs_are_preserved(self) -> None:
-        fake = FakeFirebaseClient(current={"run-old": TERMINAL_RUN})
-
-        with _configured(), _with_firebase(fake):
-            queued = await enqueue_training_run(
-                course_id=COURSE, mode="full", dataset_ref="exports/x"
-            )
-
-        written = fake.puts[0][1]
-        self.assertIn("run-old", written)
-        self.assertIn(queued["runId"], written)
-
-
-class DuplicateSemanticsTests(unittest.IsolatedAsyncioTestCase):
-    """3. The one-active-run rule survives the move to the backend."""
-
-    async def test_refuses_while_a_run_is_outstanding(self) -> None:
-        fake = FakeFirebaseClient(current={"run-1": ACTIVE_RUN})
-
-        with _configured(), _with_firebase(fake):
-            with self.assertRaises(ActiveTrainingRunError):
-                await enqueue_training_run(
-                    course_id=COURSE, mode="full", dataset_ref="exports/x"
-                )
-
-        self.assertEqual(fake.puts, [])
-
-    async def test_allows_a_new_run_once_every_earlier_one_finished(self) -> None:
-        fake = FakeFirebaseClient(
-            current={"run-1": TERMINAL_RUN, "run-2": {**TERMINAL_RUN, "state": "failed"}}
-        )
-
-        with _configured(), _with_firebase(fake):
-            queued = await enqueue_training_run(
-                course_id=COURSE, mode="full", dataset_ref="exports/x"
-            )
-
-        self.assertTrue(queued["runId"])
-
-    async def test_a_lost_race_is_retried_and_then_refused(self) -> None:
-        """412 means someone else wrote first; the retry sees their run."""
-        fake = FakeFirebaseClient(current=None, put_statuses=[412])
-
-        async def _get(url: str, headers: dict | None = None) -> FakeResponse:
-            fake.gets.append((url, headers or {}))
-            # Second read reflects the winner's write.
-            payload = None if len(fake.gets) == 1 else {"run-1": ACTIVE_RUN}
-            return FakeResponse(200, payload)
-
-        fake.get = _get  # type: ignore[assignment]
-
-        with _configured(), _with_firebase(fake):
-            with self.assertRaises(ActiveTrainingRunError):
-                await enqueue_training_run(
-                    course_id=COURSE, mode="full", dataset_ref="exports/x"
-                )
-
-        self.assertEqual(len(fake.gets), 2)
-
-    async def test_rejects_an_unknown_mode_before_any_request(self) -> None:
-        fake = FakeFirebaseClient(current=None)
-
-        with _configured(), _with_firebase(fake):
-            with self.assertRaises(ValueError):
-                await enqueue_training_run(
-                    course_id=COURSE, mode="turbo", dataset_ref="exports/x"
-                )
-
-        self.assertEqual(fake.gets, [])
+@contextmanager
+def _fake_connection(**kwargs: Any) -> Iterator[object]:
+    yield object()
 
 
 class EnqueueRouteTests(unittest.TestCase):
-    """2, 5, 6. The route mirrors to PostgreSQL and is honest when it cannot."""
-
     def setUp(self) -> None:
         self.client = TestClient(app)
 
-    def _post(self, mirror_side_effect: Exception | None = None, **kwargs: Any):
-        fake = FakeFirebaseClient(current=None)
-        self.upsert = AsyncMock()
+    @contextmanager
+    def _stubbed(
+        self,
+        *,
+        course_exists: bool = True,
+        enqueue: Any = None,
+    ) -> Iterator[list[dict[str, Any]]]:
+        calls: list[dict[str, Any]] = []
 
-        mirrored: list[tuple[str, str, dict]] = []
-
-        def _upsert(connection: Any, course_id: str, run_id: str, record: dict):
-            if mirror_side_effect is not None:
-                raise mirror_side_effect
-            mirrored.append((course_id, run_id, record))
-            return {"runId": run_id, **record}
-
-        self.mirrored = mirrored
-        self.fake = fake
-
-        from contextlib import contextmanager
-
-        @contextmanager
-        def _connection(**_kwargs: Any):
-            yield object()
+        def _enqueue(connection: Any, course_id: str, **kwargs: Any) -> dict[str, Any]:
+            calls.append({"courseId": course_id, **kwargs})
+            if enqueue is not None:
+                if isinstance(enqueue, Exception):
+                    raise enqueue
+                return enqueue
+            return _queued_run(course_id)
 
         with (
-            _configured(),
-            _with_firebase(fake),
-            patch("app.main.db_connection", new=_connection),
-            patch("app.main.upsert_training_run", side_effect=_upsert),
+            patch("app.main.db_connection", _fake_connection),
+            patch("app.main.course_exists", return_value=course_exists),
+            patch("app.main.enqueue_training_run", side_effect=_enqueue),
         ):
-            return self.client.post(
-                f"/api/courses/{COURSE}/training-runs",
-                json={"mode": "full", "datasetRef": f"exports/{COURSE}", **kwargs},
+            yield calls
+
+    def test_queues_a_run_and_returns_it(self) -> None:
+        with self._stubbed() as calls:
+            response = self.client.post(
+                f"/api/courses/{COURSE}/training-runs", json=BODY
             )
 
-    def test_queues_and_mirrors_the_same_run(self) -> None:
-        response = self._post(approvedExampleCount=54)
-
         self.assertEqual(response.status_code, 201)
-        body = response.json()
-        self.assertTrue(body["mirroredToPostgres"])
-        self.assertIsNone(body["warning"])
+        payload = response.json()
+        self.assertEqual(payload["courseId"], COURSE)
+        self.assertEqual(payload["runId"], "run-20260813t120000z-a1b2c3")
+        self.assertEqual(payload["run"]["state"], "queued")
+        self.assertEqual(payload["run"]["runId"], payload["runId"])
 
-        # The same run id reached both stores.
-        firebase_run_id = list(self.fake.puts[0][1])[0]
-        self.assertEqual(body["runId"], firebase_run_id)
-        self.assertEqual(self.mirrored[0][1], firebase_run_id)
-        self.assertEqual(self.mirrored[0][0], COURSE)
-        self.assertEqual(self.mirrored[0][2]["approvedExampleCount"], 54)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["courseId"], COURSE)
+        self.assertEqual(calls[0]["dataset_ref"], f"exports/{COURSE}")
+        self.assertEqual(calls[0]["train_examples"], 48)
 
-    def test_a_failed_mirror_is_reported_not_hidden(self) -> None:
-        """6. Never a plain success while PostgreSQL is known stale."""
-        response = self._post(mirror_side_effect=RuntimeError("postgres down"))
+    def test_the_response_no_longer_hedges_about_where_the_run_landed(self) -> None:
+        """`mirroredToPostgres` described a second store. There isn't one."""
+        with self._stubbed():
+            response = self.client.post(
+                f"/api/courses/{COURSE}/training-runs", json=BODY
+            )
 
-        self.assertEqual(response.status_code, 201)
-        body = response.json()
-        self.assertFalse(body["mirroredToPostgres"])
-        self.assertIn("PostgreSQL", body["warning"])
-        # The run really is queued, so the caller must not be told to retry.
-        self.assertTrue(body["runId"])
-        self.assertEqual(len(self.fake.puts), 1)
+        payload = response.json()
+        self.assertNotIn("mirroredToPostgres", payload)
+        self.assertNotIn("warning", payload)
+
+    def test_the_queued_run_is_readable_immediately_after_the_request(self) -> None:
+        """The bug this migration exists to close.
+
+        The enqueue and the admin list read the same table, so whatever the
+        enqueue committed is what the next list returns. Asserted end to end
+        against a shared store rather than by trusting the route's word.
+        """
+        stored: dict[str, dict[str, Any]] = {}
+
+        def _enqueue(connection: Any, course_id: str, **kwargs: Any) -> dict[str, Any]:
+            run = _queued_run(course_id)
+            stored[run["runId"]] = run
+            return run
+
+        with (
+            patch("app.main.db_connection", _fake_connection),
+            patch("app.main.course_exists", return_value=True),
+            patch("app.main.enqueue_training_run", side_effect=_enqueue),
+        ):
+            created = self.client.post(
+                f"/api/courses/{COURSE}/training-runs", json=BODY
+            )
+        self.assertEqual(created.status_code, 201)
+        run_id = created.json()["runId"]
+
+        with (
+            patch("app.db_routes.db_connection", _fake_connection),
+            patch(
+                "app.db_routes.db_training_runs.list_training_runs",
+                return_value=list(stored.values()),
+            ),
+        ):
+            listed = self.client.get(f"/api/db/courses/{COURSE}/training-runs")
+
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([run["runId"] for run in listed.json()["runs"]], [run_id])
 
     def test_a_second_active_run_is_409(self) -> None:
-        fake = FakeFirebaseClient(current={"run-1": ACTIVE_RUN})
+        """The guard, and the reason a retry is safe.
 
-        with _configured(), _with_firebase(fake):
+        A duplicate must be refused rather than queued twice — a retry after a
+        timeout has to be able to lose harmlessly.
+        """
+        with self._stubbed(
+            enqueue=ActiveTrainingRunError(
+                f'Course "{COURSE}" already has an active training run.'
+            )
+        ):
             response = self.client.post(
-                f"/api/courses/{COURSE}/training-runs",
-                json={"mode": "full", "datasetRef": "exports/x"},
+                f"/api/courses/{COURSE}/training-runs", json=BODY
             )
 
         self.assertEqual(response.status_code, 409)
+        self.assertIn("active training run", response.json()["detail"])
 
-    def test_nothing_is_mirrored_when_the_queue_write_fails(self) -> None:
-        """PostgreSQL must not show a run the cluster never received."""
-        fake = FakeFirebaseClient(current=None, put_statuses=[500])
-        upsert = AsyncMock()
+    def test_an_unknown_course_is_404(self) -> None:
+        with self._stubbed(course_exists=False) as calls:
+            response = self.client.post(
+                f"/api/courses/{COURSE}/training-runs", json=BODY
+            )
 
-        with _configured(), _with_firebase(fake), patch(
-            "app.main.upsert_training_run", new=upsert
-        ):
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(calls, [])
+
+    def test_an_unknown_mode_is_422(self) -> None:
+        with self._stubbed(enqueue=ValueError("Unknown training mode: 'turbo'.")):
             response = self.client.post(
                 f"/api/courses/{COURSE}/training-runs",
-                json={"mode": "full", "datasetRef": "exports/x"},
+                json={**BODY, "mode": "turbo"},
+            )
+
+        self.assertEqual(response.status_code, 422)
+
+    def test_an_invalid_course_id_is_rejected_before_any_write(self) -> None:
+        with self._stubbed() as calls:
+            response = self.client.post(
+                "/api/courses/..%2Fetc/training-runs", json=BODY
+            )
+
+        self.assertIn(response.status_code, (400, 404))
+        self.assertEqual(calls, [])
+
+    def test_dataset_ref_is_required(self) -> None:
+        with self._stubbed() as calls:
+            response = self.client.post(
+                f"/api/courses/{COURSE}/training-runs",
+                json={"mode": "full"},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(calls, [])
+
+    def test_a_run_is_queued_only_for_the_course_in_the_path(self) -> None:
+        """Course isolation: the id in the URL is the only one that reaches SQL."""
+        with self._stubbed() as calls:
+            self.client.post(f"/api/courses/{OTHER_COURSE}/training-runs", json=BODY)
+
+        self.assertEqual([call["courseId"] for call in calls], [OTHER_COURSE])
+
+    def test_an_unreachable_database_is_503_not_a_false_success(self) -> None:
+        """A failed enqueue must never read as a queued run."""
+        from app.db import DatabaseConfigurationError
+
+        def _boom(**kwargs: Any) -> Any:
+            raise DatabaseConfigurationError("PostgreSQL is not configured.")
+
+        with patch("app.main.db_connection", _boom):
+            response = self.client.post(
+                f"/api/courses/{COURSE}/training-runs", json=BODY
             )
 
         self.assertEqual(response.status_code, 503)
-        upsert.assert_not_called()
-
-    def test_an_invalid_course_id_is_rejected_before_any_write(self) -> None:
-        response = self.client.post(
-            "/api/courses/CSS%20360/training-runs",
-            json={"mode": "full", "datasetRef": "exports/x"},
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_dataset_ref_is_required(self) -> None:
-        response = self.client.post(
-            f"/api/courses/{COURSE}/training-runs", json={"mode": "full"}
-        )
-        self.assertEqual(response.status_code, 422)
 
 
 if __name__ == "__main__":

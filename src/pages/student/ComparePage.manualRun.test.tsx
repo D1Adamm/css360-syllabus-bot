@@ -37,7 +37,6 @@ vi.mock('../../lib/api', () => ({
   listCourseSeeds: vi.fn(async () => ({
     courseId: 'css-430-summer-2026-ibce',
     count: 2,
-    firebasePath: '',
     seeds: [
       { id: 's1', question: SUGGESTED[0], answer: 'a', reviewStatus: 'approved' },
       { id: 's2', question: SUGGESTED[1], answer: 'a', reviewStatus: 'approved' },

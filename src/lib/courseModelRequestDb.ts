@@ -219,7 +219,7 @@ export class DuplicateModelRequestError extends Error {
  * The guard moved into the database with the record. The backend inserts only
  * when no active request exists for the course, evaluated at write time, so a
  * professor double-clicking or two tabs racing still produce exactly one
- * request — the same guarantee the Firebase transaction gave, enforced a layer
+ * request — the same guarantee the client-side transaction gave, enforced a layer
  * lower. A refused create comes back as 409.
  */
 export async function createCourseModelRequest(

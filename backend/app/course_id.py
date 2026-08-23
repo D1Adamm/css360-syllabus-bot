@@ -1,4 +1,4 @@
-"""Reusable courseId validation for filesystem-safe Firebase/backend paths."""
+"""Reusable courseId validation for filesystem-safe backend paths and keys."""
 
 from __future__ import annotations
 

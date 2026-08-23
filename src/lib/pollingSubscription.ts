@@ -1,5 +1,5 @@
 /**
- * The replacement for Firebase's realtime listeners.
+ * The replacement for the realtime listeners this app used before the cutover.
  *
  * `onValue` gave every screen a live subscription for free. Almost none of them
  * needed one: a course's title, its seed list, its registered model, and its

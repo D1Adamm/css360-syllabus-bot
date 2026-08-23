@@ -80,7 +80,6 @@ function noSeeds(id = courseId) {
   listCourseSeeds.mockResolvedValue({
     courseId: id,
     count: 0,
-    firebasePath: `courses/${id}/seedExamples`,
     seeds: [],
   });
 }
@@ -112,7 +111,6 @@ describe('ReviewExamplesPage', () => {
     listCourseSeeds.mockResolvedValue({
       courseId: 'css-360-winter-2026-a7rp',
       count: 2,
-      firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples',
       seeds: [
         {
           id: 'seed-1',
@@ -154,7 +152,6 @@ describe('ReviewExamplesPage', () => {
         return {
           courseId: 'css-360-winter-2026-a7rp',
           seedId,
-          firebasePath: `courses/css-360-winter-2026-a7rp/seedExamples/${seedId}`,
           seed: {
             id: seedId,
             question: body.question ?? 'Can I submit late?',
@@ -239,7 +236,6 @@ describe('ReviewExamplesPage', () => {
     listCourseSeeds.mockResolvedValue({
       courseId: 'css-360-winter-2026-a7rp',
       count: 2,
-      firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples',
       seeds: [
         {
           id: 'seed-1',
@@ -298,7 +294,6 @@ describe('ReviewExamplesPage', () => {
     listCourseSeeds.mockResolvedValue({
       courseId: 'css-360-winter-2026-a7rp',
       count: 1,
-      firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples',
       seeds: [
         {
           id: 'seed-edit',
@@ -316,7 +311,6 @@ describe('ReviewExamplesPage', () => {
     reviewCourseSeed.mockResolvedValue({
       courseId: 'css-360-winter-2026-a7rp',
       seedId: 'seed-edit',
-      firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples/seed-edit',
       seed: {
         id: 'seed-edit',
         question: 'How does grading work?',
@@ -379,7 +373,6 @@ describe('ReviewExamplesPage', () => {
     listCourseSeeds.mockResolvedValue({
       courseId: 'css-360-winter-2026-a7rp',
       count: 2,
-      firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples',
       seeds: [
         {
           id: 'seed-1',
@@ -531,7 +524,7 @@ describe('ReviewExamplesPage', () => {
 
       const text = document.body.textContent ?? '';
       expect(text).not.toMatch(/ollama|11434|127\.0\.0\.1|timed out|600s/i);
-      expect(text).not.toMatch(/traceback|exception|firebase|http/i);
+      expect(text).not.toMatch(/traceback|exception|postgres|http/i);
     });
 
     it('offers no retry, because nothing here can safely start one', async () => {

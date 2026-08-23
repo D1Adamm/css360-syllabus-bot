@@ -4,7 +4,7 @@ import type { CourseMetadata, EvaluationRecord, SeedExample } from '../types';
 /**
  * Course, seed, and evaluation persistence after the PostgreSQL cutover.
  *
- * These used to assert Firebase call mechanics — which `ref` path a write went
+ * These used to assert client-side database call mechanics — which path a write went
  * to, which snapshot a listener parsed. They now assert the same guarantees one
  * layer over: that each call reaches the FastAPI route for exactly the course
  * it was given, and that what comes back is parsed the way the UI expects.

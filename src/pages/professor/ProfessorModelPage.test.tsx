@@ -457,7 +457,7 @@ describe('ProfessorModelPage requests', () => {
     expect(text).not.toContain('run-20260812t120000z-0a1b2c');
     expect(text).not.toMatch(/\brun\b|queue|claim|lease|attempt/i);
     expect(text).not.toMatch(
-      /courses\/|trainingRuns|firebase|tillicum|hyak|slurm|sbatch|ssh|duo|gpu/i,
+      /courses\/|trainingRuns|postgres|tillicum|hyak|slurm|sbatch|ssh|duo|gpu/i,
     );
   });
 

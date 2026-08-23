@@ -3,10 +3,14 @@
 
 Run this *on* Tillicum, in a session you logged into normally — the usual
 password and two-factor prompt. Nothing here bypasses that, and nothing here
-opens a connection to anywhere except the database over HTTPS and the local
+opens a connection to anywhere except the backend API over HTTPS and the local
 `training/start_qlora_training.sh` script. That is the whole point of the
 queue: the browser writes a run and stops, and the work is picked up later by
 a person who is already logged in.
+
+The queue lives in PostgreSQL on the application VM and is reached through
+`/api/training-queue`. Set TRAINING_API_BASE_URL and TRAINING_WORKER_TOKEN in
+the environment or .env.local before running this.
 
 Submission reuses the existing launcher. This process never calls sbatch
 itself, never syncs data, and never promotes an adapter. `--dry-run` is

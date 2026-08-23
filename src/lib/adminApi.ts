@@ -175,7 +175,6 @@ export function fetchFactInventory(courseId: string): Promise<FactInventoryRespo
 
 export interface SeedQualityCheckResponse {
   courseId: string;
-  firebasePath: string;
   report: Record<string, unknown>;
 }
 

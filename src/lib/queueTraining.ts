@@ -12,11 +12,11 @@ import type { CourseModelRequest, TrainingMode, TrainingRun } from '../types';
 /**
  * Queueing a prepared request for training.
  *
- * The browser's durable responsibility ends here. It writes a `queued` run and
- * a pointer to it, and that is all: it does not reach a cluster, hold a
- * connection open, or wait for anything. Whoever runs the queue on the cluster
- * has logged in normally, with the usual two-factor prompt, and picks the work
- * up from Firebase.
+ * The browser's durable responsibility ends here. It asks the backend to write
+ * a `queued` run and a pointer to it, and that is all: it does not reach a
+ * cluster, hold a connection open, or wait for anything. Whoever runs the queue
+ * on the cluster has logged in normally, with the usual two-factor prompt, and
+ * claims the work from the same `training_runs` table.
  *
  * That is the whole reason this replaced the direct launch path. Submitting a
  * job from a web request needed a non-interactive session to a machine that
@@ -53,13 +53,6 @@ export function canQueueTraining(
 
 export interface QueueTrainingResult {
   run: TrainingRun;
-  /**
-   * False when the cluster has the run but PostgreSQL does not. The admin page
-   * reads PostgreSQL, so this is the difference between "queued" and "queued
-   * and visible" — the caller has to say so rather than imply success.
-   */
-  mirroredToPostgres: boolean;
-  warning: string | null;
 }
 
 export async function queueTrainingForRequest(
@@ -74,8 +67,9 @@ export async function queueTrainingForRequest(
   }
 
   // A cheap pre-check so the common duplicate is refused before a write is
-  // attempted. It is not the guard — `enqueueTrainingRun` decides atomically,
-  // because anything read here can be stale by the time the write lands.
+  // attempted. It is not the guard — the backend's conditional INSERT decides
+  // atomically, because anything read here can be stale by the time the write
+  // lands.
   const existing = await fetchCourseTrainingRuns(courseId);
   if (findActiveTrainingRun(existing) !== null) {
     throw new DuplicateTrainingRunError();
@@ -115,9 +109,5 @@ export async function queueTrainingForRequest(
     launchError: '',
   });
 
-  return {
-    run,
-    mirroredToPostgres: queued.mirroredToPostgres,
-    warning: queued.warning ?? null,
-  };
+  return { run };
 }

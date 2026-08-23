@@ -1,7 +1,15 @@
-"""Import a Firebase `courses.json` snapshot into the PostgreSQL migration target.
+"""LEGACY MIGRATION TOOLING — import an old Firebase snapshot into PostgreSQL.
 
-The live application is untouched by this script: it reads a JSON file and
-writes to PostgreSQL, never to Firebase, and nothing in `app.main` imports it.
+Kept deliberately, and deliberately isolated. Firebase is no longer a runtime
+dependency of anything in this repository: the application, the backend and the
+training worker all read and write PostgreSQL only, and none of them needs
+Firebase configuration to start. This script is the one exception, and it does
+not need Firebase either — it reads a JSON file that was exported before the
+migration and writes to PostgreSQL. It talks to no network service, and nothing
+in `app.main` imports it.
+
+It exists so the archived snapshot can be replayed if the original import ever
+has to be redone or audited. Do not wire it into a live code path.
 
 Usage:
     .venv/bin/python scripts/import_firebase_snapshot.py <snapshot.json> [--dry-run]

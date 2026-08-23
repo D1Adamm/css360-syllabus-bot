@@ -135,7 +135,7 @@ describe('ProfessorCoursesPage', () => {
   it('reports a load failure without naming the database', async () => {
     subscribeToCoursesMock.mockImplementation(
       (_onData: (courses: CourseListItem[]) => void, onError?: (message: string) => void) => {
-        onError?.('Firebase permission denied');
+        onError?.('PostgreSQL permission denied');
         return () => undefined;
       },
     );
@@ -144,7 +144,7 @@ describe('ProfessorCoursesPage', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Courses unavailable');
-    expect(alert).not.toHaveTextContent(/firebase/i);
+    expect(alert).not.toHaveTextContent(/postgres/i);
   });
 
   it('links the create action into the professor area', async () => {

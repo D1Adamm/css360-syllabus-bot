@@ -1618,10 +1618,10 @@ class StarterSeedEndpointTests(unittest.TestCase):
                     }
                 ),
             ),
-            # A save=true run also reconciles starter status afterwards, which
-            # reads seedExamples and writes metadata. Stubbing persistence alone
-            # left that second Firebase round trip live, and it recreated this
-            # course in the real database on every suite run.
+            # A save=true run also reconciles starter status afterwards,
+            # which counts the course's seeds and writes the status row.
+            # Stubbing persistence alone left that second round trip live, and
+            # it rewrote this course in the real database on every suite run.
             patch(
                 "app.main.reconcile_starter_seed_generation",
                 new=AsyncMock(return_value=None),
@@ -1640,20 +1640,27 @@ class StarterSeedEndpointTests(unittest.TestCase):
         # not that it stopped happening.
         mock_reconcile.assert_awaited_once()
 
-    def test_endpoint_save_true_missing_firebase_configuration(self) -> None:
+    def test_endpoint_save_true_reports_unavailable_storage(self) -> None:
+        """A run that could not save must 503, not report a successful save.
+
+        This is the failure the storage layer must never swallow: the seeds are
+        gone either way, and a 200 would tell a professor their fifty examples
+        were persisted when nothing was written.
+        """
+
         async def _fake_generate(prompt: str, **kwargs: object) -> dict[str, str]:
             payload = {
                 "seeds": [
                     {
-                        "question": "Question for firebase config test?",
-                        "answer": "Answer for firebase config test here.",
+                        "question": "Question for storage failure test?",
+                        "answer": "Answer for storage failure test here.",
                         "category": "general",
                     }
                 ]
             }
             return {"answer": json.dumps(payload), "model": SEED_GENERATION_MODEL}
 
-        from app.firebase_seeds import FirebaseConfigurationError
+        from fastapi import HTTPException
 
         with (
             patch(
@@ -1663,8 +1670,9 @@ class StarterSeedEndpointTests(unittest.TestCase):
             patch(
                 "app.seed_generation.persist_accepted_seeds",
                 new=AsyncMock(
-                    side_effect=FirebaseConfigurationError(
-                        "Firebase is not configured for seed persistence."
+                    side_effect=HTTPException(
+                        status_code=503,
+                        detail="PostgreSQL is unavailable while saving seed examples.",
                     )
                 ),
             ),
@@ -1675,7 +1683,7 @@ class StarterSeedEndpointTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 503)
-        self.assertIn("Firebase is not configured", response.json()["detail"])
+        self.assertIn("PostgreSQL is unavailable", response.json()["detail"])
 
 
 class StarterRunCeilingTests(unittest.IsolatedAsyncioTestCase):

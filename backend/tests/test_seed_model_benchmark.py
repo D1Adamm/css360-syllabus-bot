@@ -249,7 +249,7 @@ class EvaluateFactCandidateTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RunModelBenchmarkTests(unittest.IsolatedAsyncioTestCase):
-    async def test_same_facts_produce_ten_rows_and_no_firebase(self) -> None:
+    async def test_same_facts_produce_ten_rows_and_persist_nothing(self) -> None:
         facts = [_fact(f"fact-{index:02d}") for index in range(1, 12)]
         selected = select_benchmark_facts(facts, count=5)
         self.assertEqual(len(selected), 5)

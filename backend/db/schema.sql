@@ -34,6 +34,16 @@ CREATE TABLE IF NOT EXISTS starter_seed_generation (
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
 
+    -- Why a short run was short. Written by the automatic starter job and read
+    -- by operators, not by the UI: a course whose syllabus only supports eleven
+    -- examples and produced eleven is otherwise indistinguishable, by count
+    -- alone, from one whose fact extractor was silently failing.
+    achievable_ceiling INTEGER,
+    limiting_factor TEXT,
+
+    CONSTRAINT starter_ceiling_nonnegative
+        CHECK (achievable_ceiling IS NULL OR achievable_ceiling >= 0),
+
     CONSTRAINT starter_target_nonnegative
         CHECK (target_count IS NULL OR target_count >= 0),
 

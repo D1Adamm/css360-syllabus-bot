@@ -23,7 +23,7 @@ import { ApiError, getApiBaseUrl } from './api';
  * which, and after it the two still answer different questions.
  *
  * Every id is URL-encoded. Course ids are validated before they get here, but
- * seed and run ids come from stored records — a Firebase push id begins with a
+ * seed and run ids come from stored records — an imported push id begins with a
  * hyphen and can contain characters that must not be read as path syntax.
  */
 

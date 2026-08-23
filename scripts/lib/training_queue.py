@@ -1,39 +1,40 @@
-"""Durable training queue over the Firebase Realtime Database (stdlib only).
+"""Durable training queue client for the cluster runner (stdlib only).
 
-Runs are stored course-scoped at:
+Runs live in PostgreSQL on the application VM, in `training_runs`, scoped to a
+course. This module is the cluster side of that queue: it discovers queued work
+and claims exactly one run with a time-limited lease. It performs no training,
+does not know what a scheduler is, and never shells out — everything about
+actually submitting a job stays in `training/start_qlora_training.sh`, which
+already owns versioned output directories and the live-adapter guard.
 
-    courses/{courseId}/trainingRuns/{runId}
+Why HTTP and not a database connection
+--------------------------------------
+Tillicum is not on the database's network, and the only way to give it a
+psycopg connection would be to expose PostgreSQL beyond the VM. That is not
+something a queue migration should buy. So the worker keeps the shape it always
+had — outbound HTTPS to a single host, `urllib`, no client library to install
+and pin on a login node we do not control — and the other end is the backend's
+`/api/training-queue` router, which owns the transaction.
 
-This module is the cluster side of that queue: it discovers queued work, and
-claims exactly one run with a time-limited lease. It performs no training, does
-not know what a scheduler is, and never shells out — everything about actually
-submitting a job stays in `training/start_qlora_training.sh`, which already owns
-versioned output directories and the live-adapter guard.
-
-Why REST and not a client library
----------------------------------
-Tillicum has outbound HTTPS to the database and nothing else is needed:
-`urllib` with the same URL and token handling `scripts/register_course_model.py`
-already uses. Adding an SDK to a login node for four HTTP calls would be a new
-dependency to install, pin, and keep working on a machine we do not control.
+The credential is a shared worker token sent as `X-Training-Worker-Token`. It
+is not a database credential and cannot be used as one: it reaches exactly the
+queue endpoints and nothing else.
 
 How two runners are kept apart
 ------------------------------
-The database has no transactions over REST, but it does have conditional
-requests. A claim is:
+By PostgreSQL, in one statement, rather than by anything negotiated here. A
+claim is a single POST; the backend selects one eligible row `FOR UPDATE SKIP
+LOCKED` and stamps the lease inside the same transaction. A second runner
+posting at the same instant cannot see the locked row and does not wait for it
+— it either gets the next eligible run or is told there is none. There is no
+compare-and-set to retry and no window between choosing and claiming.
 
-    GET  .../trainingRuns/{runId}.json   with `X-Firebase-ETag: true`
-    PUT  .../trainingRuns/{runId}.json   with `if-match: <that etag>`
-
-The PUT succeeds only if nothing changed in between. A second runner racing for
-the same run gets HTTP 412 and takes nothing — it does not retry the same run,
-because by then someone else legitimately holds it.
-
-The lease expires. A runner that dies mid-run — a dropped login session, a
-rebooted node — would otherwise strand a run as permanently claimed. Once
-`expiresAt` has passed the run becomes claimable again and the attempt count
-goes up, so a run that keeps failing this way is visible as one that keeps
-being retried rather than one that quietly vanished.
+The lease still expires, and for the same reason it always did: a runner that
+dies mid-run — a dropped login session, a rebooted node — would otherwise
+strand a run as permanently claimed. Once `expiresAt` has passed the run
+becomes claimable again and `attempt` goes up, so a run that keeps failing this
+way is visible as one that keeps being retried rather than one that quietly
+vanished.
 """
 
 from __future__ import annotations
@@ -42,9 +43,10 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -61,13 +63,19 @@ TERMINAL_RUN_STATES = ("succeeded", "failed")
 DEFAULT_LEASE_SECONDS = 900
 REQUEST_TIMEOUT_SECONDS = 30
 
+API_BASE_URL_ENV_VARS = ("TRAINING_API_BASE_URL", "VITE_API_BASE_URL")
+WORKER_TOKEN_ENV_VAR = "TRAINING_WORKER_TOKEN"
+WORKER_TOKEN_HEADER = "X-Training-Worker-Token"
+
+QUEUE_PREFIX = "/api/training-queue"
+
 
 class TrainingQueueError(Exception):
     """Anything that stops the queue being read or written."""
 
 
 class ClaimConflict(TrainingQueueError):
-    """Another runner changed the run first; it is not ours."""
+    """There was no run to take — none queued, or another runner took it."""
 
 
 # --------------------------------------------------------------------------- #
@@ -89,23 +97,25 @@ def load_env_file(root: Path = PROJECT_ROOT) -> None:
             os.environ.setdefault(key.strip(), value.strip())
 
 
-def firebase_database_url() -> str:
-    url = (
-        os.environ.get("FIREBASE_DATABASE_URL")
-        or os.environ.get("VITE_FIREBASE_DATABASE_URL")
-        or ""
-    ).strip().rstrip("/")
-    if not url:
+def training_api_base_url() -> str:
+    for name in API_BASE_URL_ENV_VARS:
+        url = (os.environ.get(name) or "").strip().rstrip("/")
+        if url:
+            return url
+    raise TrainingQueueError(
+        "Missing backend API URL. Set TRAINING_API_BASE_URL in the environment "
+        "or .env.local, e.g. TRAINING_API_BASE_URL=https://aiswe.uwb.edu"
+    )
+
+
+def training_worker_token() -> str:
+    token = (os.environ.get(WORKER_TOKEN_ENV_VAR) or "").strip()
+    if not token:
         raise TrainingQueueError(
-            "Missing Firebase database URL. Set FIREBASE_DATABASE_URL or "
-            "VITE_FIREBASE_DATABASE_URL in the environment or .env.local."
+            f"Missing {WORKER_TOKEN_ENV_VAR}. The backend refuses queue requests "
+            "without it; set the same value the backend has."
         )
-    return url
-
-
-def firebase_auth_token() -> Optional[str]:
-    token = (os.environ.get("FIREBASE_AUTH_TOKEN") or "").strip()
-    return token or None
+    return token
 
 
 def validate_course_id(course_id: str) -> str:
@@ -126,18 +136,6 @@ def validate_run_id(run_id: str) -> str:
     if not candidate or not RUN_ID_PATTERN.match(candidate) or "/" in candidate:
         raise TrainingQueueError(f"Invalid runId: {run_id!r}")
     return candidate
-
-
-def course_training_runs_path(course_id: str) -> str:
-    return f"courses/{validate_course_id(course_id)}/trainingRuns"
-
-
-def course_training_run_path(course_id: str, run_id: str) -> str:
-    return f"{course_training_runs_path(course_id)}/{validate_run_id(run_id)}"
-
-
-def course_model_request_path(course_id: str) -> str:
-    return f"courses/{validate_course_id(course_id)}/modelRequest"
 
 
 def validate_slurm_job_id(job_id: str) -> str:
@@ -183,45 +181,57 @@ def urllib_transport(
                 body=response.read().decode("utf-8"),
             )
     except urllib.error.HTTPError as exc:
-        # A 412 is an ordinary outcome of a contested claim, not an error to
-        # raise through — the caller decides what a status means.
+        # A 4xx is an ordinary outcome for several of these calls — the caller
+        # decides what a status means, so it is returned rather than raised.
         return HttpResponse(
             status=exc.code,
             headers={key.lower(): value for key, value in (exc.headers or {}).items()},
             body=exc.read().decode("utf-8", errors="replace"),
         )
     except urllib.error.URLError as exc:
-        raise TrainingQueueError(f"Could not reach Firebase: {exc.reason}") from exc
+        raise TrainingQueueError(f"Could not reach the backend API: {exc.reason}") from exc
 
 
-class FirebaseRest:
-    """The four database calls this queue needs, and nothing else."""
+class TrainingQueueApi:
+    """The handful of backend calls this queue needs, and nothing else."""
 
     def __init__(
         self,
         *,
-        database_url: str,
-        auth_token: Optional[str] = None,
+        base_url: str,
+        worker_token: str,
         transport: Transport = urllib_transport,
     ) -> None:
-        self.database_url = database_url.rstrip("/")
-        self.auth_token = auth_token
+        self.base_url = base_url.rstrip("/")
+        self.worker_token = worker_token
         self.transport = transport
 
-    def url(self, path: str, query: str = "") -> str:
-        url = f"{self.database_url}/{path}.json"
-        parts = [part for part in (query, f"auth={self.auth_token}" if self.auth_token else "") if part]
-        return f"{url}?{'&'.join(parts)}" if parts else url
+    def url(self, path: str, query: Optional[dict[str, str]] = None) -> str:
+        url = f"{self.base_url}{QUEUE_PREFIX}{path}"
+        if query:
+            return f"{url}?{urllib.parse.urlencode(query)}"
+        return url
+
+    def _headers(self, *, json_body: bool) -> dict[str, str]:
+        headers = {
+            "Accept": "application/json",
+            WORKER_TOKEN_HEADER: self.worker_token,
+        }
+        if json_body:
+            headers["Content-Type"] = "application/json"
+        return headers
 
     def _decode(self, response: HttpResponse, what: str) -> Any:
-        if response.status == 401:
+        if response.status in (401, 403):
             raise TrainingQueueError(
-                f"Firebase rejected the request for {what} (401). Provide "
-                "FIREBASE_AUTH_TOKEN if the database rules require authentication."
+                f"The backend rejected the request for {what} "
+                f"(HTTP {response.status}). Check {WORKER_TOKEN_ENV_VAR} matches "
+                "the backend's."
             )
         if response.status >= 400:
             raise TrainingQueueError(
-                f"Firebase request for {what} failed with HTTP {response.status}."
+                f"The backend request for {what} failed with HTTP "
+                f"{response.status}: {_detail(response.body)}"
             )
         body = response.body.strip()
         if not body or body == "null":
@@ -230,52 +240,32 @@ class FirebaseRest:
             return json.loads(body)
         except json.JSONDecodeError as exc:
             raise TrainingQueueError(
-                f"Firebase returned a payload for {what} that is not JSON: {exc.msg}"
+                f"The backend returned a payload for {what} that is not JSON: {exc.msg}"
             ) from exc
 
-    def get(self, path: str, query: str = "") -> Any:
-        response = self.transport("GET", self.url(path, query), None, {"Accept": "application/json"})
-        return self._decode(response, path)
-
-    def get_with_etag(self, path: str) -> tuple[Any, str]:
-        """Read a node together with the tag a conditional write must match."""
+    def get(self, path: str, query: Optional[dict[str, str]] = None) -> Any:
         response = self.transport(
-            "GET",
-            self.url(path),
-            None,
-            {"Accept": "application/json", "X-Firebase-ETag": "true"},
-        )
-        value = self._decode(response, path)
-        etag = response.headers.get("etag", "")
-        if not etag:
-            raise TrainingQueueError(
-                f"Firebase did not return an ETag for {path}; a claim cannot be "
-                "made safely without one."
-            )
-        return value, etag
-
-    def put_if_match(self, path: str, value: Any, etag: str) -> Any:
-        """Write only if the node still looks exactly as it did when read."""
-        response = self.transport(
-            "PUT",
-            self.url(path),
-            json.dumps(value).encode("utf-8"),
-            {"Content-Type": "application/json", "if-match": etag},
-        )
-        if response.status == 412:
-            raise ClaimConflict(
-                "Another runner changed this run first; it was not claimed here."
-            )
-        return self._decode(response, path)
-
-    def patch(self, path: str, value: dict[str, Any]) -> Any:
-        response = self.transport(
-            "PATCH",
-            self.url(path),
-            json.dumps(value).encode("utf-8"),
-            {"Content-Type": "application/json"},
+            "GET", self.url(path, query), None, self._headers(json_body=False)
         )
         return self._decode(response, path)
+
+    def post(self, path: str, payload: Optional[dict[str, Any]] = None) -> Any:
+        body = json.dumps(payload or {}).encode("utf-8")
+        response = self.transport(
+            "POST", self.url(path), body, self._headers(json_body=True)
+        )
+        return self._decode(response, path)
+
+
+def _detail(body: str) -> str:
+    """The API's `detail` string when there is one, else the raw body."""
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, TypeError):
+        return (body or "").strip()[:300]
+    if isinstance(payload, dict) and isinstance(payload.get("detail"), str):
+        return payload["detail"]
+    return (body or "").strip()[:300]
 
 
 # --------------------------------------------------------------------------- #
@@ -314,7 +304,7 @@ def _as_count(raw: Any) -> int:
 
 
 def parse_run(run_id: str, raw: Any) -> Optional[TrainingRun]:
-    """Read one stored run, or None when it is not usable.
+    """Read one run record, or None when it is not usable.
 
     Deliberately strict about `courseId`, `state` and `mode`: a record missing
     any of them cannot be acted on, and guessing a default would mean claiming
@@ -378,10 +368,24 @@ def parse_run(run_id: str, raw: Any) -> Optional[TrainingRun]:
     )
 
 
+def parse_run_record(raw: Any) -> Optional[TrainingRun]:
+    """Parse a record that carries its own `runId`, as the API returns them."""
+    if not isinstance(raw, dict):
+        return None
+    run_id = raw.get("runId")
+    if not isinstance(run_id, str) or not run_id.strip():
+        return None
+    return parse_run(run_id.strip(), raw)
+
+
 def parse_runs(payload: Any) -> list[TrainingRun]:
-    if not isinstance(payload, dict):
+    """A list of API run records, or a mapping of runId -> record."""
+    if isinstance(payload, list):
+        runs = [parse_run_record(raw) for raw in payload]
+    elif isinstance(payload, dict):
+        runs = [parse_run(run_id, raw) for run_id, raw in payload.items()]
+    else:
         return []
-    runs = [parse_run(run_id, raw) for run_id, raw in payload.items()]
     return sorted(
         (run for run in runs if run is not None),
         key=lambda run: run.enqueued_at,
@@ -413,8 +417,8 @@ def lease_expired(run: TrainingRun, now: datetime) -> bool:
     """Whether a held run may be taken again.
 
     An unreadable or missing expiry counts as expired. The alternative is a run
-    nothing can ever pick up, which is worse than one picked up twice — the
-    second claim still has to win a conditional write.
+    nothing can ever pick up, which is worse than one picked up twice — and the
+    second claim still has to win the row lock.
     """
     if not run.claim:
         return True
@@ -423,6 +427,11 @@ def lease_expired(run: TrainingRun, now: datetime) -> bool:
 
 
 def is_claimable(run: TrainingRun, now: datetime) -> bool:
+    """The same rule the backend's `CLAIMABLE_PREDICATE` enforces in SQL.
+
+    Kept here so `--dry-run` can explain its own reasoning locally. The backend
+    decides; this only has to agree with it.
+    """
     # A real job id means a submission already happened. Never take it again.
     if run.job_id:
         return False
@@ -448,22 +457,22 @@ def select_next_run(runs: list[TrainingRun], now: datetime) -> Optional[Training
 
 
 class TrainingQueue:
-    def __init__(self, client: FirebaseRest) -> None:
+    def __init__(self, client: TrainingQueueApi) -> None:
         self.client = client
 
-    def list_course_ids(self) -> list[str]:
-        """Course ids only — a shallow read, never the whole database."""
-        payload = self.client.get("courses", query="shallow=true")
-        if not isinstance(payload, dict):
-            return []
-        return sorted(
-            course_id
-            for course_id in payload
-            if isinstance(course_id, str) and COURSE_ID_PATTERN.match(course_id)
+    def _run_path(self, course_id: str, run_id: str, action: str) -> str:
+        return (
+            f"/courses/{validate_course_id(course_id)}"
+            f"/runs/{validate_run_id(run_id)}/{action}"
         )
 
     def list_runs(self, course_id: str) -> list[TrainingRun]:
-        return parse_runs(self.client.get(course_training_runs_path(course_id)))
+        """Claimable runs for one course. Read-only."""
+        payload = self.client.get(
+            "/pending", {"course_id": validate_course_id(course_id)}
+        )
+        runs = (payload or {}).get("runs") if isinstance(payload, dict) else None
+        return parse_runs(runs or [])
 
     def discover_claimable(
         self,
@@ -473,16 +482,25 @@ class TrainingQueue:
     ) -> list[tuple[str, TrainingRun]]:
         """Claimable runs across the courses asked for, oldest first.
 
-        Passing `course_ids` keeps the runner to exactly those courses; nothing
-        else is read.
+        Passing `course_ids` keeps the runner to exactly those courses. One
+        request per course when they are named, one request in total when they
+        are not — the backend already filters and orders, so nothing here reads
+        a course it was not asked about.
         """
-        courses = course_ids if course_ids is not None else self.list_course_ids()
-        found: list[tuple[str, TrainingRun]] = []
-        for course_id in courses:
-            for run in self.list_runs(course_id):
-                if is_claimable(run, now):
+        if course_ids is None:
+            payload = self.client.get("/pending")
+            runs = (payload or {}).get("runs") if isinstance(payload, dict) else None
+            found = [(run.course_id, run) for run in parse_runs(runs or [])]
+        else:
+            found = []
+            for course_id in course_ids:
+                for run in self.list_runs(course_id):
                     found.append((course_id, run))
-        return sorted(found, key=lambda pair: pair[1].enqueued_at)
+
+        return sorted(
+            (pair for pair in found if is_claimable(pair[1], now)),
+            key=lambda pair: pair[1].enqueued_at,
+        )
 
     def claim(
         self,
@@ -493,50 +511,37 @@ class TrainingQueue:
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
         now: Optional[datetime] = None,
     ) -> TrainingRun:
-        """Take one run, or raise `ClaimConflict` and take nothing.
+        """Take one run for this course, or raise `ClaimConflict`.
 
-        The read immediately before the write is what makes this safe: the ETag
-        it returns describes the run as it is right now, and the write is
-        refused if anything about it changed — including another runner's claim
-        landing microseconds earlier.
+        The run passed in is the candidate this runner saw a moment ago; the
+        backend picks and locks the run it actually hands over, which may be a
+        different one if something changed in between. Whatever comes back is
+        what this runner holds — the caller uses the returned run, not the
+        candidate.
         """
-        moment = now or utc_now()
-        path = course_training_run_path(course_id, run.run_id)
+        del now  # the backend stamps the lease from its own clock
+        safe_course_id = validate_course_id(course_id)
+        validate_run_id(run.run_id)
 
-        current_raw, etag = self.client.get_with_etag(path)
-        current = parse_run(run.run_id, current_raw)
-        if current is None:
-            raise ClaimConflict(f"Run {run.run_id} is no longer readable.")
-        if current.job_id:
-            raise ClaimConflict(
-                f"Run {run.run_id} already has job {current.job_id}; it was not claimed."
-            )
-        if not is_claimable(current, moment):
-            raise ClaimConflict(
-                f"Run {run.run_id} is {current.state} and held by "
-                f"{(current.claim or {}).get('owner', 'another runner')}."
-            )
-
-        claimed = dict(current.raw)
-        claimed.update(
+        payload = self.client.post(
+            "/claim",
             {
-                "state": "claimed",
-                "attempt": current.attempt + 1,
-                "updatedAt": iso(moment),
-                "claim": {
-                    "owner": owner,
-                    "claimedAt": iso(moment),
-                    "expiresAt": iso(moment + timedelta(seconds=lease_seconds)),
-                },
-            }
+                "owner": owner,
+                "leaseSeconds": int(lease_seconds),
+                "courseIds": [safe_course_id],
+            },
         )
 
-        self.client.put_if_match(path, claimed, etag)
+        if not isinstance(payload, dict) or not payload.get("claimed"):
+            raise ClaimConflict(
+                f"No claimable run for {safe_course_id}; another runner may have "
+                "taken it first."
+            )
 
-        result = parse_run(run.run_id, claimed)
-        if result is None:  # pragma: no cover - we just built this record
-            raise TrainingQueueError("Claimed run could not be read back.")
-        return result
+        claimed = parse_run_record(payload.get("run"))
+        if claimed is None:
+            raise TrainingQueueError("The claimed run could not be read back.")
+        return claimed
 
     def release(
         self,
@@ -552,16 +557,10 @@ class TrainingQueue:
         `claimed` would make it wait out a lease for no reason, and marking it
         failed would be untrue — nothing was attempted.
         """
-        moment = now or utc_now()
-        patch: dict[str, Any] = {
-            "state": "queued",
-            "updatedAt": iso(moment),
-            # Firebase deletes a key written as null; the lease must not linger.
-            "claim": None,
-        }
-        if error is not None:
-            patch["error"] = error
-        self.client.patch(course_training_run_path(course_id, run.run_id), patch)
+        del now
+        self.client.post(
+            self._run_path(course_id, run.run_id, "release"), {"error": error}
+        )
 
     def record_submission(
         self,
@@ -573,60 +572,33 @@ class TrainingQueue:
         validation_count: int,
         now: Optional[datetime] = None,
     ) -> TrainingRun:
-        """Persist a real job id, then point the request at the running job.
+        """Persist a real job id and point the model request at the running job.
 
-        Order matters. The run is marked ``submitted`` first so a crash before
-        the request update cannot look like "nothing was queued". The request
-        becomes ``training`` only once that id exists — a professor must never
-        be told their model is training when no job can be looked up.
+        One call, one transaction on the backend. Previously these were two
+        ordered writes, and a crash between them left a submitted run whose
+        request still said `preparing`; now a professor either sees a job that
+        exists or sees the state from before the submission.
 
-        ``failureMessage`` is not written. That field is professor-facing when
-        a request has failed; a successful submission is not a failure, and a
+        ``failureMessage`` is not written. That field is professor-facing when a
+        request has failed; a successful submission is not a failure, and a
         later launch error belongs on ``launchError`` (admin-only).
         """
-        moment = now or utc_now()
+        del now
         safe_job_id = validate_slurm_job_id(job_id)
-        submitted_at = iso(moment)
 
-        run_patch: dict[str, Any] = {
-            "state": "submitted",
-            "updatedAt": submitted_at,
-            "jobId": safe_job_id,
-            "claim": None,
-            "error": None,
-        }
-        self.client.patch(course_training_run_path(course_id, run.run_id), run_patch)
-
-        request_patch: dict[str, Any] = {
-            "status": "training",
-            "updatedAt": submitted_at,
-            "currentRunId": run.run_id,
-            "launchError": None,
-            "training": {
+        payload = self.client.post(
+            self._run_path(course_id, run.run_id, "submitted"),
+            {
                 "jobId": safe_job_id,
-                "mode": run.mode,
-                "submittedAt": submitted_at,
-                "datasetRef": run.dataset_ref,
                 "trainExamples": int(train_count),
                 "validationExamples": int(validation_count),
             },
-        }
-        self.client.patch(course_model_request_path(course_id), request_patch)
-
-        stored = dict(run.raw)
-        stored.update(
-            {
-                "state": "submitted",
-                "updatedAt": submitted_at,
-                "jobId": safe_job_id,
-            }
         )
-        stored.pop("claim", None)
-        stored.pop("error", None)
-        result = parse_run(run.run_id, stored)
-        if result is None:  # pragma: no cover - we just built this record
-            raise TrainingQueueError("Submitted run could not be read back.")
-        return result
+
+        submitted = parse_run_record((payload or {}).get("run"))
+        if submitted is None:
+            raise TrainingQueueError("The submitted run could not be read back.")
+        return submitted
 
     def record_submission_failure(
         self,
@@ -641,32 +613,90 @@ class TrainingQueue:
         The dataset is still valid, so the run goes back to ``queued`` with an
         operator-visible error. The request stays ``preparing``: nothing was
         submitted, and telling a professor it is training (or that it failed)
-        would be untrue. ``launchError`` is admin-only. ``failureMessage`` is
-        not written — that field is what a professor-facing failed request
-        carries.
+        would be untrue. ``launchError`` is admin-only.
         """
-        moment = now or utc_now()
-        self.release(course_id, run, error=error, now=moment)
-        self.client.patch(
-            course_model_request_path(course_id),
-            {
-                "launchError": error,
-                "updatedAt": iso(moment),
-                "currentRunId": run.run_id,
-            },
+        del now
+        self.client.post(
+            self._run_path(course_id, run.run_id, "submission-failed"),
+            {"error": error},
         )
+
+    def record_training_failure(
+        self,
+        course_id: str,
+        run: TrainingRun,
+        *,
+        error: str,
+    ) -> TrainingRun:
+        """Training itself failed: terminal for the run and for the request.
+
+        Distinct from a submission failure. A job existed and produced no model,
+        so there is nothing to retry automatically and the professor does need
+        to be told.
+        """
+        payload = self.client.post(
+            self._run_path(course_id, run.run_id, "failed"), {"error": error}
+        )
+        failed = parse_run_record(payload)
+        if failed is None:
+            raise TrainingQueueError("The failed run could not be read back.")
+        return failed
+
+    def register_model_version(
+        self,
+        course_id: str,
+        *,
+        base_model: str,
+        training_example_count: int,
+        artifact_ref: str,
+        status: str = "ready",
+        deployment: str = "offline",
+        version: Optional[str] = None,
+        notes: Optional[str] = None,
+        run_id: Optional[str] = None,
+        set_current: bool = True,
+    ) -> dict[str, Any]:
+        """Record a finished model against this course.
+
+        Course isolation is the backend's, not this caller's: the version row is
+        keyed by course id, so there is no shape of this request that writes
+        another course's registry.
+        """
+        payload: dict[str, Any] = {
+            "baseModel": base_model,
+            "trainingExampleCount": int(training_example_count),
+            "artifactRef": artifact_ref,
+            "status": status,
+            "deployment": deployment,
+            "setCurrent": bool(set_current),
+        }
+        if version:
+            payload["version"] = version
+        if notes:
+            payload["notes"] = notes
+        if run_id:
+            payload["runId"] = validate_run_id(run_id)
+
+        result = self.client.post(
+            f"/courses/{validate_course_id(course_id)}/model-versions", payload
+        )
+        if not isinstance(result, dict):
+            raise TrainingQueueError("The registered model version could not be read back.")
+        return result
 
 
 def build_queue(
     *,
     transport: Transport = urllib_transport,
-    database_url: Optional[str] = None,
-    auth_token: Optional[str] = None,
+    base_url: Optional[str] = None,
+    worker_token: Optional[str] = None,
 ) -> TrainingQueue:
     return TrainingQueue(
-        FirebaseRest(
-            database_url=database_url or firebase_database_url(),
-            auth_token=auth_token if auth_token is not None else firebase_auth_token(),
+        TrainingQueueApi(
+            base_url=base_url or training_api_base_url(),
+            worker_token=(
+                worker_token if worker_token is not None else training_worker_token()
+            ),
             transport=transport,
         )
     )

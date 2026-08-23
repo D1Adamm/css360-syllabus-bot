@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.course_id import assert_valid_course_id
-from app.firebase_metadata import (
+from app.starter_status import (
     best_effort_patch_starter_seed_generation,
     read_starter_seed_generation_status,
     reconcile_starter_seed_generation,
@@ -246,8 +246,8 @@ async def run_auto_starter_seed_generation(course_id: str) -> None:
         )
 
         if reconciled is None:
-            # Firebase could not be counted. Fall back to exactly what this job
-            # wrote before reconciliation existed rather than guess.
+            # The stored seeds could not be counted. Fall back to exactly what
+            # this job wrote before reconciliation existed rather than guess.
             terminal = _resolve_terminal_status(
                 target_count=target_count,
                 final_count=final_count,

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getCourseMetadataPath } from './coursePaths';
 
 const {
   courseExistsMock,
@@ -57,9 +56,11 @@ describe('createCourse', () => {
         chunkCount: 0,
       }),
     );
-    expect(getCourseMetadataPath(result.courseId)).toBe(
-      'courses/css-430-summer-2026-a82f/metadata',
-    );
+    // Course scoping is the id itself now: it is what every request path and
+    // every table key is built from, so the created course must carry the id
+    // that was generated for it.
+    expect(result.courseId).toBe('css-430-summer-2026-a82f');
+    expect(createCourseMetadataMock.mock.calls[0][0]).toBe(result.courseId);
   });
 
   it('regenerates the course id when a collision is detected', async () => {

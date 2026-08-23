@@ -25,10 +25,7 @@ from app.config import load_backend_env  # noqa: E402
 load_backend_env()
 
 from app.course_id import assert_valid_course_id  # noqa: E402
-from app.firebase_seeds import (  # noqa: E402
-    FirebaseConfigurationError,
-    fetch_course_seed_examples,
-)
+from app.seed_persistence import fetch_course_seed_examples  # noqa: E402
 from app.seed_export import export_approved_seeds  # noqa: E402
 from app.seed_split import TrainingSplitError, prepare_training_split  # noqa: E402
 
@@ -38,7 +35,7 @@ async def _run(course_id: str) -> dict:
 
     try:
         payload = await fetch_course_seed_examples(safe_course_id)
-    except FirebaseConfigurationError as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI: report and exit, do not trace
         raise SystemExit(f"ERROR: {exc}") from exc
 
     seeds: list[dict] = []

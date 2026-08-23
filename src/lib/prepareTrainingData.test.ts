@@ -161,7 +161,7 @@ describe('failure and retry', () => {
 
   it('still reports the original failure when recording it also fails', async () => {
     exportApprovedCourseSeeds.mockRejectedValue(new Error('export blew up'));
-    updateCourseModelRequest.mockRejectedValue(new Error('firebase down'));
+    updateCourseModelRequest.mockRejectedValue(new Error('the database is down'));
 
     await expect(prepareTrainingDataForRequest(COURSE_490)).rejects.toThrow(
       'export blew up',

@@ -6,7 +6,7 @@ import { pollingSubscription, type Unsubscribe } from './pollingSubscription';
 /**
  * Course metadata, now read from PostgreSQL through FastAPI.
  *
- * The module keeps the shape it had when it spoke to Firebase —
+ * The module keeps the shape it had before the PostgreSQL cutover —
  * `subscribeToCourses(onData, onError)` returning an unsubscribe — so the hooks
  * and pages above it did not have to change. What changed is underneath: a
  * realtime listener became a fetch, because a course list only changes when

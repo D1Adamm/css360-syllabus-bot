@@ -1,7 +1,7 @@
 """Offline seed-model benchmark helpers (qwen3:4b vs qwen3:8b).
 
 Reuses fact inventory, allocation, generation, prevalidation, and validation
-code from the starter pipeline. Never persists seeds to Firebase.
+code from the starter pipeline. Never persists seeds.
 Does not change production SEED_GENERATION_MODEL or API behavior.
 """
 

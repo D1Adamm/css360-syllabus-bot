@@ -1,7 +1,7 @@
 # Training Dataset Splits
 
 > **Legacy / not used by current QLoRA training.**  
-> The canonical path is Firebase approved seeds →
+> The canonical path is approved seeds read from PostgreSQL →
 > `backend/scripts/prepare_qlora_dataset.py` → `data/exports/<courseId>/` →
 > Tillicum helpers in `training/README.md`. This document describes the older
 > `data/splits/` 70/15/15 pipeline (`scripts/split_training_dataset.py`).

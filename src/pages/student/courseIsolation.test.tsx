@@ -115,7 +115,6 @@ beforeEach(() => {
   listCourseSeedsMock.mockResolvedValue({
     courseId: COURSE_A,
     count: 0,
-    firebasePath: '',
     seeds: [],
   });
 });

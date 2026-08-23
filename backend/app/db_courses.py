@@ -2,10 +2,9 @@
 
 Shapes match `CourseMetadata` and `StoredStarterSeedGeneration` in
 `src/types/index.ts` so the frontend can be pointed here without a parser
-change. `starterSeedGeneration` is nested inside the metadata object exactly as
-Firebase nests it, rather than exposed as a sibling resource — the frontend
-reads it off metadata, and a different shape would mean rewriting
-`useCourseMetadata` for no gain.
+change. `starterSeedGeneration` is nested inside the metadata object rather
+than exposed as a sibling resource — the frontend reads it off metadata, and a
+different shape would mean rewriting `useCourseMetadata` for no gain.
 
 Every function takes an open connection. Routes own the transaction; that is
 what lets one request touch two tables atomically and what lets the tests run
@@ -34,7 +33,8 @@ COURSE_COLUMNS = """
 
 STARTER_COLUMNS = """
     course_id, status, target_count, final_count, saved_count,
-    failed_to_save_count, error, started_at, completed_at
+    failed_to_save_count, error, started_at, completed_at,
+    achievable_ceiling, limiting_factor
 """
 
 # camelCase API field -> column. Also the allowlist: a key absent here never
@@ -59,6 +59,8 @@ STARTER_PATCH_COLUMNS = {
     "error": "error",
     "startedAt": "started_at",
     "completedAt": "completed_at",
+    "achievableCeiling": "achievable_ceiling",
+    "limitingFactor": "limiting_factor",
 }
 
 
@@ -98,6 +100,9 @@ def map_starter_seed_generation(row: Mapping[str, Any]) -> dict[str, Any]:
     put_optional(record, "error", optional_string(row.get("error")))
     put_optional(record, "startedAt", to_iso(row.get("started_at")))
     put_optional(record, "completedAt", to_iso(row.get("completed_at")))
+    if row.get("achievable_ceiling") is not None:
+        record["achievableCeiling"] = as_int(row.get("achievable_ceiling"))
+    put_optional(record, "limitingFactor", optional_string(row.get("limiting_factor")))
     return record
 
 
@@ -126,8 +131,8 @@ def list_courses(conn: Any) -> list[dict[str, Any]]:
     """Every course as {courseId, metadata}, newest first.
 
     Ordering matches `sortCoursesNewestFirst`: createdAt descending, course id
-    ascending as the tie-break, so a picker fed from here looks identical to one
-    fed from Firebase.
+    ascending as the tie-break, so the picker does not reshuffle between a
+    server-ordered list and a client-sorted one.
     """
     with conn.cursor() as cursor:
         cursor.execute(
@@ -264,12 +269,10 @@ def upsert_starter_seed_generation(
 ) -> dict[str, Any] | None:
     """Merge starter-generation fields, creating the row if needed.
 
-    Merge semantics mirror `patch_starter_seed_generation`, which PATCHes the
-    Firebase node: the generation job writes `startedAt` and `status` first and
-    the counts later, so a full write would erase what an earlier call stored.
-
-    Read/update support only. The live job still writes Firebase and nothing
-    here is wired into it.
+    Merge, not replace: the generation job writes `startedAt` and `status`
+    first and the counts later, so a full write would erase what an earlier
+    call stored. `app/starter_status.py` is what drives this on the job's
+    behalf.
     """
     safe_course_id = assert_valid_course_id(course_id)
     assignments = build_patch(patch, STARTER_PATCH_COLUMNS)

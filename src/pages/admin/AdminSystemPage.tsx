@@ -27,14 +27,15 @@ export function AdminSystemPage() {
         <SectionHeader title="Frontend" divider />
         <div className="ui-prose">
           <p>
-            React 19 and TypeScript, bundled by Vite and deployed to Firebase
-            Hosting. React Router serves three role-scoped trees —{' '}
+            React 19 and TypeScript, bundled by Vite and served by Nginx on the
+            UWB VM. React Router serves three role-scoped trees —{' '}
             <code>/student</code>, <code>/professor</code> and <code>/admin</code> —
             plus redirects from the earlier <code>/course/:courseId/*</code> URLs.
           </p>
           <p>
-            Course metadata, example questions, and evaluations live in Firebase
-            Realtime Database under <code>courses/{'{courseId}'}</code>.
+            Course metadata, example questions, and evaluations live in
+            PostgreSQL, every table scoped by <code>courseId</code>, reached
+            through FastAPI under <code>/api/</code>.
           </p>
         </div>
       </section>

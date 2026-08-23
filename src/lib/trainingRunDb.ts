@@ -146,10 +146,10 @@ export function findActiveTrainingRun(runs: TrainingRun[]): TrainingRun | null {
 /**
  * Runs for one course, read from PostgreSQL through FastAPI.
  *
- * Reads moved off Firebase with the rest of the application's state. The queue
- * is still written to Firebase, because the cluster runner claims work there —
- * see `trainingQueueFirebase.ts` — and the backend mirrors each run into
- * PostgreSQL so this read shows it.
+ * One store: the browser reads `training_runs`, the backend writes it, and the
+ * cluster runner claims from it. A run queued by `queueTraining` is therefore
+ * visible to this read as soon as the enqueue returns — there is no second
+ * copy that could lag behind.
  */
 export async function fetchCourseTrainingRuns(courseId: string): Promise<TrainingRun[]> {
   assertValidCourseId(courseId);
@@ -192,10 +192,10 @@ export class DuplicateTrainingRunError extends Error {
 /**
  * A run id that sorts by time and cannot collide in practice.
  *
- * Not a Firebase push key: the id is written into a record the runner echoes
- * back in logs, and a readable, sortable one is worth the four extra
- * characters. Lowercase and hyphens only, so it is a legal key and a legal path
- * segment everywhere it is used.
+ * Not an opaque key: the id is written into a record the runner echoes back in
+ * logs, and a readable, sortable one is worth the four extra characters.
+ * Lowercase and hyphens only, so it is a legal key and a legal path segment
+ * everywhere it is used.
  */
 export function generateTrainingRunId(now: Date = new Date()): string {
   const stamp = now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'z');
@@ -208,10 +208,10 @@ export function generateTrainingRunId(now: Date = new Date()): string {
 }
 
 /*
- * Queueing lives in `trainingQueueFirebase.ts`, not here.
+ * Queueing lives in `queueTraining.ts`, not here.
  *
- * It is the one browser write still going to Firebase, because the cluster
- * runner claims work from there. Callers import it from that module directly:
- * re-exporting it would make this persistence module depend on the
- * orchestration one, which already depends on these parsers.
+ * That module decides whether a request may be queued and points the model
+ * request at the resulting run; this one only parses and reads. Callers import
+ * it from there directly: re-exporting it would make this persistence module
+ * depend on the orchestration one, which already depends on these parsers.
  */

@@ -11,8 +11,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.course_id import assert_valid_course_id
-from app.firebase_seeds import (
-    FirebaseConfigurationError,
+from app.seed_persistence import (
     build_chunk_section_lookup,
     compute_top_up_gap,
     fetch_course_seed_examples,
@@ -1106,8 +1105,8 @@ async def generate_seeds_from_chunk(
 ) -> dict[str, Any]:
     """Generate a small batch of AI seeds from one stored syllabus chunk.
 
-    Loads chunk text from the course index. Does not persist to Firebase or
-    mutate course creation flows.
+    Loads chunk text from the course index. Does not persist seeds or mutate
+    course creation flows.
     """
     cleaned_chunk_id = chunk_id.strip()
     if not cleaned_chunk_id:
@@ -1161,7 +1160,7 @@ async def generate_starter_seeds_for_course(
       → LLM validation → accept
 
     When top_up=True:
-      - read existing Firebase seedExamples first
+      - read the course's existing stored seeds first
       - generate only the missing count (targetCount - existing)
       - dedupe against existing questions
       - prefer facts not already represented
@@ -1169,7 +1168,7 @@ async def generate_starter_seeds_for_course(
 
     Phase 6 batching helpers exist but are not used on this live path.
     Chunks are evidence only. Does not use topic planning. When save=True,
-    persists accepted validated seeds to Firebase. Does not trigger course creation.
+    persists accepted validated seeds. Does not trigger course creation.
     """
     try:
         safe_course_id = assert_valid_course_id(course_id)
@@ -1196,10 +1195,9 @@ async def generate_starter_seeds_for_course(
     existing_scenario_count = 0
 
     if top_up:
-        try:
-            existing_payload = await fetch_course_seed_examples(safe_course_id)
-        except FirebaseConfigurationError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        # Raises a 503 of its own when PostgreSQL is unreachable; a top-up that
+        # cannot see what already exists must not proceed and regenerate it.
+        existing_payload = await fetch_course_seed_examples(safe_course_id)
         summary = summarize_existing_seed_examples(existing_payload)
         existing_count = int(summary["existingCount"])
         existing_scenario_count = count_scenario_or_clarification(
@@ -1720,16 +1718,16 @@ async def generate_starter_seeds_for_course(
     saved_count = 0
     persistence: dict[str, Any] | None = None
     if save:
-        try:
-            chunk_sections = build_chunk_section_lookup(raw_chunks)
-            persistence = await persist_accepted_seeds(
-                course_id=safe_course_id,
-                seeds=seeds,
-                chunk_sections=chunk_sections,
-            )
-            saved_count = int(persistence.get("savedCount", 0))
-        except FirebaseConfigurationError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        # Deliberately not wrapped: a storage failure here means the run's
+        # seeds were not saved, and reporting success for a run that persisted
+        # nothing is exactly the failure this migration exists to remove.
+        chunk_sections = build_chunk_section_lookup(raw_chunks)
+        persistence = await persist_accepted_seeds(
+            course_id=safe_course_id,
+            seeds=seeds,
+            chunk_sections=chunk_sections,
+        )
+        saved_count = int(persistence.get("savedCount", 0))
 
     elapsed_ms = max(0, int(round((time.perf_counter() - started_at) * 1000)))
     final_count = len(seeds)
@@ -1863,7 +1861,7 @@ async def generate_starter_seeds_for_course(
     if persistence is not None:
         result["persistence"] = persistence
 
-    # Local artifact for review/export (does not replace Firebase course path).
+    # Local artifact for review/export (does not replace the stored seeds).
     if seeds:
         snapshot_path = write_generation_snapshot(
             course_id=safe_course_id,

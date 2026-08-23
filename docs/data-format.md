@@ -50,11 +50,13 @@ Stored under `courses/{courseId}/evaluations/{id}`.
 | `comment` | string? | Freeer feedback |
 | `createdAt` | string | ISO timestamp |
 
-## Legacy root Firebase paths
+## Historical note
 
-Historical prototypes also used:
+These records used to live in Firebase Realtime Database under
+`courses/{courseId}/seedExamples` and `courses/{courseId}/evaluations`, and
+historical export files in `data/exports/` still carry a `firebasePath` key
+naming those nodes. They are records of exports that really happened and are
+left as they are.
 
-- `seedExamples/`
-- `evaluations/`
-
-The live UI does **not** use these paths. They may remain in Firebase until manually removed after confirmation. See README Phase 1 notes.
+Current storage is PostgreSQL (`seed_examples`, `evaluations`), and current
+exports no longer write that key. See `backend/db/schema.sql`.

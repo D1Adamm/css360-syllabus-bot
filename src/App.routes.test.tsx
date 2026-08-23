@@ -4,11 +4,6 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 
-vi.mock('./lib/firebase', () => ({
-  database: {},
-  app: {},
-}));
-
 const subscribeToCoursesMock = vi.fn();
 const subscribeToCourseMetadataMock = vi.fn();
 
@@ -36,7 +31,6 @@ vi.mock('./lib/api', async () => {
     listCourseSeeds: vi.fn().mockResolvedValue({
       courseId: 'css360-default',
       count: 0,
-      firebasePath: 'courses/css360-default/seedExamples',
       seeds: [],
     }),
     getApprovedExportStatus: vi.fn().mockResolvedValue({

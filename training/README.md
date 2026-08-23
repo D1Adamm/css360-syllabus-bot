@@ -7,13 +7,13 @@ This is the **canonical** training workflow. Inference deployment is separate
 (see `training/inference_service/README.md`).
 
 Exports are **gitignored**. Code reaches Tillicum via `git pull`; training JSONL
-must be prepared on a machine with Firebase access, then synced explicitly.
+must be prepared on a machine with database access, then synced explicitly.
 
 ---
 
 ## Canonical workflow
 
-### A) Machine with backend / Firebase access (local or UWB VM)
+### A) Machine with backend / PostgreSQL access (local or UWB VM)
 
 ```bash
 cd backend
@@ -84,9 +84,22 @@ What it deliberately does **not** do yet: submit anything. It never calls
 exiting, so the run goes back to `queued` rather than waiting out a lease for
 work that never started. Submitting stays the explicit step in (B).
 
-It needs `FIREBASE_DATABASE_URL` (and `FIREBASE_AUTH_TOKEN` if the database
-rules require one) in the environment or `.env.local`, and outbound HTTPS.
-Nothing else.
+It needs `TRAINING_API_BASE_URL` and `TRAINING_WORKER_TOKEN` in the environment
+or `.env.local`, and outbound HTTPS. Nothing else — in particular it needs no
+database credentials and opens no database connection.
+
+The queue lives in PostgreSQL on the UWB VM, in `training_runs`, and this worker
+reaches it through the backend's `/api/training-queue` endpoints. A claim is one
+POST; the backend selects a single eligible row `FOR UPDATE SKIP LOCKED` and
+stamps the lease in the same transaction, so two runners cannot take the same
+run. The transaction ends there — training happens long after it has committed,
+which is why the claim carries an expiry: a runner that dies mid-job releases
+nothing, and the lease expiring is what lets the work be picked up again.
+
+```bash
+export TRAINING_API_BASE_URL=https://aiswe.uwb.edu
+export TRAINING_WORKER_TOKEN=…   # same value as the backend's
+```
 
 ### C) Explicit promotion (optional, intentional)
 
@@ -220,5 +233,6 @@ The older root-level pipeline in `docs/export-dataset.md`,
 `docs/prepare-dataset.md`, and `docs/split-dataset.md`
 (`scripts/export_seed_dataset.py` → `prepare_seed_dataset.py` →
 `split_training_dataset.py` producing `data/splits/` with a 70/15/15 split)
-is **legacy**. Current QLoRA training uses Firebase **approved** seeds via
-`backend` export + `prepare_training_split` into `data/exports/<courseId>/`.
+is **legacy**. Current QLoRA training uses **approved** seeds read from
+PostgreSQL via `backend` export + `prepare_training_split` into
+`data/exports/<courseId>/`.

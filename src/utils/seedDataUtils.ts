@@ -257,7 +257,7 @@ function parseSourceChunkIds(value: unknown): string[] | undefined {
 }
 
 /**
- * Normalize a Firebase (or local) seed record into the frontend SeedExample shape.
+ * Normalize a stored (or local fixture) seed record into the SeedExample shape.
  * Accepts dual AI field names (question/answer) and classic instruction/response.
  */
 export function normalizeSeedExample(

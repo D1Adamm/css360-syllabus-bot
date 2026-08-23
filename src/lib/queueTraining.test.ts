@@ -15,8 +15,8 @@ vi.mock('./trainingRunDb', async () => {
   };
 });
 
-// Queueing now goes through the backend, which writes the Firebase queue the
-// cluster claims from and mirrors the run into PostgreSQL.
+// Queueing goes through the backend, which inserts the run into the
+// `training_runs` table the admin list reads and the cluster claims from.
 vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api');
   return {
@@ -75,8 +75,6 @@ beforeEach(() => {
     courseId: COURSE_490,
     runId: QUEUED_RUN.runId,
     run: QUEUED_RUN,
-    mirroredToPostgres: true,
-    warning: null,
   });
   updateCourseModelRequest.mockResolvedValue(undefined);
 });
@@ -181,12 +179,12 @@ describe('queueTrainingForRequest', () => {
   });
 });
 
-describe('the queue write goes through FastAPI, never Firebase', () => {
+describe('the queue write goes through FastAPI to PostgreSQL', () => {
   it('calls the backend enqueue endpoint', async () => {
     await queueTrainingForRequest(COURSE_490, PREPARED);
 
-    // The browser no longer writes the Firebase queue itself; the backend does,
-    // and it mirrors the run into PostgreSQL in the same request.
+    // The browser does not write the queue itself; the backend inserts the run
+    // into PostgreSQL inside one transaction.
     expect(enqueueTrainingRun).toHaveBeenCalledTimes(1);
     expect(enqueueTrainingRun.mock.calls[0][0]).toBe(COURSE_490);
   });
@@ -212,30 +210,26 @@ describe('the queue write goes through FastAPI, never Firebase', () => {
     ).rejects.not.toBeInstanceOf(DuplicateTrainingRunError);
   });
 
-  it('passes through a known-stale PostgreSQL mirror instead of implying success', async () => {
+  it('returns the queued run with no caveat about a second store', async () => {
     /*
-     * The split-brain case. The cluster has the run; PostgreSQL — which the
-     * training list reads — does not. The caller has to be able to say that,
-     * so the result carries it rather than looking like an ordinary success.
+     * There used to be a split-brain case here: the cluster had the run and
+     * PostgreSQL — which the training list reads — did not, so the result
+     * carried `mirroredToPostgres` and a warning to admit it. One store, one
+     * transaction, so the state cannot exist and the fields are gone.
      */
-    enqueueTrainingRun.mockResolvedValue({
-      courseId: COURSE_490,
-      runId: QUEUED_RUN.runId,
-      run: QUEUED_RUN,
-      mirroredToPostgres: false,
-      warning: 'Queued for the cluster but not recorded in PostgreSQL.',
-    });
-
     const result = await queueTrainingForRequest(COURSE_490, PREPARED);
 
-    expect(result.mirroredToPostgres).toBe(false);
-    expect(result.warning).toContain('not recorded in PostgreSQL');
+    expect(result.run.runId).toBe(QUEUED_RUN.runId);
+    expect(result).not.toHaveProperty('mirroredToPostgres');
+    expect(result).not.toHaveProperty('warning');
   });
 
-  it('reports the mirror as healthy on a normal queue', async () => {
-    const result = await queueTrainingForRequest(COURSE_490, PREPARED);
+  it('points the model request at the run it just queued', async () => {
+    await queueTrainingForRequest(COURSE_490, PREPARED);
 
-    expect(result.mirroredToPostgres).toBe(true);
-    expect(result.warning).toBeNull();
+    expect(updateCourseModelRequest).toHaveBeenCalledWith(COURSE_490, {
+      currentRunId: QUEUED_RUN.runId,
+      launchError: '',
+    });
   });
 });

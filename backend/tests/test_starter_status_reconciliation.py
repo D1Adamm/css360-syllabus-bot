@@ -5,8 +5,8 @@ The live drift these cover: CSS 350 held 50 seeds while its record said
 topped up through routes that never wrote the record at all, so it kept
 describing the original post-upload run forever.
 
-Firebase is never contacted here — the seed fetch and the metadata patch are
-both stubbed.
+No database is contacted here — the seed count and the status write are both
+stubbed.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
-from app.firebase_metadata import (
-    count_course_seed_examples,
+from app.seed_persistence import count_course_seed_examples
+from app.starter_status import (
     reconcile_starter_seed_generation,
     resolve_reconciled_starter_status,
 )
@@ -65,25 +65,24 @@ class StatusResolutionTests(unittest.TestCase):
 
 
 class SeedCountingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_counts_only_record_shaped_children(self) -> None:
-        payload = {**_payload(3), "junk": "not a record"}
+    async def test_counts_every_stored_seed(self) -> None:
         with patch(
-            "app.firebase_metadata.fetch_course_seed_examples",
-            new=AsyncMock(return_value=payload),
+            "app.seed_persistence.fetch_course_seed_examples",
+            new=AsyncMock(return_value=_payload(3)),
         ):
             self.assertEqual(await count_course_seed_examples(COURSE), 3)
 
-    async def test_empty_node_counts_as_zero(self) -> None:
+    async def test_a_course_with_no_seeds_counts_as_zero(self) -> None:
         with patch(
-            "app.firebase_metadata.fetch_course_seed_examples",
+            "app.seed_persistence.fetch_course_seed_examples",
             new=AsyncMock(return_value={}),
         ):
             self.assertEqual(await count_course_seed_examples(COURSE), 0)
 
-    async def test_unreadable_firebase_is_none_not_zero(self) -> None:
+    async def test_unreadable_storage_is_none_not_zero(self) -> None:
         """None means "cannot say"; zero would overwrite a true record."""
         with patch(
-            "app.firebase_metadata.fetch_course_seed_examples",
+            "app.seed_persistence.fetch_course_seed_examples",
             new=AsyncMock(side_effect=HTTPException(status_code=503, detail="down")),
         ):
             self.assertIsNone(await count_course_seed_examples(COURSE))
@@ -98,19 +97,15 @@ class ReconciliationTestCase(unittest.IsolatedAsyncioTestCase):
             self.patches.append(updates)
             return True
 
-        fetch = (
-            AsyncMock(side_effect=HTTPException(status_code=503, detail="down"))
-            if seed_count is None
-            else AsyncMock(return_value=_payload(seed_count))
-        )
+        count = AsyncMock(return_value=seed_count)
         return (
-            patch("app.firebase_metadata.fetch_course_seed_examples", new=fetch),
+            patch("app.starter_status.count_course_seed_examples", new=count),
             patch(
-                "app.firebase_metadata.read_starter_seed_generation",
+                "app.starter_status.read_starter_seed_generation",
                 new=AsyncMock(return_value=stored),
             ),
             patch(
-                "app.firebase_metadata.best_effort_patch_starter_seed_generation",
+                "app.starter_status.best_effort_patch_starter_seed_generation",
                 new=AsyncMock(side_effect=_capture),
             ),
         )
@@ -218,41 +213,45 @@ class StarterReconciliationScenarios(ReconciliationTestCase):
         """It must never delete or regenerate a seed."""
         seen: list[str] = []
 
-        async def _fetch(course_id: str) -> dict[str, Any]:
+        async def _count(course_id: str) -> int:
             seen.append("read_seeds")
-            return _payload(50)
+            return 50
 
         async def _write(course_id: str, updates: dict[str, Any]) -> bool:
-            seen.append("write_metadata")
+            seen.append("write_status")
             return True
 
         with (
             patch(
-                "app.firebase_metadata.fetch_course_seed_examples",
-                new=AsyncMock(side_effect=_fetch),
+                "app.starter_status.count_course_seed_examples",
+                new=AsyncMock(side_effect=_count),
             ),
             patch(
-                "app.firebase_metadata.read_starter_seed_generation",
+                "app.starter_status.read_starter_seed_generation",
                 new=AsyncMock(return_value=None),
             ),
             patch(
-                "app.firebase_metadata.best_effort_patch_starter_seed_generation",
+                "app.starter_status.best_effort_patch_starter_seed_generation",
                 new=AsyncMock(side_effect=_write),
             ),
             patch(
-                "app.firebase_seeds.save_course_seed_example",
-                new=AsyncMock(side_effect=AssertionError("must not write seeds")),
+                "app.db_seeds.create_seed",
+                side_effect=AssertionError("must not write seeds"),
             ),
             patch(
-                "app.firebase_seeds.patch_course_seed_example",
-                new=AsyncMock(side_effect=AssertionError("must not edit seeds")),
+                "app.db_seeds.update_seed",
+                side_effect=AssertionError("must not edit seeds"),
+            ),
+            patch(
+                "app.db_seeds.delete_seed",
+                side_effect=AssertionError("must not delete seeds"),
             ),
         ):
             await reconcile_starter_seed_generation(COURSE, target_count=50)
 
-        self.assertEqual(seen, ["read_seeds", "write_metadata"])
+        self.assertEqual(seen, ["read_seeds", "write_status"])
 
-    async def test_the_metadata_patch_touches_no_seed_fields(self) -> None:
+    async def test_the_status_patch_touches_no_seed_fields(self) -> None:
         applied = await self._reconcile(seed_count=50)
         for key in applied:
             self.assertNotIn(key, {"seedExamples", "seeds", "id", "question", "answer"})
@@ -284,11 +283,7 @@ class AutoJobReconciliationTests(unittest.IsolatedAsyncioTestCase):
             self.patches.append(updates)
             return True
 
-        fetch = (
-            AsyncMock(side_effect=HTTPException(status_code=503, detail="down"))
-            if seed_count is None
-            else AsyncMock(return_value=_payload(seed_count))
-        )
+        count = AsyncMock(return_value=seed_count)
         generate = AsyncMock(
             side_effect=side_effect,
             return_value=run_result
@@ -308,12 +303,12 @@ class AutoJobReconciliationTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(side_effect=_capture),
             ),
             patch(
-                "app.firebase_metadata.best_effort_patch_starter_seed_generation",
+                "app.starter_status.best_effort_patch_starter_seed_generation",
                 new=AsyncMock(side_effect=_capture),
             ),
-            patch("app.firebase_metadata.fetch_course_seed_examples", new=fetch),
+            patch("app.starter_status.count_course_seed_examples", new=count),
             patch(
-                "app.firebase_metadata.read_starter_seed_generation",
+                "app.starter_status.read_starter_seed_generation",
                 new=AsyncMock(return_value=None),
             ),
             patch("app.starter_jobs.generate_starter_seeds_for_course", new=generate),
@@ -345,7 +340,7 @@ class AutoJobReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(final["limitingFactor"], "none")
         self.assertEqual(final["achievableCeiling"], 9)
 
-    async def test_job_falls_back_to_run_counts_when_firebase_cannot_be_counted(
+    async def test_job_falls_back_to_run_counts_when_seeds_cannot_be_counted(
         self,
     ) -> None:
         """Unchanged pre-reconciliation behavior, not a false zero."""
@@ -458,11 +453,11 @@ class TopUpRouteReconciliationTests(unittest.TestCase):
                 new=AsyncMock(return_value=self._run_result(target=target, saved=saved)),
             ),
             patch(
-                "app.firebase_metadata.fetch_course_seed_examples",
-                new=AsyncMock(return_value=_payload(seed_count)),
+                "app.starter_status.count_course_seed_examples",
+                new=AsyncMock(return_value=seed_count),
             ),
             patch(
-                "app.firebase_metadata.read_starter_seed_generation",
+                "app.starter_status.read_starter_seed_generation",
                 new=AsyncMock(
                     return_value={
                         "status": "partial",
@@ -473,7 +468,7 @@ class TopUpRouteReconciliationTests(unittest.TestCase):
                 ),
             ),
             patch(
-                "app.firebase_metadata.best_effort_patch_starter_seed_generation",
+                "app.starter_status.best_effort_patch_starter_seed_generation",
                 new=AsyncMock(side_effect=_capture),
             ),
         ):
@@ -532,10 +527,8 @@ class TopUpRouteReconciliationTests(unittest.TestCase):
                 new=AsyncMock(return_value=self._run_result(target=50, saved=41)),
             ),
             patch(
-                "app.firebase_metadata.fetch_course_seed_examples",
-                new=AsyncMock(
-                    side_effect=HTTPException(status_code=503, detail="down")
-                ),
+                "app.starter_status.count_course_seed_examples",
+                new=AsyncMock(return_value=None),
             ),
         ):
             response = self.client.post(
@@ -545,16 +538,16 @@ class TopUpRouteReconciliationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
 
-class FirebaseNetworkIsolationTests(unittest.TestCase):
-    """No backend test may reach the real Firebase database.
+class ExternalServiceIsolationTests(unittest.TestCase):
+    """No backend test may reach a real external service or a real database.
 
-    `backend/.env` carries a working FIREBASE_DATABASE_URL, so an unstubbed path
-    does not fail — it succeeds, against production. That is how a suite run
-    kept recreating `courses/css-360-summer-2026-demo`: the generate-starter
-    route stubbed seed persistence but not the starter-status reconciliation
-    that follows it, and the reconciliation's read and write both went out.
+    `backend/.env` carries working credentials, so an unstubbed path does not
+    fail — it succeeds, against production. That is how a suite run kept
+    recreating `css-360-summer-2026-demo`: the generate-starter route stubbed
+    seed persistence but not the starter-status reconciliation that follows it,
+    and the reconciliation's read and write both went out.
 
-    These pin the guard in `tests/conftest.py` rather than any one caller.
+    These pin the guards in `tests/conftest.py` rather than any one caller.
     """
 
     def setUp(self) -> None:
@@ -577,26 +570,31 @@ class FirebaseNetworkIsolationTests(unittest.TestCase):
         async def _attempt() -> None:
             async with httpx.AsyncClient() as client:
                 await client.get(
-                    "https://example-default-rtdb.firebaseio.com/courses.json"
+                    "https://example.invalid/courses.json"
                 )
 
         with self.assertRaises(ExternalRequestBlocked) as caught:
             asyncio.run(_attempt())
-        self.assertIn("firebaseio.com", str(caught.exception))
+        self.assertIn("example.invalid", str(caught.exception))
 
     def test_local_requests_are_still_allowed(self) -> None:
         """Ollama and the fine-tuned tunnel are loopback; they must pass."""
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
 
-    def test_firebase_is_unconfigured_during_tests(self) -> None:
-        from app.firebase_seeds import (
-            FirebaseConfigurationError,
-            get_firebase_database_url,
-        )
+    def test_postgres_is_unconfigured_during_tests(self) -> None:
+        from app.db import DatabaseConfigurationError, get_database_url
 
-        with self.assertRaises(FirebaseConfigurationError):
-            get_firebase_database_url()
+        with self.assertRaises(DatabaseConfigurationError):
+            get_database_url()
+
+    def test_the_training_queue_refuses_without_a_worker_token(self) -> None:
+        """An unconfigured queue router must refuse, never serve openly."""
+        response = self.client.post(
+            "/api/training-queue/claim",
+            json={"owner": "tester@host", "leaseSeconds": 60},
+        )
+        self.assertEqual(response.status_code, 503)
 
     def test_generate_starter_with_save_makes_no_external_request(self) -> None:
         """The exact leaking path, with nothing but the guard protecting it.
@@ -644,8 +642,8 @@ class FirebaseNetworkIsolationTests(unittest.TestCase):
                     )
                     self.assertEqual(response.status_code, 200)
 
-    def test_reconciliation_without_firebase_config_writes_nothing(self) -> None:
-        """Unconfigured Firebase must be a no-op, not an error and not a write."""
+    def test_reconciliation_without_a_database_writes_nothing(self) -> None:
+        """An unreadable count must be a no-op, not an error and not a write."""
         import asyncio
 
         applied = asyncio.run(

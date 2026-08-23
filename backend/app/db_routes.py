@@ -1,9 +1,10 @@
-"""PostgreSQL-backed routes, mounted in parallel under `/api/db`.
+"""The application's persistence routes, under `/api/db`.
 
-Every route here is new. Nothing under `/api/courses` changed: those still read
-and write Firebase, which remains the system of record. The prefix is the whole
-point — during the cutover it must be obvious from a URL alone which store
-answered a request, and a shared path with a feature flag would not give that.
+PostgreSQL is the system of record for everything the browser reads or writes,
+and this is what it talks to. The `/api/db` prefix is kept rather than
+collapsed into `/api/courses`: the frontend wrappers, the Nginx config and the
+deployed `VITE_API_BASE_URL` all compose these paths today, and renaming them
+would be a deployment change dressed up as a cleanup.
 
 Route bodies stay thin: validate, open one connection, call repositories, map
 "not found" to 404. Each request runs inside one transaction, so a route that
@@ -19,7 +20,6 @@ from fastapi import APIRouter, HTTPException
 from app import db_courses, db_evaluations, db_model_requests, db_models
 from app import db_seeds, db_training_runs
 from app.course_id import assert_valid_course_id
-from app.db_sync import mirror_seed_delete_to_firebase, mirror_seed_to_firebase
 from app.db import db_connection, translate_db_errors
 from app.db_schemas import (
     CourseCreateRequest,
@@ -54,10 +54,10 @@ router = APIRouter(prefix="/api/db", tags=["postgresql"])
 def _safe_course_id(course_id: str) -> str:
     """Validate before any statement runs.
 
-    The same validator the Firebase paths use. It is not what keeps SQL safe —
-    every value below is a bound parameter — but it keeps a malformed id from
-    reaching the database at all, and keeps both stores agreeing on what a
-    course id is.
+    Not what keeps SQL safe — every value below is a bound parameter — but it
+    keeps a malformed id from reaching the database at all, and keeps the API,
+    the export directories, and the training queue agreeing on what a course id
+    is.
     """
     try:
         return assert_valid_course_id(course_id)
@@ -170,8 +170,9 @@ def update_starter_seed_generation(
 ) -> StarterSeedGenerationResponse:
     """Merge starter-generation state.
 
-    Repository support only. The running generation job still writes Firebase
-    and nothing calls this on its behalf.
+    The generation job writes this through `app/starter_status.py` rather than
+    over HTTP; this route exists for admin correction and for reading a course
+    back after a run.
     """
     safe_course_id = _safe_course_id(course_id)
     patch = _patch_fields(request)
@@ -233,9 +234,7 @@ def get_course_seed(course_id: str, seed_id: str) -> SeedResponse:
 @router.post(
     "/courses/{course_id}/seeds", response_model=SeedResponse, status_code=201
 )
-async def create_course_seed(
-    course_id: str, request: SeedCreateRequest
-) -> SeedResponse:
+def create_course_seed(course_id: str, request: SeedCreateRequest) -> SeedResponse:
     safe_course_id = _safe_course_id(course_id)
     payload = _patch_fields(request)
 
@@ -250,9 +249,6 @@ async def create_course_seed(
         created = _run("creating a seed", work)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    # Firebase still backs the training export and the generation
-    # deduplicator, so a seed created here has to reach it as well.
-    await mirror_seed_to_firebase(safe_course_id, created)
     return SeedResponse(
         courseId=safe_course_id, seedId=created["id"], seed=created
     )
@@ -288,8 +284,9 @@ def review_course_seed(
 ) -> SeedResponse:
     """Approve, reject, or edit one seed.
 
-    Reuses `SeedReviewRequest` and `apply_seed_review` so the PostgreSQL path
-    validates and records provenance identically to the Firebase route.
+    Reuses `SeedReviewRequest` and `apply_seed_review`, the same helper the
+    `/api/courses/{courseId}/seeds/{seedId}/review` route uses, so the two
+    validate and record provenance identically.
     """
     safe_course_id = _safe_course_id(course_id)
     status = request.review_status.strip().lower()
@@ -320,7 +317,7 @@ def review_course_seed(
 
 
 @router.delete("/courses/{course_id}/seeds/{seed_id}", response_model=DeleteResponse)
-async def delete_course_seed(course_id: str, seed_id: str) -> DeleteResponse:
+def delete_course_seed(course_id: str, seed_id: str) -> DeleteResponse:
     safe_course_id = _safe_course_id(course_id)
     deleted = _run(
         "deleting a seed",
@@ -328,7 +325,6 @@ async def delete_course_seed(course_id: str, seed_id: str) -> DeleteResponse:
     )
     if not deleted:
         raise HTTPException(status_code=404, detail=f'Seed "{seed_id}" was not found.')
-    await mirror_seed_delete_to_firebase(safe_course_id, seed_id)
     return DeleteResponse(courseId=safe_course_id, deleted=1)
 
 

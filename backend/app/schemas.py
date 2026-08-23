@@ -337,7 +337,7 @@ class StarterSeedGenerateRequest(BaseModel):
     save: bool = Field(
         default=False,
         description=(
-            "When true, persist accepted validated seeds to Firebase. "
+            "When true, persist accepted validated seeds to the database. "
             "Defaults to false (generate-only)."
         ),
     )
@@ -352,7 +352,7 @@ class StarterSeedGenerateRequest(BaseModel):
         default=False,
         alias="topUp",
         description=(
-            "When true, read existing Firebase seeds first and generate only "
+            "When true, read the stored seeds first and generate only "
             "enough new seeds to reach targetCount. Existing seeds are preserved."
         ),
     )
@@ -371,7 +371,7 @@ class StarterSeedTopUpRequest(BaseModel):
     save: bool = Field(
         default=True,
         description=(
-            "When true (default), persist only newly accepted seeds to Firebase. "
+            "When true (default), persist only newly accepted seeds. "
             "Existing seeds are never deleted."
         ),
     )
@@ -514,7 +514,7 @@ class StarterSeedProgress(BaseModel):
     saved_count: int = Field(
         alias="savedCount",
         default=0,
-        description="Seeds saved to Firebase for this run (0 when save=false).",
+        description="Seeds saved for this run (0 when save=false).",
     )
     elapsed_ms: int = Field(
         alias="elapsedMs",
@@ -528,12 +528,12 @@ class StarterSeedProgress(BaseModel):
     top_up: bool = Field(
         default=False,
         alias="topUp",
-        description="True when this run was a top-up against existing Firebase seeds.",
+        description="True when this run was a top-up against stored seeds.",
     )
     existing_count: int = Field(
         default=0,
         alias="existingCount",
-        description="Seeds already present in Firebase before this run (top-up).",
+        description="Seeds already stored for the course before this run (top-up).",
     )
     missing_count: int = Field(
         default=0,
@@ -617,7 +617,6 @@ class SeedReviewResponse(BaseModel):
     course_id: str = Field(alias="courseId")
     seed_id: str = Field(alias="seedId")
     seed: SeedReviewRecord
-    firebase_path: str = Field(alias="firebasePath")
 
 
 class CourseSeedListResponse(BaseModel):
@@ -625,7 +624,6 @@ class CourseSeedListResponse(BaseModel):
 
     course_id: str = Field(alias="courseId")
     count: int
-    firebase_path: str = Field(alias="firebasePath")
     seeds: list[SeedReviewRecord]
 
 
@@ -643,7 +641,6 @@ class SeedQualityCheckResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     course_id: str = Field(alias="courseId")
-    firebase_path: str = Field(alias="firebasePath")
     report: dict
 
 
@@ -885,15 +882,3 @@ class EnqueueTrainingRunResponse(BaseModel):
     course_id: str = Field(alias="courseId")
     run_id: str = Field(alias="runId")
     run: dict[str, Any]
-    mirrored_to_postgres: bool = Field(
-        alias="mirroredToPostgres",
-        description=(
-            "False when the run was queued in Firebase — and so will be picked "
-            "up by the cluster — but could not be recorded in PostgreSQL, which "
-            "is what the training list reads. Never reported as a plain success."
-        ),
-    )
-    warning: str | None = Field(
-        default=None,
-        description="Set only when mirroredToPostgres is false.",
-    )

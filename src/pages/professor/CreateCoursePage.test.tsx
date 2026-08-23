@@ -102,7 +102,7 @@ describe('CreateCoursePage', () => {
     expect(uploadCourseSyllabusMock).not.toHaveBeenCalled();
   });
 
-  it('uploads multipart syllabus and updates Firebase metadata before redirecting', async () => {
+  it('uploads multipart syllabus and updates course metadata before redirecting', async () => {
     createCourseMock.mockResolvedValue({
       courseId: 'css-430-summer-2026-a82f',
       metadata: {
@@ -196,7 +196,7 @@ describe('CreateCoursePage', () => {
   });
 
   it('reports a save failure without naming the database', async () => {
-    createCourseMock.mockRejectedValue(new Error('Firebase permission denied'));
+    createCourseMock.mockRejectedValue(new Error('PostgreSQL permission denied'));
 
     renderCreateCoursePage();
     fillRequiredTextFields();
@@ -205,7 +205,7 @@ describe('CreateCoursePage', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/try uploading it again|try again/i);
-    expect(alert).not.toHaveTextContent(/firebase/i);
+    expect(alert).not.toHaveTextContent(/postgres/i);
     expect(uploadCourseSyllabusMock).not.toHaveBeenCalled();
     expect(screen.getByTestId('location')).toHaveTextContent(
       '/professor/courses/new',

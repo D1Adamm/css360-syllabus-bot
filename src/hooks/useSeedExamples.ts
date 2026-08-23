@@ -61,7 +61,7 @@ export function useSeedExamples(): UseSeedExamplesResult {
         const message =
           caughtError instanceof Error
             ? caughtError.message
-            : 'Could not save the example to Firebase.';
+            : 'Could not save the example.';
         setSaveError(message);
         throw caughtError;
       } finally {
@@ -81,7 +81,7 @@ export function useSeedExamples(): UseSeedExamplesResult {
         const message =
           caughtError instanceof Error
             ? caughtError.message
-            : 'Could not delete the example from Firebase.';
+            : 'Could not delete the example.';
         setSaveError(message);
         throw caughtError;
       }
@@ -98,7 +98,7 @@ export function useSeedExamples(): UseSeedExamplesResult {
       const message =
         caughtError instanceof Error
           ? caughtError.message
-          : 'Could not delete all examples from Firebase.';
+          : 'Could not delete all examples.';
       setSaveError(message);
       throw caughtError;
     }

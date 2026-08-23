@@ -68,7 +68,6 @@ vi.mock('../lib/api', () => ({
 
 import { ComparisonRunProvider } from '../context/ComparisonRunContext';
 import { CourseProvider } from '../context/CourseContext';
-import { getCourseEvaluationsPath, getCourseSeedExamplesPath } from '../lib/coursePaths';
 import { ContributePage } from '../pages/student/ContributePage';
 import { AdminExamplesPage } from '../pages/admin/AdminExamplesPage';
 import { EvaluatePage } from '../pages/student/EvaluatePage';
@@ -154,9 +153,6 @@ describe('course-scoped seed and evaluation data', () => {
       );
     });
 
-    expect(getCourseSeedExamplesPath(courseId)).toBe(
-      `courses/${courseId}/seedExamples`,
-    );
     expect(
       document.body.textContent,
     ).toMatch(/Nothing added yet/);
@@ -175,9 +171,6 @@ describe('course-scoped seed and evaluation data', () => {
         expect.any(Function),
       );
     });
-    expect(getCourseSeedExamplesPath(courseId)).toBe(
-      'courses/css360-default/seedExamples',
-    );
     expect(
       await screen.findByText('No examples stored'),
     ).toBeInTheDocument();
@@ -196,9 +189,6 @@ describe('course-scoped seed and evaluation data', () => {
         expect.any(Function),
       );
     });
-    expect(getCourseEvaluationsPath(courseId)).toBe(
-      'courses/css360-default/evaluations',
-    );
     expect(document.body.textContent).toMatch(/Results appear once students compare answers/);
   });
 
@@ -241,9 +231,6 @@ describe('course-scoped seed and evaluation data', () => {
 
     const seedCourseIds = subscribeToSeedExamplesMock.mock.calls.map((call) => call[0]);
     expect(seedCourseIds).toEqual(['course-alpha', 'course-beta']);
-    expect(getCourseSeedExamplesPath('course-alpha')).not.toBe(
-      getCourseSeedExamplesPath('course-beta'),
-    );
   });
 
   it('does not share evaluations across different course ids', async () => {
@@ -272,9 +259,6 @@ describe('course-scoped seed and evaluation data', () => {
       (call) => call[0],
     );
     expect(evaluationCourseIds).toEqual(['course-alpha', 'course-beta']);
-    expect(getCourseEvaluationsPath('course-alpha')).not.toBe(
-      getCourseEvaluationsPath('course-beta'),
-    );
   });
 });
 
@@ -337,9 +321,6 @@ describe('course-scoped create/delete helpers via hooks', () => {
       'course-gamma',
       expect.objectContaining({ comparisonId: 'comparison-001' }),
     );
-    expect(getCourseEvaluationsPath('course-gamma')).toBe(
-      'courses/course-gamma/evaluations',
-    );
   });
 
   it('Seed Data creates under courses/{courseId}/seedExamples', async () => {
@@ -380,9 +361,6 @@ describe('course-scoped create/delete helpers via hooks', () => {
     expect(createSeedExampleMock).toHaveBeenCalledWith(
       'course-delta',
       expect.objectContaining({ instruction: 'When does class meet?' }),
-    );
-    expect(getCourseSeedExamplesPath('course-delta')).toBe(
-      'courses/course-delta/seedExamples',
     );
   });
 });

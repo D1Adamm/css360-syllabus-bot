@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Read-only export of prototype and Firebase seed examples for review."""
+"""Read-only export of prototype and stored seed examples for review.
+
+Stored seeds are read through the backend API — `/api/db/courses/{courseId}/
+seeds` — rather than from any database directly, so this stays a script that
+needs one URL and no credentials of its own. Set EXPORT_COURSE_ID to choose the
+course and API_BASE_URL (or VITE_API_BASE_URL) to choose the backend.
+"""
 
 from __future__ import annotations
 
@@ -17,13 +23,22 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SEED_DATA_PATH = PROJECT_ROOT / "src" / "data" / "seedData.json"
 EXPORT_DIR = PROJECT_ROOT / "data" / "exports"
-# Prefer course-scoped seeds. Override with EXPORT_COURSE_ID.
-# Legacy root `seedExamples` is no longer used by the live UI.
-def firebase_seed_examples_path() -> str:
+
+
+def export_course_id() -> str:
+    """Which course's seeds to export. Required — seeds are course-scoped."""
     course_id = os.getenv("EXPORT_COURSE_ID", "").strip()
-    if course_id:
-        return f"courses/{course_id}/seedExamples"
-    return "seedExamples"
+    if not course_id:
+        raise ValueError(
+            "Missing EXPORT_COURSE_ID. Seeds are stored per course, so the "
+            "export has to name one, e.g. "
+            "EXPORT_COURSE_ID=css-360-winter-2026-a7rp"
+        )
+    return course_id
+
+
+def seed_examples_endpoint() -> str:
+    return f"{get_api_base_url()}/api/db/courses/{export_course_id()}/seeds"
 
 COMBINED_JSON = "seed-dataset-combined.json"
 COMBINED_JSONL = "seed-dataset-combined.jsonl"
@@ -160,32 +175,25 @@ def load_prototype_examples() -> list[ExportRecord]:
     return records
 
 
-def get_database_url() -> str:
-    database_url = (
-        os.environ.get("FIREBASE_DATABASE_URL")
-        or os.environ.get("VITE_FIREBASE_DATABASE_URL")
+def get_api_base_url() -> str:
+    base_url = (
+        os.environ.get("API_BASE_URL")
+        or os.environ.get("VITE_API_BASE_URL")
         or ""
     ).strip().rstrip("/")
 
-    if not database_url:
+    if not base_url:
         raise ValueError(
-            "Missing Firebase database URL. Set FIREBASE_DATABASE_URL or "
-            "VITE_FIREBASE_DATABASE_URL in your environment or .env file."
+            "Missing backend API URL. Set API_BASE_URL or VITE_API_BASE_URL in "
+            "your environment or .env file, e.g. http://127.0.0.1:8001"
         )
 
-    return database_url
+    return base_url
 
 
-def fetch_firebase_seed_examples() -> list[ExportRecord]:
-    database_url = get_database_url()
-    auth_token = os.environ.get("FIREBASE_AUTH_TOKEN", "").strip()
-
-    request_url = f"{database_url}/{firebase_seed_examples_path()}.json"
-    if auth_token:
-        request_url = f"{request_url}?auth={auth_token}"
-
+def fetch_stored_seed_examples() -> list[ExportRecord]:
     request = urllib.request.Request(
-        request_url,
+        seed_examples_endpoint(),
         headers={"Accept": "application/json"},
         method="GET",
     )
@@ -194,23 +202,20 @@ def fetch_firebase_seed_examples() -> list[ExportRecord]:
         with urllib.request.urlopen(request, timeout=30) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as error:
-        if error.code == 401:
-            raise ValueError(
-                "Firebase returned 401 Unauthorized. Provide FIREBASE_AUTH_TOKEN "
-                "if database rules require authentication."
-            ) from error
-        raise ValueError(f"Firebase request failed with HTTP {error.code}: {error.reason}") from error
+        raise ValueError(
+            f"The backend request failed with HTTP {error.code}: {error.reason}"
+        ) from error
     except urllib.error.URLError as error:
-        raise ValueError(f"Could not reach Firebase database: {error.reason}") from error
+        raise ValueError(f"Could not reach the backend API: {error.reason}") from error
 
     if payload is None:
         return []
 
-    if not isinstance(payload, dict):
-        raise ValueError("Unexpected Firebase payload shape for seedExamples")
+    if not isinstance(payload, dict) or not isinstance(payload.get("seeds"), list):
+        raise ValueError("Unexpected seed list payload shape from the backend")
 
     records: list[ExportRecord] = []
-    for item in payload.values():
+    for item in payload["seeds"]:
         if not isinstance(item, dict):
             continue
         origin = str(item.get("origin", "")).strip()
@@ -293,21 +298,12 @@ def main() -> int:
     prototype_records = load_prototype_examples()
 
     try:
-        student_records = fetch_firebase_seed_examples()
-        firebase_access = (
-            "Firebase read used the Realtime Database REST API with "
-            f"{get_database_url()}/{firebase_seed_examples_path()}.json"
-        )
-        if os.environ.get("FIREBASE_AUTH_TOKEN", "").strip():
-            firebase_access += " (authenticated with FIREBASE_AUTH_TOKEN)"
-        else:
-            firebase_access += (
-                " (unauthenticated public read; temporary if database rules allow it)"
-            )
+        student_records = fetch_stored_seed_examples()
+        stored_access = f"Read from {seed_examples_endpoint()}"
     except ValueError as error:
-        print(f"Warning: skipping Firebase examples: {error}", file=sys.stderr)
+        print(f"Warning: skipping stored examples: {error}", file=sys.stderr)
         student_records = []
-        firebase_access = "Firebase examples were not loaded due to the error above."
+        stored_access = "Stored examples were not loaded due to the error above."
 
     combined_before = len(prototype_records) + len(student_records)
     combined_records = [*prototype_records, *student_records]
@@ -328,7 +324,7 @@ def main() -> int:
     print("Seed dataset export complete")
     print("============================")
     print(f"Prototype source: {SEED_DATA_PATH}")
-    print(f"Firebase path: {firebase_seed_examples_path()}")
+    print(f"Stored seeds: {stored_access}")
     print(f"Export directory: {EXPORT_DIR}")
     print(f"Duplicates removed: {duplicate_count}")
     print("\nFiles written:")
@@ -336,7 +332,6 @@ def main() -> int:
     print(f"  {combined_jsonl_path}")
     print(f"  {prototype_jsonl_path}")
     print(f"  {student_jsonl_path}")
-    print(f"\nFirebase access: {firebase_access}")
 
     print_summary(
         prototype_count=len(prototype_records),

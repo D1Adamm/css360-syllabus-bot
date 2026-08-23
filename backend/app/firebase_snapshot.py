@@ -1,4 +1,14 @@
-"""Parse a Firebase Realtime Database `courses.json` snapshot into SQL rows.
+"""LEGACY MIGRATION TOOLING — parse an old Firebase snapshot into SQL rows.
+
+Not part of the running application. Firebase was removed as a runtime
+dependency; nothing under `app/` imports this module, no route reaches it, and
+the live app needs no Firebase configuration of any kind. It is retained for
+exactly one job: replaying the archived `courses.json` export into PostgreSQL
+if the original import ever has to be redone or audited. Its only caller is
+`scripts/import_firebase_snapshot.py`, which reads a file from disk.
+
+If you are looking for how the app stores seeds, courses, or training runs
+today, see `app/db_*.py` — this describes a store that no longer exists.
 
 Pure mapping only — nothing here opens a database connection or touches the
 network, so the whole camelCase -> snake_case translation is unit testable. The

@@ -5,6 +5,8 @@ python-multipart
 pypdf
 uvicorn[standard]
 pytest
-# PostgreSQL migration target only. Live routes still read/write Firebase, so
-# nothing imported by app.main needs this driver at runtime.
+# PostgreSQL is the application's only database. Every persistence route, the
+# starter-seed job, and the training queue go through this driver, so it is a
+# hard runtime requirement — app.db imports it lazily only so the process can
+# still start and report a clear 503 on a host where it is missing.
 psycopg[binary]

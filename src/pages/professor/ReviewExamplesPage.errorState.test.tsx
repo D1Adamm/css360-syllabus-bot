@@ -68,7 +68,6 @@ describe('ReviewExamplesPage load failure', () => {
     listCourseSeeds.mockResolvedValue({
       courseId: 'css-360-winter-2026-a7rp',
       count: 1,
-      firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples',
       seeds: [
         {
           id: 'seed-1',
@@ -94,7 +93,6 @@ describe('ReviewExamplesPage load failure', () => {
     listCourseSeeds.mockResolvedValue({
       courseId: 'css-360-winter-2026-a7rp',
       count: 0,
-      firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples',
       seeds: [],
     });
 

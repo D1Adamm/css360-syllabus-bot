@@ -1,4 +1,4 @@
-"""Tests for Phase 8 approved-only export and Firebase path isolation."""
+"""Tests for Phase 8 approved-only export and per-course isolation."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.firebase_seeds import course_seed_examples_path
 from app.seed_export import (
     FinetuneJsonlValidationError,
     export_approved_seeds,
@@ -58,16 +57,11 @@ class SeedExportTests(unittest.TestCase):
             self.assertEqual(summary["validatedCount"], 1)
             self.assertTrue(summary["validationPassed"])
             self.assertEqual(summary["skippedCount"], 2)
-            self.assertEqual(
-                summary["firebasePath"],
-                "courses/css-360-winter-2026-a7rp/seedExamples",
-            )
-            # No competing root seedExamples path.
-            self.assertNotEqual(summary["firebasePath"], "seedExamples")
-            self.assertEqual(
-                course_seed_examples_path("css-360-winter-2026-a7rp"),
-                summary["firebasePath"],
-            )
+            self.assertEqual(summary["courseId"], "css-360-winter-2026-a7rp")
+            # The store is named by nothing in the summary any more: seeds come
+            # from `seed_examples` scoped by courseId, and the old
+            # `firebasePath` key described a node that no longer exists.
+            self.assertNotIn("firebasePath", summary)
 
             finetune_path = Path(summary["files"]["finetuneJsonl"])
             self.assertEqual(summary["exportPath"], str(finetune_path))
@@ -197,7 +191,8 @@ class SeedExportTests(unittest.TestCase):
             latest = root / "data" / "exports" / "css-360-winter-2026-a7rp" / "generated-snapshot-latest.json"
             self.assertTrue(latest.is_file())
             payload = json.loads(latest.read_text(encoding="utf-8"))
-            self.assertEqual(payload["firebasePath"], "courses/css-360-winter-2026-a7rp/seedExamples")
+            self.assertNotIn("firebasePath", payload)
+            self.assertEqual(payload["courseId"], "css-360-winter-2026-a7rp")
             self.assertEqual(payload["seedCount"], 1)
 
 

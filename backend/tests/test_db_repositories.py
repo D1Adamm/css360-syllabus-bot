@@ -14,7 +14,7 @@ answer; `db/schema.sql` and the VM smoke test cover that.
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app import db_courses, db_evaluations, db_model_requests, db_models
@@ -252,7 +252,7 @@ class SeedWriteTests(unittest.TestCase):
         self.assertEqual(parameters["response"], "A.")
         self.assertEqual(parameters["course_id"], COURSE)
 
-    def test_created_seeds_get_a_non_firebase_id(self) -> None:
+    def test_created_seeds_get_a_distinguishable_id(self) -> None:
         """Imported push ids are real references; new rows must not mimic them."""
         connection = FakeConnection([1, [seed_row()]])
         db_seeds.create_seed(connection, COURSE, {"question": "Q?", "answer": "A."})
@@ -283,7 +283,7 @@ class SeedWriteTests(unittest.TestCase):
         self.assertIsInstance(parameters["instruction"], str)
 
     def test_review_reuses_the_shared_provenance_helper(self) -> None:
-        """Editing text must snapshot the original, exactly as Firebase review does."""
+        """Editing text must snapshot the original, as the review helper requires."""
         edited = seed_row(instruction="New?", original_question="Q?")
         connection = FakeConnection([[seed_row()], [seed_row()], 1, [edited]])
         db_seeds.review_seed(
@@ -712,8 +712,202 @@ class TrainingRunRepositoryTests(unittest.TestCase):
         self.assertEqual(connection.params[0], (COURSE, ["succeeded", "failed"]))
 
 
+class QueueClaimSqlTests(unittest.TestCase):
+    """The claim is the one place two workers can collide.
+
+    What makes it safe is in the SQL, not in the worker: a single eligible row
+    is selected `FOR UPDATE SKIP LOCKED` and the lease is stamped against that
+    already-locked row. These assert the statement really says so — a claim
+    that lost `SKIP LOCKED` would still pass every behavioural test and start
+    handing the same run to two runners under load.
+    """
+
+    def _row(self, course_id: str = COURSE, run_id: str = "run-1") -> dict[str, Any]:
+        return {"course_id": course_id, "run_id": run_id}
+
+    def test_claim_selects_one_row_for_update_skip_locked(self) -> None:
+        connection = FakeConnection([[self._row()], 1, []])
+        db_training_runs.claim_next_training_run(
+            connection, owner="runner@node", lease_seconds=900, now=UTC_NOON
+        )
+
+        select = connection.sql[0]
+        self.assertIn("FOR UPDATE SKIP LOCKED", select)
+        self.assertIn("LIMIT 1", select)
+        self.assertIn("ORDER BY enqueued_at ASC", select)
+
+    def test_claim_never_takes_a_run_that_already_has_a_job(self) -> None:
+        """A job id means a submission happened; retaking it double-submits."""
+        connection = FakeConnection([[self._row()], 1, []])
+        db_training_runs.claim_next_training_run(
+            connection, owner="runner@node", now=UTC_NOON
+        )
+        self.assertIn("job_id IS NULL", connection.sql[0])
+
+    def test_claim_takes_queued_runs_and_expired_leases_only(self) -> None:
+        connection = FakeConnection([[self._row()], 1, []])
+        db_training_runs.claim_next_training_run(
+            connection, owner="runner@node", now=UTC_NOON
+        )
+
+        select = connection.sql[0]
+        self.assertIn("state = 'queued'", select)
+        self.assertIn("state = 'claimed'", select)
+        self.assertIn("claim_expires_at <= %(now)s", select)
+        # submitted / training / succeeded / failed are not claimable.
+        self.assertNotIn("'submitted'", select)
+
+    def test_claim_stamps_the_lease_on_the_locked_row(self) -> None:
+        connection = FakeConnection([[self._row()], 1, []])
+        db_training_runs.claim_next_training_run(
+            connection, owner="runner@node", lease_seconds=600, now=UTC_NOON
+        )
+
+        update = connection.sql[1]
+        self.assertIn("UPDATE training_runs SET", update)
+        self.assertIn("state = 'claimed'", update)
+        self.assertIn("attempt = attempt + 1", update)
+        self.assertIn(
+            "WHERE course_id = %(course_id)s AND run_id = %(run_id)s", update
+        )
+
+        parameters = connection.params[1]
+        self.assertEqual(parameters["owner"], "runner@node")
+        self.assertEqual(
+            parameters["expires_at"], UTC_NOON + timedelta(seconds=600)
+        )
+
+    def test_no_eligible_row_claims_nothing_and_updates_nothing(self) -> None:
+        """No work is not an error, and must not write."""
+        connection = FakeConnection([[]])
+        claimed = db_training_runs.claim_next_training_run(
+            connection, owner="runner@node", now=UTC_NOON
+        )
+
+        self.assertIsNone(claimed)
+        self.assertEqual(len(connection.sql), 1)
+        self.assertFalse(
+            [statement for statement in connection.sql if statement.startswith("UPDATE")]
+        )
+
+    def test_a_claim_can_be_scoped_to_named_courses(self) -> None:
+        connection = FakeConnection([[self._row()], 1, []])
+        db_training_runs.claim_next_training_run(
+            connection,
+            owner="runner@node",
+            now=UTC_NOON,
+            course_ids=[COURSE],
+        )
+
+        self.assertIn("course_id = ANY(%(course_ids)s::text[])", connection.sql[0])
+        self.assertEqual(connection.params[0]["course_ids"], [COURSE])
+
+    def test_an_unscoped_claim_binds_null_rather_than_naming_every_course(self) -> None:
+        connection = FakeConnection([[self._row()], 1, []])
+        db_training_runs.claim_next_training_run(
+            connection, owner="runner@node", now=UTC_NOON
+        )
+        self.assertIsNone(connection.params[0]["course_ids"])
+
+    def test_a_claim_needs_an_owner_and_a_positive_lease(self) -> None:
+        with self.assertRaises(ValueError):
+            db_training_runs.claim_next_training_run(FakeConnection(), owner="  ")
+        with self.assertRaises(ValueError):
+            db_training_runs.claim_next_training_run(
+                FakeConnection(), owner="runner", lease_seconds=0
+            )
+
+    def test_release_clears_the_whole_lease_not_half_of_it(self) -> None:
+        connection = FakeConnection([[{"run_id": "run-1", "course_id": COURSE,
+                                       "mode": "full", "state": "claimed",
+                                       "enqueued_at": UTC_NOON,
+                                       "updated_at": UTC_NOON,
+                                       "dataset_ref": "exports/x"}], 1, []])
+        db_training_runs.release_training_run(
+            connection, COURSE, "run-1", error="nothing was submitted", now=UTC_NOON
+        )
+
+        update = next(s for s in connection.sql if s.startswith("UPDATE"))
+        for column in ("claim_owner", "claim_claimed_at", "claim_expires_at"):
+            self.assertIn(column, update)
+        self.assertIn("state", update)
+
+    def test_a_failed_run_is_terminal_and_unleased(self) -> None:
+        row = {
+            "run_id": "run-1",
+            "course_id": COURSE,
+            "mode": "full",
+            "state": "training",
+            "enqueued_at": UTC_NOON,
+            "updated_at": UTC_NOON,
+            "dataset_ref": "exports/x",
+        }
+        connection = FakeConnection([[row], 1, [{**row, "state": "failed"}]])
+        db_training_runs.fail_training_run(
+            connection, COURSE, "run-1", error="the job died", now=UTC_NOON
+        )
+
+        update = next(s for s in connection.sql if s.startswith("UPDATE"))
+        self.assertIn("claim_owner", update)
+        parameters = next(
+            p for s, p in connection.statements if s.startswith("UPDATE")
+        )
+        self.assertEqual(parameters["state"], "failed")
+        self.assertEqual(parameters["error"], "the job died")
+        self.assertIsNone(parameters["claim_owner"])
+
+    def test_a_submission_records_the_job_id_and_drops_the_lease(self) -> None:
+        row = {
+            "run_id": "run-1",
+            "course_id": COURSE,
+            "mode": "full",
+            "state": "claimed",
+            "enqueued_at": UTC_NOON,
+            "updated_at": UTC_NOON,
+            "dataset_ref": "exports/x",
+        }
+        connection = FakeConnection([[row], 1, [{**row, "state": "submitted"}]])
+        db_training_runs.mark_training_run_submitted(
+            connection,
+            COURSE,
+            "run-1",
+            job_id="123456",
+            train_examples=48,
+            validation_examples=6,
+            now=UTC_NOON,
+        )
+
+        parameters = next(
+            p for s, p in connection.statements if s.startswith("UPDATE")
+        )
+        self.assertEqual(parameters["state"], "submitted")
+        self.assertEqual(parameters["job_id"], "123456")
+        self.assertEqual(parameters["train_examples"], 48)
+        self.assertIsNone(parameters["claim_owner"])
+
+    def test_a_submission_without_a_job_id_is_refused(self) -> None:
+        """A placeholder id would make an unsubmitted run look submitted."""
+        with self.assertRaises(ValueError):
+            db_training_runs.mark_training_run_submitted(
+                FakeConnection(),
+                COURSE,
+                "run-1",
+                job_id="   ",
+                train_examples=1,
+                validation_examples=1,
+            )
+
+    def test_claimable_listing_is_read_only(self) -> None:
+        connection = FakeConnection([[]])
+        db_training_runs.claimable_training_runs(connection, now=UTC_NOON)
+
+        self.assertEqual(len(connection.sql), 1)
+        self.assertTrue(connection.sql[0].startswith("SELECT"))
+        self.assertNotIn("FOR UPDATE", connection.sql[0])
+
+
 class OrderingTests(unittest.TestCase):
-    """Ordering matches the Firebase parsers so a cutover changes no list."""
+    """Ordering matches the frontend parsers, so no list reshuffles."""
 
     def test_courses_sort_newest_first_then_by_id(self) -> None:
         connection = FakeConnection([[]])

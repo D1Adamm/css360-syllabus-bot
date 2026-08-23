@@ -7,9 +7,14 @@ import type { CourseMetadata } from '../types';
  * Guards for the PostgreSQL cutover itself.
  *
  * Everything else tests behaviour through a module. These test the properties
- * the cutover is *for*: that persistence no longer reaches Firebase from the
+ * the cutover is *for*: that no persistence code reaches Firebase from the
  * browser, that polling exists only while something is genuinely moving, and
  * that no test in this suite can quietly perform real network I/O.
+ *
+ * The Firebase checks are regression guards, not mocks of a live dependency.
+ * The package is gone from `package.json` and no module imports it; these fail
+ * loudly if an import is ever reintroduced, which is cheaper than discovering
+ * it in a production bundle.
  */
 
 const dbApiMock = vi.hoisted(() => ({

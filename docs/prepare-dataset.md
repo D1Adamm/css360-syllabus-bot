@@ -5,7 +5,7 @@
 
 This document describes the local preparation script that converts the combined export into review-ready and fine-tuning-ready files.
 
-This step **only prepares data**. It does **not** train or fine-tune a model, and it does **not** modify Firebase data.
+This step **only prepares data**. It does **not** train or fine-tune a model, and it does **not** modify stored course data.
 
 ## Prerequisites
 
@@ -158,7 +158,7 @@ The script prints counts based on the input file available when you run it.
 Example:
 
 - a workspace with prototype-only export may show 55 examples
-- a local machine with Firebase included may show 57 examples (55 prototype + 2 student)
+- a local machine that also read stored course seeds may show 57 examples (55 prototype + 2 student)
 
 Re-run the script after regenerating `data/exports/seed-dataset-combined.json` locally to refresh prepared outputs and summary counts.
 

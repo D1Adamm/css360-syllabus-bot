@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export approved Firebase seedExamples for a course to local JSONL + metadata.
+"""Export a course's approved seeds to local JSONL + metadata.
 
 Usage:
   cd backend
@@ -22,10 +22,7 @@ from app.config import load_backend_env  # noqa: E402
 
 load_backend_env()
 
-from app.firebase_seeds import (  # noqa: E402
-    FirebaseConfigurationError,
-    fetch_course_seed_examples,
-)
+from app.seed_persistence import fetch_course_seed_examples  # noqa: E402
 from app.seed_export import export_approved_seeds  # noqa: E402
 
 
@@ -36,7 +33,7 @@ async def main() -> None:
 
     try:
         payload = await fetch_course_seed_examples(args.course_id)
-    except FirebaseConfigurationError as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI: report and exit, do not trace
         print(f"ERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

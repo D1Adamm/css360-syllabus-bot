@@ -101,7 +101,7 @@ export interface EvaluationRecord {
   courseId?: string;
 }
 
-/** Syllabus processing status for a course in Firebase. */
+/** Syllabus processing status for a course. */
 export type SyllabusStatus =
   | 'none'
   | 'not_uploaded'

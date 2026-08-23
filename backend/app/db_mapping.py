@@ -10,7 +10,7 @@ Two conventions worth stating once:
     emitted as null. The TypeScript types spread optional fields conditionally
     (`...(typeof record.notes === 'string' ? { notes } : {})`), so an explicit
     null is a value those parsers would have to learn to ignore.
-  - Timestamps go out as ISO 8601 in UTC with a `+00:00` offset. Firebase holds
+  - Timestamps go out as ISO 8601 in UTC with a `+00:00` offset. Stored records hold
     a mix of `...Z` and `...+00:00` because different writers produced them;
     reading from `TIMESTAMPTZ` means every timestamp this layer emits has one
     shape, which is what the frontend's `localeCompare` sorting needs.
@@ -75,7 +75,7 @@ def put_optional(target: dict[str, Any], key: str, value: Any) -> None:
     """Set `key` only when there is something to set.
 
     Mirrors the conditional spreads in the TypeScript parsers, so a record that
-    round-trips through PostgreSQL has the same key set it had in Firebase.
+    round-trips through PostgreSQL has the key set the frontend parsers expect.
     """
     if value is None:
         return

@@ -3,9 +3,9 @@
 Records come back carrying both name pairs — `instruction`/`question` and
 `response`/`answer` — because both are load-bearing today. `SeedExample` in the
 frontend uses instruction/response, `normalizeSeedExample` accepts either, and
-`apply_seed_review` reads and writes all four. Firebase stores both; emitting
-both here means review, export, and the seed table keep working unchanged after
-a cutover.
+`apply_seed_review` reads and writes all four. Emitting both here means review,
+export, and the seed table all read the same record without a translation step
+in between.
 
 Every function is course-scoped: `seed_examples` is keyed `(course_id, seed_id)`
 and every statement below binds both, so no course can read or delete another's
@@ -89,10 +89,10 @@ def _bind(parameters: dict[str, Any]) -> dict[str, Any]:
 def new_seed_id() -> str:
     """A fresh id for a seed this layer creates.
 
-    Deliberately not shaped like a Firebase push id. Imported seeds keep the
-    push ids they arrived with — those are real references — and inventing
-    lookalikes for new rows would make two different provenances
-    indistinguishable.
+    Deliberately not shaped like a Realtime Database push id. Seeds imported
+    from the old snapshot keep the push ids they arrived with — those are real
+    references, and existing exports name them — while inventing lookalikes for
+    new rows would make two different provenances indistinguishable.
     """
     return f"seed-{uuid.uuid4().hex}"
 
@@ -107,7 +107,7 @@ def map_seed(row: Mapping[str, Any]) -> dict[str, Any]:
         "courseId": row["course_id"],
         "instruction": instruction,
         "response": response,
-        # Dual names, exactly as Firebase stores them.
+        # Dual names: both halves of each pair are read somewhere.
         "question": instruction,
         "answer": response,
         "category": row["category"],
@@ -313,7 +313,7 @@ def review_seed(
     The provenance logic — snapshotting originalQuestion/originalAnswer on the
     first edit, forcing `edited`, keeping grounding fields — is not restated
     here. Reimplementing it would give PostgreSQL-backed review subtly different
-    behavior from the Firebase route that shares the same helper.
+    behavior from the operational review route that shares the same helper.
     """
     safe_course_id = assert_valid_course_id(course_id)
     existing = get_seed(conn, safe_course_id, seed_id)

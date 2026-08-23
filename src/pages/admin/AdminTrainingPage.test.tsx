@@ -36,7 +36,6 @@ vi.mock('../../lib/api', () => ({
   listCourseSeeds: vi.fn().mockResolvedValue({
     courseId: 'css-360-winter-2026-a7rp',
     count: 2,
-    firebasePath: 'courses/css-360-winter-2026-a7rp/seedExamples',
     seeds: [
       { id: 'a', question: 'q1', answer: 'a1', reviewStatus: 'approved' },
       { id: 'b', question: 'q2', answer: 'a2', reviewStatus: 'generated' },
@@ -600,14 +599,14 @@ describe('AdminTrainingPage', () => {
   it('surfaces a queueing failure to the admin', async () => {
     fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
     queueTrainingForRequest.mockRejectedValue(
-      new Error('Firebase is unavailable right now.'),
+      new Error('The database is unavailable right now.'),
     );
 
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: /Queue training/i }));
 
     expect(
-      await screen.findByText(/Firebase is unavailable right now/),
+      await screen.findByText(/The database is unavailable right now/),
     ).toBeInTheDocument();
   });
 

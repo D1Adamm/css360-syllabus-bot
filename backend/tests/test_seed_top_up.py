@@ -1,4 +1,4 @@
-"""Tests for safe dataset top-up against existing Firebase seeds."""
+"""Tests for safe dataset top-up against a course's stored seeds."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from app.firebase_seeds import (
+from app.seed_persistence import (
     compute_top_up_gap,
     summarize_existing_seed_examples,
 )

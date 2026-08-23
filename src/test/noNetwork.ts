@@ -4,11 +4,10 @@
  * Suite-wide guarantee that no frontend test performs real network I/O.
  *
  * The backend suite learned this the hard way: `backend/.env` held a live
- * Firebase URL, so an unstubbed path did not fail — it succeeded, against
- * production, and recreated a course node on every run. The frontend is one
- * `VITE_API_BASE_URL` away from the same class of mistake, and after the
- * cutover the paths that would leak point at a real FastAPI host rather than a
- * mock.
+ * database URL, so an unstubbed path did not fail — it succeeded, against
+ * production, and recreated a course record on every run. The frontend is one
+ * `VITE_API_BASE_URL` away from the same class of mistake: the paths that would
+ * leak point at a real FastAPI host rather than a mock.
  *
  * So `fetch` is replaced with something that fails loudly and names the URL.
  * Every test that needs a response mocks `./dbApi`, `./api`, or `fetch` itself;

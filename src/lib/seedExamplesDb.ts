@@ -8,7 +8,7 @@ import { pollingSubscription, type Unsubscribe } from './pollingSubscription';
  * Seed examples, now read and written through FastAPI against PostgreSQL.
  *
  * `normalizeSeedExample` still runs over every record. The API returns both
- * name pairs (instruction/question, response/answer) exactly as Firebase did,
+ * name pairs (instruction/question, response/answer) as the stored records do,
  * and that normalizer is what the seed table, the review queue, and the export
  * screens all agree on — running it here means the cutover changed the source
  * of the records and nothing about their shape.
@@ -25,7 +25,7 @@ export function parseSeedExampleList(seeds: dbApi.DbSeedRecord[]): SeedExample[]
   }
 
   // The API already orders newest first; sorting again keeps this independent
-  // of that promise, exactly as the Firebase version did.
+  // of that promise, exactly as the pre-cutover version did.
   return normalized.sort((left, right) => {
     const leftTime = left.createdAt ?? '';
     const rightTime = right.createdAt ?? '';
