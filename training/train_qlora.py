@@ -147,6 +147,59 @@ def estimate_optimizer_steps(
     return int(math.ceil(steps_per_epoch * float(epochs)))
 
 
+def resolve_max_steps(
+    *,
+    smoke_test: bool,
+    smoke_max_steps: int | None,
+    train_example_count: int,
+    epochs: float,
+    per_device_batch_size: int,
+    gradient_accumulation_steps: int,
+    gpu_count: int,
+) -> int:
+    """Resolve the explicit ``max_steps`` value handed to SFTConfig.
+
+    Smoke runs keep their fixed tiny cap. Full runs must pass an explicit
+    optimizer-step budget because Hugging Face Trainer derives its own budget
+    as ``floor(len(dataloader) / gradient_accumulation_steps) * epochs``. When
+    the example count is not divisible by the effective batch size that floor
+    silently drops the trailing partial accumulation group of every epoch, so
+    the run stops materially short of ``num_train_epochs`` (e.g. 37 examples /
+    accumulation 8 / 3 epochs stops at 12 steps, epoch ~2.43, instead of 15).
+    The ceil-based estimator is the single source of truth for the budget.
+    """
+    if smoke_test:
+        if smoke_max_steps is None or smoke_max_steps < 1:
+            raise ValueError("smoke_max_steps must be >= 1 for smoke runs")
+        return int(smoke_max_steps)
+    return estimate_optimizer_steps(
+        train_example_count=train_example_count,
+        epochs=epochs,
+        per_device_batch_size=per_device_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        gpu_count=gpu_count,
+    )
+
+
+def evaluate_training_length(
+    *,
+    completed_steps: int,
+    intended_steps: int,
+) -> dict[str, Any]:
+    """Compare completed optimizer steps against the intended step budget."""
+    if intended_steps < 1:
+        raise ValueError("intended_steps must be >= 1")
+    completed = max(0, int(completed_steps))
+    missing = max(0, intended_steps - completed)
+    return {
+        "intendedOptimizerSteps": intended_steps,
+        "completedSteps": completed,
+        "missingOptimizerSteps": missing,
+        "completedStepRatio": completed / float(intended_steps),
+        "trainingLengthSatisfied": missing == 0,
+    }
+
+
 def average_seconds_per_step(
     step_durations_seconds: list[float],
     *,
@@ -272,6 +325,10 @@ def build_runtime_report(
     effective_batch: int,
     estimated_optimizer_steps: int,
     completed_steps: int,
+    intended_optimizer_steps: int | None = None,
+    missing_optimizer_steps: int | None = None,
+    completed_step_ratio: float | None = None,
+    training_length_satisfied: bool | None = None,
     model_load_seconds: float,
     training_seconds: float,
     evaluation_seconds: float,
@@ -295,6 +352,15 @@ def build_runtime_report(
         "effectiveBatchSize": effective_batch,
         "estimatedOptimizerSteps": estimated_optimizer_steps,
         "completedSteps": completed_steps,
+        # Optimizer steps this run was configured to execute (max_steps).
+        "intendedOptimizerSteps": (
+            estimated_optimizer_steps
+            if intended_optimizer_steps is None
+            else intended_optimizer_steps
+        ),
+        "missingOptimizerSteps": missing_optimizer_steps,
+        "completedStepRatio": completed_step_ratio,
+        "trainingLengthSatisfied": training_length_satisfied,
         "modelLoadSeconds": model_load_seconds,
         "trainingSeconds": training_seconds,
         "evaluationSeconds": evaluation_seconds,
@@ -513,6 +579,19 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Full runs pass an explicit ceil-based optimizer-step budget so Trainer's
+    # floor(len(dataloader) / gradient_accumulation_steps) does not truncate the
+    # run when the dataset is not divisible by the effective batch size.
+    resolved_max_steps = resolve_max_steps(
+        smoke_test=bool(args.smoke_test),
+        smoke_max_steps=smoke_max_steps,
+        train_example_count=len(train_records),
+        epochs=args.epochs,
+        per_device_batch_size=args.per_device_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        gpu_count=gpu_count,
+    )
+
     resolved = ResolvedRunConfig(
         mode=mode,
         model_id=args.model_id,
@@ -529,7 +608,7 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         seed=args.seed,
         gpu_count=gpu_count,
         smoke_test=bool(args.smoke_test),
-        max_steps=smoke_max_steps,
+        max_steps=resolved_max_steps,
         train_example_count=len(train_records),
         validation_example_count=len(validation_records),
         full_train_example_count=len(full_train),
@@ -634,13 +713,15 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         "packing": False,
         "dataset_text_field": "text",
     }
+    # Both modes supply an explicit max_steps; only smoke runs switch to
+    # step-based eval/save, so full-run eval/save stay per-epoch as before.
+    sft_kwargs["max_steps"] = resolved_max_steps
     if smoke_max_steps is not None:
-        sft_kwargs["max_steps"] = smoke_max_steps
         # Keep periodic eval/save usable during short smoke runs.
         sft_kwargs["eval_strategy"] = "steps" if eval_dataset is not None else "no"
-        sft_kwargs["eval_steps"] = max(1, smoke_max_steps)
+        sft_kwargs["eval_steps"] = max(1, resolved_max_steps)
         sft_kwargs["save_strategy"] = "steps"
-        sft_kwargs["save_steps"] = max(1, smoke_max_steps)
+        sft_kwargs["save_steps"] = max(1, resolved_max_steps)
 
     sft_config = SFTConfig(**sft_kwargs)
 
@@ -696,6 +777,10 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         int(train_metrics.get("train_steps", 0) or 0),
         int(getattr(trainer.state, "global_step", 0) or 0),
     )
+    length_status = evaluate_training_length(
+        completed_steps=completed_steps,
+        intended_steps=resolved_max_steps,
+    )
     all_avg = average_seconds_per_step(timing.step_durations, exclude_first=False)
     skip_first_avg = average_seconds_per_step(timing.step_durations, exclude_first=True)
     conservative_avg = choose_conservative_step_average(all_avg, skip_first_avg)
@@ -738,6 +823,10 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         effective_batch=effective_batch,
         estimated_optimizer_steps=full_optimizer_steps,
         completed_steps=completed_steps,
+        intended_optimizer_steps=resolved_max_steps,
+        missing_optimizer_steps=length_status["missingOptimizerSteps"],
+        completed_step_ratio=length_status["completedStepRatio"],
+        training_length_satisfied=length_status["trainingLengthSatisfied"],
         model_load_seconds=model_load_seconds,
         training_seconds=training_seconds,
         evaluation_seconds=evaluation_seconds,
@@ -760,6 +849,10 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         print_smoke_benchmark(report)
     else:
         print("\nFull run complete:")
+        print(
+            f"  - Optimizer steps: {completed_steps}/{resolved_max_steps} "
+            f"(requested epochs: {args.epochs})"
+        )
         print(f"  - Total elapsed: {format_duration(total_elapsed)}")
         if actual_gpu_hours is not None:
             print(f"  - Actual GPU hours: {actual_gpu_hours:.4f}")
@@ -768,6 +861,16 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
 
     print(f"\nWrote adapter to {adapter_dir}")
     print(f"Wrote runtime report to {output_dir / 'runtime-report.json'}")
+
+    # A full run must not silently finish materially short of its step budget.
+    if mode == "full" and not length_status["trainingLengthSatisfied"]:
+        raise RuntimeError(
+            "Full training run finished short of its intended length: "
+            f"{length_status['completedSteps']}/{length_status['intendedOptimizerSteps']}"
+            " optimizer steps "
+            f"({length_status['missingOptimizerSteps']} missing). "
+            "See runtime-report.json for details."
+        )
     return report
 
 

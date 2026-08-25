@@ -16,6 +16,8 @@ from train_qlora import (
     estimate_gpu_hours,
     estimate_optimizer_steps,
     estimate_conservative_total_seconds,
+    evaluate_training_length,
+    resolve_max_steps,
     estimate_training_only_seconds,
     load_instruction_response_jsonl,
     parse_args,
@@ -130,6 +132,198 @@ class TrainQloraHelperTests(unittest.TestCase):
             gpu_count=1,
         )
         self.assertEqual(steps, 18)
+
+    def test_optimizer_step_calculation_for_non_divisible_dataset(self) -> None:
+        # 37 examples, effective batch 8 => ceil(37/8)=5 steps/epoch * 3 = 15.
+        # Hugging Face Trainer's own budget would floor 37//8 = 4 -> 12 steps.
+        steps = estimate_optimizer_steps(
+            train_example_count=37,
+            epochs=3,
+            per_device_batch_size=1,
+            gradient_accumulation_steps=8,
+            gpu_count=1,
+        )
+        self.assertEqual(steps, 15)
+
+    def test_full_run_max_steps_for_non_divisible_dataset(self) -> None:
+        max_steps = resolve_max_steps(
+            smoke_test=False,
+            smoke_max_steps=None,
+            train_example_count=37,
+            epochs=3,
+            per_device_batch_size=1,
+            gradient_accumulation_steps=8,
+            gpu_count=1,
+        )
+        # Explicit budget matches the estimator, not Trainer's floored 12.
+        self.assertEqual(max_steps, 15)
+        self.assertNotEqual(max_steps, 12)
+        self.assertEqual(
+            max_steps,
+            estimate_optimizer_steps(
+                train_example_count=37,
+                epochs=3,
+                per_device_batch_size=1,
+                gradient_accumulation_steps=8,
+                gpu_count=1,
+            ),
+        )
+        # Effective batch size is untouched by the fix.
+        self.assertEqual(
+            effective_batch_size(
+                per_device_batch_size=1,
+                gradient_accumulation_steps=8,
+                gpu_count=1,
+            ),
+            8,
+        )
+        # 15 steps at effective batch 8 covers at least 3 full epochs of data.
+        self.assertGreaterEqual(max_steps * 8, 37 * 3)
+
+    def test_full_run_max_steps_for_divisible_dataset_unchanged(self) -> None:
+        # Divisible case: Trainer's own floor already agreed, so the explicit
+        # budget must equal the previous behaviour.
+        self.assertEqual(
+            resolve_max_steps(
+                smoke_test=False,
+                smoke_max_steps=None,
+                train_example_count=48,
+                epochs=3,
+                per_device_batch_size=1,
+                gradient_accumulation_steps=8,
+                gpu_count=1,
+            ),
+            18,
+        )
+        self.assertEqual(
+            resolve_max_steps(
+                smoke_test=False,
+                smoke_max_steps=None,
+                train_example_count=64,
+                epochs=2,
+                per_device_batch_size=2,
+                gradient_accumulation_steps=4,
+                gpu_count=2,
+            ),
+            8,
+        )
+
+    def test_full_run_max_steps_generalizes(self) -> None:
+        cases = [
+            # (examples, epochs, per_device, grad_accum, gpus, expected)
+            (37, 3, 1, 8, 1, 15),
+            (37, 1, 1, 8, 1, 5),
+            (1, 3, 1, 8, 1, 3),
+            (100, 2, 2, 8, 2, 8),
+            # 129 examples, effective batch 32 -> ceil = 5 steps/epoch * 2 = 10
+            (129, 2, 2, 8, 2, 10),
+            (37, 2.5, 1, 8, 1, 13),
+        ]
+        for examples, epochs, per_device, accum, gpus, expected in cases:
+            with self.subTest(examples=examples, epochs=epochs, gpus=gpus):
+                self.assertEqual(
+                    resolve_max_steps(
+                        smoke_test=False,
+                        smoke_max_steps=None,
+                        train_example_count=examples,
+                        epochs=epochs,
+                        per_device_batch_size=per_device,
+                        gradient_accumulation_steps=accum,
+                        gpu_count=gpus,
+                    ),
+                    expected,
+                )
+
+    def test_smoke_max_steps_unchanged_by_full_run_budget(self) -> None:
+        train = [{"instruction": f"Q{i}?", "response": f"A{i}."} for i in range(37)]
+        val = [{"instruction": f"V{i}?", "response": f"B{i}."} for i in range(5)]
+        smoke_train, smoke_val, smoke_max_steps = resolve_smoke_limits(
+            smoke_test=True,
+            train_records=train,
+            validation_records=val,
+        )
+        self.assertEqual(len(smoke_train), 4)
+        self.assertEqual(len(smoke_val), 2)
+        self.assertEqual(smoke_max_steps, 3)
+        self.assertEqual(
+            resolve_max_steps(
+                smoke_test=True,
+                smoke_max_steps=smoke_max_steps,
+                train_example_count=len(smoke_train),
+                epochs=3,
+                per_device_batch_size=1,
+                gradient_accumulation_steps=8,
+                gpu_count=1,
+            ),
+            3,
+        )
+
+    def test_smoke_max_steps_required_for_smoke_runs(self) -> None:
+        with self.assertRaises(ValueError):
+            resolve_max_steps(
+                smoke_test=True,
+                smoke_max_steps=None,
+                train_example_count=4,
+                epochs=3,
+                per_device_batch_size=1,
+                gradient_accumulation_steps=8,
+                gpu_count=1,
+            )
+
+    def test_training_length_evaluation(self) -> None:
+        satisfied = evaluate_training_length(completed_steps=15, intended_steps=15)
+        self.assertTrue(satisfied["trainingLengthSatisfied"])
+        self.assertEqual(satisfied["missingOptimizerSteps"], 0)
+        self.assertAlmostEqual(satisfied["completedStepRatio"], 1.0)
+
+        # The historical bug: 12 completed against an intended 15.
+        short = evaluate_training_length(completed_steps=12, intended_steps=15)
+        self.assertFalse(short["trainingLengthSatisfied"])
+        self.assertEqual(short["missingOptimizerSteps"], 3)
+        self.assertAlmostEqual(short["completedStepRatio"], 12 / 15)
+
+        over = evaluate_training_length(completed_steps=16, intended_steps=15)
+        self.assertTrue(over["trainingLengthSatisfied"])
+        self.assertEqual(over["missingOptimizerSteps"], 0)
+
+        with self.assertRaises(ValueError):
+            evaluate_training_length(completed_steps=1, intended_steps=0)
+
+    def test_runtime_report_records_intended_training_length(self) -> None:
+        status = evaluate_training_length(completed_steps=15, intended_steps=15)
+        report = build_runtime_report(
+            mode="full",
+            model_id="meta-llama/Llama-3.2-3B-Instruct",
+            gpu_count=1,
+            train_example_count=37,
+            validation_example_count=5,
+            epochs=3,
+            effective_batch=8,
+            estimated_optimizer_steps=15,
+            completed_steps=15,
+            intended_optimizer_steps=15,
+            missing_optimizer_steps=status["missingOptimizerSteps"],
+            completed_step_ratio=status["completedStepRatio"],
+            training_length_satisfied=status["trainingLengthSatisfied"],
+            model_load_seconds=12.5,
+            training_seconds=900.0,
+            evaluation_seconds=5.0,
+            total_elapsed_seconds=950.0,
+            average_seconds_per_step_value=60.0,
+            average_seconds_per_step_excluding_first=58.0,
+            estimated_training_only_seconds=None,
+            estimated_conservative_total_seconds=None,
+            estimated_gpu_hours=None,
+            actual_gpu_hours=0.26,
+            git_commit_sha="abc123",
+            slurm_job_id="999",
+        )
+        self.assertEqual(report["estimatedOptimizerSteps"], 15)
+        self.assertEqual(report["intendedOptimizerSteps"], 15)
+        self.assertEqual(report["completedSteps"], 15)
+        self.assertEqual(report["missingOptimizerSteps"], 0)
+        self.assertTrue(report["trainingLengthSatisfied"])
+        self.assertEqual(report["effectiveBatchSize"], 8)
 
     def test_runtime_estimate_calculation(self) -> None:
         avg = average_seconds_per_step([10.0, 4.0, 6.0], exclude_first=False)
