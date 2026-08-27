@@ -214,6 +214,63 @@ export interface CourseModelVersion {
   createdAt: string;
   updatedAt?: string;
   notes?: string;
+  /**
+   * The training run this artifact came from, when one is known.
+   *
+   * Absent on versions registered by hand before automatic registration
+   * existed. Present, it is what makes a version traceable: one run, one
+   * version, and a repeated completion callback refreshes that version rather
+   * than allocating another.
+   */
+  runId?: string;
+  /**
+   * What this model was made from. Admin-facing detail only.
+   *
+   * Kept on the version rather than only on the run because the question it
+   * answers — "what is this model, exactly?" — is asked long after anyone is
+   * looking at the run that produced it.
+   */
+  provenance?: CourseModelProvenance;
+}
+
+/**
+ * Traceability for one registered artifact.
+ *
+ * Every field is optional: the record is assembled on a compute node from files
+ * a given run may not have written, and a partial record is worth more than
+ * none. Admin surfaces show it; professor surfaces never do.
+ */
+export interface CourseModelProvenance {
+  courseId?: string;
+  runId?: string;
+  mode?: string;
+  attempt?: number;
+  slurmJobId?: string;
+  baseModel?: string;
+  artifactRef?: string;
+  outputRef?: string;
+  datasetRef?: string;
+  datasetVersion?: string;
+  datasetSha256?: string;
+  datasetChecksums?: Record<string, string>;
+  approvedExampleCount?: number;
+  trainExamples?: number;
+  validationExamples?: number;
+  intendedOptimizerSteps?: number;
+  completedSteps?: number;
+  missingOptimizerSteps?: number;
+  trainingLengthSatisfied?: boolean;
+  epochs?: number;
+  trainLoss?: number;
+  evalLoss?: number;
+  actualGpuHours?: number;
+  gpuCount?: number;
+  elapsedSeconds?: number;
+  gitCommitSha?: string;
+  resolvedConfig?: Record<string, unknown>;
+  enqueuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
 }
 
 export interface CourseModelRegistry {
@@ -371,6 +428,80 @@ export interface TrainingRun {
   claim?: TrainingRunClaim;
   /** Why the last attempt failed. Operator-facing. */
   error?: string;
+  /**
+   * What the cluster reported when the job ended.
+   *
+   * Written once, by the completion callback the job itself sends. Before that
+   * callback existed a finished job left no trace here at all — the run stayed
+   * `submitted` until a person noticed — so an absent `completion` on a
+   * terminal run means the run predates it or the report has not arrived yet.
+   */
+  completion?: TrainingRunCompletion;
+}
+
+/** How a training job ended, as reported by the cluster. Admin-facing. */
+export interface TrainingRunCompletion {
+  outcome: 'succeeded' | 'failed';
+  receivedAt: string;
+  jobId?: string;
+  startedAt?: string;
+  completedAt?: string;
+  outputRef?: string;
+  artifactRef?: string;
+  baseModel?: string;
+  datasetRef?: string;
+  datasetVersion?: string;
+  datasetSha256?: string;
+  datasetChecksums?: Record<string, string>;
+  approvedExampleCount?: number;
+  trainExamples?: number;
+  validationExamples?: number;
+  intendedOptimizerSteps?: number;
+  completedSteps?: number;
+  missingOptimizerSteps?: number;
+  trainingLengthSatisfied?: boolean;
+  epochs?: number;
+  trainLoss?: number;
+  evalLoss?: number;
+  actualGpuHours?: number;
+  gpuCount?: number;
+  elapsedSeconds?: number;
+  gitCommitSha?: string;
+  failureStage?: string;
+  error?: string;
+  resolvedConfig?: Record<string, unknown>;
+  trainingMetrics?: Record<string, unknown>;
+  evaluationMetrics?: Record<string, unknown>;
+  runtimeReport?: Record<string, unknown>;
+}
+
+/* ------------------------------------------------------------------------ *
+ * Serving sessions
+ *
+ * Whether a GPU is currently running the fine-tuned inference service, and
+ * until when. Deliberately separate from `CourseModelDeploymentStatus`: that
+ * describes one course's artifact and is durable, this describes one Slurm
+ * allocation with a wall clock on it and belongs to no course in particular.
+ *
+ * The browser never sees the compute node or port. Every `/api/db` route is
+ * reachable without a credential, and those two fields are the only ones that
+ * say how to reach a machine.
+ * ------------------------------------------------------------------------ */
+
+export type ServingSessionState = 'starting' | 'ready' | 'stopped' | 'expired';
+
+export interface ServingSession {
+  sessionId: string;
+  jobId: string;
+  state: ServingSessionState;
+  startedAt?: string;
+  expiresAt?: string;
+  updatedAt?: string;
+  /** True while the session has not been stopped and has wall clock left. */
+  live: boolean;
+  /** Courses this session can answer for, with the version each is serving. */
+  courses?: Array<{ courseId: string; currentVersion: string }>;
+  baseModel?: string;
 }
 
 export type TrainingMode = 'smoke' | 'full';

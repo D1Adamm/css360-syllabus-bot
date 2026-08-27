@@ -18,7 +18,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, HTTPException
 
 from app import db_courses, db_evaluations, db_model_requests, db_models
-from app import db_seeds, db_training_runs
+from app import db_seeds, db_serving_sessions, db_training_runs
 from app.course_id import assert_valid_course_id
 from app.db import db_connection, translate_db_errors
 from app.db_schemas import (
@@ -597,3 +597,25 @@ def update_course_training_run(
             status_code=404, detail=f'Training run "{run_id}" was not found.'
         )
     return TrainingRunRecord(**updated)
+
+
+
+@router.get("/serving-session")
+def get_current_serving_session() -> dict[str, Any]:
+    """Whether a fine-tuned serving job is up, and until when.
+
+    The browser-facing half of the serving session. `node` and `port` are not
+    included: every route on this router is reachable without a credential, and
+    a compute hostname with a listening port is the one field in that record
+    that describes how to reach a machine. The worker-token route
+    `/api/training-queue/serving-session` returns those to the one caller that
+    needs them.
+
+    `session: null` is a normal answer — most of the time nothing is serving,
+    which is the intended resting state of a research GPU allocation.
+    """
+    session = _run(
+        "reading the current serving session",
+        lambda connection: db_serving_sessions.current_serving_session(connection),
+    )
+    return {"session": db_serving_sessions.public_serving_session(session)}

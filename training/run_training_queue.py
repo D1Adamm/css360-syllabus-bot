@@ -12,9 +12,27 @@ The queue lives in PostgreSQL on the application VM and is reached through
 `/api/training-queue`. Set TRAINING_API_BASE_URL and TRAINING_WORKER_TOKEN in
 the environment or .env.local before running this.
 
-Submission reuses the existing launcher. This process never calls sbatch
-itself, never syncs data, and never promotes an adapter. `--dry-run` is
-read-only: it does not claim, write, or spawn the launcher.
+What one invocation does
+------------------------
+    1. deliver any completion reports earlier jobs queued locally
+    2. re-report any submission the backend never acknowledged
+    3. claim one queued run
+    4. fetch that run's prepared dataset from the backend, unless the copy on
+       disk already matches it byte for byte
+    5. verify counts, checksums and training configuration
+    6. refuse to submit a second job for a run that already has one
+    7. submit through the existing launcher
+    8. record the submission, locally first and then to the backend
+
+Steps 1, 2 and 4 are new, and each replaces something an operator used to do by
+hand: chase a finished job that never reported, work out whether a job had
+really been submitted after a failed call, and `rsync` a dataset from the
+application VM over a second Duo prompt.
+
+Submission still reuses the existing launcher. This process never calls sbatch
+itself and never promotes an adapter. `--dry-run` stays read-only: it claims
+nothing, writes nothing, sends nothing, and never spawns the launcher — it will
+describe the dataset it would fetch, but it will not fetch it.
 
 Usage (from the repository root on Tillicum):
 
@@ -40,6 +58,13 @@ SCRIPTS_LIB = REPO_ROOT / "scripts" / "lib"
 
 sys.path.insert(0, str(SCRIPTS_LIB))
 
+from dataset_sync import (  # noqa: E402
+    DatasetSyncError,
+    DatasetSyncResult,
+    local_dataset_matches,
+    sync_run_dataset,
+    validate_descriptor,
+)
 from finetuned_deploy_helpers import parse_sbatch_job_id  # noqa: E402
 from training_queue import (  # noqa: E402  (path set above)
     ClaimConflict,
@@ -51,6 +76,12 @@ from training_queue import (  # noqa: E402  (path set above)
     load_env_file,
     utc_now,
     validate_course_id,
+)
+from training_state import (  # noqa: E402
+    list_pending_callbacks,
+    read_run_record,
+    unreported_submissions,
+    write_run_record,
 )
 
 START_SCRIPT = "./training/start_qlora_training.sh"
@@ -161,12 +192,27 @@ def validate_run_against_prepared_data(
 def describe_planned_launch(run: TrainingRun, *, helpers: Any) -> dict[str, str]:
     """Exactly what would be invoked, using the launcher's own job naming."""
     job_name = helpers.slurm_training_job_name(course_id=run.course_id, mode=run.mode)
-    command = f"{START_SCRIPT} --course {run.course_id} --{run.mode} --yes"
+    command = " ".join(launcher_argv(run))
     return {"jobName": job_name, "command": command}
 
 
 def launcher_argv(run: TrainingRun) -> list[str]:
-    return [START_SCRIPT, "--course", run.course_id, f"--{run.mode}", "--yes"]
+    """The launcher invocation, carrying the queue run id into the Slurm job.
+
+    `--queue-run-id` is what lets the job report its own completion. Without it
+    the compute node knows the course and the output directory but not which
+    PostgreSQL run it is finishing, and the completion callback has nothing to
+    address itself to — which is exactly why job 253552 could not report itself.
+    """
+    return [
+        START_SCRIPT,
+        "--course",
+        run.course_id,
+        f"--{run.mode}",
+        "--queue-run-id",
+        run.run_id,
+        "--yes",
+    ]
 
 
 def subprocess_launcher(
@@ -200,6 +246,25 @@ def subprocess_launcher(
         stdout=completed.stdout or "",
         stderr=completed.stderr or "",
     )
+
+
+_OUTPUT_DIR_LINE_PREFIX = "output dir:"
+
+
+def parse_launcher_output_dir(output: str) -> Optional[str]:
+    """The versioned run directory the launcher reported, if it said one.
+
+    Recorded locally alongside the job id so the three identifiers an operator
+    needs to reconcile anything — run id, Slurm job id, output directory — are
+    in one file, written before the backend was told about any of them.
+    """
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith(_OUTPUT_DIR_LINE_PREFIX):
+            value = stripped.split(":", 1)[1].strip()
+            if value:
+                return value
+    return None
 
 
 def parse_launcher_job_id(output: str) -> Optional[str]:
@@ -242,6 +307,157 @@ def _print_run(run: TrainingRun, course_id: str) -> None:
     print(f"  Attempt:  {run.attempt}")
 
 
+class DatasetUnavailable(Exception):
+    """The backend could not give this run a usable dataset."""
+
+
+def ensure_dataset(
+    queue: TrainingQueue,
+    run: TrainingRun,
+    *,
+    root: Path = REPO_ROOT,
+) -> DatasetSyncResult:
+    """Make this cluster hold exactly the dataset the backend has for this run.
+
+    The step that removes the manual `rsync`. It is safe to repeat: a local copy
+    that already matches the backend's digests is left alone, so a retried run
+    costs one request rather than a transfer.
+
+    Failures here are refusals, not crashes. The run goes back on the queue with
+    an operator-readable reason — the dataset can be re-prepared on the VM and
+    the same run picked up again, with no second Slurm job and nothing lost.
+    """
+    export_dir = course_export_dir(run.course_id, root)
+    try:
+        return sync_run_dataset(queue, run.course_id, run.run_id, export_dir)
+    except DatasetSyncError as exc:
+        raise DatasetUnavailable(str(exc)) from exc
+    except TrainingQueueError as exc:
+        raise DatasetUnavailable(
+            f"Could not fetch the prepared dataset from the backend: {exc}"
+        ) from exc
+
+
+def _load_reporter() -> Any:
+    """Import the completion reporter by path.
+
+    Loaded lazily and by path rather than imported at module scope: it lives in
+    `training/` alongside this file rather than on the import path, and a worker
+    doing only a dry run never needs it.
+    """
+    path = REPO_ROOT / "training" / "report_training_result.py"
+    spec = importlib.util.spec_from_file_location("report_training_result", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        raise TrainingQueueError(f"Missing completion reporter: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def flush_pending_reports(
+    queue: TrainingQueue,
+    *,
+    root: Path = REPO_ROOT,
+) -> None:
+    """Deliver completion reports earlier jobs could not send.
+
+    Run first, before anything is claimed. A job that finished while the backend
+    was unreachable left its report on the shared filesystem; this is the moment
+    it becomes the application's problem instead of a file nobody looks at. It
+    is also why an operator needs no separate "did anything finish?" command —
+    the one command they were going to run anyway resolves it.
+
+    The worker's own queue client is reused rather than a second one built, so a
+    flush uses exactly the credentials and base URL the rest of the run does.
+    """
+    pending = list_pending_callbacks(root)
+    if not pending:
+        return
+
+    print(f"Delivering {len(pending)} queued training report(s)...")
+    summary = _load_reporter().flush_pending(root, queue)
+    print(
+        "  delivered {0}, still queued {1}, dropped as superseded {2}".format(
+            summary["delivered"], summary["failed"], summary["superseded"]
+        )
+    )
+
+
+def reconcile_unreported_submissions(
+    queue: TrainingQueue,
+    *,
+    root: Path = REPO_ROOT,
+) -> None:
+    """Re-report submissions the backend never acknowledged.
+
+    The ambiguous-network case, made recoverable. `sbatch` succeeded and the
+    `/submitted` call did not land, so the cluster has a real job the application
+    has never heard of. The local run record — written before the report was
+    attempted — is the evidence, and re-reporting is the correct repair.
+    Submitting again would be the wrong one: it would spend a second GPU
+    allocation on work already running.
+    """
+    outstanding = unreported_submissions(root)
+    if not outstanding:
+        return
+
+    print(f"Reconciling {len(outstanding)} unreported submission(s)...")
+    for record in outstanding:
+        run_id = str(record.get("runId") or "")
+        course_id = str(record.get("courseId") or "")
+        job_id = str(record.get("jobId") or "")
+        stub = TrainingRun(
+            run_id=run_id,
+            course_id=course_id,
+            mode=str(record.get("mode") or "full"),
+            state="claimed",
+            enqueued_at="",
+            updated_at="",
+            dataset_ref=f"exports/{course_id}",
+            approved_example_count=0,
+            train_examples=int(record.get("trainExamples") or 0),
+            validation_examples=int(record.get("validationExamples") or 0),
+            attempt=0,
+        )
+        try:
+            queue.record_submission(
+                course_id,
+                stub,
+                job_id=job_id,
+                train_count=stub.train_examples,
+                validation_count=stub.validation_examples,
+            )
+        except TrainingQueueError as exc:
+            message = str(exc)
+            if "HTTP 409" in message or "HTTP 404" in message:
+                # Superseded or removed. The job is real but the application has
+                # deliberately moved on; recording that locally stops this being
+                # retried on every future run.
+                print(f"  {run_id}: not applied ({message})")
+                write_run_record(
+                    root,
+                    run_id=run_id,
+                    course_id=course_id,
+                    mode=str(record.get("mode") or "full"),
+                    job_id=job_id,
+                    reported=True,
+                    extra={"reportRefused": message[:500]},
+                )
+                continue
+            print(f"  {run_id}: still unreported ({message})")
+            continue
+
+        print(f"  {run_id}: reported as job {job_id}")
+        write_run_record(
+            root,
+            run_id=run_id,
+            course_id=course_id,
+            mode=str(record.get("mode") or "full"),
+            job_id=job_id,
+            reported=True,
+        )
+
+
 def run_once(
     queue: TrainingQueue,
     *,
@@ -256,6 +472,14 @@ def run_once(
 ) -> int:
     moment = now or utc_now()
 
+    if not dry_run:
+        # Before anything is claimed, and in this order: a completion that never
+        # landed describes work already finished, and a submission that never
+        # landed describes work already running. Both change what claiming a new
+        # run means, and both are cheap no-ops when there is nothing outstanding.
+        flush_pending_reports(queue, root=root)
+        reconcile_unreported_submissions(queue, root=root)
+
     candidates = queue.discover_claimable(now=moment, course_ids=course_ids)
     if not candidates:
         print("No queued training runs.")
@@ -264,26 +488,7 @@ def run_once(
     course_id, candidate = candidates[0]
 
     if dry_run:
-        # Read-only on purpose: a dry run must be safe to point at the real
-        # queue, which means claiming nothing another runner could have had,
-        # and never spawning the launcher.
-        print("Dry run — nothing is claimed, written, or submitted.")
-        _print_run(candidate, course_id)
-        try:
-            counts, warnings = validate_run_against_prepared_data(
-                candidate, helpers=helpers, root=root
-            )
-        except ValidationFailed as exc:
-            print(f"  Would refuse: {exc}")
-            return 1
-        plan = describe_planned_launch(candidate, helpers=helpers)
-        for warning in warnings:
-            print(f"  Warning: {warning}")
-        print(f"  Prepared: {counts['train_count']} train / {counts['validation_count']} validation")
-        print(f"  Job name: {plan['jobName']}")
-        print(f"  Would run: {plan['command']}")
-        print("Not submitted (--dry-run never calls the launcher).")
-        return 0
+        return _dry_run(candidate, course_id, queue=queue, helpers=helpers, root=root)
 
     try:
         run = queue.claim(
@@ -302,20 +507,45 @@ def run_once(
     print(f"Claimed by {owner} (lease {lease_seconds}s).")
     _print_run(run, course_id)
 
-    if run.job_id:
-        # A previous attempt already captured a real job id. Do not submit again.
-        print(f"  Already submitted as job {run.job_id}; will not submit another.")
+    # Two independent records of "this run already has a job". The backend's is
+    # authoritative when it has one; the local one covers the case the backend
+    # cannot know about, where sbatch succeeded and the report did not land.
+    # Either is enough to refuse a second submission — which matters, because a
+    # duplicate here is a second GPU allocation training the same adapter.
+    local_record = read_run_record(root, run.run_id) or {}
+    existing_job_id = run.job_id or str(local_record.get("jobId") or "")
+    if existing_job_id:
+        print(f"  Already submitted as job {existing_job_id}; will not submit another.")
         submitted = queue.record_submission(
             course_id,
             run,
-            job_id=run.job_id,
-            train_count=run.train_examples,
-            validation_count=run.validation_examples,
+            job_id=existing_job_id,
+            train_count=run.train_examples or int(local_record.get("trainExamples") or 0),
+            validation_count=run.validation_examples
+            or int(local_record.get("validationExamples") or 0),
             now=moment,
+        )
+        write_run_record(
+            root,
+            run_id=run.run_id,
+            course_id=course_id,
+            mode=run.mode,
+            job_id=existing_job_id,
+            reported=True,
         )
         print(f"  Job ID: {submitted.job_id}")
         print("  modelRequest.status=training")
         return 0
+
+    try:
+        sync = ensure_dataset(queue, run, root=root)
+    except DatasetUnavailable as exc:
+        print(f"  Refused: {exc}")
+        queue.release(course_id, run, error=str(exc), now=moment)
+        print("Released back to queued; nothing was submitted.")
+        return 1
+
+    print(f"  Dataset:  {sync.describe()}")
 
     try:
         counts, warnings = validate_run_against_prepared_data(
@@ -334,6 +564,20 @@ def run_once(
     print(f"  Job name: {plan['jobName']}")
     print(f"  Running: {plan['command']}")
 
+    # Written before the launcher runs, so a submission that succeeds while this
+    # process is killed still leaves the run/job/output mapping behind. The job
+    # id is filled in after sbatch; what matters now is that the record exists.
+    write_run_record(
+        root,
+        run_id=run.run_id,
+        course_id=course_id,
+        mode=run.mode,
+        dataset_sha256=sync.dataset_sha256,
+        train_examples=counts["train_count"],
+        validation_examples=counts["validation_count"],
+        reported=False,
+    )
+
     invoke = launcher if launcher is not None else subprocess_launcher
     result = invoke(launcher_argv(run), root)
     if result.stdout:
@@ -343,13 +587,47 @@ def run_once(
 
     job_id = parse_launcher_job_id(_combined_output(result))
     if job_id:
-        submitted = queue.record_submission(
-            course_id,
-            run,
+        # Locally first. If the report below fails, the next run of this command
+        # finds an unreported submission and repairs it rather than submitting a
+        # second job for work that is already queued on the cluster.
+        write_run_record(
+            root,
+            run_id=run.run_id,
+            course_id=course_id,
+            mode=run.mode,
             job_id=job_id,
-            train_count=counts["train_count"],
-            validation_count=counts["validation_count"],
-            now=moment,
+            output_dir=parse_launcher_output_dir(_combined_output(result)),
+            dataset_sha256=sync.dataset_sha256,
+            train_examples=counts["train_count"],
+            validation_examples=counts["validation_count"],
+            reported=False,
+        )
+
+        try:
+            submitted = queue.record_submission(
+                course_id,
+                run,
+                job_id=job_id,
+                train_count=counts["train_count"],
+                validation_count=counts["validation_count"],
+                now=moment,
+            )
+        except TrainingQueueError as exc:
+            print(f"  Job ID: {job_id}")
+            print(f"  Submitted, but the application was not told: {exc}")
+            print(
+                "  The job is running. Re-run ./training/run_training_queue.sh "
+                "--once to report it; nothing will be submitted twice."
+            )
+            return 1
+
+        write_run_record(
+            root,
+            run_id=run.run_id,
+            course_id=course_id,
+            mode=run.mode,
+            job_id=job_id,
+            reported=True,
         )
         print(f"  Job ID: {submitted.job_id}")
         print("  trainingRun.state=submitted")
@@ -370,6 +648,68 @@ def run_once(
     queue.record_submission_failure(course_id, run, error=error, now=moment)
     print("Released back to queued; modelRequest stays preparing.")
     return 1
+
+
+def _dry_run(
+    candidate: TrainingRun,
+    course_id: str,
+    *,
+    queue: TrainingQueue,
+    helpers: Any,
+    root: Path,
+) -> int:
+    """Describe what would happen. Claims nothing, writes nothing, sends nothing.
+
+    It does ask the backend to *describe* the dataset, which is a read. That is
+    the difference between "there is a queued run" and "there is a queued run
+    that could actually be trained right now", and it is the question a dry run
+    is being asked.
+    """
+    print("Dry run — nothing is claimed, written, downloaded, or submitted.")
+    _print_run(candidate, course_id)
+
+    pending = list_pending_callbacks(root)
+    if pending:
+        print(
+            f"  Queued reports: {len(pending)} waiting to be delivered "
+            "(a real run would deliver them first)"
+        )
+    outstanding = unreported_submissions(root)
+    if outstanding:
+        print(
+            f"  Unreported submissions: {len(outstanding)} "
+            "(a real run would re-report them, not resubmit)"
+        )
+
+    export_dir = course_export_dir(candidate.course_id, root)
+    try:
+        descriptor = queue.describe_dataset(candidate.course_id, candidate.run_id)
+    except TrainingQueueError as exc:
+        print(f"  Would refuse: the backend has no usable dataset for this run ({exc})")
+        return 1
+
+    print(
+        "  Backend dataset: {0} train / {1} validation, digest {2}".format(
+            descriptor.get("trainExamples"),
+            descriptor.get("validationExamples"),
+            str(descriptor.get("datasetSha256") or "")[:12],
+        )
+    )
+    try:
+        described = validate_descriptor(descriptor)
+        if export_dir.is_dir() and local_dataset_matches(export_dir, described):
+            print("  Local copy:      already matches; nothing would be downloaded")
+        else:
+            print(f"  Local copy:      would download into {export_dir}")
+    except DatasetSyncError as exc:
+        print(f"  Would refuse: {exc}")
+        return 1
+
+    plan = describe_planned_launch(candidate, helpers=helpers)
+    print(f"  Job name: {plan['jobName']}")
+    print(f"  Would run: {plan['command']}")
+    print("Not submitted (--dry-run never calls the launcher).")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -2,6 +2,7 @@ import * as dbApi from './dbApi';
 import { pollingSubscription, type Unsubscribe } from './pollingSubscription';
 import type {
   CourseModelDeploymentStatus,
+  CourseModelProvenance,
   CourseModelRegistry,
   CourseModelStatus,
   CourseModelVersion,
@@ -70,6 +71,15 @@ export function parseCourseModelVersion(value: unknown): CourseModelVersion | nu
     createdAt: record.createdAt,
     ...(typeof record.updatedAt === 'string' ? { updatedAt: record.updatedAt } : {}),
     ...(typeof record.notes === 'string' ? { notes: record.notes } : {}),
+    ...(typeof record.runId === 'string' && record.runId.trim() !== ''
+      ? { runId: record.runId }
+      : {}),
+    // Every field inside is optional and none is validated individually: this
+    // is an admin-facing record of what a run reported, and a provenance block
+    // missing one metric is still worth showing. It never affects behaviour.
+    ...(record.provenance && typeof record.provenance === 'object'
+      ? { provenance: record.provenance as CourseModelProvenance }
+      : {}),
   };
 }
 

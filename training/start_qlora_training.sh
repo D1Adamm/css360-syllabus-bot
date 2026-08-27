@@ -15,6 +15,9 @@ DEPLOY_HELPERS="${REPO_ROOT}/scripts/lib/finetuned_deploy_helpers.py"
 COURSE_ID=""
 MODE=""
 ASSUME_YES=0
+QUEUE_RUN_ID=""
+WALLTIME_OVERRIDE="${QLORA_WALLTIME:-}"
+WALLTIME_CEILING="${QLORA_MAX_WALLTIME:-}"
 
 usage() {
   cat <<'EOF'
@@ -25,6 +28,18 @@ Usage:
   ./training/start_qlora_training.sh --course <courseId> --full
 
 Exactly one of --smoke or --full is required. Full is never auto-submitted after smoke.
+
+Options:
+  --queue-run-id <runId>  PostgreSQL training run this job is executing. Passed
+                          into the Slurm job so it can report its own completion
+                          back to the application. Set automatically by
+                          ./training/run_training_queue.sh.
+  --time HH:MM:SS         Override the requested wall clock.
+  --yes                   Skip the confirmation prompt.
+
+Wall clock is chosen from the dataset size rather than fixed at 8 hours:
+a full run asks for 30 minutes of overhead plus 20 seconds per optimizer step,
+with a 1 hour floor and an 8 hour ceiling (raise with QLORA_MAX_WALLTIME).
 
 Full training writes to a VERSIONED directory under:
   /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<runId>-full/
@@ -93,6 +108,16 @@ while [[ $# -gt 0 ]]; do
       MODE="full"
       shift
       ;;
+    --queue-run-id)
+      [[ $# -ge 2 ]] || die "--queue-run-id requires a value"
+      QUEUE_RUN_ID="$2"
+      shift 2
+      ;;
+    --time)
+      [[ $# -ge 2 ]] || die "--time requires a value (HH:MM:SS)"
+      WALLTIME_OVERRIDE="$2"
+      shift 2
+      ;;
     --yes|-y)
       ASSUME_YES=1
       shift
@@ -150,6 +175,33 @@ if EXISTING="$(find_active_job_for_course "${COURSE_ID}" "${MODE}")"; then
   exit 0
 fi
 
+# The queue run id is what the finished job reports its completion against.
+# Validated here rather than trusted: it becomes a file name in training/state/
+# and a path segment in the callback URL.
+if [[ -n "${QUEUE_RUN_ID}" ]]; then
+  [[ "${QUEUE_RUN_ID}" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] \
+    || die "Invalid --queue-run-id: ${QUEUE_RUN_ID}"
+fi
+
+# Wall clock from dataset size, not a fixed 8 hours. See
+# scripts/lib/qlora_training_helpers.py for the policy and the measurements
+# behind it.
+if [[ -n "${WALLTIME_OVERRIDE}" ]]; then
+  WALLTIME="${WALLTIME_OVERRIDE}"
+  WALLTIME_REASON="explicit override"
+  WALLTIME_CLAMPED="null"
+else
+  WALLTIME_PLAN="$(
+    helpers training-walltime \
+      --mode "${MODE}" \
+      --train-examples "${TRAIN_COUNT}" \
+      ${WALLTIME_CEILING:+--ceiling "${WALLTIME_CEILING}"}
+  )" || die "Could not choose a wall clock for this run."
+  WALLTIME="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["walltime"])' "${WALLTIME_PLAN}")"
+  WALLTIME_REASON="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["reason"])' "${WALLTIME_PLAN}")"
+  WALLTIME_CLAMPED="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["clamped"])' "${WALLTIME_PLAN}")"
+fi
+
 RUN_ID="$(python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))')"
 TRAINING_OUTPUT_DIR="$(helpers versioned-outdir --user "${USER}" --course-id "${COURSE_ID}" --run-id "${RUN_ID}" --mode "${MODE}")" \
   || die "Could not build versioned output directory."
@@ -165,6 +217,16 @@ echo "Train examples: ${TRAIN_COUNT}"
 echo "Validation examples: ${VAL_COUNT}"
 echo "Slurm script: ${SLURM_SCRIPT}"
 echo "Job name: ${JOB_NAME}"
+echo "Wall clock: ${WALLTIME} (${WALLTIME_REASON})"
+if [[ "${WALLTIME_CLAMPED}" == "ceiling" ]]; then
+  echo "  Note: the estimate exceeded the maximum request and was capped."
+  echo "  If this course times out, raise it: QLORA_MAX_WALLTIME=16:00:00 $0 ..."
+fi
+if [[ -n "${QUEUE_RUN_ID}" ]]; then
+  echo "Queue run: ${QUEUE_RUN_ID} (the job will report its own completion)"
+else
+  echo "Queue run: (none — this job will not report a completion)"
+fi
 echo "Output directory (versioned):"
 echo "  ${TRAINING_OUTPUT_DIR}"
 echo "Adapter will be written to:"
@@ -193,6 +255,9 @@ export TRAIN_FILE
 export VAL_FILE
 export TRAINING_OUTPUT_DIR
 export COURSE_ID
+# Read by train.slurm / smoke.slurm to address the completion callback. Empty
+# when the job was launched by hand, which simply means no callback is sent.
+export QUEUE_RUN_ID
 
 # Persist planned run metadata for status helper (updated with JOB_ID after sbatch).
 META_FILE="${REPO_ROOT}/training/logs/last-qlora-${MODE}.env"
@@ -200,6 +265,8 @@ cat > "${META_FILE}" <<EOF
 COURSE_ID=${COURSE_ID}
 MODE=${MODE}
 RUN_ID=${RUN_ID}
+QUEUE_RUN_ID=${QUEUE_RUN_ID}
+WALLTIME=${WALLTIME}
 TRAINING_OUTPUT_DIR=${TRAINING_OUTPUT_DIR}
 TRAIN_FILE=${TRAIN_FILE}
 VAL_FILE=${VAL_FILE}
@@ -209,7 +276,13 @@ EOF
 
 # Override #SBATCH --job-name with a course-scoped name so CSS360 never collides
 # with CSS490/CSS350 active-job detection.
-SBATCH_OUT="$(sbatch -J "${JOB_NAME}" "${SLURM_SCRIPT}")" || die "sbatch failed."
+# `env -u TRAINING_WORKER_TOKEN`: the token would otherwise be inherited into
+# the job environment on the compute node. The job does need it — it reports its
+# own completion — but it reads it from .env.local on the shared filesystem,
+# where it is already protected by file permissions, rather than travelling
+# through the scheduler.
+SBATCH_OUT="$(env -u TRAINING_WORKER_TOKEN sbatch -J "${JOB_NAME}" --time="${WALLTIME}" "${SLURM_SCRIPT}")" \
+  || die "sbatch failed."
 echo "${SBATCH_OUT}"
 if [[ -f "${DEPLOY_HELPERS}" ]]; then
   JOB_ID="$(printf '%s\n' "${SBATCH_OUT}" | python3 "${DEPLOY_HELPERS}" parse-sbatch-job-id)" \

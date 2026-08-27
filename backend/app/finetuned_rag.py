@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.course_id import assert_valid_course_id
+from app.course_model_resolution import resolve_current_course_model
 from app.course_rag import retrieve_course_syllabus_chunks
 from app.finetuned_client import generate_finetuned_response
 from app.retrieval_diversity import DEFAULT_TOP_K
@@ -120,14 +121,22 @@ async def generate_course_finetuned_rag_answer(
         )
 
     prompt = build_finetuned_rag_prompt(trimmed, retrieved_chunks)
-    # Send the grounded prompt through the existing fine-tuned client.
-    # The remote service accepts a single "question" string.
-    generation = await generate_finetuned_response(prompt)
+    # The same course resolution the plain fine-tuned path does. Retrieval is
+    # already course-scoped; without this the grounded prompt would be answered
+    # by whichever adapter the service happened to have, which is the one way
+    # this path could still cross courses.
+    resolved = resolve_current_course_model(safe_course_id)
+    generation = await generate_finetuned_response(
+        prompt,
+        course_id=safe_course_id,
+        model_version=resolved["version"],
+    )
 
     return {
         "courseId": safe_course_id,
         "answer": generation["answer"],
         "model": generation["model"],
+        "modelVersion": generation.get("model_version") or resolved["version"],
         "adapterLoaded": generation["adapter_loaded"],
         "generationSeconds": generation["generation_seconds"],
         "sources": _sources_from_chunks(retrieved_chunks),

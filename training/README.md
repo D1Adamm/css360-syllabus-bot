@@ -4,10 +4,24 @@ Fine-tunes **LoRA adapters only** on top of `meta-llama/Llama-3.2-3B-Instruct`
 using the **approved** course export under `data/exports/<courseId>/`.
 
 This is the **canonical** training workflow. Inference deployment is separate
-(see `training/inference_service/README.md`).
+(see `training/inference_service/README.md`). The full operational reference is
+[docs/tillicum-operations.md](../docs/tillicum-operations.md).
 
-Exports are **gitignored**. Code reaches Tillicum via `git pull`; training JSONL
-must be prepared on a machine with database access, then synced explicitly.
+Exports are **gitignored**, and no longer need to be synced by hand: the queue
+worker downloads a run's prepared dataset from the backend over the credential
+it already holds. `scripts/sync_training_data_to_tillicum.sh` is kept as a
+debugging tool and is not part of the normal path.
+
+## The short version
+
+```bash
+# Tillicum, after SSH + Duo
+./training/run_training_queue.sh --once
+```
+
+That claims one queued run, fetches its dataset, submits it, and records the
+submission. The Slurm job reports its own completion, and a successful full run
+registers its model version automatically.
 
 ---
 
@@ -18,14 +32,16 @@ must be prepared on a machine with database access, then synced explicitly.
 ```bash
 cd backend
 .venv/bin/python scripts/prepare_qlora_dataset.py css-360-winter-2026-a7rp
-
-cd ..
-./scripts/sync_training_data_to_tillicum.sh css-360-winter-2026-a7rp
 ```
 
+The sync step that used to follow is gone. An administrator can do the same
+thing from Admin → Training (**Create training dataset**, then **Prepare
+train/validation split**), and the worker fetches the result itself.
+
 `prepare_qlora_dataset.py` calls the existing approved-export + train/validation
-split logic (it does not reimplement them). Sync sends **only**
-`data/exports/<courseId>/` to Tillicum (rsync; Duo remains interactive).
+split logic (it does not reimplement them). The split now also records SHA-256
+checksums of `train.jsonl` and `validation.jsonl` into `manifest.json`, which is
+what the cluster verifies each transferred file against.
 
 Required files after prepare:
 
@@ -70,19 +86,23 @@ cd /gpfs/projects/simswe/$USER/css360-syllabus-bot
 ./training/run_training_queue.sh --once             # claims one run
 ```
 
-What it does today:
+What it does:
 
-- finds the oldest queued (or expired-lease) run
-- claims exactly one, with a time-limited lease, using a conditional write so
-  two runners can never hold the same run
-- validates the course id and the prepared `data/exports/<courseId>/` files
-  using the same helpers `start_qlora_training.sh` uses
-- prints the exact command that launcher **would** be given
+- delivers any completion reports earlier jobs could not send
+- re-reports any submission the backend never acknowledged, rather than
+  submitting a second job for work already running
+- finds the oldest queued (or expired-lease) run and claims exactly one, with a
+  time-limited lease, using a conditional write so two runners can never hold
+  the same run
+- **downloads that run's prepared dataset from the backend**, unless the local
+  copy already matches it byte for byte
+- validates the course id, the checksums, and the counts using the same helpers
+  `start_qlora_training.sh` uses
+- submits through `start_qlora_training.sh`, and records the submission locally
+  before reporting it
 
-What it deliberately does **not** do yet: submit anything. It never calls
-`sbatch`, never syncs or regenerates a dataset, and releases its claim before
-exiting, so the run goes back to `queued` rather than waiting out a lease for
-work that never started. Submitting stays the explicit step in (B).
+It never calls `sbatch` itself and never promotes an adapter. `--dry-run` claims
+nothing, writes nothing, and downloads nothing.
 
 It needs `TRAINING_API_BASE_URL` and `TRAINING_WORKER_TOKEN` in the environment
 or `.env.local`, and outbound HTTPS. Nothing else — in particular it needs no
@@ -101,34 +121,56 @@ export TRAINING_API_BASE_URL=https://aiswe.uwb.edu
 export TRAINING_WORKER_TOKEN=…   # same value as the backend's
 ```
 
-### C) Explicit promotion (optional, intentional)
+### C) Explicit publication (optional, intentional)
 
-Only after you are satisfied with a finished full run:
+Registering a model and serving it are separate decisions. A finished run
+registers a version automatically with `status = ready` and
+`deployment = offline`; publishing its adapter so a serving session can load it
+is this step, and it is deliberate.
 
 ```bash
 ./training/promote_qlora_adapter.sh \
+  --course css-350-spring-2026-n3h9 --version v1 \
   /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<runId>-full/adapter
 ```
 
-This backs up the previous live adapter (if present) and replaces:
+Per course and per version:
 
 ```text
-/gpfs/projects/simswe/$USER/training_outputs/css-360-qlora/adapter
+/gpfs/projects/simswe/$USER/training_outputs/serving/<courseId>/<version>/adapter
+/gpfs/projects/simswe/$USER/training_outputs/serving/<courseId>/current.json
 ```
 
-Promotion does **not** start or restart inference.
+The legacy course-agnostic path (`training_outputs/css-360-qlora/adapter`) still
+works when `--course` is omitted, but the per-course service does not read it:
+that path has no course in it, so publishing one course used to replace whatever
+every other course was being served with.
+
+Publication does **not** start or restart inference.
 
 ### D) Inference (separate)
 
-Use the existing fine-tuned inference helpers:
-
 ```bash
 ./training/start_finetuned_service.sh
+./training/status_finetuned_service.sh
+./training/stop_finetuned_service.sh
 # on aiswe.uwb.edu:
-./scripts/start_finetuned_tunnel.sh <NODE>
+./scripts/start_finetuned_tunnel.sh --from-backend
 ```
 
-See `training/inference_service/README.md`.
+See `training/inference_service/README.md` and
+[docs/tillicum-operations.md](../docs/tillicum-operations.md).
+
+### E) Reclaiming disk (dry run first)
+
+```bash
+./training/cleanup_training_outputs.sh            # prints a plan, deletes nothing
+./training/cleanup_training_outputs.sh --apply
+```
+
+Only checkpoints of completed full runs and whole smoke runs are ever proposed.
+Published adapters, registered artifacts, and runs still owing a report to the
+application are never touched.
 
 ---
 
@@ -163,7 +205,9 @@ Normal training must go through:
 ```
 
 That helper always exports a **versioned** `TRAINING_OUTPUT_DIR` under
-`.../training_outputs/qlora-runs/...`.
+`.../training_outputs/qlora-runs/...`, chooses the wall clock from the dataset
+size rather than requesting a flat 8 hours, and passes `QUEUE_RUN_ID` into the
+job so the job can report its own completion.
 
 `training/train.slurm` and `training/smoke.slurm` **require** `TRAINING_OUTPUT_DIR`.
 Raw `sbatch training/train.slurm` / `sbatch training/smoke.slurm` without it fails
@@ -184,6 +228,9 @@ Environment variables:
 | --- | --- |
 | `TRAIN_FILE` / `VAL_FILE` | Train/validation JSONL paths |
 | `TRAINING_OUTPUT_DIR` | **Required** for smoke/full; versioned output root (`adapter/` underneath) |
+| `QUEUE_RUN_ID` | PostgreSQL run the job reports its completion against. Empty for a hand-launched job, which simply sends no callback. |
+| `QLORA_WALLTIME` | Override the computed `--time` for one submission |
+| `QLORA_MAX_WALLTIME` | Raise the 8-hour cap for a genuinely large course |
 | `ADAPTER_PATH` | Compare job adapter to **read** (default: live path) |
 | `COMPARISON_OUTPUT_DIR` | Compare job outputs |
 

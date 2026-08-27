@@ -44,6 +44,10 @@ class FineTunedGenerateResponse(BaseModel):
     model: str
     response_type: str = Field(alias="responseType")
     course_id: str | None = Field(default=None, alias="courseId")
+    # Which registered version answered. Optional so a response from an older
+    # single-adapter service still parses; the client refuses a mismatched
+    # course id separately, which is the check that matters for isolation.
+    model_version: str | None = Field(default=None, alias="modelVersion")
     adapter_loaded: bool = Field(alias="adapterLoaded")
     generation_seconds: float | None = Field(default=None, alias="generationSeconds")
 
@@ -57,6 +61,11 @@ class FineTunedHealthResponse(BaseModel):
     hostname: str | None = None
     port: int | None = None
     service_url: str | None = Field(default=None, alias="serviceUrl")
+    #: Courses the running service has a published adapter for, each with its
+    #: available versions. Empty from a service that predates per-course serving.
+    courses: list[dict[str, Any]] = Field(default_factory=list)
+    #: Wall clock left in the serving session, when the service reports one.
+    seconds_remaining: float | None = Field(default=None, alias="secondsRemaining")
 
     model_config = {"populate_by_name": True}
 
@@ -178,6 +187,7 @@ class FineTunedRagGenerateResponse(BaseModel):
     sources: list[RagGenerateSource]
     retrieved_chunks: list[RagRetrieveResult] = Field(alias="retrievedChunks")
     response_type: str = Field(default="fineTunedRag", alias="responseType")
+    model_version: str | None = Field(default=None, alias="modelVersion")
     adapter_loaded: bool = Field(alias="adapterLoaded")
     generation_seconds: float | None = Field(default=None, alias="generationSeconds")
 

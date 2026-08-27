@@ -2,6 +2,18 @@
 
 The service URL comes from FINETUNED_SERVICE_URL (e.g. a Tillicum node that
 changes between Slurm jobs). No hostnames are hardcoded here.
+
+Course isolation at the boundary
+--------------------------------
+Every generate request names its course, and the response is refused unless it
+names the same one back. That check is not ceremony: training is per course, and
+the failure it guards against — CSS 350's question answered by CSS 360's adapter
+— produces a plausible-looking answer with nothing wrong on its face. A wrong
+answer that looks right is exactly the kind of failure that has to be caught by
+a machine rather than by a reader.
+
+The service is the other half: it resolves the adapter from the course id on the
+request and has no course-agnostic default to fall back to.
 """
 
 from __future__ import annotations
@@ -49,7 +61,9 @@ def require_finetuned_service_url() -> str:
     return url
 
 
-def _validate_generate_payload(data: Any) -> dict[str, Any]:
+def _validate_generate_payload(
+    data: Any, *, expected_course_id: str | None = None
+) -> dict[str, Any]:
     """Validate the remote /generate JSON body; raise 502 on malformed data."""
     if not isinstance(data, dict):
         raise HTTPException(
@@ -89,6 +103,33 @@ def _validate_generate_payload(data: Any) -> dict[str, Any]:
             ),
         )
 
+    # The isolation check. A service that answered for a different course than
+    # the one asked for has loaded the wrong adapter, and the answer must not
+    # reach a student — it would be fluent, specific, and about another course's
+    # syllabus. 502 because the remote gave a response this backend cannot use.
+    returned_course_id = data.get("courseId")
+    if expected_course_id is not None:
+        if not isinstance(returned_course_id, str) or not returned_course_id.strip():
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Fine-tuned service returned no courseId. This backend "
+                    "requires a per-course service; the remote may be running "
+                    "an older single-adapter build."
+                ),
+            )
+        if returned_course_id.strip() != expected_course_id:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Fine-tuned service answered for course "
+                    f'"{returned_course_id.strip()}" when asked for '
+                    f'"{expected_course_id}". The answer was discarded.'
+                ),
+            )
+
+    model_version = data.get("modelVersion")
+
     generation_seconds = data.get("generationSeconds")
     if generation_seconds is not None and not isinstance(generation_seconds, (int, float)):
         raise HTTPException(
@@ -103,6 +144,16 @@ def _validate_generate_payload(data: Any) -> dict[str, Any]:
         "answer": answer.strip(),
         "model": model.strip(),
         "adapter_loaded": adapter_loaded,
+        "course_id": (
+            returned_course_id.strip()
+            if isinstance(returned_course_id, str) and returned_course_id.strip()
+            else None
+        ),
+        "model_version": (
+            model_version.strip()
+            if isinstance(model_version, str) and model_version.strip()
+            else None
+        ),
         "generation_seconds": (
             float(generation_seconds) if generation_seconds is not None else None
         ),
@@ -161,6 +212,7 @@ async def check_finetuned_service_health() -> dict[str, Any]:
             detail="Fine-tuned service health endpoint returned a malformed response.",
         )
 
+    courses = data.get("courses")
     return {
         "status": data.get("status", "unknown"),
         "model": data.get("model"),
@@ -168,11 +220,32 @@ async def check_finetuned_service_health() -> dict[str, Any]:
         "hostname": data.get("hostname"),
         "port": data.get("port"),
         "serviceUrl": base_url,
+        # Which courses the running service can actually answer for. Absent from
+        # an older single-adapter build, which reads as an empty list rather
+        # than an error: health is about reachability, and a version mismatch
+        # surfaces on the first generate call with a message that says so.
+        "courses": courses if isinstance(courses, list) else [],
+        "secondsRemaining": data.get("secondsRemaining"),
     }
 
 
-async def generate_finetuned_response(question: str) -> dict[str, Any]:
+async def generate_finetuned_response(
+    question: str,
+    *,
+    course_id: str,
+    model_version: str | None = None,
+) -> dict[str, Any]:
     """Call POST {FINETUNED_SERVICE_URL}/generate and return a validated result.
+
+    `course_id` is required and is sent with the request. There is no
+    course-agnostic fine-tuned model to fall back to: each course has its own
+    adapter, and a request that did not say which one would be asking the
+    service to guess.
+
+    `model_version` is the version the backend resolved from its own registry.
+    Sending it makes the two sides checkable against each other — the response
+    reports the version actually used, and a mismatch is visible rather than
+    silent.
 
     Never falls back to simulated text. Failures raise HTTPException.
     """
@@ -180,15 +253,23 @@ async def generate_finetuned_response(question: str) -> dict[str, Any]:
     if not trimmed:
         raise HTTPException(status_code=422, detail="Question must not be empty.")
 
+    safe_course_id = (course_id or "").strip()
+    if not safe_course_id:
+        raise HTTPException(
+            status_code=422,
+            detail="A course id is required to generate a fine-tuned answer.",
+        )
+
     base_url = require_finetuned_service_url()
     timeout = get_finetuned_timeout_seconds()
 
+    body: dict[str, Any] = {"question": trimmed, "courseId": safe_course_id}
+    if model_version:
+        body["modelVersion"] = model_version
+
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                f"{base_url}/generate",
-                json={"question": trimmed},
-            )
+            response = await client.post(f"{base_url}/generate", json=body)
     except httpx.TimeoutException as exc:
         raise HTTPException(
             status_code=503,
@@ -215,6 +296,19 @@ async def generate_finetuned_response(question: str) -> dict[str, Any]:
             ),
         )
 
+    if response.status_code == 409:
+        # The service is healthy and this course simply has nothing published.
+        # Forwarded as 409 rather than flattened into 502 because it is an
+        # operator action away from being fixed, and the detail says which.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "No fine-tuned adapter is published on the inference service "
+                f'for course "{safe_course_id}". '
+                f"({response.text[:200]})"
+            ),
+        )
+
     if response.status_code >= 400:
         raise HTTPException(
             status_code=502,
@@ -232,11 +326,13 @@ async def generate_finetuned_response(question: str) -> dict[str, Any]:
             detail="Fine-tuned service returned invalid JSON.",
         ) from exc
 
-    validated = _validate_generate_payload(data)
+    validated = _validate_generate_payload(data, expected_course_id=safe_course_id)
     return {
         "answer": validated["answer"],
         "model": validated["model"],
         "adapter_loaded": validated["adapter_loaded"],
+        "course_id": validated["course_id"],
+        "model_version": validated["model_version"],
         "generation_seconds": validated["generation_seconds"],
         "response_type": "fineTuned",
     }

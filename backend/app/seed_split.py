@@ -6,6 +6,7 @@ and writes train.jsonl, validation.jsonl, and manifest.json in the same director
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import random
@@ -28,6 +29,20 @@ TRAIN_FILENAME = "train.jsonl"
 VALIDATION_FILENAME = "validation.jsonl"
 MANIFEST_FILENAME = "manifest.json"
 SUMMARY_FILENAME = "approved-export-summary.json"
+
+CHECKSUM_CHUNK_BYTES = 64 * 1024
+
+
+def sha256_file(path: Path) -> str:
+    """SHA-256 of a file's bytes, read in chunks."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(CHECKSUM_CHUNK_BYTES)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class TrainingSplitError(ValueError):
@@ -178,6 +193,15 @@ def prepare_training_split(
         )
 
     created = created_at or datetime.now(timezone.utc).isoformat()
+    # Written into the manifest so the split is self-describing wherever it ends
+    # up. The worker verifies each transferred file against these before letting
+    # it replace anything on the cluster, and a file that was truncated in
+    # transit or edited on arrival stops being trainable rather than becoming a
+    # silently shorter training set.
+    checksums = {
+        TRAIN_FILENAME: sha256_file(train_path),
+        VALIDATION_FILENAME: sha256_file(validation_path),
+    }
     source_export_timestamp = read_source_export_timestamp(
         course_id,
         export_root=export_root,
@@ -196,6 +220,11 @@ def prepare_training_split(
         "validationExamples": len(validation),
         "trainFile": str(train_path),
         "validationFile": str(validation_path),
+        # SHA-256 of each written file, keyed by file name. Additive: readers
+        # that predate this key ignore it, and `validate_course_export_dir` on
+        # the cluster does not require it.
+        "checksums": checksums,
+        "checksumAlgorithm": "sha256",
     }
     write_json(manifest_path, manifest)
 

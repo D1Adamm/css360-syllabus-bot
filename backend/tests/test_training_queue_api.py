@@ -421,6 +421,14 @@ class ModelRegistrationTests(QueueApiTestCase):
                 "app.training_queue_routes.db_models.list_model_versions",
                 return_value=[],
             ),
+            # No version has been registered for this run yet, so registration
+            # allocates a new key rather than reusing one. The reuse path — a
+            # redelivered completion callback — is covered in
+            # test_training_completion_api.py.
+            patch(
+                "app.training_queue_routes.db_models.find_model_version_for_run",
+                return_value=None,
+            ),
             patch(
                 "app.training_queue_routes.db_models.upsert_model_version",
                 side_effect=_upsert,

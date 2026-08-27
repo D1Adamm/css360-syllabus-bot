@@ -171,11 +171,28 @@ CREATE TABLE IF NOT EXISTS course_model_versions (
     updated_at TIMESTAMPTZ,
     notes TEXT,
 
+    -- The training run this artifact came from, when one is known. NULL for
+    -- versions registered by hand before automatic registration existed.
+    run_id TEXT,
+
+    -- Traceability for one artifact: base model, dataset reference and
+    -- checksums, example counts, resolved training configuration, optimizer
+    -- step accounting, Slurm job id, git commit. See
+    -- backend/db/migrations/001_training_provenance_and_serving.sql.
+    provenance JSONB,
+
     PRIMARY KEY (course_id, version),
 
     CONSTRAINT model_training_count_nonnegative
         CHECK (training_example_count >= 0)
 );
+
+
+-- At most one registered version per training run. This is what makes a
+-- repeated completion callback idempotent rather than a source of v2, v3, …
+CREATE UNIQUE INDEX IF NOT EXISTS uq_course_model_versions_run
+    ON course_model_versions(course_id, run_id)
+    WHERE run_id IS NOT NULL;
 
 
 CREATE TABLE IF NOT EXISTS model_requests (
@@ -233,6 +250,12 @@ CREATE TABLE IF NOT EXISTS training_runs (
 
     error TEXT,
 
+    -- What the cluster reported when the job ended: optimizer steps completed
+    -- against intended, losses, measured GPU hours, git commit, dataset
+    -- digests, artifact location, failure stage. Operator-facing; never queried
+    -- by field, which is why it stays whole in JSONB.
+    completion JSONB,
+
     PRIMARY KEY (course_id, run_id),
 
     CONSTRAINT training_counts_nonnegative CHECK (
@@ -249,3 +272,29 @@ CREATE INDEX IF NOT EXISTS idx_training_runs_course_state
 
 CREATE INDEX IF NOT EXISTS idx_training_runs_enqueued
     ON training_runs(course_id, enqueued_at);
+
+
+CREATE TABLE IF NOT EXISTS serving_sessions (
+    session_id TEXT PRIMARY KEY,
+
+    job_id TEXT NOT NULL,
+
+    node TEXT NOT NULL,
+    port INTEGER NOT NULL,
+
+    -- starting | ready | stopped | expired
+    state TEXT NOT NULL,
+
+    started_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+
+    detail JSONB,
+
+    CONSTRAINT serving_session_port_range
+        CHECK (port > 0 AND port < 65536)
+);
+
+
+CREATE INDEX IF NOT EXISTS idx_serving_sessions_expires
+    ON serving_sessions(expires_at DESC);

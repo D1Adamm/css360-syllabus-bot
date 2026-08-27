@@ -3,8 +3,14 @@
 # point backend/.env at the local forward, and restart aiswe-backend.
 #
 # Usage (on aiswe.uwb.edu, from repository root):
+#   ./scripts/start_finetuned_tunnel.sh --from-backend
 #   ./scripts/start_finetuned_tunnel.sh g014
 #   ./scripts/start_finetuned_tunnel.sh --help
+#
+# `--from-backend` asks the application which node the Tillicum start script
+# registered, instead of the operator reading a hostname off one machine and
+# typing it into another. The compute node changes with every Slurm job, so that
+# copy was both required and the easiest thing to get wrong.
 
 set -euo pipefail
 
@@ -32,11 +38,17 @@ usage() {
 Open the UWB VM -> Tillicum -> compute-node tunnel for fine-tuned inference.
 
 Usage:
+  ./scripts/start_finetuned_tunnel.sh --from-backend
   ./scripts/start_finetuned_tunnel.sh <compute-node>
   ./scripts/start_finetuned_tunnel.sh --help
 
-Example:
-  ./scripts/start_finetuned_tunnel.sh g014
+Examples:
+  ./scripts/start_finetuned_tunnel.sh --from-backend   # look the node up
+  ./scripts/start_finetuned_tunnel.sh g014             # name it explicitly
+
+--from-backend reads the session ./training/start_finetuned_service.sh recorded
+on Tillicum. It needs TRAINING_API_BASE_URL and TRAINING_WORKER_TOKEN in the
+environment or .env.local — the same pair the training worker uses.
 
 Environment overrides:
   TILLICUM_LOGIN     SSH target (default: $USER@tillicum.hyak.uw.edu)
@@ -129,11 +141,16 @@ managed_tunnel_is_trustworthy() {
 }
 
 NODE=""
+FROM_BACKEND=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
       usage
       exit 0
+      ;;
+    --from-backend)
+      FROM_BACKEND=1
+      shift
       ;;
     -*)
       die "Unknown option: $1 (try --help)"
@@ -148,7 +165,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "${NODE}" ]] || die "Compute node hostname required. Example: ./scripts/start_finetuned_tunnel.sh g014"
+if [[ "${FROM_BACKEND}" -eq 1 ]]; then
+  [[ -z "${NODE}" ]] || die "Pass either --from-backend or a hostname, not both."
+  echo "Looking up the current serving session..."
+  SESSION_JSON="$(python3 "${REPO_ROOT}/training/serving_session.py" show --json)" \
+    || die "No serving session is recorded. Start one on Tillicum first:
+  ./training/start_finetuned_service.sh"
+  NODE="$(printf '%s' "${SESSION_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("node") or "")')"
+  REMOTE_PORT="$(printf '%s' "${SESSION_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("port") or 8001)')"
+  SESSION_EXPIRES="$(printf '%s' "${SESSION_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("expiresAt") or "")')"
+  [[ -n "${NODE}" ]] || die "The recorded serving session names no compute node."
+  echo "Session node: ${NODE}:${REMOTE_PORT} (session ends ${SESSION_EXPIRES:-unknown})"
+fi
+
+[[ -n "${NODE}" ]] || die "Compute node hostname required. Either:
+  ./scripts/start_finetuned_tunnel.sh --from-backend
+  ./scripts/start_finetuned_tunnel.sh g014"
 NODE="$(helpers validate-hostname "${NODE}")" || die "Invalid compute node hostname."
 
 require_cmd ssh
@@ -238,23 +270,23 @@ echo "Restarting ${BACKEND_SERVICE} ..."
 systemctl --user restart "${BACKEND_SERVICE}" \
   || die "Failed to restart ${BACKEND_SERVICE}. Is the user systemd unit installed?"
 
-echo "Waiting for FastAPI ${BACKEND_URL}/health ..."
+echo "Waiting for FastAPI ${BACKEND_URL}/api/health ..."
 deadline=$((SECONDS + BACKEND_HEALTH_TIMEOUT_SECONDS))
 backend_ok=0
 while (( SECONDS < deadline )); do
-  if curl -fsS --max-time 5 "${BACKEND_URL}/health" >/dev/null 2>&1; then
+  if curl -fsS --max-time 5 "${BACKEND_URL}/api/health" >/dev/null 2>&1; then
     backend_ok=1
     break
   fi
   sleep "${POLL_SECONDS}"
 done
-[[ "${backend_ok}" -eq 1 ]] || die "Backend restarted but ${BACKEND_URL}/health never became ready."
+[[ "${backend_ok}" -eq 1 ]] || die "Backend restarted but ${BACKEND_URL}/api/health never became ready."
 
-if ! health_ready "${BACKEND_URL}/fine-tuned/health"; then
+if ! health_ready "${BACKEND_URL}/api/fine-tuned/health"; then
   # Give the backend a moment after /health before declaring FT failure.
   sleep 2
-  if ! health_ready "${BACKEND_URL}/fine-tuned/health"; then
-    die "Backend restarted but /fine-tuned/health failed (need status=ok and adapterLoaded=true). Check FINETUNED_SERVICE_URL and the Tillicum job."
+  if ! health_ready "${BACKEND_URL}/api/fine-tuned/health"; then
+    die "Backend restarted but /api/fine-tuned/health failed (need status=ok and adapterLoaded=true). Check FINETUNED_SERVICE_URL and the Tillicum job."
   fi
 fi
 
@@ -270,3 +302,7 @@ echo "Fine-Tuned + RAG uses the same service and is now available."
 echo
 echo "Status: ./scripts/status_finetuned_tunnel.sh"
 echo "Stop tunnel: ./scripts/stop_finetuned_tunnel.sh"
+echo
+echo "The Tillicum session has a bounded wall clock. When it ends, the tunnel"
+echo "goes dead and Fine-Tuned becomes unavailable until a new session is"
+echo "started; Base and RAG are unaffected throughout."

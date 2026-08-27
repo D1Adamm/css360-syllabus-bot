@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
+from app.course_model_resolution import resolve_current_course_model
 from app.course_rag import generate_course_rag_answer
 from app.db_routes import router as db_router
 from app.training_queue_routes import router as training_queue_router
@@ -203,6 +204,8 @@ async def fine_tuned_health() -> FineTunedHealthResponse:
         hostname=result.get("hostname"),
         port=result.get("port"),
         serviceUrl=result.get("serviceUrl"),
+        courses=result.get("courses") or [],
+        secondsRemaining=result.get("secondsRemaining"),
     )
 
 
@@ -220,13 +223,22 @@ async def generate_fine_tuned(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # courseId is validated for route isolation; the remote service is course-agnostic.
-    result = await generate_finetuned_response(question)
+    # The course's own model, resolved from PostgreSQL before the cluster is
+    # asked anything. This is what makes a fine-tuned answer attributable: the
+    # version travels with the request and comes back on the response, and the
+    # client refuses a response that names a different course.
+    resolved = resolve_current_course_model(safe_course_id)
+    result = await generate_finetuned_response(
+        question,
+        course_id=safe_course_id,
+        model_version=resolved["version"],
+    )
     return FineTunedGenerateResponse(
         answer=result["answer"],
         model=result["model"],
         responseType=result["response_type"],
         courseId=safe_course_id,
+        modelVersion=result.get("model_version") or resolved["version"],
         adapterLoaded=result["adapter_loaded"],
         generationSeconds=result["generation_seconds"],
     )
@@ -281,6 +293,7 @@ async def generate_fine_tuned_rag(
             RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
         ],
         responseType=result["responseType"],
+        modelVersion=result.get("modelVersion"),
         adapterLoaded=result["adapterLoaded"],
         generationSeconds=result["generationSeconds"],
     )

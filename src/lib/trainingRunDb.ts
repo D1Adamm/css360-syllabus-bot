@@ -4,6 +4,7 @@ import type {
   TrainingMode,
   TrainingRun,
   TrainingRunClaim,
+  TrainingRunCompletion,
   TrainingRunState,
 } from '../types';
 import { assertValidCourseId } from './courseId';
@@ -85,6 +86,33 @@ function parseClaim(value: unknown): TrainingRunClaim | null {
   };
 }
 
+/**
+ * The cluster's end-of-job report, or null.
+ *
+ * Only `outcome` and `receivedAt` are required, and only `outcome` is
+ * constrained: everything else is assembled on a compute node from files a
+ * failed run may never have written, and dropping the whole record because a
+ * metric is missing would lose the one thing that was worth having — that the
+ * job ended, and how.
+ */
+function parseCompletion(value: unknown): TrainingRunCompletion | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (record.outcome !== 'succeeded' && record.outcome !== 'failed') {
+    return null;
+  }
+
+  return {
+    ...(record as Omit<TrainingRunCompletion, 'outcome' | 'receivedAt'>),
+    outcome: record.outcome,
+    receivedAt:
+      typeof record.receivedAt === 'string' ? record.receivedAt : '',
+  };
+}
+
 export function parseTrainingRun(runId: string, value: unknown): TrainingRun | null {
   if (!value || typeof value !== 'object') {
     return null;
@@ -103,6 +131,7 @@ export function parseTrainingRun(runId: string, value: unknown): TrainingRun | n
   }
 
   const claim = parseClaim(record.claim);
+  const completion = parseCompletion(record.completion);
 
   return {
     runId,
@@ -124,6 +153,7 @@ export function parseTrainingRun(runId: string, value: unknown): TrainingRun | n
     ...(typeof record.error === 'string' && record.error !== ''
       ? { error: record.error }
       : {}),
+    ...(completion ? { completion } : {}),
   };
 }
 

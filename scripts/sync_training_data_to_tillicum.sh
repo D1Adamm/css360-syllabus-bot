@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Sync ONE course's gitignored training export to the Tillicum repo checkout.
 #
+# NOT PART OF THE NORMAL WORKFLOW ANY MORE.
+#
+# `./training/run_training_queue.sh --once` downloads a run's prepared dataset
+# from the backend over the worker token it already holds, so the normal path
+# needs no rsync and no second Duo prompt. This script is kept as an emergency
+# and debugging tool: pushing an export by hand when the backend cannot serve
+# it, or comparing what the cluster has against what the VM prepared.
+#
 # Usage (from repository root, on a machine that already has the export):
 #   ./scripts/sync_training_data_to_tillicum.sh css-360-winter-2026-a7rp
 #   ./scripts/sync_training_data_to_tillicum.sh css-360-winter-2026-a7rp --yes
@@ -139,4 +147,7 @@ echo "Remote export: ${REMOTE_DIR}"
 echo
 echo "On Tillicum run:"
 echo "  cd ${TILLICUM_REPO_ROOT}"
-echo "  ./training/start_qlora_training.sh --course ${COURSE_ID} --smoke"
+echo "  ./training/run_training_queue.sh --once"
+echo
+echo "(The queue worker would have fetched this dataset itself. This script is"
+echo " the manual fallback for when it cannot.)"

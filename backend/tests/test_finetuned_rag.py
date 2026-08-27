@@ -70,6 +70,20 @@ class BuildFinetunedRagPromptTests(unittest.TestCase):
 
 
 class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
+    """Fine-Tuned + RAG, which resolves a course model exactly as Fine-Tuned does.
+
+    `resolve_current_course_model` reads PostgreSQL, and no test in this suite
+    has a database. It is patched with the version the course would have
+    resolved to — which is also the assertion that the version reaches the
+    inference client, rather than the cluster being left to choose one.
+    """
+
+    def _resolved_model(self, course_id: str, version: str = "v1"):
+        return patch(
+            "app.finetuned_rag.resolve_current_course_model",
+            return_value={"courseId": course_id, "version": version},
+        )
+
     def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
         root = Path(self._temp_dir.name)
@@ -145,6 +159,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ),
             ),
+            self._resolved_model(self.css430_id),
             patch(
                 "app.finetuned_rag.generate_finetuned_response",
                 new=AsyncMock(
@@ -205,6 +220,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
                 "app.finetuned_rag.retrieve_course_syllabus_chunks",
                 new=AsyncMock(side_effect=fake_retrieve),
             ),
+            self._resolved_model(self.css430_id),
             patch(
                 "app.finetuned_rag.generate_finetuned_response",
                 new=AsyncMock(
@@ -268,6 +284,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ),
             ),
+            self._resolved_model(self.css430_id),
             patch(
                 "app.finetuned_rag.generate_finetuned_response",
                 new=AsyncMock(
@@ -305,6 +322,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
                     )
                 ),
             ),
+            self._resolved_model(self.css430_id),
             patch(
                 "app.finetuned_rag.generate_finetuned_response",
                 new=AsyncMock(
