@@ -16,7 +16,14 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from app.course_id import assert_valid_course_id
-from app.db_mapping import as_int, build_patch, optional_string, put_optional, to_iso
+from app.db_mapping import (
+    as_int,
+    bind_jsonb,
+    build_patch,
+    optional_string,
+    put_optional,
+    to_iso,
+)
 
 REQUEST_COLUMNS = """
     course_id, status, requested_at, updated_at, approved_example_count,
@@ -50,16 +57,7 @@ class ActiveModelRequestError(Exception):
 
 
 def _bind(parameters: dict[str, Any]) -> dict[str, Any]:
-    from psycopg.types.json import Json
-
-    return {
-        column: (
-            Json(value)
-            if column in JSONB_COLUMNS and value is not None
-            else value
-        )
-        for column, value in parameters.items()
-    }
+    return bind_jsonb(parameters, JSONB_COLUMNS)
 
 
 def map_model_request(row: Mapping[str, Any]) -> dict[str, Any]:

@@ -56,14 +56,92 @@ export SLURM_JOB_ID="${SLURM_JOB_ID:-}"
 mkdir -p "${HF_HOME}"
 mkdir -p "${HF_HUB_CACHE}"
 
-test -s "$HF_TOKEN_PATH" || {
-  echo "Missing Hugging Face token at $HF_TOKEN_PATH" >&2
-  exit 1
-}
-
 TRAIN_FILE="${TRAIN_FILE:-${REPO_ROOT}/data/exports/css-360-winter-2026-a7rp/train.jsonl}"
 VAL_FILE="${VAL_FILE:-${REPO_ROOT}/data/exports/css-360-winter-2026-a7rp/validation.jsonl}"
 mkdir -p "${OUT_DIR}"
+
+# ---------------------------------------------------------------------------
+# Completion reporting
+#
+# The job tells the application how it ended, instead of a person doing it
+# hours later. Job 253552 finished successfully and the run sat at `submitted`
+# for days because nothing here existed.
+#
+# The trap fires on any nonzero exit or signal, including a Slurm timeout, so a
+# failure is reported as reliably as a success. `report_training_result.py`
+# persists the payload to training/state/pending/ before it tries to send it, so
+# a backend that is unreachable right now costs a delay and not the event: the
+# next ./training/run_training_queue.sh --once delivers it.
+#
+# QUEUE_RUN_ID is empty when the job was launched by hand rather than by the
+# queue. That is a supported way to run this script, and it simply means there
+# is no run to report against.
+# ---------------------------------------------------------------------------
+
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+REPORTED=0
+
+report_result() {
+  local outcome="$1"
+  local stage="$2"
+  local message="$3"
+
+  [[ -n "${QUEUE_RUN_ID:-}" ]] || return 0
+  # Report once. Both the success path and the trap can reach this, and a
+  # failure during reporting must not re-enter it.
+  [[ "${REPORTED}" -eq 0 ]] || return 0
+  REPORTED=1
+
+  # An array, not an interpolated string: the error message is free text with
+  # spaces in it, and an unquoted `${message:+--error "$message"}` would split
+  # it into separate arguments.
+  local -a args=(
+    --course-id "${COURSE_ID:-}"
+    --run-id "${QUEUE_RUN_ID}"
+    --output-dir "${OUT_DIR}"
+    --export-dir "$(dirname "${TRAIN_FILE}")"
+    --job-id "${SLURM_JOB_ID:-}"
+    --started-at "${STARTED_AT}"
+    --outcome "${outcome}"
+  )
+  # `if` rather than `[[ ... ]] && ...`: under `set -e` a false test is a
+  # nonzero statement, which would fire the ERR trap and re-enter this function
+  # simply because there was no failure stage to add.
+  if [[ -n "${stage}" ]]; then
+    args+=(--failure-stage "${stage}")
+  fi
+  if [[ -n "${message}" ]]; then
+    args+=(--error "${message}")
+  fi
+
+  python3 "${REPO_ROOT}/training/report_training_result.py" "${args[@]}" \
+    || echo "WARNING: completion reporting failed; the payload is queued under training/state/pending/" >&2
+}
+
+on_failure() {
+  local status=$?
+  report_result failed "${FAILURE_STAGE:-training}" \
+    "The Slurm job exited with status ${status}. See training/logs/train-${SLURM_JOB_ID}.err for details."
+}
+
+trap on_failure ERR
+trap on_failure INT TERM
+
+# Checked after the trap is installed, not before. A job that dies here
+# is still a job that has to report its failure — leaving the run at
+# `submitted` with nothing to say why is the whole problem the trap
+# exists to fix.
+FAILURE_STAGE="preflight"
+if [[ ! -s "${HF_TOKEN_PATH}" ]]; then
+  # Reported explicitly rather than left to the ERR trap: `exit` inside a
+  # `||` list is not a failing command, so the trap would never see it and the
+  # run would sit at `submitted` exactly as it used to.
+  echo "Missing Hugging Face token at ${HF_TOKEN_PATH}" >&2
+  report_result failed preflight \
+    "No Hugging Face token at ${HF_TOKEN_PATH} on the compute node."
+  exit 1
+fi
+
 
 echo "=== Job info ==="
 echo "Job ID: ${SLURM_JOB_ID:-unknown}"
@@ -113,6 +191,7 @@ for name in mods:
         print(f"{name}=IMPORT_ERROR ({exc})")
 PY
 
+FAILURE_STAGE="training"
 python training/train_qlora.py \
   --train-file "${TRAIN_FILE}" \
   --validation-file "${VAL_FILE}" \
@@ -125,6 +204,12 @@ from pathlib import Path
 path = Path("${OUT_DIR}") / "runtime-report.json"
 print(path.read_text(encoding="utf-8") if path.is_file() else "missing")
 PY
+
+# Success is reported only after the adapter has been written. The reporter
+# checks for it too and downgrades a "success" with no adapter to a failure,
+# because a registered model that cannot be loaded is worse than a failed run.
+FAILURE_STAGE="reporting"
+report_result succeeded "" ""
 
 echo "Full training job finished."
 echo "Adapter (if successful): ${OUT_DIR}/adapter"

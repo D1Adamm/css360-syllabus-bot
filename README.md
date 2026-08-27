@@ -49,12 +49,14 @@ is load-bearing and covered by tests.
 - Syllabus artifacts and indexes are stored **locally** by the FastAPI backend
 - **No authentication.** Anyone with a link can open any course
 - **No enrolment**, join codes, or class rosters
-- **No fine-tuning requests, job tracking, or model versioning.** Training runs
-  through the Slurm scripts in `training/`, outside this application
+- Fine-tuning runs on Tillicum, not in this application. A professor requests a
+  model, an admin queues a run, and the cluster claims it, fetches its dataset,
+  trains, reports back, and registers the resulting version — see
+  **[docs/tillicum-operations.md](docs/tillicum-operations.md)**
 
-The three gaps above ship as documented integration boundaries rather than fake
-persistence — the UI is complete, states plainly what is missing, and writes
-nothing. See **[docs/frontend-backend-gaps.md](docs/frontend-backend-gaps.md)**
+The remaining gaps above ship as documented integration boundaries rather than
+fake persistence — the UI is complete, states plainly what is missing, and
+writes nothing. See **[docs/frontend-backend-gaps.md](docs/frontend-backend-gaps.md)**
 for the exact endpoints each one needs.
 
 This application previously stored course data in Firebase Realtime Database.
@@ -195,7 +197,8 @@ Every table is course-scoped and reached only through FastAPI. Schema:
 | `evaluations` | Student evaluations |
 | `course_models`, `course_model_versions` | The per-course model registry |
 | `model_requests` | The professor-facing model request lifecycle |
-| `training_runs` | The training queue Tillicum claims from |
+| `training_runs` | The training queue Tillicum claims from, and what each run reported when it ended |
+| `serving_sessions` | Whether a GPU is currently running fine-tuned inference, and until when |
 
 ### Local backend artifacts (not in the database)
 
@@ -217,7 +220,8 @@ Every table is course-scoped and reached only through FastAPI. Schema:
 
 - No authentication or access control
 - No enrolment, join codes, or class rosters
-- No fine-tuning requests, training job tracking, or model versioning
+- Fine-tuned inference needs a GPU session started by hand on Tillicum, because
+  opening the tunnel to it authenticates to UW and Duo is not automated
 - Syllabus artifacts and indexes are local disk only (not GCP yet)
 - The archived Firebase snapshot is retained; nothing deletes it automatically
 

@@ -16,12 +16,20 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from app.course_id import assert_valid_course_id
-from app.db_mapping import as_int, optional_string, put_optional, to_iso
+from app.db_mapping import (
+    as_int,
+    bind_jsonb,
+    optional_string,
+    put_optional,
+    to_iso,
+)
 
 VERSION_COLUMNS = """
     course_id, version, base_model, training_example_count, status,
-    deployment, artifact_ref, created_at, updated_at, notes
+    deployment, artifact_ref, created_at, updated_at, notes, run_id, provenance
 """
+
+JSONB_COLUMNS = frozenset({"provenance"})
 
 
 def map_model_version(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -37,7 +45,41 @@ def map_model_version(row: Mapping[str, Any]) -> dict[str, Any]:
     }
     put_optional(record, "updatedAt", to_iso(row.get("updated_at")))
     put_optional(record, "notes", optional_string(row.get("notes")))
+    put_optional(record, "runId", optional_string(row.get("run_id")))
+
+    provenance = row.get("provenance")
+    if isinstance(provenance, dict):
+        record["provenance"] = provenance
+
     return record
+
+
+def find_model_version_for_run(
+    conn: Any, course_id: str, run_id: str
+) -> dict[str, Any] | None:
+    """The version already registered for this run, if there is one.
+
+    The read half of idempotent registration: a completion callback that arrives
+    twice finds the version its first delivery created and reuses it instead of
+    allocating the next `vN`. `uq_course_model_versions_run` is the other half —
+    it makes a second row impossible even if two callbacks race past this read,
+    which a retry after a timeout genuinely can.
+    """
+    safe_course_id = assert_valid_course_id(course_id)
+    cleaned_run_id = optional_string(run_id)
+    if not cleaned_run_id:
+        return None
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT {VERSION_COLUMNS} FROM course_model_versions
+            WHERE course_id = %s AND run_id = %s
+            """,
+            (safe_course_id, cleaned_run_id),
+        )
+        row = cursor.fetchone()
+    return map_model_version(row) if row else None
 
 
 def list_model_versions(conn: Any, course_id: str) -> list[dict[str, Any]]:
@@ -114,6 +156,8 @@ def upsert_model_version(
         "created_at": version["createdAt"],
         "updated_at": optional_string(version.get("updatedAt")),
         "notes": optional_string(version.get("notes")),
+        "run_id": optional_string(version.get("runId")),
+        "provenance": version.get("provenance"),
     }
 
     columns = list(parameters)
@@ -131,7 +175,7 @@ def upsert_model_version(
             VALUES ({placeholders})
             ON CONFLICT (course_id, version) DO UPDATE SET {updates}
             """,
-            parameters,
+            bind_jsonb(parameters, JSONB_COLUMNS),
         )
 
         if set_current:

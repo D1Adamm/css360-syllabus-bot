@@ -169,3 +169,71 @@ describe('course isolation', () => {
     expect(runs[0].state).toBe('queued');
   });
 });
+
+describe('the cluster completion record', () => {
+  /*
+   * A run used to end and leave nothing behind: `submitted` forever, and an
+   * operator finding out by looking at the cluster. `completion` is what the
+   * finished job now writes back, and every field in it except the outcome is
+   * assembled on a compute node from files a failed run may never have written.
+   * So the parser keeps whatever arrived rather than insisting on a full record
+   * — a failure that measured nothing is exactly the case that must survive.
+   */
+
+  const COMPLETION = {
+    outcome: 'succeeded',
+    receivedAt: '2026-08-27T06:48:00.000Z',
+    jobId: '264787',
+    intendedOptimizerSteps: 15,
+    completedSteps: 15,
+    trainingLengthSatisfied: true,
+    actualGpuHours: 0.0134,
+    gitCommitSha: '9941833',
+  };
+
+  it('keeps the completion a successful run reported', () => {
+    const run = parseTrainingRun('run-1', { ...STORED, completion: COMPLETION });
+
+    expect(run?.completion?.outcome).toBe('succeeded');
+    expect(run?.completion?.completedSteps).toBe(15);
+    expect(run?.completion?.actualGpuHours).toBe(0.0134);
+    expect(run?.completion?.gitCommitSha).toBe('9941833');
+  });
+
+  it('keeps a failure that recorded almost nothing', () => {
+    const run = parseTrainingRun('run-1', {
+      ...STORED,
+      state: 'failed',
+      completion: { outcome: 'failed', receivedAt: '2026-08-27T06:48:00.000Z' },
+    });
+
+    expect(run?.completion?.outcome).toBe('failed');
+  });
+
+  it('drops a completion whose outcome is not one of the two', () => {
+    const run = parseTrainingRun('run-1', {
+      ...STORED,
+      completion: { outcome: 'partially', receivedAt: 'x' },
+    });
+
+    expect(run?.completion).toBeUndefined();
+  });
+
+  it('drops a completion that is not an object', () => {
+    expect(
+      parseTrainingRun('run-1', { ...STORED, completion: 'succeeded' })?.completion,
+    ).toBeUndefined();
+  });
+
+  it('leaves the key absent on a run that has not reported', () => {
+    // Which is what a run queued before completion reporting existed looks like.
+    expect(parseTrainingRun('run-1', STORED)?.completion).toBeUndefined();
+  });
+
+  it('does not let an unreadable completion drop the whole run', () => {
+    const run = parseTrainingRun('run-1', { ...STORED, completion: 42 });
+
+    expect(run).not.toBeNull();
+    expect(run?.state).toBe('queued');
+  });
+});

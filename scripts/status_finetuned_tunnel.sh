@@ -30,8 +30,8 @@ Usage:
 Checks:
   - saved tunnel state / control socket
   - localhost:$LOCAL_PORT/health
-  - $BACKEND_URL/health
-  - $BACKEND_URL/fine-tuned/health
+  - $BACKEND_URL/api/health
+  - $BACKEND_URL/api/fine-tuned/health
 
 Exits nonzero if Fine-Tuned is unavailable.
 EOF
@@ -101,17 +101,17 @@ else
   FT_OK=0
 fi
 
-if curl -fsS --max-time 5 "${BACKEND_URL}/health" >/dev/null 2>&1; then
-  echo "FastAPI (${BACKEND_URL}/health): OK"
+if curl -fsS --max-time 5 "${BACKEND_URL}/api/health" >/dev/null 2>&1; then
+  echo "FastAPI (${BACKEND_URL}/api/health): OK"
 else
-  echo "FastAPI (${BACKEND_URL}/health): UNAVAILABLE"
+  echo "FastAPI (${BACKEND_URL}/api/health): UNAVAILABLE"
   FT_OK=0
 fi
 
-if health_ready "${BACKEND_URL}/fine-tuned/health"; then
-  echo "Fine-Tuned endpoint (${BACKEND_URL}/fine-tuned/health): OK (adapterLoaded=true)"
+if health_ready "${BACKEND_URL}/api/fine-tuned/health"; then
+  echo "Fine-Tuned endpoint (${BACKEND_URL}/api/fine-tuned/health): OK (adapterLoaded=true)"
 else
-  echo "Fine-Tuned endpoint (${BACKEND_URL}/fine-tuned/health): UNAVAILABLE"
+  echo "Fine-Tuned endpoint (${BACKEND_URL}/api/fine-tuned/health): UNAVAILABLE"
   FT_OK=0
 fi
 

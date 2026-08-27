@@ -35,6 +35,10 @@ dist-ssr
 # QLoRA / Hugging Face / Slurm artifacts (never commit)
 training/logs/
 training/outputs/
+# The cluster's own durable record: run id -> Slurm job id -> output directory,
+# and completion reports not yet accepted by the application. Machine-local by
+# definition, and losing it costs reconciliation information rather than data.
+training/state/
 **/training_outputs/
 **/hf_cache/
 **/.cache/huggingface/

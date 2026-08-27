@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -83,12 +84,55 @@ class ClaimConflict(TrainingQueueError):
 # --------------------------------------------------------------------------- #
 
 
-def load_env_file(root: Path = PROJECT_ROOT) -> None:
-    """Read `.env.local` / `.env` the way the other scripts in this repo do."""
+#: Permission bits that would let anyone but the owner read the env file.
+#:
+#: `.env.local` on the cluster holds TRAINING_WORKER_TOKEN, and it lives on a
+#: shared project filesystem. It is read by processes on login nodes *and* by
+#: training jobs on compute nodes — the token is deliberately not passed through
+#: the scheduler, so the file is the only thing standing between the token and
+#: anyone else with access to /gpfs/projects/simswe.
+GROUP_OR_WORLD_READABLE = 0o077
+
+
+def warn_if_env_file_is_readable(path: Path) -> Optional[str]:
+    """Return a warning when a secrets file is readable beyond its owner.
+
+    Returned rather than printed so callers decide where it goes, and so this
+    stays testable. The value itself is never read, quoted, or logged — only the
+    mode bits and the path.
+    """
+    try:
+        mode = path.stat().st_mode
+    except OSError:
+        return None
+    if not mode & GROUP_OR_WORLD_READABLE:
+        return None
+    return (
+        "WARNING: {0} is readable by others (mode {1:04o}). It holds "
+        "{2}, which training jobs read from this file on the shared "
+        "filesystem. Run: chmod 600 {0}".format(
+            path, mode & 0o777, WORKER_TOKEN_ENV_VAR
+        )
+    )
+
+
+def load_env_file(root: Path = PROJECT_ROOT, *, warn: bool = True) -> None:
+    """Read `.env.local` / `.env` the way the other scripts in this repo do.
+
+    This is also how a training job on a compute node obtains
+    TRAINING_WORKER_TOKEN: it is scrubbed from the sbatch environment on
+    purpose, so it does not travel through the scheduler, and the job reads it
+    here instead. That makes the file's permissions the actual protection, which
+    is why an over-readable one is called out.
+    """
     for name in (".env.local", ".env"):
         path = root / name
         if not path.exists():
             continue
+        if warn:
+            message = warn_if_env_file_is_readable(path)
+            if message:
+                print(message, file=sys.stderr)
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -156,6 +200,17 @@ class HttpResponse:
     status: int
     headers: dict[str, str]
     body: str
+    #: The undecoded response body, when the transport kept it.
+    #:
+    #: Dataset files are UTF-8 by construction, so `body.encode("utf-8")` is
+    #: byte-identical for them and the checksum check would pass either way.
+    #: Carrying the original bytes anyway means the digest is computed over what
+    #: actually arrived rather than over a re-encoding of it, which is the
+    #: difference between verifying a transfer and verifying a round trip.
+    raw: Optional[bytes] = None
+
+    def content(self) -> bytes:
+        return self.raw if self.raw is not None else self.body.encode("utf-8")
 
 
 #: (method, url, body, headers) -> HttpResponse. Injected in tests so nothing
@@ -175,10 +230,12 @@ def urllib_transport(
 
     try:
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            payload = response.read()
             return HttpResponse(
                 status=response.status,
                 headers={key.lower(): value for key, value in response.headers.items()},
-                body=response.read().decode("utf-8"),
+                body=payload.decode("utf-8", errors="replace"),
+                raw=payload,
             )
     except urllib.error.HTTPError as exc:
         # A 4xx is an ordinary outcome for several of these calls — the caller
@@ -255,6 +312,36 @@ class TrainingQueueApi:
             "POST", self.url(path), body, self._headers(json_body=True)
         )
         return self._decode(response, path)
+
+    def put(self, path: str, payload: Optional[dict[str, Any]] = None) -> Any:
+        body = json.dumps(payload or {}).encode("utf-8")
+        response = self.transport(
+            "PUT", self.url(path), body, self._headers(json_body=True)
+        )
+        return self._decode(response, path)
+
+    def get_bytes(self, path: str) -> tuple[bytes, dict[str, str]]:
+        """Fetch a file body, with its headers, without JSON-decoding it.
+
+        Used only for dataset files. The status handling is the same as `get`,
+        so an expired token or a missing dataset raises the same way it does for
+        every other call rather than writing an HTML error page to disk.
+        """
+        response = self.transport(
+            "GET", self.url(path), None, self._headers(json_body=False)
+        )
+        if response.status in (401, 403):
+            raise TrainingQueueError(
+                f"The backend rejected the request for {path} "
+                f"(HTTP {response.status}). Check {WORKER_TOKEN_ENV_VAR} matches "
+                "the backend's."
+            )
+        if response.status >= 400:
+            raise TrainingQueueError(
+                f"The backend request for {path} failed with HTTP "
+                f"{response.status}: {_detail(response.body)}"
+            )
+        return response.content(), dict(response.headers)
 
 
 def _detail(body: str) -> str:
@@ -641,6 +728,75 @@ class TrainingQueue:
         if failed is None:
             raise TrainingQueueError("The failed run could not be read back.")
         return failed
+
+    # ---------------------------------------------------------------- #
+    # Prepared dataset
+    #
+    # The replacement for the manual rsync. A worker asks the backend for the
+    # dataset belonging to a run it holds; it does not name a path, and there
+    # is no shape of these calls that reaches another course's data.
+    # ---------------------------------------------------------------- #
+
+    def describe_dataset(self, course_id: str, run_id: str) -> dict[str, Any]:
+        """Counts, per-file digests, and one digest for the whole dataset.
+
+        Read-only. `--dry-run` calls this to say whether a run is actually
+        trainable without claiming it or moving any bytes.
+        """
+        payload = self.client.get(self._run_path(course_id, run_id, "dataset"))
+        if not isinstance(payload, dict):
+            raise TrainingQueueError(
+                "The backend returned an unreadable dataset description."
+            )
+        return payload
+
+    def download_dataset_file(
+        self, course_id: str, run_id: str, name: str
+    ) -> bytes:
+        """One prepared file, as bytes. The caller verifies the digest."""
+        path = f"{self._run_path(course_id, run_id, 'dataset')}/files/{name}"
+        body, _headers = self.client.get_bytes(path)
+        return body
+
+    # ---------------------------------------------------------------- #
+    # Completion
+    # ---------------------------------------------------------------- #
+
+    def record_completion(
+        self, course_id: str, run_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Report how a job ended, and let the backend register the model.
+
+        Safe to call more than once with the same payload. The backend keys
+        registration on the run, so a redelivery after a network failure
+        refreshes the version the first delivery created rather than creating
+        another one — which is what makes the worker's "persist, then send,
+        then retry later" behaviour safe.
+        """
+        result = self.client.post(
+            self._run_path(course_id, run_id, "completed"), payload
+        )
+        if not isinstance(result, dict):
+            raise TrainingQueueError("The completion result could not be read back.")
+        return result
+
+    # ---------------------------------------------------------------- #
+    # Serving sessions
+    # ---------------------------------------------------------------- #
+
+    def put_serving_session(
+        self, session_id: str, payload: dict[str, Any]
+    ) -> Optional[dict[str, Any]]:
+        result = self.client.put(f"/serving-sessions/{session_id}", payload)
+        return (result or {}).get("session") if isinstance(result, dict) else None
+
+    def stop_serving_session(self, session_id: str) -> Optional[dict[str, Any]]:
+        result = self.client.post(f"/serving-sessions/{session_id}/stopped")
+        return (result or {}).get("session") if isinstance(result, dict) else None
+
+    def current_serving_session(self) -> Optional[dict[str, Any]]:
+        result = self.client.get("/serving-session")
+        return (result or {}).get("session") if isinstance(result, dict) else None
 
     def register_model_version(
         self,

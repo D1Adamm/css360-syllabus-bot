@@ -366,3 +366,187 @@ class TrainSlurmSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --------------------------------------------------------------------------- #
+# Slurm wall-time policy
+#
+# The CSS 350 full run asked for 8 hours and used 48 seconds: 0.01 GPU hours
+# against an 8-hour reservation. That is not only untidy — an 8-hour request
+# queues behind everything the scheduler can fit in front of it, so the habit
+# costs wall-clock latency on every run of every size.
+# --------------------------------------------------------------------------- #
+
+
+class SlurmWalltimeTests(unittest.TestCase):
+    def test_the_real_css350_run_now_asks_for_an_hour_not_eight(self) -> None:
+        """37 train examples, 3 epochs, accumulation 8 — 15 optimizer steps."""
+        plan = helpers.estimate_training_walltime_seconds(
+            mode="full", train_examples=37
+        )
+
+        self.assertEqual(plan["optimizerSteps"], 15)
+        self.assertEqual(plan["walltime"], "01:00:00")
+        self.assertEqual(plan["clamped"], "floor")
+
+    def test_a_tiny_dataset_still_gets_the_floor(self) -> None:
+        """The floor covers what does not scale with data.
+
+        A cold Hugging Face download of a 3B model, a slow shared filesystem and
+        a busy node are all fixed costs, and an estimate that only counted
+        optimizer steps would produce a request a first run could not finish in.
+        """
+        plan = helpers.estimate_training_walltime_seconds(
+            mode="full", train_examples=1
+        )
+
+        self.assertEqual(plan["walltime"], "01:00:00")
+
+    def test_a_larger_course_gets_proportionally_more(self) -> None:
+        plan = helpers.estimate_training_walltime_seconds(
+            mode="full", train_examples=2000
+        )
+
+        self.assertEqual(plan["optimizerSteps"], 750)
+        self.assertEqual(plan["walltime"], "04:40:00")
+        self.assertIsNone(plan["clamped"])
+
+    def test_the_estimate_grows_monotonically_with_the_dataset(self) -> None:
+        sizes = [37, 200, 800, 2000, 4000]
+        seconds = [
+            helpers.estimate_training_walltime_seconds(
+                mode="full", train_examples=size
+            )["seconds"]
+            for size in sizes
+        ]
+
+        self.assertEqual(seconds, sorted(seconds))
+
+    def test_a_very_large_course_is_capped_and_says_so(self) -> None:
+        """A QOS has a maximum, and a request above it is rejected rather than queued.
+
+        `clamped: ceiling` is the signal an operator acts on — it is the one case
+        where the policy may genuinely be wrong for a course.
+        """
+        plan = helpers.estimate_training_walltime_seconds(
+            mode="full", train_examples=5000
+        )
+
+        self.assertEqual(plan["walltime"], "08:00:00")
+        self.assertEqual(plan["clamped"], "ceiling")
+        self.assertGreater(plan["estimatedSeconds"], plan["seconds"])
+
+    def test_the_ceiling_can_be_raised_deliberately(self) -> None:
+        plan = helpers.estimate_training_walltime_seconds(
+            mode="full",
+            train_examples=5000,
+            ceiling_seconds=16 * 3600,
+        )
+
+        self.assertEqual(plan["walltime"], "10:55:00")
+        self.assertIsNone(plan["clamped"])
+
+    def test_a_smoke_run_keeps_its_fixed_debug_walltime(self) -> None:
+        """Smoke runs execute three optimizer steps; their cost is overhead only."""
+        plan = helpers.estimate_training_walltime_seconds(
+            mode="smoke", train_examples=5000
+        )
+
+        self.assertEqual(plan["walltime"], "00:45:00")
+        self.assertIsNone(plan["optimizerSteps"])
+
+    def test_a_walltime_is_rounded_up_to_the_next_minute(self) -> None:
+        """A request is a limit: a job needing 61s that asks for 1m is killed."""
+        self.assertEqual(helpers.format_slurm_walltime(61), "00:02:00")
+        self.assertEqual(helpers.format_slurm_walltime(3600), "01:00:00")
+        self.assertEqual(helpers.format_slurm_walltime(1), "00:01:00")
+
+    def test_walltime_parsing_accepts_the_shapes_an_operator_types(self) -> None:
+        self.assertEqual(helpers.parse_slurm_walltime("02:00:00"), 7200)
+        self.assertEqual(helpers.parse_slurm_walltime("16:00"), 57600)
+        self.assertEqual(helpers.parse_slurm_walltime("00:45:00"), 2700)
+
+    def test_an_unparseable_walltime_is_refused_rather_than_passed_through(self) -> None:
+        """A value this cannot bound-check would defeat the ceiling."""
+        for bad in ("2 hours", "1-00:00:00", "99:99:99", "", "8h"):
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    helpers.parse_slurm_walltime(bad)
+
+
+# --------------------------------------------------------------------------- #
+# Per-course serving paths
+# --------------------------------------------------------------------------- #
+
+
+class CourseServingPathTests(unittest.TestCase):
+    def test_each_course_gets_its_own_versioned_directory(self) -> None:
+        """The property the old single adapter path could not have.
+
+        `training_outputs/css-360-qlora/adapter` had no course in it, so
+        publishing CSS 360 replaced whatever CSS 350 was being served with — and
+        nothing about a request could detect it, because a request carried no
+        course either.
+        """
+        css350 = helpers.course_version_adapter_dir(
+            user="madamk", course_id="css-350-spring-2026-n3h9", version="v1"
+        )
+        css360 = helpers.course_version_adapter_dir(
+            user="madamk", course_id="css-360-winter-2026-a7rp", version="v1"
+        )
+
+        self.assertNotEqual(css350, css360)
+        self.assertTrue(css350.endswith("/serving/css-350-spring-2026-n3h9/v1/adapter"))
+        self.assertTrue(css360.endswith("/serving/css-360-winter-2026-a7rp/v1/adapter"))
+
+    def test_versions_of_one_course_do_not_collide(self) -> None:
+        first = helpers.course_version_adapter_dir(
+            user="madamk", course_id="css-350-spring-2026-n3h9", version="v1"
+        )
+        second = helpers.course_version_adapter_dir(
+            user="madamk", course_id="css-350-spring-2026-n3h9", version="v2"
+        )
+
+        self.assertNotEqual(first, second)
+
+    def test_an_invalid_course_id_never_becomes_a_path(self) -> None:
+        for bad in ("../etc", "CSS-350", "css_350", ""):
+            with self.subTest(course_id=bad):
+                with self.assertRaises(ValueError):
+                    helpers.course_serving_dir(user="madamk", course_id=bad)
+
+    def test_an_invalid_version_never_becomes_a_path(self) -> None:
+        for bad in ("latest", "1", "v", "../v1", ""):
+            with self.subTest(version=bad):
+                with self.assertRaises(ValueError):
+                    helpers.validate_model_version(bad)
+
+
+class RelativeOutputRefTests(unittest.TestCase):
+    def test_the_machine_specific_prefix_is_stripped(self) -> None:
+        """A stored reference outlives the account and the cluster home it came from."""
+        ref = helpers.relative_training_output_ref(
+            "/gpfs/projects/simswe/madamk/training_outputs/"
+            "qlora-runs/css-350-spring-2026-n3h9/20260827T064701Z-full"
+        )
+
+        self.assertEqual(
+            ref, "qlora-runs/css-350-spring-2026-n3h9/20260827T064701Z-full"
+        )
+        self.assertNotIn("madamk", ref)
+        self.assertFalse(ref.startswith("/"))
+
+    def test_a_trailing_slash_is_ignored(self) -> None:
+        self.assertEqual(
+            helpers.relative_training_output_ref(
+                "/gpfs/x/training_outputs/qlora-runs/a/b/"
+            ),
+            "qlora-runs/a/b",
+        )
+
+    def test_a_path_with_no_marker_is_returned_relative_rather_than_dropped(self) -> None:
+        """Recording an unusual reference beats recording nothing."""
+        self.assertEqual(
+            helpers.relative_training_output_ref("/somewhere/else/adapter"),
+            "somewhere/else/adapter",
+        )

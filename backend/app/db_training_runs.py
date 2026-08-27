@@ -27,12 +27,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from app.course_id import assert_valid_course_id
-from app.db_mapping import as_int, build_patch, optional_string, put_optional, to_iso
+from app.db_mapping import (
+    as_int,
+    bind_jsonb,
+    build_patch,
+    optional_string,
+    put_optional,
+    to_iso,
+)
 
 RUN_COLUMNS = """
     run_id, course_id, mode, state, enqueued_at, updated_at, dataset_ref,
     approved_example_count, train_examples, validation_examples, attempt,
-    job_id, claim_owner, claim_claimed_at, claim_expires_at, error
+    job_id, claim_owner, claim_claimed_at, claim_expires_at, error, completion
 """
 
 RUN_STATES = ("queued", "claimed", "submitted", "training", "succeeded", "failed")
@@ -126,7 +133,12 @@ RUN_PATCH_COLUMNS = {
     "claimOwner": "claim_owner",
     "claimedAt": "claim_claimed_at",
     "claimExpiresAt": "claim_expires_at",
+    # What the cluster reported when the job ended. Written once, by the
+    # completion callback; nothing else patches it.
+    "completion": "completion",
 }
+
+JSONB_COLUMNS = frozenset({"completion"})
 
 
 class ActiveTrainingRunError(Exception):
@@ -166,6 +178,10 @@ def map_training_run(row: Mapping[str, Any]) -> dict[str, Any]:
 
     put_optional(record, "jobId", optional_string(row.get("job_id")))
     put_optional(record, "error", optional_string(row.get("error")))
+
+    completion = row.get("completion")
+    if isinstance(completion, dict):
+        record["completion"] = completion
 
     owner = optional_string(row.get("claim_owner"))
     claimed_at = to_iso(row.get("claim_claimed_at"))
@@ -454,7 +470,7 @@ def update_training_run(
         cursor.execute(
             f"UPDATE training_runs SET {sets} "
             "WHERE course_id = %(course_id)s AND run_id = %(run_id)s",
-            parameters,
+            bind_jsonb(parameters, JSONB_COLUMNS),
         )
 
     return get_training_run(conn, safe_course_id, run_id)

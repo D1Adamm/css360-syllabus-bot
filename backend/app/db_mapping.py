@@ -121,3 +121,27 @@ def update_statement(
     sets = ", ".join(f"{column} = %({column})s" for column in assignments)
     where = " AND ".join(f"{column} = %({column})s" for column in key_columns)
     return f"UPDATE {table} SET {sets} WHERE {where}"
+
+
+def bind_jsonb(
+    parameters: Mapping[str, Any],
+    jsonb_columns: frozenset[str],
+) -> dict[str, Any]:
+    """Wrap JSONB-column values in psycopg's `Json` adapter.
+
+    psycopg will not send a Python dict to a `jsonb` column on its own — it
+    raises rather than guessing an encoding. Every repository that stores a
+    document column needs the same two lines, so they live here; psycopg is
+    imported lazily for the same reason `app.db` imports it lazily, so a host
+    without the driver can still import the application.
+    """
+    from psycopg.types.json import Json
+
+    return {
+        column: (
+            Json(value)
+            if column in jsonb_columns and value is not None
+            else value
+        )
+        for column, value in parameters.items()
+    }

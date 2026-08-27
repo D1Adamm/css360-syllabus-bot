@@ -18,12 +18,26 @@ from typing import TYPE_CHECKING, Any, Iterator
 
 from fastapi import HTTPException
 
-from app.config import load_backend_env
+from app.config import is_test_mode, load_backend_env
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from psycopg import Connection
 
 DATABASE_URL_ENV_VAR = "DATABASE_URL"
+
+#: The only DSN a test process may connect to. Deliberately not DATABASE_URL:
+#: a deployment sets that one, a developer's shell may still be carrying it,
+#: and neither should be able to hand a test suite a production database.
+TEST_DATABASE_URL_ENV_VAR = "TEST_DATABASE_URL"
+
+TEST_MODE_MESSAGE = (
+    "PostgreSQL is not configured for tests, and production configuration is "
+    f"deliberately ignored here: {DATABASE_URL_ENV_VAR} and backend/.env are "
+    "not read while APP_ENV names a test environment or the process is running "
+    f"under pytest. A test that really needs a database sets "
+    f"{TEST_DATABASE_URL_ENV_VAR} to a throwaway one. Everything else patches "
+    "app.db.db_connection."
+)
 
 
 class DatabaseConfigurationError(Exception):
@@ -31,11 +45,25 @@ class DatabaseConfigurationError(Exception):
 
 
 def get_database_url() -> str:
-    """Return DATABASE_URL, loading backend/.env first if it is not set yet.
+    """Return the DSN to connect to, or raise with what to set.
 
-    Raises DatabaseConfigurationError when unset or blank so callers fail with
-    a message that says what to set rather than a driver-level connection error.
+    Two separate rules, because the two situations have opposite failure modes.
+
+    Under test the answer comes from `TEST_DATABASE_URL` and from nowhere else.
+    `DATABASE_URL` is not consulted even when it is set, and backend/.env is not
+    read even when it exists — reading it is exactly how a suite that thought it
+    had unset the variable ended up writing to the live database. Fail closed:
+    with no `TEST_DATABASE_URL` the connection never opens.
+
+    Outside test the behaviour is unchanged: the process environment first, then
+    backend/.env for a script that has not loaded it yet.
     """
+    if is_test_mode():
+        test_database_url = os.getenv(TEST_DATABASE_URL_ENV_VAR, "").strip()
+        if test_database_url:
+            return test_database_url
+        raise DatabaseConfigurationError(TEST_MODE_MESSAGE)
+
     database_url = os.getenv(DATABASE_URL_ENV_VAR, "").strip()
     if not database_url:
         # A script run outside uvicorn may not have imported anything that

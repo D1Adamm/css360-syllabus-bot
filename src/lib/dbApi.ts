@@ -424,3 +424,22 @@ export function updateTrainingRun(
     'The backend could not update this training run.',
   );
 }
+
+export interface DbServingSessionResponse {
+  /** null whenever nothing is serving, which is the usual answer. */
+  session: unknown;
+}
+
+/**
+ * The fine-tuned serving session the backend currently knows about.
+ *
+ * Not course-scoped, because a session is not: one Slurm allocation serves
+ * every course whose adapter it can load. The response carries no compute
+ * hostname or port — see `db_serving_sessions.public_serving_session` for why.
+ */
+export function getServingSession(): Promise<DbServingSessionResponse> {
+  return get<DbServingSessionResponse>(
+    `${DB_ROOT}/serving-session`,
+    'The backend could not report whether a fine-tuned service is running.',
+  );
+}

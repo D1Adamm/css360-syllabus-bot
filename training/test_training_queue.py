@@ -9,6 +9,7 @@ are served by an in-memory stand-in.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -150,15 +151,52 @@ class FakeQueueApi:
         *,
         runs: dict | None = None,
         requests: dict | None = None,
+        datasets: dict | None = None,
     ) -> None:
         # {courseId: {runId: record}}
         self.runs: dict = runs or {}
         # {courseId: record}
         self.model_requests: dict = requests or {}
+        # {courseId: {fileName: text}} — the prepared export as the backend
+        # holds it. A course with no entry has no prepared dataset, which is
+        # what the endpoint reports as a 409.
+        self.datasets: dict = datasets or {}
         self.calls: list[tuple[str, str]] = []
         self.writes: list[tuple[str, str, object]] = []
         self.model_versions: list[dict] = []
+        self.completions: list[dict] = []
+        self.downloads: list[tuple[str, str, str]] = []
         self.token_seen: list[str] = []
+
+    # -- dataset serving --------------------------------------------------- #
+    def set_dataset(self, course_id: str, files: dict) -> None:
+        self.datasets[course_id] = dict(files)
+
+    def _dataset_descriptor(self, course_id: str, run_id: str) -> dict:
+        files = self.datasets.get(course_id) or {}
+        entries = [
+            {
+                "name": name,
+                "bytes": len(body.encode("utf-8")),
+                "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+                "required": name != "approved-export-summary.json",
+            }
+            for name, body in sorted(files.items())
+        ]
+        digest = hashlib.sha256(
+            "\n".join(
+                sorted(f"{item['name']}:{item['sha256']}" for item in entries)
+            ).encode("utf-8")
+        ).hexdigest()
+        return {
+            "courseId": course_id,
+            "runId": run_id,
+            "datasetRef": f"exports/{course_id}",
+            "trainExamples": _count_lines(files.get("train.jsonl", "")),
+            "validationExamples": _count_lines(files.get("validation.jsonl", "")),
+            "datasetSha256": digest,
+            "files": entries,
+        }
 
     # -- accessors used by tests ------------------------------------------ #
     def run(self, course_id: str, run_id: str) -> dict | None:
@@ -271,6 +309,42 @@ class FakeQueueApi:
 
         parts = [segment for segment in path.split("/") if segment]
 
+        if (
+            method == "GET"
+            and len(parts) == 5
+            and parts[0] == "courses"
+            and parts[2] == "runs"
+            and parts[4] == "dataset"
+        ):
+            course_id, run_id = parts[1], parts[3]
+            if self.run(course_id, run_id) is None:
+                return error(404, f'Training run "{run_id}" was not found.')
+            if course_id not in self.datasets:
+                return error(409, "No prepared training data for this course.")
+            return ok(self._dataset_descriptor(course_id, run_id))
+
+        if (
+            method == "GET"
+            and len(parts) == 7
+            and parts[0] == "courses"
+            and parts[2] == "runs"
+            and parts[4] == "dataset"
+            and parts[5] == "files"
+        ):
+            course_id, run_id, name = parts[1], parts[3], parts[6]
+            if self.run(course_id, run_id) is None:
+                return error(404, f'Training run "{run_id}" was not found.')
+            body = (self.datasets.get(course_id) or {}).get(name)
+            if body is None:
+                return error(404, f'"{name}" has not been prepared for this course.')
+            self.downloads.append((course_id, run_id, name))
+            return queue_module.HttpResponse(
+                status=200,
+                headers={"content-type": "application/octet-stream"},
+                body=body,
+                raw=body.encode("utf-8"),
+            )
+
         if method == "POST" and len(parts) == 3 and parts[0] == "courses" and parts[2] == "model-versions":
             course_id = parts[1]
             version = payload.get("version") or f"v{len(self.model_versions) + 1}"
@@ -365,6 +439,91 @@ class FakeQueueApi:
                     },
                 )
                 return ok(self._api_record(course_id, run_id))
+
+            if action == "completed":
+                self.completions.append(
+                    {"courseId": course_id, "runId": run_id, **payload}
+                )
+                if payload.get("outcome") == "failed":
+                    self._merge_run(
+                        course_id,
+                        run_id,
+                        {
+                            "state": "failed",
+                            "updatedAt": queue_module.iso(self.now),
+                            "claim": None,
+                            "error": payload.get("error"),
+                        },
+                    )
+                    self._merge_request(
+                        course_id,
+                        {
+                            "status": "failed",
+                            "failureMessage": "Training did not finish successfully.",
+                            "launchError": payload.get("error"),
+                        },
+                    )
+                    return ok(
+                        {
+                            "courseId": course_id,
+                            "runId": run_id,
+                            "outcome": "failed",
+                            "runState": "failed",
+                            "requestStatus": "failed",
+                        }
+                    )
+
+                existing = next(
+                    (
+                        item
+                        for item in self.model_versions
+                        if item.get("courseId") == course_id
+                        and item.get("runId") == run_id
+                    ),
+                    None,
+                )
+                if existing is None:
+                    version = f"v{len(self.model_versions) + 1}"
+                    self.model_versions.append(
+                        {
+                            "courseId": course_id,
+                            "runId": run_id,
+                            "version": version,
+                            "artifactRef": payload.get("artifactRef"),
+                            "baseModel": payload.get("baseModel"),
+                        }
+                    )
+                    already = False
+                else:
+                    version = existing["version"]
+                    already = True
+
+                self._merge_run(
+                    course_id,
+                    run_id,
+                    {
+                        "state": "succeeded",
+                        "updatedAt": queue_module.iso(self.now),
+                        "claim": None,
+                    },
+                )
+                self._merge_request(
+                    course_id,
+                    {"status": "ready", "failureMessage": None, "launchError": None},
+                )
+                return ok(
+                    {
+                        "courseId": course_id,
+                        "runId": run_id,
+                        "outcome": "succeeded",
+                        "runState": "succeeded",
+                        "requestStatus": "ready",
+                        "version": version,
+                        "currentVersion": version,
+                        "registered": True,
+                        "alreadyRegistered": already,
+                    }
+                )
 
             if action == "failed":
                 self._merge_run(
@@ -706,25 +865,41 @@ class CourseIsolationTests(unittest.TestCase):
             self.assertNotIn(COURSE_B, target)
 
 
-def _prepared_export(root: Path, course_id: str, *, train: int = 38, validation: int = 4) -> None:
-    export_dir = root / "data" / "exports" / course_id
-    export_dir.mkdir(parents=True, exist_ok=True)
-    (export_dir / "train.jsonl").write_text(
-        "".join(
+def _count_lines(text: str) -> int:
+    return len([line for line in text.splitlines() if line.strip()])
+
+
+def _dataset_files(course_id: str, *, train: int = 38, validation: int = 4) -> dict:
+    """The three prepared files, as text, exactly as both sides see them.
+
+    One builder for the backend's copy and the cluster's copy so a test that
+    wants "already in sync" and a test that wants "must be downloaded" differ by
+    which of them it writes, not by whether the bytes happen to match.
+    """
+    return {
+        "train.jsonl": "".join(
             json.dumps({"instruction": f"Q{index}", "response": f"A{index}"}) + "\n"
             for index in range(train)
         ),
-        encoding="utf-8",
-    )
-    (export_dir / "validation.jsonl").write_text(
-        "".join(
+        "validation.jsonl": "".join(
             json.dumps({"instruction": f"V{index}", "response": f"A{index}"}) + "\n"
             for index in range(validation)
         ),
-        encoding="utf-8",
-    )
-    (export_dir / "manifest.json").write_text(
-        json.dumps({"courseId": course_id}), encoding="utf-8"
+        "manifest.json": json.dumps({"courseId": course_id}),
+    }
+
+
+def _write_export(root: Path, course_id: str, files: dict) -> Path:
+    export_dir = root / "data" / "exports" / course_id
+    export_dir.mkdir(parents=True, exist_ok=True)
+    for name, body in files.items():
+        (export_dir / name).write_text(body, encoding="utf-8")
+    return export_dir
+
+
+def _prepared_export(root: Path, course_id: str, *, train: int = 38, validation: int = 4) -> None:
+    _write_export(
+        root, course_id, _dataset_files(course_id, train=train, validation=validation)
     )
 
 
@@ -736,6 +911,11 @@ class RunnerTests(unittest.TestCase):
         self.fake = FakeQueueApi(
             runs={COURSE_A: {"run-1": make_run_record()}},
             requests={COURSE_A: make_request_record()},
+            # The backend holds the same bytes the cluster already has, so the
+            # default runner test exercises the skip path: one descriptor read
+            # and no transfer. Tests that want a real download clear the local
+            # copy instead of changing the backend's.
+            datasets={COURSE_A: _dataset_files(COURSE_A)},
         )
         self.queue = build_queue(self.fake)
         self.launcher = FakeLauncher()
@@ -780,11 +960,22 @@ class RunnerTests(unittest.TestCase):
         argv, cwd = self.launcher.calls[0]
         self.assertEqual(
             argv,
-            ["./training/start_qlora_training.sh", "--course", COURSE_A, "--full", "--yes"],
+            [
+                "./training/start_qlora_training.sh",
+                "--course",
+                COURSE_A,
+                "--full",
+                # Carried into the Slurm job so it can report its own completion.
+                "--queue-run-id",
+                "run-1",
+                "--yes",
+            ],
         )
         self.assertEqual(cwd, self.root)
         self.assertIn(
-            f"./training/start_qlora_training.sh --course {COURSE_A} --full --yes", output
+            f"./training/start_qlora_training.sh --course {COURSE_A} --full "
+            "--queue-run-id run-1 --yes",
+            output,
         )
         self.assertIn(f"qlora-train-{COURSE_A}", output)
 
@@ -933,9 +1124,42 @@ class RunnerTests(unittest.TestCase):
         self.assertNotIn("ssh", argv)
         self.assertNotIn("rsync", argv)
 
-    def test_refuses_and_releases_when_the_dataset_is_missing(self) -> None:
+    def test_a_missing_local_dataset_is_downloaded_rather_than_refused(self) -> None:
+        """The step that used to send an operator back to the VM for an rsync.
+
+        A cluster checkout with no `data/exports/<courseId>/` used to be a hard
+        refusal: prepare on the VM, rsync over a second Duo prompt, come back,
+        re-run. Now it is the ordinary first run of a course.
+        """
         empty = Path(self.tmp.name) / "empty"
         empty.mkdir()
+        code, output = self._run_once(root=empty)
+
+        self.assertEqual(code, 0)
+        self.assertIn("downloaded 3 file(s)", output)
+        self.assertEqual(
+            sorted(name for _, _, name in self.fake.downloads),
+            ["manifest.json", "train.jsonl", "validation.jsonl"],
+        )
+
+        export_dir = empty / "data" / "exports" / COURSE_A
+        self.assertEqual(
+            _count_lines((export_dir / "train.jsonl").read_text(encoding="utf-8")), 38
+        )
+        self.assertEqual(self._run_record()["jobId"], "9182736")
+
+    def test_an_up_to_date_local_dataset_is_not_downloaded_again(self) -> None:
+        """Retry-safe and cheap: matching checksums mean no transfer at all."""
+        code, output = self._run_once()
+
+        self.assertEqual(code, 0)
+        self.assertIn("already present and matching", output)
+        self.assertEqual(self.fake.downloads, [])
+
+    def test_refuses_and_releases_when_the_backend_has_no_dataset(self) -> None:
+        empty = Path(self.tmp.name) / "empty"
+        empty.mkdir()
+        self.fake.datasets.pop(COURSE_A)
         code, output = self._run_once(root=empty, launcher=boom_launcher)
 
         self.assertEqual(code, 1)
@@ -948,10 +1172,189 @@ class RunnerTests(unittest.TestCase):
     def test_dry_run_refuses_a_missing_dataset_without_writing(self) -> None:
         empty = Path(self.tmp.name) / "empty-dry"
         empty.mkdir()
+        self.fake.datasets.pop(COURSE_A)
         code, _ = self._run_once(dry_run=True, root=empty, launcher=boom_launcher)
 
         self.assertEqual(code, 1)
         self.assertEqual(self.fake.writes, [])
+
+    # ------------------------------------------------------------------ #
+    # Outage recovery
+    #
+    # Two real failures. A job finished and the application never found out. And
+    # `sbatch` succeeded while the `/submitted` call did not, leaving the
+    # cluster with a job UWB had never heard of. Both are repaired by the same
+    # command an operator was going to run anyway.
+    # ------------------------------------------------------------------ #
+
+    def _state(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "training_state",
+            REPO_ROOT / "scripts" / "lib" / "training_state.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_a_queued_completion_is_delivered_before_anything_is_claimed(self) -> None:
+        state = self._state()
+        # An earlier run that already finished on the cluster. Its report never
+        # reached the application because the backend was briefly unreachable.
+        self.fake.set_run(
+            COURSE_A,
+            "run-earlier",
+            make_run_record(state="submitted", job_id="111111"),
+        )
+        state.queue_pending_callback(
+            self.root,
+            run_id="run-earlier",
+            course_id=COURSE_A,
+            kind="completed",
+            payload={"outcome": "succeeded", "jobId": "111111"},
+        )
+
+        code, output = self._run_once()
+
+        self.assertEqual(code, 0)
+        self.assertIn("Delivering 1 queued training report", output)
+        self.assertEqual(
+            [item["runId"] for item in self.fake.completions], ["run-earlier"]
+        )
+        self.assertEqual(state.list_pending_callbacks(self.root), [])
+
+    def test_an_unreported_submission_is_re_reported_not_resubmitted(self) -> None:
+        """The ambiguous-network case. A duplicate here is a second GPU job."""
+        state = self._state()
+        state.write_run_record(
+            self.root,
+            run_id="run-1",
+            course_id=COURSE_A,
+            mode="full",
+            job_id="225122",
+            reported=False,
+        )
+
+        code, output = self._run_once(launcher=boom_launcher)
+
+        self.assertEqual(code, 0)
+        self.assertIn("Reconciling 1 unreported submission", output)
+        self.assertEqual(self._run_record()["jobId"], "225122")
+
+    def test_a_reconciled_submission_is_not_reported_twice(self) -> None:
+        state = self._state()
+        state.write_run_record(
+            self.root,
+            run_id="run-1",
+            course_id=COURSE_A,
+            mode="full",
+            job_id="225122",
+            reported=False,
+        )
+
+        self._run_once(launcher=boom_launcher)
+        _, output = self._run_once(launcher=boom_launcher)
+
+        self.assertNotIn("Reconciling", output)
+
+    def test_a_local_job_id_stops_a_second_submission_of_the_same_run(self) -> None:
+        """Two independent records of "this run already has a job".
+
+        The backend's is authoritative when it has one; the local record covers
+        the case the backend cannot know about.
+        """
+        state = self._state()
+        state.write_run_record(
+            self.root,
+            run_id="run-1",
+            course_id=COURSE_A,
+            mode="full",
+            job_id="225122",
+            reported=True,
+        )
+
+        code, output = self._run_once(launcher=boom_launcher)
+
+        self.assertEqual(code, 0)
+        self.assertIn("will not submit another", output)
+
+    def test_the_run_record_links_run_job_and_output_directory(self) -> None:
+        """The three identifiers reconciliation needs, written before reporting."""
+        state = self._state()
+
+        self._run_once()
+
+        record = state.read_run_record(self.root, "run-1")
+        self.assertIsNotNone(record)
+        self.assertEqual(record["jobId"], "9182736")
+        self.assertEqual(record["courseId"], COURSE_A)
+        self.assertTrue(record["reported"])
+
+    def test_a_lost_submission_report_leaves_a_recoverable_record(self) -> None:
+        """The exact failure: sbatch worked, the report did not land.
+
+        The command exits nonzero and says what to do, and the local record is
+        what makes the next run a repair rather than a duplicate.
+        """
+        state = self._state()
+        real_post = self.queue.client.post
+
+        def post(path, payload=None):
+            if path.endswith("/submitted"):
+                raise queue_module.TrainingQueueError(
+                    "Could not reach the backend API: timed out"
+                )
+            return real_post(path, payload)
+
+        self.queue.client.post = post  # type: ignore[method-assign]
+
+        code, output = self._run_once()
+
+        self.assertEqual(code, 1)
+        self.assertIn("the application was not told", output)
+        record = state.read_run_record(self.root, "run-1")
+        self.assertEqual(record["jobId"], "9182736")
+        self.assertFalse(record["reported"])
+
+    def test_dry_run_delivers_nothing_and_reconciles_nothing(self) -> None:
+        """A dry run must be safe to point at the live queue."""
+        state = self._state()
+        state.queue_pending_callback(
+            self.root,
+            run_id="run-earlier",
+            course_id=COURSE_A,
+            kind="completed",
+            payload={"outcome": "succeeded"},
+        )
+        state.write_run_record(
+            self.root,
+            run_id="run-other",
+            course_id=COURSE_A,
+            mode="full",
+            job_id="225122",
+            reported=False,
+        )
+
+        code, output = self._run_once(dry_run=True, launcher=boom_launcher)
+
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.completions, [])
+        self.assertEqual(self.fake.writes, [])
+        self.assertIn("Queued reports: 1", output)
+        self.assertIn("Unreported submissions: 1", output)
+        self.assertEqual(len(state.list_pending_callbacks(self.root)), 1)
+
+    def test_dry_run_downloads_nothing_even_when_the_local_copy_is_missing(self) -> None:
+        empty = Path(self.tmp.name) / "empty-dry-2"
+        empty.mkdir()
+        code, output = self._run_once(dry_run=True, root=empty, launcher=boom_launcher)
+
+        self.assertEqual(code, 0)
+        self.assertIn("would download", output)
+        self.assertEqual(self.fake.downloads, [])
+        self.assertEqual(self.fake.writes, [])
+        self.assertFalse((empty / "data" / "exports" / COURSE_A).exists())
 
     def test_reports_a_count_that_disagrees_with_the_prepared_data(self) -> None:
         self.fake.set_run(COURSE_A, "run-1", make_run_record(train=999))
@@ -990,7 +1393,7 @@ class RunnerTests(unittest.TestCase):
     def test_a_smoke_run_reports_the_smoke_command(self) -> None:
         self.fake.set_run(COURSE_A, "run-1", make_run_record(mode="smoke"))
         _, output = self._run_once()
-        self.assertIn(f"--course {COURSE_A} --smoke --yes", output)
+        self.assertIn(f"--course {COURSE_A} --smoke --queue-run-id run-1 --yes", output)
         self.assertIn(f"qlora-smoke-{COURSE_A}", output)
         argv, _ = self.launcher.calls[0]
         self.assertIn("--smoke", argv)
@@ -1266,3 +1669,69 @@ class Python39RuntimeCompatibilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnvFilePermissionTests(unittest.TestCase):
+    """`.env.local` is the only thing protecting the worker token on the cluster.
+
+    The token is deliberately scrubbed from the sbatch environment, so it does
+    not travel through the scheduler — and a training job on a compute node
+    therefore reads it out of this file on the shared project filesystem. That
+    makes the file mode the actual protection rather than a formality, and an
+    over-readable one worth saying out loud.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.path = self.root / ".env.local"
+        self.path.write_text(
+            "TRAINING_API_BASE_URL=https://aiswe.uwb.edu\n"
+            "TRAINING_WORKER_TOKEN=not-a-real-token\n",
+            encoding="utf-8",
+        )
+
+    def test_an_owner_only_file_produces_no_warning(self) -> None:
+        os.chmod(self.path, 0o600)
+
+        self.assertIsNone(queue_module.warn_if_env_file_is_readable(self.path))
+
+    def test_a_group_readable_file_is_called_out(self) -> None:
+        os.chmod(self.path, 0o640)
+
+        message = queue_module.warn_if_env_file_is_readable(self.path)
+
+        self.assertIsNotNone(message)
+        self.assertIn("chmod 600", message)
+        self.assertIn(str(self.path), message)
+
+    def test_a_world_readable_file_is_called_out(self) -> None:
+        os.chmod(self.path, 0o644)
+
+        self.assertIsNotNone(queue_module.warn_if_env_file_is_readable(self.path))
+
+    def test_the_warning_never_contains_the_token_value(self) -> None:
+        """A warning about a leaked secret must not itself leak it."""
+        os.chmod(self.path, 0o644)
+
+        message = queue_module.warn_if_env_file_is_readable(self.path)
+
+        self.assertNotIn("not-a-real-token", message or "")
+
+    def test_a_missing_file_is_not_a_warning(self) -> None:
+        self.assertIsNone(
+            queue_module.warn_if_env_file_is_readable(self.root / "nothing")
+        )
+
+    def test_loading_still_sets_the_variables(self) -> None:
+        os.chmod(self.path, 0o600)
+        for key in ("TRAINING_API_BASE_URL", "TRAINING_WORKER_TOKEN"):
+            os.environ.pop(key, None)
+            self.addCleanup(os.environ.pop, key, None)
+
+        queue_module.load_env_file(self.root)
+
+        self.assertEqual(
+            os.environ["TRAINING_API_BASE_URL"], "https://aiswe.uwb.edu"
+        )

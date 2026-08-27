@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -162,6 +163,171 @@ def versioned_training_output_dir(
     return path
 
 
+# --------------------------------------------------------------------------- #
+# Slurm wall-time policy
+#
+# The CSS 350 full run requested 8 hours and used 48 seconds — 0.01 GPU hours
+# against an 8-hour reservation. That is not just untidy: an 8-hour request sits
+# behind every other job the scheduler can fit in front of it, so the habit costs
+# queue time on every run for a course of any size.
+#
+# The estimate is deliberately crude and deliberately generous. Optimizer steps
+# are the only thing that scales with the dataset, the measured cost was about
+# 2.3 seconds per step on this model, and the constant below is an order of
+# magnitude above that. What the request has to survive is not a bad estimate of
+# steady-state throughput — it is a cold Hugging Face download, a slow shared
+# filesystem, a busy node, and per-epoch checkpoint writes. Those are what
+# OVERHEAD covers, and they do not scale with the data.
+#
+# A ceiling is kept because a QOS has one and a request above it is rejected
+# rather than queued. `full` is capped at the value that is known to work today;
+# a genuinely larger course raises it explicitly rather than discovering the
+# limit at submission time.
+# --------------------------------------------------------------------------- #
+
+#: Fixed overhead: model download/load, tokenizer, evaluation, checkpoint writes.
+WALLTIME_OVERHEAD_SECONDS = 30 * 60
+
+#: Per-optimizer-step allowance. Measured cost is ~2.3s on Llama-3.2-3B with
+#: this configuration; this is ~9x that, so a node an order of magnitude slower
+#: than the one we measured still finishes inside the request.
+WALLTIME_SECONDS_PER_STEP = 20
+
+#: Never ask for less than this for a full run, whatever the estimate says.
+WALLTIME_FULL_FLOOR_SECONDS = 60 * 60
+
+#: Never ask for more without an explicit override. This is the value the
+#: existing `#SBATCH --time` used and is therefore known to be accepted.
+WALLTIME_FULL_CEILING_SECONDS = 8 * 60 * 60
+
+#: Smoke runs are capped at a fixed tiny number of optimizer steps, so their
+#: cost is overhead and nothing else. Unchanged from the value the debug QOS has
+#: been accepting.
+WALLTIME_SMOKE_SECONDS = 45 * 60
+
+
+def format_slurm_walltime(total_seconds: int) -> str:
+    """Seconds as `HH:MM:SS`, rounded up to the next whole minute.
+
+    Rounded up because a request is a limit: a job that needs 61 seconds and
+    asks for 1 minute is killed at 60.
+    """
+    if total_seconds < 60:
+        total_seconds = 60
+    minutes = -(-int(total_seconds) // 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:02d}:{minutes:02d}:00"
+
+
+def parse_slurm_walltime(value: str) -> int:
+    """`HH:MM:SS` or `MM:SS` or `HH:MM` -> seconds. Raises on anything else.
+
+    Accepts only the shapes an operator would plausibly type for an override.
+    Slurm itself accepts more (`days-hours`), but a value this cannot parse is
+    one this cannot bound-check, and silently passing it through would defeat
+    the ceiling.
+    """
+    text = (value or "").strip()
+    if not re.fullmatch(r"\d{1,3}(:\d{2}){1,2}", text):
+        raise ValueError(
+            f"Invalid Slurm wall time {value!r}: expected HH:MM:SS or HH:MM."
+        )
+    parts = [int(part) for part in text.split(":")]
+    if len(parts) == 3:
+        hours, minutes, seconds = parts
+    else:
+        hours, minutes, seconds = parts[0], parts[1], 0
+    if minutes > 59 or seconds > 59:
+        raise ValueError(f"Invalid Slurm wall time {value!r}: minutes/seconds > 59.")
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def estimate_training_walltime_seconds(
+    *,
+    mode: str,
+    train_examples: int,
+    epochs: float = 3.0,
+    per_device_batch_size: int = 1,
+    gradient_accumulation_steps: int = 8,
+    gpu_count: int = 1,
+    ceiling_seconds: int = WALLTIME_FULL_CEILING_SECONDS,
+) -> dict[str, Any]:
+    """How much wall clock to request, and why.
+
+    Returns the chosen value together with the inputs behind it, so the launcher
+    can print a line an operator can check rather than a number they have to
+    trust. `clamped` says which bound was hit, which is the one case worth
+    reacting to: a full run pinned at the ceiling is a course that may genuinely
+    need a raised limit.
+    """
+    mode_norm = _normalize_training_mode(mode)
+
+    if mode_norm == "smoke":
+        return {
+            "mode": mode_norm,
+            "seconds": WALLTIME_SMOKE_SECONDS,
+            "walltime": format_slurm_walltime(WALLTIME_SMOKE_SECONDS),
+            "optimizerSteps": None,
+            "clamped": None,
+            "reason": "smoke runs execute a fixed tiny step budget",
+        }
+
+    examples = max(1, int(train_examples))
+    batch = max(1, int(per_device_batch_size)) * max(
+        1, int(gradient_accumulation_steps)
+    ) * max(1, int(gpu_count))
+    steps_per_epoch = max(1, -(-examples // batch))
+    steps = int(math.ceil(steps_per_epoch * max(0.1, float(epochs))))
+
+    raw = WALLTIME_OVERHEAD_SECONDS + steps * WALLTIME_SECONDS_PER_STEP
+    clamped = None
+    seconds = raw
+    if seconds < WALLTIME_FULL_FLOOR_SECONDS:
+        seconds = WALLTIME_FULL_FLOOR_SECONDS
+        clamped = "floor"
+    if seconds > ceiling_seconds:
+        seconds = ceiling_seconds
+        clamped = "ceiling"
+
+    return {
+        "mode": mode_norm,
+        "seconds": seconds,
+        "walltime": format_slurm_walltime(seconds),
+        "optimizerSteps": steps,
+        "estimatedSeconds": raw,
+        "clamped": clamped,
+        "reason": (
+            f"{steps} optimizer steps x {WALLTIME_SECONDS_PER_STEP}s + "
+            f"{WALLTIME_OVERHEAD_SECONDS // 60}m overhead"
+        ),
+    }
+
+
+TRAINING_OUTPUTS_MARKER = "training_outputs/"
+
+
+def relative_training_output_ref(path: str | Path) -> str:
+    """Turn an absolute run directory into a stored, machine-independent ref.
+
+    ``/gpfs/projects/simswe/madamk/training_outputs/qlora-runs/css-350-.../
+    20260827T064701Z-full`` becomes ``qlora-runs/css-350-.../20260827T064701Z-full``.
+
+    The stored reference must not embed a cluster home directory or a username:
+    admin surfaces display it, and it is written into the model registry where it
+    long outlives the account it was produced under. Everything before
+    ``training_outputs/`` is exactly the machine-specific part.
+
+    A path with no ``training_outputs/`` segment is returned with any leading
+    slash stripped rather than rejected — the caller validates separately, and a
+    reference that is merely unusual is better recorded than dropped.
+    """
+    normalized = str(path).replace("\\", "/").rstrip("/")
+    marker_at = normalized.rfind(TRAINING_OUTPUTS_MARKER)
+    if marker_at >= 0:
+        return normalized[marker_at + len(TRAINING_OUTPUTS_MARKER):]
+    return normalized.lstrip("/")
+
+
 def live_adapter_dir(*, user: str, projects_root: str = "/gpfs/projects/simswe") -> str:
     safe_user = user.strip()
     if not safe_user or "/" in safe_user:
@@ -232,6 +398,51 @@ def validate_adapter_source(path: Path) -> Path:
         )
     # Refuse promoting from backup roots accidentally named oddly — allow backups.
     return resolved
+
+
+SERVING_SUBDIR = "training_outputs/serving"
+VERSION_RE = re.compile(r"^v[0-9]+$")
+
+
+def validate_model_version(version: str) -> str:
+    value = (version or "").strip()
+    if not VERSION_RE.fullmatch(value):
+        raise ValueError(f"Invalid model version {version!r}: expected v1, v2, …")
+    return value
+
+
+def course_serving_dir(
+    *,
+    user: str,
+    course_id: str,
+    projects_root: str = "/gpfs/projects/simswe",
+) -> str:
+    """Where one course's published adapters live.
+
+    Per course and per version, unlike the single `css-360-qlora/adapter` path
+    this replaces. That path had no course in it at all, so publishing CSS 360
+    silently replaced whatever CSS 350 was being served with — undetectable from
+    a request, because a request carried no course either.
+    """
+    safe_user = user.strip()
+    if not safe_user or "/" in safe_user or safe_user in {".", ".."}:
+        raise ValueError(f"Invalid user for serving path: {user!r}")
+    safe_course = validate_course_id(course_id)
+    return f"{projects_root.rstrip('/')}/{safe_user}/{SERVING_SUBDIR}/{safe_course}"
+
+
+def course_version_adapter_dir(
+    *,
+    user: str,
+    course_id: str,
+    version: str,
+    projects_root: str = "/gpfs/projects/simswe",
+) -> str:
+    """The adapter directory for exactly one course and one version."""
+    base = course_serving_dir(
+        user=user, course_id=course_id, projects_root=projects_root
+    )
+    return f"{base}/{validate_model_version(version)}/adapter"
 
 
 def backup_destination_dir(
@@ -438,6 +649,47 @@ def _cli_validate_adapter(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cli_course_serving_dir(args: argparse.Namespace) -> int:
+    print(
+        course_serving_dir(user=args.user, course_id=args.course_id)
+    )
+    return 0
+
+
+def _cli_course_version_adapter_dir(args: argparse.Namespace) -> int:
+    print(
+        course_version_adapter_dir(
+            user=args.user, course_id=args.course_id, version=args.version
+        )
+    )
+    return 0
+
+
+def _cli_training_walltime(args: argparse.Namespace) -> int:
+    ceiling = (
+        parse_slurm_walltime(args.ceiling)
+        if args.ceiling
+        else WALLTIME_FULL_CEILING_SECONDS
+    )
+    plan = estimate_training_walltime_seconds(
+        mode=args.mode,
+        train_examples=args.train_examples,
+        epochs=args.epochs,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        ceiling_seconds=ceiling,
+    )
+    if args.field:
+        print(plan[args.field])
+    else:
+        print(json.dumps(plan))
+    return 0
+
+
+def _cli_relative_output_ref(args: argparse.Namespace) -> int:
+    print(relative_training_output_ref(args.path))
+    return 0
+
+
 def _cli_is_live_adapter(args: argparse.Namespace) -> int:
     print("yes" if is_live_adapter_path(args.path, user=args.user) else "no")
     return 0 if is_live_adapter_path(args.path, user=args.user) else 1
@@ -530,6 +782,50 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("validate-adapter-source")
     p.add_argument("path")
     p.set_defaults(func=_cli_validate_adapter)
+
+    p = sub.add_parser(
+        "course-serving-dir",
+        help="Where one course's published adapters live",
+    )
+    p.add_argument("--user", required=True)
+    p.add_argument("--course-id", required=True)
+    p.set_defaults(func=_cli_course_serving_dir)
+
+    p = sub.add_parser(
+        "course-version-adapter-dir",
+        help="The adapter directory for one course and one version",
+    )
+    p.add_argument("--user", required=True)
+    p.add_argument("--course-id", required=True)
+    p.add_argument("--version", required=True)
+    p.set_defaults(func=_cli_course_version_adapter_dir)
+
+    p = sub.add_parser(
+        "training-walltime",
+        help="Choose a Slurm --time value from mode and dataset size",
+    )
+    p.add_argument("--mode", choices=("smoke", "full"), required=True)
+    p.add_argument("--train-examples", type=int, default=1)
+    p.add_argument("--epochs", type=float, default=3.0)
+    p.add_argument("--gradient-accumulation-steps", type=int, default=8)
+    p.add_argument(
+        "--ceiling",
+        default=None,
+        help="Override the maximum request, e.g. 16:00:00",
+    )
+    p.add_argument(
+        "--field",
+        choices=("walltime", "seconds", "optimizerSteps", "clamped", "reason"),
+        default=None,
+    )
+    p.set_defaults(func=_cli_training_walltime)
+
+    p = sub.add_parser(
+        "relative-output-ref",
+        help="Strip the machine-specific prefix from a training output path",
+    )
+    p.add_argument("path")
+    p.set_defaults(func=_cli_relative_output_ref)
 
     p = sub.add_parser("is-live-adapter")
     p.add_argument("path")

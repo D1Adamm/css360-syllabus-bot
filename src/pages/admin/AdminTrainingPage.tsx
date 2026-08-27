@@ -7,6 +7,7 @@ import { formatCourseHeading } from '../../lib/courseLabels';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SectionHeader } from '../../components/ui/SectionHeader';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { TrainingJobs } from '../../components/admin/TrainingJobs';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
 import { fetchCourseModelRequest } from '../../lib/courseModelRequestDb';
@@ -701,17 +702,7 @@ export function AdminTrainingPage() {
         )}
       </section>
 
-      <section className="ui-stack ui-stack--snug">
-        <SectionHeader
-          title="Training jobs"
-          description="What this page will show once a run reports back."
-          divider
-        />
-        <EmptyState
-          title="No job tracking yet"
-          description="Queued runs appear against their course above. Watching a run's progress and promoting its result are still handled outside this application. See docs/frontend-backend-gaps.md for what that needs."
-        />
-      </section>
+      <TrainingJobs />
     </div>
   );
 }

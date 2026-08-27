@@ -1,12 +1,18 @@
 #!/bin/bash
-# Launch the CSS 360 fine-tuned inference service on one Tillicum GPU.
+# Launch the per-course fine-tuned inference service on one Tillicum GPU.
 # Preferred (from repository root on Tillicum):
 #   ./training/start_finetuned_service.sh
+#   ./training/start_finetuned_service.sh --hours 3
 #
 # Manual submit:
-#   sbatch training/inference_service/serve.slurm
+#   sbatch --time=02:00:00 training/inference_service/serve.slurm
 # Then discover NODE via squeue (not hardcoded), and on aiswe.uwb.edu:
-#   ./scripts/start_finetuned_tunnel.sh NODE
+#   ./scripts/start_finetuned_tunnel.sh --from-backend
+#
+# The service loads the base model once and attaches one LoRA adapter per course
+# from SERVING_ROOT, choosing between them per request. There is no single
+# ADAPTER_PATH any more: that variable had no course in it, so publishing one
+# course replaced whatever every other course was being served with.
 
 #SBATCH --job-name=css360-ft-infer
 #SBATCH --account=simswe
@@ -14,7 +20,11 @@
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=200G
-#SBATCH --time=01:00:00
+# Default only. start_finetuned_service.sh overrides it with `sbatch --time` to
+# give the session an explicit, bounded lifetime (2 hours by default). The
+# allocation ending is what makes a session expire without anyone having to
+# remember to stop it — including when the operator's login session drops.
+#SBATCH --time=02:00:00
 #SBATCH --output=training/logs/infer-%j.out
 #SBATCH --error=training/logs/infer-%j.err
 
@@ -29,8 +39,9 @@ mkdir -p "/gpfs/projects/simswe/${USER}/hf_cache"
 export HF_HOME="/gpfs/projects/simswe/${USER}/huggingface"
 export HF_HUB_CACHE="${HF_HOME}/hub"
 export HF_TOKEN_PATH="${HF_HOME}/token"
-export ADAPTER_PATH="${ADAPTER_PATH:-/gpfs/projects/simswe/${USER}/training_outputs/css-360-qlora/adapter}"
+export SERVING_ROOT="${SERVING_ROOT:-/gpfs/projects/simswe/${USER}/training_outputs/serving}"
 export MODEL_ID="${MODEL_ID:-meta-llama/Llama-3.2-3B-Instruct}"
+export MAX_LOADED_ADAPTERS="${MAX_LOADED_ADAPTERS:-4}"
 export INFERENCE_HOST="${INFERENCE_HOST:-0.0.0.0}"
 export INFERENCE_PORT="${INFERENCE_PORT:-8001}"
 export SLURM_JOB_ID="${SLURM_JOB_ID:-}"
@@ -40,17 +51,33 @@ test -s "$HF_TOKEN_PATH" || {
   exit 1
 }
 
-test -d "$ADAPTER_PATH" || {
-  echo "Adapter path does not exist: $ADAPTER_PATH" >&2
-  exit 1
-}
+# The serving root is created rather than required. A service with no published
+# course still answers /health and returns a clear 409 for every course, which
+# is a better failure than a GPU allocation that refuses to start: the operator
+# publishes an adapter and retries the request instead of re-queueing a job.
+mkdir -p "${SERVING_ROOT}"
+
+# The moment this allocation ends, from the wall clock Slurm actually gave it.
+# Reported on /health so a caller can see a session expiring rather than
+# discover it as a dropped connection.
+if command -v squeue >/dev/null 2>&1 && [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  REMAINING="$(squeue -j "${SLURM_JOB_ID}" -h -o '%L' 2>/dev/null | head -n 1 || true)"
+  if [[ -n "${REMAINING}" ]]; then
+    DEADLINE="$(python3 "${REPO_ROOT}/scripts/lib/slurm_time_left.py" "${REMAINING}" 2>/dev/null || true)"
+    if [[ -n "${DEADLINE}" ]]; then
+      export SERVICE_DEADLINE_EPOCH="${DEADLINE}"
+    fi
+  fi
+fi
 
 echo "=== Job info ==="
 echo "Job ID: ${SLURM_JOB_ID:-unknown}"
 echo "Host: $(hostname)"
 echo "Listening port: ${INFERENCE_PORT}"
-echo "Adapter: ${ADAPTER_PATH}"
+echo "Serving root: ${SERVING_ROOT}"
 echo "Model: ${MODEL_ID}"
+echo "Max loaded adapters: ${MAX_LOADED_ADAPTERS}"
+echo "Session ends (unix): ${SERVICE_DEADLINE_EPOCH:-unknown}"
 echo "Repo: ${REPO_ROOT}"
 date -u
 
@@ -93,6 +120,9 @@ for name in mods:
     except Exception as exc:  # noqa: BLE001
         print(f"{name}=IMPORT_ERROR ({exc})")
 PY
+
+echo "=== Published course adapters ==="
+python3 "${REPO_ROOT}/scripts/lib/list_published_adapters.py" "${SERVING_ROOT}" || true
 
 echo "Node hostname: $(hostname)"
 echo "Listening port: ${INFERENCE_PORT}"
