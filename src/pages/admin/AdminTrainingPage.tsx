@@ -12,9 +12,12 @@ import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
 import { fetchCourseModelRequest } from '../../lib/courseModelRequestDb';
 import {
+  canQueueNewVersion,
   canQueueTraining,
   canRetryTraining,
   findRetryTargetRun,
+  findReusableDataset,
+  queueNewVersionForRequest,
   queueTrainingForRequest,
   retryTrainingForRequest,
 } from '../../lib/queueTraining';
@@ -286,6 +289,18 @@ function OutstandingRequests() {
    * destructive action in the application.
    */
   const [confirming, setConfirming] = useState<RequestRow | null>(null);
+  /*
+   * The course whose retrain is awaiting confirmation.
+   *
+   * Kept separate from `confirming` rather than sharing one dialog: the two
+   * actions read almost identically in a list and do opposite things to a
+   * course's history. Retry retires the run a course is waiting on; retraining
+   * leaves every finished run exactly where it is. A shared piece of state
+   * would make the wrong dialog a one-character mistake.
+   */
+  const [confirmingRetrain, setConfirmingRetrain] = useState<RequestRow | null>(
+    null,
+  );
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [reload, setReload] = useState(0);
 
@@ -421,6 +436,45 @@ function OutstandingRequests() {
       setRetrying(null);
       // Re-read the request and the queue so the retired run, the new queued
       // run and the cleared job metadata all come from storage, not from here.
+      setReload((current) => current + 1);
+    }
+  }
+
+  /**
+   * Queues a fresh run for a course that already finished one.
+   *
+   * Nothing existing is touched. The previous run keeps its state and its job
+   * id, its registered model version stays current and stays published, and
+   * this adds one queued run beside them. The prepared dataset is reused —
+   * re-exporting would change nothing unless the approved set has moved, and
+   * Rebuild dataset is the control for that.
+   */
+  async function trainNewVersion(row: RequestRow) {
+    setConfirmingRetrain(null);
+    setQueueing(row.courseId);
+    setMessages((current) => ({ ...current, [row.courseId]: '' }));
+
+    try {
+      const { run } = await queueNewVersionForRequest(
+        row.courseId,
+        row.request,
+        row.runs,
+      );
+      setMessages((current) => ({
+        ...current,
+        [row.courseId]:
+          `Queued ${run.mode} run ${run.runId} for a new version. Earlier runs ` +
+          'and the current model version are unchanged. It will be picked up ' +
+          'the next time the queue is run on the cluster.',
+      }));
+    } catch (error) {
+      setMessages((current) => ({
+        ...current,
+        [row.courseId]:
+          error instanceof Error ? error.message : 'Queueing failed.',
+      }));
+    } finally {
+      setQueueing(null);
       setReload((current) => current + 1);
     }
   }
@@ -591,6 +645,26 @@ function OutstandingRequests() {
                   </Button>
                 )}
 
+                {/* Training again for a course that already finished once.
+                    Distinct from Retry, which retires the run a course is
+                    waiting on: this supersedes nothing and leaves every
+                    finished run and registered version exactly as they are. */}
+                {canQueueNewVersion(row.request, row.runs) && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setConfirmingRetrain(row)}
+                    loading={queueing === row.courseId}
+                    loadingLabel="Queueing…"
+                    disabled={
+                      preparing !== null || queueing !== null || retrying !== null
+                    }
+                    title="Queue another training run against this course's prepared dataset. Existing runs and model versions are kept."
+                  >
+                    Train new version
+                  </Button>
+                )}
+
                 {/* The recovery path for a run this application still believes
                     is active when it is not — a cluster job that finished
                     without its completion callback landing. Offered only for a
@@ -616,6 +690,40 @@ function OutstandingRequests() {
           ))}
         </ul>
       )}
+
+      {(() => {
+        const dataset = confirmingRetrain
+          ? findReusableDataset(confirmingRetrain.request, confirmingRetrain.runs)
+          : null;
+        return (
+          <ConfirmDialog
+            open={confirmingRetrain !== null}
+            title="Train a new version for this course?"
+            description={
+              dataset
+                ? `A new run is queued against the dataset already prepared for ` +
+                  `this course — ${dataset.trainExamples} train / ` +
+                  `${dataset.validationExamples} validation from ` +
+                  `${dataset.approvedExampleCount} approved. Nothing is ` +
+                  're-exported and no split is recomputed. Every earlier run is ' +
+                  'kept, and the current model version stays registered and keeps ' +
+                  'serving until a new one is published. This uses GPU time on ' +
+                  'the cluster.'
+                : undefined
+            }
+            confirmLabel="Queue new run"
+            cancelLabel="Cancel"
+            tone="default"
+            busy={queueing !== null}
+            onConfirm={() => {
+              if (confirmingRetrain) {
+                void trainNewVersion(confirmingRetrain);
+              }
+            }}
+            onCancel={() => setConfirmingRetrain(null)}
+          />
+        );
+      })()}
 
       {(() => {
         const target = confirming ? findRetryTargetRun(confirming.request, confirming.runs) : null;

@@ -182,6 +182,21 @@ def validate_run_id(run_id: str) -> str:
     return candidate
 
 
+MODEL_VERSION_PATTERN = re.compile(r"^v\d+$")
+
+
+def validate_model_version(version: str) -> str:
+    """`v1`, `v2`, … — the scheme the registry allocates.
+
+    Checked here as well as on the backend because this value becomes a URL path
+    segment and a filesystem path segment on the cluster.
+    """
+    candidate = (version or "").strip()
+    if not MODEL_VERSION_PATTERN.match(candidate):
+        raise TrainingQueueError(f"Invalid model version: {version!r}")
+    return candidate
+
+
 def validate_slurm_job_id(job_id: str) -> str:
     """A real scheduler id is digits only. Placeholders are refused."""
     value = (job_id or "").strip()
@@ -797,6 +812,42 @@ class TrainingQueue:
     def current_serving_session(self) -> Optional[dict[str, Any]]:
         result = self.client.get("/serving-session")
         return (result or {}).get("session") if isinstance(result, dict) else None
+
+    def report_model_published(
+        self,
+        course_id: str,
+        version: str,
+        *,
+        source_ref: Optional[str] = None,
+        published_at: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Tell the application a version's adapter is now in the serving tree.
+
+        Called only after the copy has landed and been validated. That ordering
+        is the failure safety: a copy that fails reports nothing, so the
+        application keeps naming the version that really is published rather
+        than routing every question at one that is not there.
+
+        Idempotent on the backend, so a rerun of the promote script or a report
+        redelivered after a network failure lands in the same state.
+        """
+        payload: dict[str, Any] = {}
+        if source_ref:
+            payload["sourceRef"] = source_ref
+        if published_at:
+            payload["publishedAt"] = published_at
+
+        result = self.client.post(
+            "/courses/{0}/model-versions/{1}/published".format(
+                validate_course_id(course_id), validate_model_version(version)
+            ),
+            payload,
+        )
+        if not isinstance(result, dict):
+            raise TrainingQueueError(
+                "The published model version could not be read back."
+            )
+        return result
 
     def register_model_version(
         self,

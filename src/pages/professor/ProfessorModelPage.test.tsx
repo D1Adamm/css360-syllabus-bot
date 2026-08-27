@@ -485,3 +485,106 @@ describe('ProfessorModelPage requests', () => {
     }
   });
 });
+
+/* ------------------------------------------------------------------------ *
+ * A second version being trained while the first one still works
+ *
+ * Newly reachable: administrators can now queue a retrain for a course that is
+ * already `ready`, which puts a `ready` model and an outstanding request on the
+ * page at the same time. That combination could not happen before.
+ *
+ * The page must not hand the headline to the new work. The model a professor
+ * has is still registered, still theirs, and still answering questions; saying
+ * "your course model is training" there tells them they have nothing while the
+ * thing they have keeps working.
+ * ------------------------------------------------------------------------ */
+
+describe('ProfessorModelPage while a new version trains', () => {
+  function retrainingRequest(status: 'preparing' | 'training') {
+    return {
+      courseId: 'css-360-winter-2026-a7rp',
+      status,
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-09-02T08:00:00.000Z',
+      approvedExampleCount: 54,
+      currentRunId: 'run-20260902t080000z-abcdef',
+    };
+  }
+
+  it('keeps the ready headline rather than reporting training', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(retrainingRequest('training'));
+    renderPage();
+
+    expect(
+      screen.getByText(/Your course model is ready, but offline/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Your course model is training/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the ready pill', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(retrainingRequest('training'));
+    renderPage();
+
+    expect(screen.getByText('Ready · offline')).toBeInTheDocument();
+    expect(screen.queryByText('Training')).not.toBeInTheDocument();
+  });
+
+  it('still shows the version they actually have', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(retrainingRequest('training'));
+    renderPage();
+
+    expect(screen.getByText('v1')).toBeInTheDocument();
+  });
+
+  it('mentions the update in one quiet line, without infrastructure', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(retrainingRequest('training'));
+    renderPage();
+
+    expect(
+      screen.getByText(/An updated version is being prepared/i),
+    ).toBeInTheDocument();
+    // No run id, no job id, no cluster.
+    expect(screen.queryByText(/run-20260902/)).not.toBeInTheDocument();
+  });
+
+  it('does the same while the retrain is still only prepared', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(retrainingRequest('preparing'));
+    renderPage();
+
+    expect(
+      screen.getByText(/Your course model is ready, but offline/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/An updated version is being prepared/i),
+    ).toBeInTheDocument();
+  });
+
+  it('still hands the headline to a first model being prepared', () => {
+    // The unchanged case: no model yet, so the request is the whole story.
+    mockRegistry(null);
+    mockRequest(retrainingRequest('training'));
+    renderPage();
+
+    expect(screen.getByText(/Your course model is training/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/An updated version is being prepared/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('says nothing extra when no retrain is under way', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(null);
+    renderPage();
+
+    expect(
+      screen.queryByText(/An updated version is being prepared/i),
+    ).not.toBeInTheDocument();
+  });
+});

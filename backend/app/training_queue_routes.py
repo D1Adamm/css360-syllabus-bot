@@ -299,6 +299,27 @@ class CompletionResponse(QueueModel):
     already_registered: bool = Field(default=False, alias="alreadyRegistered")
 
 
+class PublishVersionRequest(QueueModel):
+    """What the cluster says after an adapter is in place.
+
+    Everything here is optional and descriptive. The action is decided by the
+    URL — this course, this version — so a malformed body cannot publish
+    something other than what the path names.
+    """
+
+    source_ref: str | None = Field(default=None, alias="sourceRef", max_length=500)
+    published_at: str | None = Field(default=None, alias="publishedAt", max_length=64)
+
+
+class PublishVersionResponse(QueueModel):
+    course_id: str = Field(alias="courseId")
+    version: str
+    deployment: str
+    current_version: str | None = Field(default=None, alias="currentVersion")
+    previous_version: str | None = Field(default=None, alias="previousVersion")
+    unchanged: bool = False
+
+
 # --------------------------------------------------------------------------- #
 # Queue
 # --------------------------------------------------------------------------- #
@@ -1436,3 +1457,101 @@ def get_current_serving_session() -> ServingSessionResponse:
         ),
     )
     return ServingSessionResponse(session=session)
+
+
+@router.post(
+    "/courses/{course_id}/model-versions/{version}/published",
+    response_model=PublishVersionResponse,
+    dependencies=[Depends(require_worker_token)],
+)
+def record_model_version_published(
+    course_id: str, version: str, request: PublishVersionRequest | None = None
+) -> PublishVersionResponse:
+    """Record that a version's adapter is now in the cluster's serving tree.
+
+    Reported *after* the copy has succeeded and been validated, never before.
+    That ordering is the whole failure-safety story for an operation spanning
+    two machines: if the copy fails, nothing is reported and the database goes
+    on naming the version that really is published. The opposite order would
+    let a failed copy leave the application confidently routing every question
+    to an adapter that is not there.
+
+    Publication is what inference resolves from. Registering `v2` moves
+    `current_version` — a professor's newest model is the honest answer to
+    "what is my model" — but it does not move what answers questions, because
+    the cluster does not have `v2` until somebody puts it there. Without this
+    endpoint that gap was an outage: the backend asked for `v2`, the cluster had
+    only `v1`, and a course that was answering fine stopped.
+
+    Idempotent. Publishing the version that is already published is a no-op that
+    reports `unchanged`, so a rerun of the promote script, or a report delivered
+    twice after a network failure, cannot corrupt anything.
+
+    Not guarded by `_require_current_run`: publication is an operator's
+    deliberate act on a registered artifact, not a callback from a run that may
+    have been superseded. An admin who publishes an older version on purpose —
+    rolling back a bad `v2` to `v1` — is doing something this must allow.
+    """
+    safe_course_id = _safe_course_id(course_id)
+
+    if not VERSION_PATTERN.match(version):
+        raise HTTPException(
+            status_code=422, detail="version must look like v1, v2, …"
+        )
+
+    def work(connection: Any) -> tuple[str, str | None, str | None, bool]:
+        existing = db_models.list_model_versions(connection, safe_course_id)
+        by_version = {item["version"]: item for item in existing}
+
+        target = by_version.get(version)
+        if target is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f'Course "{safe_course_id}" has no registered model version '
+                    f'"{version}". Register it before publishing it.'
+                ),
+            )
+
+        # A version that is not ready is not an artifact anyone should be
+        # routed to, whatever is sitting on the cluster's filesystem.
+        if target.get("status") != "ready":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f'Version "{version}" is "{target.get("status")}", not ready. '
+                    "Only a ready version can be published."
+                ),
+            )
+
+        previous = next(
+            (
+                item["version"]
+                for item in existing
+                if item.get("deployment") == "online" and item["version"] != version
+            ),
+            None,
+        )
+        already = target.get("deployment") == "online"
+
+        registry = db_models.mark_version_published(
+            connection, safe_course_id, version
+        )
+        current = (registry or {}).get("currentVersion")
+        return current, previous, version, already
+
+    try:
+        current, previous, published, already = _run(
+            "recording a published model version", work
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return PublishVersionResponse(
+        courseId=safe_course_id,
+        version=published,
+        deployment="online",
+        currentVersion=current,
+        previousVersion=previous,
+        unchanged=already,
+    )

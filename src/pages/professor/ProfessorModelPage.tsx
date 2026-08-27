@@ -65,11 +65,27 @@ export function ProfessorModelPage() {
   const request = requestState.status === 'ready' ? requestState.request : null;
   // A terminal request tells the professor nothing they cannot see from the
   // model itself, so only outstanding work is surfaced.
-  const activeRequest =
+  const outstandingRequest =
     request && request.status !== 'ready' && request.status !== 'failed'
       ? request
       : null;
   const failedRequest = request?.status === 'failed' ? request : null;
+
+  /*
+   * Whether outstanding work should replace the headline, or sit under it.
+   *
+   * It replaces the headline only when there is no model yet — then "being
+   * prepared" is the whole story. Once a course has a ready model, a second
+   * one being built must not take over the page: the model they have is still
+   * registered, still theirs, and still answering questions. Saying "your
+   * course model is training" there would be a page telling a professor they
+   * have nothing while the thing they have keeps working.
+   *
+   * This became reachable when administrators gained a Train new version
+   * action. Before it, a ready course could never have outstanding work.
+   */
+  const buildingNewVersion = hasModel && outstandingRequest !== null;
+  const activeRequest = buildingNewVersion ? null : outstandingRequest;
 
   /*
    * The Request button appears only when all four are true:
@@ -145,6 +161,16 @@ export function ProfessorModelPage() {
                 Requested {new Date(activeRequest.requestedAt).toLocaleDateString()} ·{' '}
                 {activeRequest.approvedExampleCount} approved example
                 {activeRequest.approvedExampleCount === 1 ? '' : 's'} at the time
+              </p>
+            )}
+
+            {/* A new version being built is an addition to what they have,
+                not a replacement for it, so it reads as one quiet line under
+                the model they are still using. */}
+            {buildingNewVersion && (
+              <p className="ui-text-xs ui-text-muted" role="status">
+                An updated version is being prepared from your approved
+                examples. The model above keeps working until it is ready.
               </p>
             )}
 

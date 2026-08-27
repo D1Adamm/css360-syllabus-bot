@@ -29,6 +29,7 @@ COURSE_ID=""
 VERSION=""
 RUN_ID=""
 SET_CURRENT=1
+REPORT_PUBLICATION=1
 
 usage() {
   cat <<'EOF'
@@ -56,10 +57,17 @@ Options:
   --version <vN>        Registered model version this adapter is
   --run-id <runId>      Training run it came from, recorded in current.json
   --no-current          Publish the version without making it the current one
+  --no-report           Do not tell the application (leaves inference on the
+                        previously published version)
   --yes                 Skip the confirmation prompt
 
-Publishing does not restart the inference service and does not mark the model
-deployed. `status = ready` and `deployment = offline` remain separate facts.
+Publishing does not restart the inference service.
+
+It does report the publication to the application, after the copy has landed and
+been validated, and that report is what inference resolves from. `status` and
+`deployment` stay separate facts: `ready` means a usable adapter exists, and
+`online` means this is the version the cluster is actually serving. Registering
+a new version makes it ready; only publishing makes it served.
 EOF
 }
 
@@ -96,6 +104,10 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || die "--run-id requires a value"
       RUN_ID="$2"
       shift 2
+      ;;
+    --no-report)
+      REPORT_PUBLICATION=0
+      shift
       ;;
     --no-current)
       SET_CURRENT=0
@@ -204,11 +216,12 @@ else. Publish the new adapter as the next version instead."
   helpers validate-adapter-source "${DEST_ADAPTER}" >/dev/null \
     || die "Published adapter failed validation at ${DEST_ADAPTER}."
 
+  SOURCE_REF="$(helpers relative-output-ref "${SOURCE_ADAPTER}")"
+
   if [[ "${SET_CURRENT}" -eq 1 ]]; then
     # Written through a temp file and renamed: a reader either sees the previous
     # pointer or the new one, never a truncated file.
     POINTER_TMP="${POINTER}.tmp.$$"
-    SOURCE_REF="$(helpers relative-output-ref "${SOURCE_ADAPTER}")"
     python3 - "$POINTER_TMP" "$VERSION" "$COURSE_ID" "$RUN_ID" "$SOURCE_REF" <<'PY'
 import json
 import sys
@@ -229,6 +242,31 @@ with open(path, "w", encoding="utf-8") as handle:
 PY
     mv "${POINTER_TMP}" "${POINTER}" || die "Failed to update ${POINTER}."
     echo "Pointer updated: ${COURSE_ID} -> ${VERSION}"
+  fi
+
+  # Tell the application, and only now.
+  #
+  # Everything above has to have succeeded first. Inference resolves the
+  # published version from PostgreSQL, so reporting before the copy landed would
+  # route every question for this course at an adapter that is not there — the
+  # exact outage this reporting exists to prevent, just caused from the other
+  # side. A copy that fails reports nothing and the previously published version
+  # goes on serving.
+  #
+  # A report that cannot be delivered is persisted under training/state/pending/
+  # and sent by the next ./training/run_training_queue.sh --once. The reporter
+  # exits 0 in that case on purpose: the publication is real, and a nonzero exit
+  # here would make an operator think it had failed and run it again.
+  if [[ "${SET_CURRENT}" -eq 1 && "${REPORT_PUBLICATION}" -eq 1 ]]; then
+    echo
+    echo "Telling the application ${COURSE_ID} is serving ${VERSION}..."
+    python3 "${REPO_ROOT}/scripts/report_model_published.py" \
+      --course-id "${COURSE_ID}" \
+      --version "${VERSION}" \
+      --source-ref "${SOURCE_REF}" || {
+        echo "WARNING: could not report the publication. The adapter IS published;" >&2
+        echo "the report is queued and will be sent by the next queue run." >&2
+      }
   fi
 
   echo

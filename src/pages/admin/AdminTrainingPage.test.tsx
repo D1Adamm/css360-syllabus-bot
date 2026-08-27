@@ -49,6 +49,7 @@ vi.mock('../../lib/api', () => ({
 const fetchCourseModelRequest = vi.fn();
 const prepareTrainingDataForRequest = vi.fn();
 const queueTrainingForRequest = vi.fn();
+const queueNewVersionForRequest = vi.fn();
 const retryTrainingForRequest = vi.fn();
 const fetchCourseTrainingRuns = vi.fn();
 
@@ -63,6 +64,8 @@ vi.mock('../../lib/queueTraining', async () => {
   return {
     ...actual,
     queueTrainingForRequest: (...args: unknown[]) => queueTrainingForRequest(...args),
+    queueNewVersionForRequest: (...args: unknown[]) =>
+      queueNewVersionForRequest(...args),
     retryTrainingForRequest: (...args: unknown[]) => retryTrainingForRequest(...args),
   };
 });
@@ -182,6 +185,61 @@ const SUPERSEDED_RUN: TrainingRun = {
   error: 'Superseded by admin retry',
 };
 
+/*
+ * The state CSS 350 was actually in when the gap showed up: a request that has
+ * gone all the way to `ready`, a succeeded run, a registered v1, and a prepared
+ * dataset still sitting on the backend.
+ *
+ * Every control on the page was gated on `preparing`, so this course had no way
+ * to train again — the only visible actions were Rebuild dataset and Prepare
+ * training split, neither of which starts a run.
+ */
+const READY_SUCCEEDED_RUN: TrainingRun = {
+  runId: 'run-20260827t064701z-1cf650',
+  courseId: COURSE_ID,
+  mode: 'full',
+  state: 'succeeded',
+  enqueuedAt: '2026-08-27T06:40:00.000Z',
+  updatedAt: '2026-08-27T06:48:00.000Z',
+  datasetRef: `exports/${COURSE_ID}`,
+  approvedExampleCount: 42,
+  trainExamples: 37,
+  validationExamples: 5,
+  attempt: 1,
+  jobId: '264787',
+};
+
+const READY_REQUEST = {
+  courseId: COURSE_ID,
+  status: 'ready' as const,
+  requestedAt: '2026-08-20T09:00:00.000Z',
+  updatedAt: '2026-08-27T06:48:00.000Z',
+  approvedExampleCount: 42,
+  currentRunId: READY_SUCCEEDED_RUN.runId,
+  preparation: {
+    preparedAt: '2026-08-27T06:40:00.000Z',
+    sourceApprovedExampleCount: 42,
+    datasetRef: `exports/${COURSE_ID}`,
+    trainExamples: 37,
+    validationExamples: 5,
+    splitSeed: 360,
+  },
+};
+
+const NEW_VERSION_RUN: TrainingRun = {
+  runId: 'run-20260902t080000z-abcdef',
+  courseId: COURSE_ID,
+  mode: 'full',
+  state: 'queued',
+  enqueuedAt: '2026-09-02T08:00:00.000Z',
+  updatedAt: '2026-09-02T08:00:00.000Z',
+  datasetRef: `exports/${COURSE_ID}`,
+  approvedExampleCount: 42,
+  trainExamples: 37,
+  validationExamples: 5,
+  attempt: 0,
+};
+
 const QUEUED_RUN: TrainingRun = {
   runId: 'run-20260812t120000z-0a1b2c',
   courseId: COURSE_ID,
@@ -251,6 +309,7 @@ describe('AdminTrainingPage', () => {
     fetchCourseModelRequest.mockResolvedValue(null);
     fetchCourseTrainingRuns.mockResolvedValue([]);
     queueTrainingForRequest.mockResolvedValue({ run: QUEUED_RUN });
+    queueNewVersionForRequest.mockResolvedValue({ run: NEW_VERSION_RUN });
     retryTrainingForRequest.mockResolvedValue({
       run: REPLACEMENT_RUN,
       supersededRunId: STALE_SUBMITTED_RUN.runId,
@@ -946,5 +1005,177 @@ describe('AdminTrainingPage', () => {
       await screen.findByText(/The service could not be reached/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Retired run-/)).toBeNull();
+  });
+
+  /* ------------------------------------------------------------------------ *
+   * Training a new version of a model that already exists
+   *
+   * CSS 350 reached `ready` with v1 registered, a succeeded run, and 37/5 still
+   * prepared — and the page offered no way to train again. `canQueueTraining`
+   * requires `preparing`, so the Queue training control disappears the moment a
+   * course succeeds.
+   *
+   * Retry was not the answer and these assert why: it retires the run a course is
+   * waiting on, which would rewrite a succeeded run as failed to get a side
+   * effect.
+   * ------------------------------------------------------------------------ */
+
+  describe('training a new version', () => {
+    async function openRetrainConfirmation() {
+      fireEvent.click(await screen.findByRole('button', { name: /Train new version/i }));
+      return screen.findByRole('alertdialog');
+    }
+
+    it('offers Train new version for a ready course with a finished run', async () => {
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+
+      renderPage();
+
+      expect(
+        await screen.findByRole('button', { name: /Train new version/i }),
+      ).toBeInTheDocument();
+    });
+
+    it('does not offer Retry training for a run that succeeded', async () => {
+      // Retry is disaster recovery. A succeeded run has nothing to recover from,
+      // and retiring it would destroy a good result to reuse a code path.
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+
+      renderPage();
+      await screen.findByRole('button', { name: /Train new version/i });
+
+      expect(screen.queryByRole('button', { name: /Retry training/i })).toBeNull();
+    });
+
+    it('does not offer it while a run is still outstanding', async () => {
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([
+        READY_SUCCEEDED_RUN,
+        NEW_VERSION_RUN,
+      ]);
+
+      renderPage();
+      await screen.findAllByText(new RegExp(NEW_VERSION_RUN.runId));
+
+      expect(screen.queryByRole('button', { name: /Train new version/i })).toBeNull();
+    });
+
+    it('does not offer it for a course still being prepared', async () => {
+      // That course gets Queue training instead. Two controls for one state
+      // would be two ways to do the same thing.
+      fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([]);
+
+      renderPage();
+      await screen.findByRole('button', { name: /Queue training/i });
+
+      expect(screen.queryByRole('button', { name: /Train new version/i })).toBeNull();
+    });
+
+    it('asks for confirmation and names the dataset it will reuse', async () => {
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+
+      renderPage();
+      const dialog = await openRetrainConfirmation();
+
+      expect(within(dialog).getByText(/37 train \/ 5 validation/)).toBeInTheDocument();
+      expect(within(dialog).getByText(/Nothing is re-exported/)).toBeInTheDocument();
+      expect(within(dialog).getByText(/GPU time/)).toBeInTheDocument();
+      // Nothing has happened yet.
+      expect(queueNewVersionForRequest).not.toHaveBeenCalled();
+    });
+
+    it('says earlier runs and the current model are kept', async () => {
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+
+      renderPage();
+      const dialog = await openRetrainConfirmation();
+
+      expect(within(dialog).getByText(/Every earlier run is kept/)).toBeInTheDocument();
+      expect(
+        within(dialog).getByText(/stays registered and keeps serving/),
+      ).toBeInTheDocument();
+    });
+
+    it('does nothing when the confirmation is cancelled', async () => {
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+
+      renderPage();
+      const dialog = await openRetrainConfirmation();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() => {
+        expect(screen.queryByRole('alertdialog')).toBeNull();
+      });
+      expect(queueNewVersionForRequest).not.toHaveBeenCalled();
+    });
+
+    it('queues the run once confirmed, passing the request and its history', async () => {
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+
+      renderPage();
+      const dialog = await openRetrainConfirmation();
+      fireEvent.click(within(dialog).getByRole('button', { name: /Queue new run/i }));
+
+      await waitFor(() => {
+        expect(queueNewVersionForRequest).toHaveBeenCalledWith(
+          COURSE_ID,
+          READY_REQUEST,
+          [READY_SUCCEEDED_RUN],
+        );
+      });
+      expect(queueNewVersionForRequest).toHaveBeenCalledTimes(1);
+      expect(retryTrainingForRequest).not.toHaveBeenCalled();
+    });
+
+    it('reports the new run and that nothing was replaced', async () => {
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+
+      renderPage();
+      const dialog = await openRetrainConfirmation();
+      fireEvent.click(within(dialog).getByRole('button', { name: /Queue new run/i }));
+
+      expect(
+        await screen.findAllByText(new RegExp(NEW_VERSION_RUN.runId)),
+      ).not.toHaveLength(0);
+      expect(
+        await screen.findByText(/Earlier runs and the current model version are unchanged/),
+      ).toBeInTheDocument();
+    });
+
+    it('surfaces a duplicate refusal without claiming anything was queued', async () => {
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+      queueNewVersionForRequest.mockRejectedValue(new DuplicateTrainingRunError());
+
+      renderPage();
+      const dialog = await openRetrainConfirmation();
+      fireEvent.click(within(dialog).getByRole('button', { name: /Queue new run/i }));
+
+      expect(
+        await screen.findByText(/already queued or under way/i),
+      ).toBeInTheDocument();
+    });
+
+    it('does not offer it when there is no dataset to reuse', async () => {
+      const { preparation, ...withoutPreparation } = READY_REQUEST;
+      void preparation;
+      fetchCourseModelRequest.mockResolvedValue(withoutPreparation);
+      fetchCourseTrainingRuns.mockResolvedValue([
+        { ...READY_SUCCEEDED_RUN, datasetRef: '' },
+      ]);
+
+      renderPage();
+      await screen.findAllByText(new RegExp(READY_SUCCEEDED_RUN.runId));
+
+      expect(screen.queryByRole('button', { name: /Train new version/i })).toBeNull();
+    });
   });
 });

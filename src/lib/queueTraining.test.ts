@@ -32,10 +32,15 @@ vi.mock('./courseModelRequestDb', () => ({
 }));
 
 import { DuplicateTrainingRunError } from './trainingRunDb';
+import { ApiError } from './api';
 import {
+  canQueueNewVersion,
   canQueueTraining,
   canRetryTraining,
   findRetryTargetRun,
+  findReusableDataset,
+  NoReusableDatasetError,
+  queueNewVersionForRequest,
   queueTrainingForRequest,
   retryTrainingForRequest,
   TrainingNotPreparedError,
@@ -463,5 +468,248 @@ describe('retryTrainingForRequest', () => {
     await expect(retryTrainingForRequest(COURSE_490)).rejects.toThrow(
       /held by adam@tillicum/,
     );
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * Training a new version of a model that already exists
+ *
+ * The gap: `canQueueTraining` requires `status === 'preparing'`, so once a run
+ * succeeded and the request went `ready` there was no supported way to train
+ * again. CSS 350 sat in exactly that state — ready, v1 registered, dataset
+ * prepared, and no action on the page that would start another run.
+ *
+ * The temptation was to use Retry, which is why several of these assert what
+ * a retrain does *not* do. Retry retires the run a course is waiting on; a
+ * retrain of a succeeded run must supersede nothing at all.
+ * ------------------------------------------------------------------------ */
+
+const READY_REQUEST: CourseModelRequest = {
+  courseId: COURSE_490,
+  status: 'ready',
+  requestedAt: '2026-08-11T10:00:00.000Z',
+  updatedAt: '2026-08-27T06:48:00.000Z',
+  approvedExampleCount: 42,
+  currentRunId: 'run-20260827t064701z-1cf650',
+  preparation: {
+    preparedAt: '2026-08-27T06:40:00.000Z',
+    sourceApprovedExampleCount: 42,
+    datasetRef: `exports/${COURSE_490}`,
+    trainExamples: 37,
+    validationExamples: 5,
+    splitSeed: 360,
+  },
+};
+
+const SUCCEEDED_RUN: TrainingRun = {
+  runId: 'run-20260827t064701z-1cf650',
+  courseId: COURSE_490,
+  mode: 'full',
+  state: 'succeeded',
+  enqueuedAt: '2026-08-27T06:40:00.000Z',
+  updatedAt: '2026-08-27T06:48:00.000Z',
+  datasetRef: `exports/${COURSE_490}`,
+  approvedExampleCount: 42,
+  trainExamples: 37,
+  validationExamples: 5,
+  attempt: 1,
+  jobId: '264787',
+};
+
+describe('canQueueNewVersion', () => {
+  it('is offered for a ready course whose runs are all finished', () => {
+    expect(canQueueNewVersion(READY_REQUEST, [SUCCEEDED_RUN])).toBe(true);
+  });
+
+  it('is offered for a failed request too, so a course is never stuck', () => {
+    expect(
+      canQueueNewVersion({ ...READY_REQUEST, status: 'failed' }, [
+        { ...SUCCEEDED_RUN, state: 'failed' },
+      ]),
+    ).toBe(true);
+  });
+
+  it('is refused while a run is still outstanding', () => {
+    // The same rule the backend enforces atomically on the insert. A course
+    // never gets two runs competing for one queue slot.
+    expect(
+      canQueueNewVersion(READY_REQUEST, [
+        SUCCEEDED_RUN,
+        { ...QUEUED_RUN, state: 'submitted', jobId: '999' },
+      ]),
+    ).toBe(false);
+  });
+
+  it('is refused while a request is still being prepared or trained', () => {
+    // That course has `canQueueTraining` instead. Two controls for one state
+    // would be two ways to do the same thing.
+    expect(canQueueNewVersion(PREPARED, [])).toBe(false);
+    expect(canQueueNewVersion({ ...READY_REQUEST, status: 'training' }, [])).toBe(
+      false,
+    );
+  });
+
+  it('is refused when there is no dataset to reuse', () => {
+    const { preparation, ...withoutPreparation } = READY_REQUEST;
+    void preparation;
+
+    expect(canQueueNewVersion(withoutPreparation as CourseModelRequest, [])).toBe(
+      false,
+    );
+  });
+
+  it('is refused when there is no request at all', () => {
+    expect(canQueueNewVersion(null, [SUCCEEDED_RUN])).toBe(false);
+  });
+});
+
+describe('findReusableDataset', () => {
+  it('prefers the request preparation record', () => {
+    expect(findReusableDataset(READY_REQUEST, [SUCCEEDED_RUN])).toEqual({
+      datasetRef: `exports/${COURSE_490}`,
+      approvedExampleCount: 42,
+      trainExamples: 37,
+      validationExamples: 5,
+    });
+  });
+
+  it('falls back to the newest run that carried a dataset', () => {
+    // A course whose model was registered by hand has no preparation record,
+    // and must still be retrainable.
+    const { preparation, ...withoutPreparation } = READY_REQUEST;
+    void preparation;
+
+    expect(
+      findReusableDataset(withoutPreparation as CourseModelRequest, [
+        { ...SUCCEEDED_RUN, datasetRef: '' },
+        SUCCEEDED_RUN,
+      ]),
+    ).toEqual({
+      datasetRef: `exports/${COURSE_490}`,
+      approvedExampleCount: 42,
+      trainExamples: 37,
+      validationExamples: 5,
+    });
+  });
+
+  it('is null when nothing anywhere names a dataset', () => {
+    const { preparation, ...withoutPreparation } = READY_REQUEST;
+    void preparation;
+
+    expect(
+      findReusableDataset(withoutPreparation as CourseModelRequest, [
+        { ...SUCCEEDED_RUN, datasetRef: '' },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe('queueNewVersionForRequest', () => {
+  it('reuses the prepared dataset rather than re-exporting anything', async () => {
+    await queueNewVersionForRequest(COURSE_490, READY_REQUEST, [SUCCEEDED_RUN]);
+
+    expect(enqueueTrainingRun).toHaveBeenCalledWith(COURSE_490, {
+      mode: 'full',
+      datasetRef: `exports/${COURSE_490}`,
+      approvedExampleCount: 42,
+      trainExamples: 37,
+      validationExamples: 5,
+    });
+  });
+
+  it('points the request at the new run', async () => {
+    /*
+     * Not bookkeeping. Every cluster callback is checked against
+     * `currentRunId`, so leaving it on the finished run would make the new
+     * run's own submission and completion reports 409 as superseded — it would
+     * train and then be unable to say so.
+     */
+    await queueNewVersionForRequest(COURSE_490, READY_REQUEST, [SUCCEEDED_RUN]);
+
+    expect(updateCourseModelRequest).toHaveBeenCalledWith(COURSE_490, {
+      currentRunId: QUEUED_RUN.runId,
+      launchError: '',
+    });
+  });
+
+  it('does not move the request status', async () => {
+    // It is `ready`, and it is still true: the professor has a model and it
+    // keeps working. The cluster moves it to `training` when a job exists.
+    await queueNewVersionForRequest(COURSE_490, READY_REQUEST, [SUCCEEDED_RUN]);
+
+    const patch = updateCourseModelRequest.mock.calls[0]?.[1] as Record<
+      string,
+      unknown
+    >;
+    expect(patch).not.toHaveProperty('status');
+  });
+
+  it('never retires the finished run', async () => {
+    // The whole difference from Retry. A succeeded run keeps its state, its
+    // job id and its place in the history.
+    await queueNewVersionForRequest(COURSE_490, READY_REQUEST, [SUCCEEDED_RUN]);
+
+    expect(retryTrainingRun).not.toHaveBeenCalled();
+  });
+
+  it('gets a fresh run id from the backend rather than inventing one', async () => {
+    const result = await queueNewVersionForRequest(COURSE_490, READY_REQUEST, [
+      SUCCEEDED_RUN,
+    ]);
+
+    expect(result.run.runId).toBe(QUEUED_RUN.runId);
+    expect(result.run.runId).not.toBe(SUCCEEDED_RUN.runId);
+  });
+
+  it('refuses when the course is not finished with its current work', async () => {
+    await expect(
+      queueNewVersionForRequest(COURSE_490, PREPARED, []),
+    ).rejects.toBeInstanceOf(TrainingNotPreparedError);
+    expect(enqueueTrainingRun).not.toHaveBeenCalled();
+  });
+
+  it('refuses when there is no prepared dataset to reuse', async () => {
+    const { preparation, ...withoutPreparation } = READY_REQUEST;
+    void preparation;
+
+    await expect(
+      queueNewVersionForRequest(
+        COURSE_490,
+        withoutPreparation as CourseModelRequest,
+        [],
+      ),
+    ).rejects.toBeInstanceOf(NoReusableDatasetError);
+    expect(enqueueTrainingRun).not.toHaveBeenCalled();
+  });
+
+  it('refuses before writing when a run is already outstanding', async () => {
+    fetchCourseTrainingRuns.mockResolvedValue([
+      { ...QUEUED_RUN, state: 'submitted', jobId: '999' },
+    ]);
+
+    await expect(
+      queueNewVersionForRequest(COURSE_490, READY_REQUEST, [SUCCEEDED_RUN]),
+    ).rejects.toBeInstanceOf(DuplicateTrainingRunError);
+    expect(enqueueTrainingRun).not.toHaveBeenCalled();
+  });
+
+  it('translates the backend 409 into the same duplicate error', async () => {
+    // The read above can be stale. The backend's conditional INSERT is the
+    // guard, and losing that race must read the same as losing the local one.
+    enqueueTrainingRun.mockRejectedValue(
+      new ApiError('This course already has an active training run.', 409),
+    );
+
+    await expect(
+      queueNewVersionForRequest(COURSE_490, READY_REQUEST, [SUCCEEDED_RUN]),
+    ).rejects.toBeInstanceOf(DuplicateTrainingRunError);
+    expect(updateCourseModelRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid course id before any request is made', async () => {
+    await expect(
+      queueNewVersionForRequest('../etc', READY_REQUEST, [SUCCEEDED_RUN]),
+    ).rejects.toBeInstanceOf(Error);
+    expect(enqueueTrainingRun).not.toHaveBeenCalled();
   });
 });

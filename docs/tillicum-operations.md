@@ -15,7 +15,25 @@ Everything after the login is meant to be one command.
 
 ## Training: the normal flow
 
-An administrator queues a run from the Admin → Training page. Then:
+An administrator queues a run from the Admin → Training page, using whichever
+of the two controls applies:
+
+| Course state | Control | What it does |
+| --- | --- | --- |
+| Request `preparing`, data prepared, no active run | **Queue training** | The first run for a course. |
+| Request `ready` or `failed`, no active run | **Train new version** | Another run for a course that already finished one. Every earlier run and registered version is kept. |
+| A run stuck in `submitted`/`training` and silent for 6 h | **Retry training** | Disaster recovery. Retires the stuck run and queues a replacement. |
+
+**Train new version** and **Retry training** are not interchangeable. Retry
+*retires* the run a course is waiting on — using it on a run that succeeded
+would rewrite a good result as `failed` to get a side effect. Retraining
+supersedes nothing.
+
+Both reuse the dataset already prepared for the course. Nothing is re-exported
+and no split is recomputed unless an administrator explicitly runs **Rebuild
+dataset** and **Prepare training split** first.
+
+Then:
 
 ```bash
 ssh $USER@tillicum.hyak.uw.edu           # UW password + Duo, by hand
@@ -129,6 +147,29 @@ Publishing an adapter for a course:
 A version is written once. Re-publishing over an existing version is refused,
 because a registered model version refers to that directory by reference and
 replacing it in place would make the record describe something else.
+
+### Registered is not published, and inference follows published
+
+| Fact | Where | Meaning |
+| --- | --- | --- |
+| `status = ready` | `course_model_versions` | A usable adapter exists somewhere. |
+| `deployment = online` | `course_model_versions` | This version is in the cluster's serving tree. **Inference resolves this one.** |
+| `current_version` | `course_models` | The newest registered version — what a professor is shown. |
+| `current.json` | `<SERVING_ROOT>/<courseId>/` | The cluster's own record of the same publication, used when a request arrives without a version. |
+
+Training a new version makes it `ready` and moves `current_version`. It does not
+move what answers questions, because the cluster does not have the new adapter
+until somebody puts it there. Publishing is what changes the answer, and
+`promote_qlora_adapter.sh` reports it to the backend **after** the copy has
+landed and been validated.
+
+Without that split, training a new version took the old one offline: the backend
+started asking for `v2`, the cluster only had `v1`, and every fine-tuned request
+for that course failed until `v2` was published.
+
+A course that has never had a publication reported falls back to
+`current_version`, which is how every course from before this reporting keeps
+answering exactly as it did.
 
 The service loads the base model once and attaches one adapter per course on top
 of it, choosing per request. A LoRA adapter here is ~47 MB against a ~2.5 GB
@@ -478,10 +519,23 @@ Stop when finished:
 
 ### Stage B — the automated training lifecycle
 
-Only after Stage A works.
+Only after Stage A works — and Stage A must end with **v1 reported as
+published**, which the `promote_qlora_adapter.sh` command above now does. Check
+it before starting:
 
-1. Admin → Training: **Prepare training data** for CSS 350, then **Queue
-   training**.
+```bash
+curl -s http://127.0.0.1:8001/api/db/courses/css-350-spring-2026-n3h9/model
+```
+
+Expect `v1` with `"deployment": "online"`. If it says `offline`, re-run the
+Stage A publish command — it is idempotent — so that inference has a published
+version to hold on to while `v2` trains.
+
+1. Admin → Training, on the CSS 350 row: **Train new version**, and confirm.
+   (Not **Queue training** — that control belongs to a course's first run and
+   is not offered here. Not **Retry training** either: CSS 350's run succeeded,
+   and retry would retire it.) The dialog names the dataset being reused —
+   37 train / 5 validation from 42 approved. Nothing is re-exported.
 2. Tillicum: `./training/run_training_queue.sh --once --dry-run` — expect
    `37 train / 5 validation`, either `already matches` or `would download`, and
    `Wall clock: 01:00:00`.
@@ -493,8 +547,32 @@ Only after Stage A works.
 
 **The new version is `v2`, not `v1`.** CSS 350's `v1` already exists, and
 registration allocates the next unused version for a run it has never seen
-before. Nothing overwrites `v1`, and its published adapter keeps serving until
-`v2` is published deliberately.
+before. Nothing overwrites `v1`.
+
+**And `v1` keeps serving.** While `v2` is `ready` / `offline`, every fine-tuned
+answer still comes from `v1` — check it:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate -H 'Content-Type: application/json' -d '{"courseId":"css-350-spring-2026-n3h9","question":"When does the course meet?"}'
+```
+
+Expect `"modelVersion": "v1"` even though the registry's current version is now
+`v2`. Then publish `v2` deliberately:
+
+```bash
+./training/promote_qlora_adapter.sh --course css-350-spring-2026-n3h9 --version v2 --run-id <new-run-id> /gpfs/projects/simswe/madamk/training_outputs/qlora-runs/css-350-spring-2026-n3h9/<new-run>-full/adapter
+```
+
+Re-run the same question. It now answers `"modelVersion": "v2"`, and `v1`
+remains registered and ready with `deployment: offline`.
+
+The earlier run `run-20260827t064701z-1cf650` stays `succeeded` with job
+`264787` throughout, and appears in **Training jobs** alongside the new one.
+
+While the retrain is under way the professor's Model page keeps saying their
+model is ready, with one line noting an updated version is being prepared. It
+does not report "training", because the model they have is still registered and
+still working.
 
 Neither `sync_training_data_to_tillicum.sh` nor `register_course_model.py` is
 run at any point.
