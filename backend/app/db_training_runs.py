@@ -40,6 +40,47 @@ RUN_STATES = ("queued", "claimed", "submitted", "training", "succeeded", "failed
 # Everything else is outstanding work, and outstanding work blocks a second run.
 TERMINAL_RUN_STATES = ("succeeded", "failed")
 
+# What an admin retry writes onto the run it retires.
+#
+# The state stays `failed` rather than becoming a new `superseded` one. Adding
+# a state is cheap in PostgreSQL — `state` is plain TEXT with no CHECK — and
+# expensive everywhere else: `parseTrainingRun` in `src/lib/trainingRunDb.ts`
+# drops any run whose state is not in its union, so an unrecognised state makes
+# the old run disappear from the history this feature exists to preserve, on
+# every browser that has not yet loaded the new bundle. `failed` is already
+# terminal, already rendered, already understood by the worker, and the reason
+# string says plainly what happened.
+SUPERSEDED_ERROR = "Superseded by admin retry"
+
+# States an admin may supersede outright.
+#
+# Only `failed`, which is terminal: nothing is running, so nothing can report
+# back. Every other retryable case has to earn it, in
+# `training_run_retry_block`.
+RETRYABLE_RUN_STATES = ("failed",)
+
+# States where a Slurm job may exist, so a retry needs evidence of staleness.
+#
+# The backend cannot see Slurm. It cannot tell "the job finished and the
+# callback was lost" from "the job is still running", and those two need
+# opposite answers: the first is exactly what retry is for, the second means a
+# live job is about to report against a run an admin just retired.
+#
+# Age is the only evidence available. A run whose row has not been touched for
+# `SUBMITTED_STALE_AFTER_SECONDS` is one nothing is reporting on, because a
+# healthy job's own callbacks are what would have touched it.
+LIVE_JOB_RUN_STATES = ("submitted", "training")
+
+# Six hours. Long enough that no healthy run is superseded by an impatient
+# click — a full QLoRA run on a course this size finishes well inside it, and a
+# queue wait does not move `updated_at`. Short enough that a genuinely lost
+# callback is recoverable the same working day.
+#
+# This is a floor, not a diagnosis. The ownership guard in
+# `update_model_request_for_run` is what makes a wrong retry harmless; this
+# constant is what makes a wrong retry unlikely.
+SUBMITTED_STALE_AFTER_SECONDS = 6 * 60 * 60
+
 MODES = ("smoke", "full")
 
 # How long a claim is held before another worker may retake it. Matches the
@@ -181,6 +222,121 @@ def find_active_training_run(conn: Any, course_id: str) -> dict[str, Any] | None
         )
         row = cursor.fetchone()
     return map_training_run(row) if row else None
+
+
+def _seconds_since_update(run: Mapping[str, Any], now: datetime) -> float | None:
+    """How long this run's row has been untouched, or None if unknowable.
+
+    None means "treat as stale". A row with no readable `updatedAt` is one
+    nothing has reported against in a way this can see, which is the same
+    conclusion a very old timestamp supports.
+    """
+    raw = optional_string(run.get("updatedAt")) or optional_string(
+        run.get("enqueuedAt")
+    )
+    if not raw:
+        return None
+    try:
+        updated_at = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    return (now - updated_at).total_seconds()
+
+
+def _describe_idle(seconds: float) -> str:
+    if seconds < 90:
+        return "less than a minute"
+    if seconds < 5400:
+        return f"{seconds / 60:.0f} minutes"
+    return f"{seconds / 3600:.1f} hours"
+
+
+def _claim_has_expired(run: Mapping[str, Any], now: datetime) -> bool:
+    """True when nothing can be said to hold this run any more.
+
+    A missing claim, or one whose expiry cannot be parsed, counts as expired —
+    the same reading `CLAIMABLE_PREDICATE` gives a NULL `claim_expires_at`. A
+    lease nothing can reason about is not a lease.
+    """
+    claim = run.get("claim")
+    if not isinstance(claim, Mapping):
+        return True
+
+    raw = optional_string(claim.get("expiresAt"))
+    if not raw:
+        return True
+
+    try:
+        expires_at = datetime.fromisoformat(raw)
+    except ValueError:
+        return True
+
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= now
+
+
+def training_run_retry_block(
+    run: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+) -> str | None:
+    """Why this run may not be superseded, or None when it may be.
+
+    A returned string is the refusal an operator reads, so each one says what
+    is true of the run rather than restating the policy.
+
+    The policy in one place, because "may an admin retry this?" is asked by the
+    route, by the tests, and — in a looser advisory form — by the button.
+
+    The conservative half is `queued` and `claimed`. A queued run is already
+    exactly what a retry would produce, so superseding one destroys a healthy
+    run and creates its twin. A claimed run is being worked on by a runner
+    right now; the only case the backend can *prove* is stale is a lease that
+    has run out, which is the same evidence `claim_next_training_run` acts on
+    when it retakes work.
+    """
+    moment = now or datetime.now(timezone.utc)
+    state = run.get("state")
+
+    if state in RETRYABLE_RUN_STATES:
+        return None
+
+    if state in LIVE_JOB_RUN_STATES:
+        idle = _seconds_since_update(run, moment)
+        if idle is None or idle >= SUBMITTED_STALE_AFTER_SECONDS:
+            return None
+        hours = SUBMITTED_STALE_AFTER_SECONDS / 3600
+        job = run.get("jobId")
+        return (
+            f"This run reported {_describe_idle(idle)} ago"
+            + (f" and its job ({job}) may still be running" if job else "")
+            + f". A run is only retried once it has been silent for {hours:.0f} "
+            "hours, so a live job is not retired underneath itself."
+        )
+
+    if state == "succeeded":
+        return "This run succeeded. Retrying it would discard a finished result."
+
+    if state == "queued":
+        return (
+            "This run is already queued and waiting for a worker. "
+            "There is nothing to retry."
+        )
+
+    if state == "claimed":
+        if _claim_has_expired(run, moment):
+            return None
+        claim = run.get("claim") or {}
+        owner = claim.get("owner") or "a worker"
+        return (
+            f"This run is held by {owner} until {claim.get('expiresAt')}. "
+            "Wait for the lease to expire before retrying."
+        )
+
+    return f'This run is in an unrecognised state ("{state}") and was not retried.'
 
 
 def enqueue_training_run(
@@ -466,6 +622,28 @@ def fail_training_run(
             "claim": None,
         },
     )
+
+
+def supersede_training_run(
+    conn: Any,
+    course_id: str,
+    run_id: str,
+    *,
+    error: str = SUPERSEDED_ERROR,
+    now: datetime | None = None,
+) -> dict[str, Any] | None:
+    """Retire a run an admin has replaced, keeping everything it recorded.
+
+    `fail_training_run` does the write — the retired run is terminally failed,
+    which is what makes the course free to queue its replacement. The reason
+    string is what distinguishes it from a run that failed on the cluster.
+
+    Nothing else on the row is touched. `job_id`, `attempt`, `enqueued_at` and
+    the counts stay exactly as they were, because the point of retiring rather
+    than deleting is that an operator can still see which Slurm job this course
+    was waiting on and how long it waited.
+    """
+    return fail_training_run(conn, course_id, run_id, error=error, now=now)
 
 
 def mark_training_run_submitted(

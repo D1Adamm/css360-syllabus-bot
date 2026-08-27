@@ -882,3 +882,21 @@ class EnqueueTrainingRunResponse(BaseModel):
     course_id: str = Field(alias="courseId")
     run_id: str = Field(alias="runId")
     run: dict[str, Any]
+
+
+class RetryTrainingRunResponse(BaseModel):
+    """What an admin retry did, both halves of it.
+
+    The superseded run is returned alongside the new one on purpose: the whole
+    point of the action is that a run was retired rather than removed, and the
+    caller should be able to show that without a second read.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    run_id: str = Field(alias="runId")
+    run: dict[str, Any]
+    superseded_run_id: str = Field(alias="supersededRunId")
+    superseded_run: dict[str, Any] = Field(alias="supersededRun")
+    request_status: str | None = Field(default=None, alias="requestStatus")

@@ -452,3 +452,33 @@ export async function enqueueTrainingRun(
     'The service could not be reached.',
   );
 }
+
+export interface RetryTrainingRunResponse {
+  courseId: string;
+  runId: string;
+  run: Record<string, unknown>;
+  supersededRunId: string;
+  supersededRun: Record<string, unknown>;
+  requestStatus?: string | null;
+}
+
+/**
+ * Retire this course's stale run and queue a replacement for the same dataset.
+ *
+ * The recovery path for a run PostgreSQL still believes is active when it is
+ * not — a cluster job that finished without its completion callback ever
+ * landing. The browser sends no state of its own: which run is current,
+ * whether it may be replaced, and what the replacement inherits are all decided
+ * in one backend transaction under a row lock. A second click therefore cannot
+ * queue a second run; it is refused with 409.
+ */
+export async function retryTrainingRun(
+  courseId: string,
+): Promise<RetryTrainingRunResponse> {
+  return postJson<RetryTrainingRunResponse>(
+    `/courses/${encodeURIComponent(courseId)}/training-runs/retry`,
+    {},
+    'The backend could not retry this training run.',
+    'The service could not be reached.',
+  );
+}

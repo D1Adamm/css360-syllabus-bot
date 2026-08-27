@@ -251,7 +251,12 @@ class LifecycleTests(QueueApiTestCase):
         """One transaction. The two records cannot disagree about the job."""
         patches: list[dict[str, Any]] = []
 
-        def _update_request(connection: Any, course_id: str, patch_body: dict[str, Any]):
+        def _update_request(
+            connection: Any,
+            course_id: str,
+            run_id: str,
+            patch_body: dict[str, Any],
+        ):
             patches.append({"courseId": course_id, **patch_body})
             return {"courseId": course_id, "status": patch_body["status"]}
 
@@ -265,7 +270,11 @@ class LifecycleTests(QueueApiTestCase):
                 return_value=_run(state="submitted", jobId="123456"),
             ),
             patch(
-                "app.training_queue_routes.db_model_requests.update_model_request",
+                "app.training_queue_routes.db_model_requests.lock_model_request",
+                return_value={"courseId": COURSE, "currentRunId": RUN_ID},
+            ),
+            patch(
+                "app.training_queue_routes.db_model_requests.update_model_request_for_run",
                 side_effect=_update_request,
             ),
         ):
@@ -300,8 +309,12 @@ class LifecycleTests(QueueApiTestCase):
                 return_value=_run(state="queued", error="launcher exited nonzero"),
             ),
             patch(
-                "app.training_queue_routes.db_model_requests.update_model_request",
-                side_effect=lambda c, cid, body: patches.append(body),
+                "app.training_queue_routes.db_model_requests.lock_model_request",
+                return_value={"courseId": COURSE, "currentRunId": RUN_ID},
+            ),
+            patch(
+                "app.training_queue_routes.db_model_requests.update_model_request_for_run",
+                side_effect=lambda c, cid, rid, body: patches.append(body),
             ),
         ):
             response = self.client.post(
@@ -330,8 +343,12 @@ class LifecycleTests(QueueApiTestCase):
                 return_value=_run(state="failed", error="the job died"),
             ),
             patch(
-                "app.training_queue_routes.db_model_requests.update_model_request",
-                side_effect=lambda c, cid, body: patches.append(body),
+                "app.training_queue_routes.db_model_requests.lock_model_request",
+                return_value={"courseId": COURSE, "currentRunId": RUN_ID},
+            ),
+            patch(
+                "app.training_queue_routes.db_model_requests.update_model_request_for_run",
+                side_effect=lambda c, cid, rid, body: patches.append(body),
             ),
         ):
             response = self.client.post(
@@ -409,8 +426,19 @@ class ModelRegistrationTests(QueueApiTestCase):
                 side_effect=_upsert,
             ),
             patch(
+                "app.training_queue_routes.db_model_requests.lock_model_request",
+                return_value={"courseId": COURSE, "currentRunId": RUN_ID},
+            ),
+            patch(
                 "app.training_queue_routes.db_model_requests.update_model_request",
                 side_effect=lambda c, cid, b: (
+                    self.request_patches.append(b) or {"status": b.get("status")}
+                ),
+            ),
+            # A registration that names a run goes through the ownership guard.
+            patch(
+                "app.training_queue_routes.db_model_requests.update_model_request_for_run",
+                side_effect=lambda c, cid, rid, b: (
                     self.request_patches.append(b) or {"status": b.get("status")}
                 ),
             ),

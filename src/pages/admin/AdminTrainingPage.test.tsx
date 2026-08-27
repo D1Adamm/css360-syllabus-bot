@@ -49,6 +49,7 @@ vi.mock('../../lib/api', () => ({
 const fetchCourseModelRequest = vi.fn();
 const prepareTrainingDataForRequest = vi.fn();
 const queueTrainingForRequest = vi.fn();
+const retryTrainingForRequest = vi.fn();
 const fetchCourseTrainingRuns = vi.fn();
 
 vi.mock('../../lib/courseModelRequestDb', () => ({
@@ -62,6 +63,7 @@ vi.mock('../../lib/queueTraining', async () => {
   return {
     ...actual,
     queueTrainingForRequest: (...args: unknown[]) => queueTrainingForRequest(...args),
+    retryTrainingForRequest: (...args: unknown[]) => retryTrainingForRequest(...args),
   };
 });
 
@@ -113,6 +115,71 @@ const PREPARED_REQUEST = {
     validationExamples: 4,
     splitSeed: 360,
   },
+};
+
+/**
+ * The stuck shape this feature exists for: a submitted run whose cluster job
+ * finished without a completion callback ever reaching PostgreSQL.
+ */
+const STALE_SUBMITTED_RUN: TrainingRun = {
+  runId: 'run-20260823t064333z-3c94f0',
+  courseId: COURSE_ID,
+  mode: 'full',
+  state: 'submitted',
+  enqueuedAt: '2026-08-23T06:40:00.000Z',
+  updatedAt: '2026-08-23T06:43:33.000Z',
+  datasetRef: `exports/${COURSE_ID}`,
+  approvedExampleCount: 42,
+  trainExamples: 37,
+  validationExamples: 5,
+  attempt: 1,
+  jobId: '253552',
+};
+
+const STALE_REQUEST = {
+  courseId: COURSE_ID,
+  status: 'training' as const,
+  requestedAt: '2026-08-20T09:00:00.000Z',
+  updatedAt: '2026-08-23T06:43:33.000Z',
+  approvedExampleCount: 42,
+  currentRunId: STALE_SUBMITTED_RUN.runId,
+  preparation: {
+    preparedAt: '2026-08-23T06:40:00.000Z',
+    sourceApprovedExampleCount: 42,
+    datasetRef: `exports/${COURSE_ID}`,
+    trainExamples: 37,
+    validationExamples: 5,
+    splitSeed: 350,
+  },
+  training: {
+    jobId: '253552',
+    mode: 'full',
+    submittedAt: '2026-08-23T06:43:33.000Z',
+    datasetRef: `exports/${COURSE_ID}`,
+    trainExamples: 37,
+    validationExamples: 5,
+  },
+};
+
+const REPLACEMENT_RUN: TrainingRun = {
+  runId: 'run-20260826t170000z-9f0e1d',
+  courseId: COURSE_ID,
+  mode: 'full',
+  state: 'queued',
+  enqueuedAt: '2026-08-26T17:00:00.000Z',
+  updatedAt: '2026-08-26T17:00:00.000Z',
+  datasetRef: `exports/${COURSE_ID}`,
+  approvedExampleCount: 42,
+  trainExamples: 37,
+  validationExamples: 5,
+  attempt: 0,
+};
+
+const SUPERSEDED_RUN: TrainingRun = {
+  ...STALE_SUBMITTED_RUN,
+  state: 'failed',
+  updatedAt: '2026-08-26T17:00:00.000Z',
+  error: 'Superseded by admin retry',
 };
 
 const QUEUED_RUN: TrainingRun = {
@@ -184,6 +251,10 @@ describe('AdminTrainingPage', () => {
     fetchCourseModelRequest.mockResolvedValue(null);
     fetchCourseTrainingRuns.mockResolvedValue([]);
     queueTrainingForRequest.mockResolvedValue({ run: QUEUED_RUN });
+    retryTrainingForRequest.mockResolvedValue({
+      run: REPLACEMENT_RUN,
+      supersededRunId: STALE_SUBMITTED_RUN.runId,
+    });
     prepareTrainingDataForRequest.mockResolvedValue({
       preparation: {
         preparedAt: '2026-08-11T12:00:00.000Z',
@@ -632,5 +703,248 @@ describe('AdminTrainingPage', () => {
     expect(
       await screen.findByText(/Last launch attempt: rsync: connection closed/),
     ).toBeInTheDocument();
+  });
+  /* --------------------------------------------------------------------- *
+   * Retrying a stale run
+   *
+   * The recovery path for a run PostgreSQL still believes is active when it
+   * is not — a cluster job that finished without its completion callback ever
+   * landing. Before this, the request stayed `training` forever and the
+   * one-active-run guard correctly refused a replacement, so there was no way
+   * out of the state that did not involve raw SQL.
+   * --------------------------------------------------------------------- */
+
+  async function openRetryConfirmation() {
+    fireEvent.click(await screen.findByRole('button', { name: /Retry training/i }));
+    return screen.findByRole('alertdialog');
+  }
+
+  it('offers Retry training for a stale submitted run', async () => {
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([STALE_SUBMITTED_RUN]);
+
+    renderPage();
+
+    expect(
+      await screen.findByRole('button', { name: /Retry training/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('offers Retry training for a failed run', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      ...STALE_REQUEST,
+      status: 'failed' as const,
+    });
+    fetchCourseTrainingRuns.mockResolvedValue([
+      { ...STALE_SUBMITTED_RUN, state: 'failed' as const, error: 'CUDA OOM' },
+    ]);
+
+    renderPage();
+
+    expect(
+      await screen.findByRole('button', { name: /Retry training/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('offers no Retry training for a job that reported minutes ago', async () => {
+    /*
+     * The dangerous case: the run looks stuck, but its Slurm job is alive and
+     * about to report. Retiring it would leave two jobs writing the same
+     * adapter, so neither side offers it.
+     */
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([
+      { ...STALE_SUBMITTED_RUN, updatedAt: new Date(Date.now() - 300_000).toISOString() },
+    ]);
+
+    renderPage();
+
+    await screen.findByRole('list', { name: 'Model requests' });
+    expect(screen.queryByRole('button', { name: /Retry training/i })).toBeNull();
+  });
+
+  it('offers no Retry training for a healthy queued run', async () => {
+    fetchCourseModelRequest.mockResolvedValue({
+      ...PREPARED_REQUEST,
+      currentRunId: QUEUED_RUN.runId,
+    });
+    fetchCourseTrainingRuns.mockResolvedValue([QUEUED_RUN]);
+
+    renderPage();
+
+    await screen.findByRole('list', { name: 'Model requests' });
+    expect(screen.queryByRole('button', { name: /Retry training/i })).toBeNull();
+  });
+
+  it('offers no Retry training while a runner still holds a live lease', async () => {
+    const claimed: TrainingRun = {
+      ...STALE_SUBMITTED_RUN,
+      state: 'claimed',
+      jobId: undefined,
+      claim: {
+        owner: 'adam@tillicum',
+        claimedAt: new Date(Date.now() - 60_000).toISOString(),
+        expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      },
+    };
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([claimed]);
+
+    renderPage();
+
+    await screen.findByRole('list', { name: 'Model requests' });
+    expect(screen.queryByRole('button', { name: /Retry training/i })).toBeNull();
+  });
+
+  it('offers Retry training once a claim has expired', async () => {
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([
+      {
+        ...STALE_SUBMITTED_RUN,
+        state: 'claimed' as const,
+        jobId: undefined,
+        claim: {
+          owner: 'adam@tillicum',
+          claimedAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+          expiresAt: new Date(Date.now() - 3_600_000).toISOString(),
+        },
+      },
+    ]);
+
+    renderPage();
+
+    expect(
+      await screen.findByRole('button', { name: /Retry training/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('asks for confirmation before retiring anything', async () => {
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([STALE_SUBMITTED_RUN]);
+
+    renderPage();
+    const dialog = await openRetryConfirmation();
+
+    // The dialog names the run and job being retired, and says the data is kept.
+    expect(within(dialog).getByText(new RegExp(STALE_SUBMITTED_RUN.runId))).toBeInTheDocument();
+    expect(within(dialog).getByText(/job 253552/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/same prepared dataset/)).toBeInTheDocument();
+    // Nothing has happened yet.
+    expect(retryTrainingForRequest).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the confirmation is cancelled', async () => {
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([STALE_SUBMITTED_RUN]);
+
+    renderPage();
+    const dialog = await openRetryConfirmation();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+    expect(retryTrainingForRequest).not.toHaveBeenCalled();
+  });
+
+  it('calls the retry API for that exact course once confirmed', async () => {
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([STALE_SUBMITTED_RUN]);
+
+    renderPage();
+    const dialog = await openRetryConfirmation();
+    fireEvent.click(within(dialog).getByRole('button', { name: /Retry training/i }));
+
+    await waitFor(() => {
+      expect(retryTrainingForRequest).toHaveBeenCalledWith(COURSE_ID);
+    });
+    // The browser sends the course and nothing else; the backend decides the rest.
+    expect(retryTrainingForRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports what was retired and what was queued', async () => {
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([STALE_SUBMITTED_RUN]);
+
+    renderPage();
+    const dialog = await openRetryConfirmation();
+    fireEvent.click(within(dialog).getByRole('button', { name: /Retry training/i }));
+
+    expect(
+      await screen.findByText(
+        new RegExp(
+          `Retired ${STALE_SUBMITTED_RUN.runId} and queued full run ${REPLACEMENT_RUN.runId}`,
+        ),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('re-reads the course after a retry, showing both runs and no stale job', async () => {
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([STALE_SUBMITTED_RUN]);
+
+    renderPage();
+    const dialog = await openRetryConfirmation();
+
+    // What storage returns on the reload the retry triggers.
+    fetchCourseModelRequest.mockResolvedValue({
+      ...STALE_REQUEST,
+      status: 'preparing' as const,
+      currentRunId: REPLACEMENT_RUN.runId,
+      training: undefined,
+    });
+    fetchCourseTrainingRuns.mockResolvedValue([SUPERSEDED_RUN, REPLACEMENT_RUN]);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Retry training/i }));
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+
+    // The new run is the current one.
+    await waitFor(() => {
+      expect(within(requests).getByText(REPLACEMENT_RUN.runId)).toBeInTheDocument();
+    });
+    expect(within(requests).getByText(/run queued/)).toBeInTheDocument();
+
+    // The old run is still there, terminal, with its job id and its reason.
+    expect(within(requests).getByText(STALE_SUBMITTED_RUN.runId)).toBeInTheDocument();
+    expect(
+      within(requests).getByText(/Earlier run:.*failed.*job 253552.*Superseded by admin retry/s),
+    ).toBeInTheDocument();
+
+    // The stale active training job is no longer presented as current.
+    expect(within(requests).queryByText(/Training job:/)).toBeNull();
+  });
+
+  it('surfaces a refused retry to the admin', async () => {
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([STALE_SUBMITTED_RUN]);
+    retryTrainingForRequest.mockRejectedValue(
+      new Error('This run is already queued and waiting for a worker.'),
+    );
+
+    renderPage();
+    const dialog = await openRetryConfirmation();
+    fireEvent.click(within(dialog).getByRole('button', { name: /Retry training/i }));
+
+    expect(
+      await screen.findByText(/already queued and waiting for a worker/),
+    ).toBeInTheDocument();
+  });
+
+  it('surfaces an unreachable backend rather than implying a retry happened', async () => {
+    fetchCourseModelRequest.mockResolvedValue(STALE_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([STALE_SUBMITTED_RUN]);
+    retryTrainingForRequest.mockRejectedValue(
+      new Error('The service could not be reached.'),
+    );
+
+    renderPage();
+    const dialog = await openRetryConfirmation();
+    fireEvent.click(within(dialog).getByRole('button', { name: /Retry training/i }));
+
+    expect(
+      await screen.findByText(/The service could not be reached/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Retired run-/)).toBeNull();
   });
 });

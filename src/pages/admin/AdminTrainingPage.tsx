@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { formatCourseHeading } from '../../lib/courseLabels';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -9,7 +10,13 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
 import { fetchCourseModelRequest } from '../../lib/courseModelRequestDb';
-import { canQueueTraining, queueTrainingForRequest } from '../../lib/queueTraining';
+import {
+  canQueueTraining,
+  canRetryTraining,
+  findRetryTargetRun,
+  queueTrainingForRequest,
+  retryTrainingForRequest,
+} from '../../lib/queueTraining';
 import { fetchCourseTrainingRuns } from '../../lib/trainingRunDb';
 import {
   InsufficientApprovedExamplesError,
@@ -223,6 +230,17 @@ function latestRun(runs: TrainingRun[]): TrainingRun | null {
   return runs.length > 0 ? runs[runs.length - 1]! : null;
 }
 
+/**
+ * Everything before the newest run, newest first.
+ *
+ * Rendered because a retry retires a run rather than removing it, and an
+ * operator asking "what happened to job 253552?" has to be able to find it
+ * here rather than in SQL.
+ */
+function previousRuns(runs: TrainingRun[]): TrainingRun[] {
+  return runs.slice(0, -1).reverse();
+}
+
 function runTone(state: TrainingRun['state']) {
   switch (state) {
     case 'queued':
@@ -257,6 +275,16 @@ function OutstandingRequests() {
   const [rows, setRows] = useState<RequestRow[] | null>(null);
   const [preparing, setPreparing] = useState<string | null>(null);
   const [queueing, setQueueing] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  /*
+   * The course whose retry is awaiting confirmation.
+   *
+   * Retry is not undoable from this page: it retires the run this course is
+   * waiting on and queues a replacement. That earns a confirmation step, and a
+   * focus-trapped dialog rather than `window.confirm`, matching every other
+   * destructive action in the application.
+   */
+  const [confirming, setConfirming] = useState<RequestRow | null>(null);
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [reload, setReload] = useState(0);
 
@@ -362,6 +390,40 @@ function OutstandingRequests() {
     }
   }
 
+  /**
+   * Retires a course's stale run and queues a replacement for the same data.
+   *
+   * The whole decision happens on the backend, in one transaction under a row
+   * lock. This sends the course id and nothing else — which run is retired,
+   * whether it may be, and what the replacement inherits are all things a
+   * browser can only know as of its last read.
+   */
+  async function retry(row: RequestRow) {
+    setConfirming(null);
+    setRetrying(row.courseId);
+    setMessages((current) => ({ ...current, [row.courseId]: '' }));
+
+    try {
+      const { run, supersededRunId } = await retryTrainingForRequest(row.courseId);
+      setMessages((current) => ({
+        ...current,
+        [row.courseId]:
+          `Retired ${supersededRunId} and queued ${run.mode} run ${run.runId}. ` +
+          'It will be picked up the next time the queue is run on the cluster.',
+      }));
+    } catch (error) {
+      setMessages((current) => ({
+        ...current,
+        [row.courseId]: error instanceof Error ? error.message : 'Retry failed.',
+      }));
+    } finally {
+      setRetrying(null);
+      // Re-read the request and the queue so the retired run, the new queued
+      // run and the cleared job metadata all come from storage, not from here.
+      setReload((current) => current + 1);
+    }
+  }
+
   const outstanding = (rows ?? []).filter(
     (row) => row.request.status !== 'ready' && row.request.status !== 'failed',
   );
@@ -453,6 +515,13 @@ function OutstandingRequests() {
                     </p>
                   );
                 })()}
+                {previousRuns(row.runs).map((run) => (
+                  <p key={run.runId} className="ui-text-xs ui-text-muted">
+                    Earlier run: <code>{run.runId}</code> · {run.state}
+                    {run.jobId ? ` · job ${run.jobId}` : ''}
+                    {run.error ? ` · ${run.error}` : ''}
+                  </p>
+                ))}
                 {row.request.preparationError && (
                   <p className="admin-row__error">
                     Last attempt: {row.request.preparationError}
@@ -493,7 +562,9 @@ function OutstandingRequests() {
                       onClick={() => void prepare(row.courseId)}
                       loading={preparing === row.courseId}
                       loadingLabel="Preparing…"
-                      disabled={preparing !== null || queueing !== null}
+                      disabled={
+                        preparing !== null || queueing !== null || retrying !== null
+                      }
                     >
                       {row.request.preparation
                         ? 'Re-prepare training data'
@@ -510,10 +581,33 @@ function OutstandingRequests() {
                     onClick={() => void queue(row.courseId, row.request)}
                     loading={queueing === row.courseId}
                     loadingLabel="Queueing…"
-                    disabled={preparing !== null || queueing !== null}
+                    disabled={
+                      preparing !== null || queueing !== null || retrying !== null
+                    }
                     title="Add a training run to this course's queue. It is picked up on the cluster later."
                   >
                     Queue training
+                  </Button>
+                )}
+
+                {/* The recovery path for a run this application still believes
+                    is active when it is not — a cluster job that finished
+                    without its completion callback landing. Offered only for a
+                    run the backend would actually accept; the backend decides
+                    again, under a lock, when the button is pressed. */}
+                {canRetryTraining(row.request, row.runs) && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setConfirming(row)}
+                    loading={retrying === row.courseId}
+                    loadingLabel="Retrying…"
+                    disabled={
+                      preparing !== null || queueing !== null || retrying !== null
+                    }
+                    title="Retire this course's current run and queue a replacement against the same prepared dataset."
+                  >
+                    Retry training
                   </Button>
                 )}
               </div>
@@ -521,6 +615,36 @@ function OutstandingRequests() {
           ))}
         </ul>
       )}
+
+      {(() => {
+        const target = confirming ? findRetryTargetRun(confirming.request, confirming.runs) : null;
+        return (
+          <ConfirmDialog
+            open={confirming !== null}
+            title="Retry training for this course?"
+            description={
+              target
+                ? `Run ${target.runId} (${target.state}${
+                    target.jobId ? `, job ${target.jobId}` : ''
+                  }) is retired and kept in this course's history. A new run is ` +
+                  'queued against the same prepared dataset — no examples are ' +
+                  're-exported and no split is recomputed. This cannot be undone ' +
+                  'from this page.'
+                : undefined
+            }
+            confirmLabel="Retry training"
+            cancelLabel="Cancel"
+            tone="danger"
+            busy={retrying !== null}
+            onConfirm={() => {
+              if (confirming) {
+                void retry(confirming);
+              }
+            }}
+            onCancel={() => setConfirming(null)}
+          />
+        );
+      })()}
     </section>
   );
 }

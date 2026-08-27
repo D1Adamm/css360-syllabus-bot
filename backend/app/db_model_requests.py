@@ -105,6 +105,31 @@ def is_active(request: Mapping[str, Any] | None) -> bool:
     return request is not None and request.get("status") in ACTIVE_STATUSES
 
 
+def lock_model_request(conn: Any, course_id: str) -> dict[str, Any] | None:
+    """Read one request under a row lock, or None when there is none.
+
+    `SELECT ... FOR UPDATE` inside the caller's transaction. Everything a
+    retry does — retiring the outstanding run, queueing its replacement,
+    repointing `current_run_id` — is a read-then-write across two tables, and
+    the request row is the one thing both tables hang off. Taking it first
+    means a second retry for the same course waits here and, when it proceeds,
+    reads the pointer the first one already moved rather than the stale one it
+    started from.
+
+    Deliberately not folded into `get_model_request`: an unqualified read must
+    stay lock-free, because every listing route does one.
+    """
+    safe_course_id = assert_valid_course_id(course_id)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"SELECT {REQUEST_COLUMNS} FROM model_requests "
+            "WHERE course_id = %s FOR UPDATE",
+            (safe_course_id,),
+        )
+        row = cursor.fetchone()
+    return map_model_request(row) if row else None
+
+
 def create_model_request(
     conn: Any,
     course_id: str,
@@ -166,6 +191,59 @@ def create_model_request(
             f'The model request for "{safe_course_id}" could not be read back.'
         )
     return created
+
+
+def update_model_request_for_run(
+    conn: Any,
+    course_id: str,
+    run_id: str,
+    patch: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Merge onto the request only while `run_id` still owns it.
+
+    The ownership guard for every callback a cluster worker makes. A run that
+    an admin retried is no longer this course's current run, and a late report
+    from it — a job that finished after its run was retired — must not be able
+    to move `status`, `training`, `failure_message` or `current_run_id` out
+    from under the replacement.
+
+    Written as one conditional UPDATE rather than a read followed by a write.
+    Callers take the row lock first, so the read would be correct too; the
+    condition is here as well because it costs one clause and it means the
+    guarantee does not depend on every future caller remembering to lock.
+
+    `current_run_id IS NULL` counts as ownable. A run enqueued through the
+    operational route before anything pointed at it is in exactly that state,
+    and the first callback for it is the write that claims it.
+
+    Returns None when the guard rejected the write, and None when there is no
+    request at all. Callers distinguish the two by having already read it.
+    """
+    safe_course_id = assert_valid_course_id(course_id)
+
+    assignments = build_patch(patch, REQUEST_PATCH_COLUMNS)
+    if not assignments:
+        return get_model_request(conn, safe_course_id)
+
+    assignments.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
+
+    sets = ", ".join(f"{column} = %({column})s" for column in assignments)
+    parameters = {
+        **assignments,
+        "course_id": safe_course_id,
+        "expected_run_id": run_id,
+    }
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"UPDATE model_requests SET {sets} "
+            "WHERE course_id = %(course_id)s "
+            "AND (current_run_id IS NULL OR current_run_id = %(expected_run_id)s)",
+            _bind(parameters),
+        )
+        if cursor.rowcount == 0:
+            return None
+
+    return get_model_request(conn, safe_course_id)
 
 
 def update_model_request(

@@ -25,6 +25,7 @@ from app.schemas import (
     BaseModelGenerateRequest,
     EnqueueTrainingRunRequest,
     EnqueueTrainingRunResponse,
+    RetryTrainingRunResponse,
     BaseModelGenerateResponse,
     FineTunedGenerateRequest,
     FineTunedGenerateResponse,
@@ -80,6 +81,7 @@ from app.db_training_runs import (
     ActiveTrainingRunError,
     enqueue_training_run,
 )
+from app.training_retry import RetryNotEligibleError, retry_training_run
 from app.starter_status import reconcile_starter_seed_generation
 from app.seed_dataset_quality import inspect_seed_dataset
 from app.seed_export import FinetuneJsonlValidationError, export_approved_seeds
@@ -626,6 +628,72 @@ def enqueue_course_training_run(
         courseId=safe_course_id,
         runId=created["runId"],
         run=created,
+    )
+
+
+@app.post(
+    "/api/courses/{course_id}/training-runs/retry",
+    response_model=RetryTrainingRunResponse,
+    status_code=201,
+)
+def retry_course_training_run(course_id: str) -> RetryTrainingRunResponse:
+    """Retire this course's stale run and queue a replacement for the same data.
+
+    The recovery path for a run the application still believes is active when
+    it is not — a job the cluster finished without a completion callback ever
+    reaching PostgreSQL. Nothing else can clear that state: the run will not
+    finish, and while it is outstanding `canQueueTraining` correctly refuses to
+    queue another.
+
+    The previous run is retired, never removed. It stays in the course's
+    training history as a terminal run carrying its Slurm job id and its
+    reason, `"Superseded by admin retry"`, because an operator asking what this
+    course was waiting on must still be able to find the answer.
+
+    The dataset is carried across untouched. No export is rerun, no split is
+    recomputed and no approved example is read, so a retry after a fix to the
+    training code trains the corrected code on exactly the data the professor
+    already approved.
+
+    Everything happens in one transaction, which takes the model request row
+    `FOR UPDATE` before it decides anything. A double-clicked button or a
+    second admin therefore cannot produce two new runs: the second call waits,
+    then sees the freshly queued replacement and is refused with 409.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def work(connection):
+        if not course_exists(connection, safe_course_id):
+            raise HTTPException(
+                status_code=404, detail=f'Course "{safe_course_id}" was not found.'
+            )
+        return retry_training_run(connection, safe_course_id)
+
+    try:
+        with translate_db_errors("retrying a training run"):
+            with db_connection() as connection:
+                result = work(connection)
+    except RetryNotEligibleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ActiveTrainingRunError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    created = result["run"]
+    superseded = result["superseded"] or {}
+    updated_request = result["request"] or {}
+
+    return RetryTrainingRunResponse(
+        courseId=safe_course_id,
+        runId=created["runId"],
+        run=created,
+        supersededRunId=superseded.get("runId", ""),
+        supersededRun=superseded,
+        requestStatus=updated_request.get("status"),
     )
 
 

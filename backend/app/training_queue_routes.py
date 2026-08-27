@@ -232,6 +232,57 @@ def claim_next_run(request: ClaimRequest) -> ClaimResponse:
     return ClaimResponse(claimed=True, run=TrainingRunRecord(**claimed))
 
 
+class SupersededRunCallback(HTTPException):
+    """A worker reported against a run the model request no longer points at.
+
+    The window is real and narrow: an admin retries a run whose lease has
+    expired (or whose job has been silent for hours), the worker that still
+    held it is alive after all, and its callback arrives after the replacement
+    run has become current. Without this, that late report would move the
+    request's status, its Slurm metadata and `current_run_id` back onto a run
+    that was deliberately retired — and, for a model registration, would
+    promote the very adapter the retry existed to discard.
+
+    409 rather than a quiet no-op: the job it describes is real, it may still
+    be running on the cluster, and an operator needs to see that in the
+    runner's output rather than find it later.
+    """
+
+    def __init__(self, course_id: str, run_id: str, current_run_id: str) -> None:
+        super().__init__(
+            status_code=409,
+            detail=(
+                f'Run "{run_id}" is no longer the current run for course '
+                f'"{course_id}" — it was superseded by "{current_run_id}". '
+                "Its report was not applied to the model request."
+            ),
+        )
+
+
+def _require_current_run(
+    connection: Any, course_id: str, run_id: str
+) -> dict[str, Any] | None:
+    """Take the request row and refuse a report from a superseded run.
+
+    `lock_model_request` rather than a plain read: this runs first in the
+    transaction, so a retry arriving at the same moment either commits before
+    this sees it — and this then refuses — or waits behind it. The two cannot
+    interleave into a state where both believe they own the request.
+
+    A course with no request at all is not an error here. The run rows are the
+    system of record for the queue; the request is the professor-facing view,
+    and its absence is not something a worker can do anything about.
+    """
+    request = db_model_requests.lock_model_request(connection, course_id)
+    if request is None:
+        return None
+
+    current_run_id = request.get("currentRunId")
+    if current_run_id and current_run_id != run_id:
+        raise SupersededRunCallback(course_id, run_id, current_run_id)
+    return request
+
+
 def _require_run(connection: Any, course_id: str, run_id: str) -> dict[str, Any]:
     run = db_training_runs.get_training_run(connection, course_id, run_id)
     if run is None:
@@ -287,6 +338,10 @@ def record_submission(
 
     def work(connection: Any) -> tuple[dict[str, Any], str | None]:
         run = _require_run(connection, safe_course_id, run_id)
+        # Before the run is written, not after: `mark_training_run_submitted`
+        # would move a retired run back to a non-terminal state, which is a
+        # second active run for the course as well as a stolen request.
+        _require_current_run(connection, safe_course_id, run_id)
         submitted = db_training_runs.mark_training_run_submitted(
             connection,
             safe_course_id,
@@ -298,9 +353,10 @@ def record_submission(
         )
 
         submitted_at = submitted["updatedAt"]
-        updated_request = db_model_requests.update_model_request(
+        updated_request = db_model_requests.update_model_request_for_run(
             connection,
             safe_course_id,
+            run_id,
             {
                 "status": "training",
                 "updatedAt": submitted_at,
@@ -349,12 +405,18 @@ def record_submission_failure(
 
     def work(connection: Any) -> dict[str, Any]:
         _require_run(connection, safe_course_id, run_id)
+        # `release_training_run` puts the run back to `queued`. On a superseded
+        # run that would resurrect it alongside its own replacement, leaving
+        # the course with two active runs and the queue guard unable to say
+        # which is real.
+        _require_current_run(connection, safe_course_id, run_id)
         released = db_training_runs.release_training_run(
             connection, safe_course_id, run_id, error=request.error, now=_utc_now()
         )
-        db_model_requests.update_model_request(
+        db_model_requests.update_model_request_for_run(
             connection,
             safe_course_id,
+            run_id,
             {
                 "launchError": request.error,
                 "updatedAt": _utc_now().isoformat(),
@@ -385,12 +447,16 @@ def record_training_failure(
 
     def work(connection: Any) -> dict[str, Any]:
         _require_run(connection, safe_course_id, run_id)
+        # A late failure from a retired run must not tell a professor their
+        # model failed while its replacement is queued and untried.
+        _require_current_run(connection, safe_course_id, run_id)
         failed = db_training_runs.fail_training_run(
             connection, safe_course_id, run_id, error=request.error, now=_utc_now()
         )
-        db_model_requests.update_model_request(
+        db_model_requests.update_model_request_for_run(
             connection,
             safe_course_id,
+            run_id,
             {
                 "status": "failed",
                 "updatedAt": _utc_now().isoformat(),
@@ -474,6 +540,24 @@ def register_model_version(
                 status_code=404, detail=f'Course "{safe_course_id}" was not found.'
             )
 
+        # The most consequential guard of the four, and the reason it runs
+        # before the version is written rather than only before the request is.
+        #
+        # A registration names a run. If that run has been superseded, this
+        # call is a finished job reporting an adapter an admin has already
+        # decided not to use — the exact case a retry after a training-code fix
+        # exists to produce. Letting it through would register that adapter and,
+        # with `setCurrent`, promote it: the course would end up serving the
+        # model the retry was meant to replace, and the request would go `ready`
+        # while its replacement run sat queued and untried.
+        #
+        # Refused rather than registered-but-not-promoted. The artifact is real
+        # and an operator may still want it recorded, but that is a decision a
+        # person makes deliberately with `register_course_model.py`, not one a
+        # stale callback makes on their behalf.
+        if request.run_id:
+            _require_current_run(connection, safe_course_id, request.run_id)
+
         existing = db_models.list_model_versions(connection, safe_course_id)
         version_key = request.version or next_model_version(
             [item["version"] for item in existing]
@@ -510,8 +594,14 @@ def register_model_version(
             }
             if request.run_id:
                 patch["currentRunId"] = request.run_id
-            updated = db_model_requests.update_model_request(
-                connection, safe_course_id, patch
+            updated = (
+                db_model_requests.update_model_request_for_run(
+                    connection, safe_course_id, request.run_id, patch
+                )
+                if request.run_id
+                else db_model_requests.update_model_request(
+                    connection, safe_course_id, patch
+                )
             )
             request_status = updated["status"] if updated else None
 
