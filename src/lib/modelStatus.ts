@@ -115,8 +115,17 @@ export function describeCourseModel({
     };
   }
 
-  // Ready. Availability is a separate question, and the recorded deployment is
-  // only trusted when a live check has not contradicted it.
+  /*
+   * Ready. Availability is a separate question, and the recorded deployment is
+   * only trusted when a live check has not contradicted it.
+   *
+   * What `online` records is that this version has been published to the
+   * research cluster and is the one fine-tuned answers come from. It does not
+   * record that a GPU session happens to be up at this second — the backend
+   * cannot know that from the registry alone, and a `serviceReachable` check is
+   * what narrows it when a caller has one. So the wording below says which
+   * version is used rather than promising it is answering right now.
+   */
   const recorded = version?.deployment ?? 'unknown';
   const availability: CourseModelAvailability =
     serviceReachable === true
@@ -130,7 +139,8 @@ export function describeCourseModel({
       presence,
       availability,
       title: 'Your course model is ready',
-      detail: 'It is answering questions on the Compare page now.',
+      detail:
+        'It is the version the assistant uses when it answers with your course model on the Compare page.',
       tone: 'accent',
     };
   }

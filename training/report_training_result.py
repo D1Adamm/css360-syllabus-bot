@@ -391,6 +391,24 @@ def report_completion(
     return 0
 
 
+def _load_publication_reporter() -> Any:
+    """Import the publication reporter by path.
+
+    Lazily and by path for the same reason the worker loads this module that
+    way: it lives in `scripts/` rather than on the import path, and a flush that
+    has no publications queued should not need it loaded.
+    """
+    import importlib.util
+
+    path = REPO_ROOT / "scripts" / "report_model_published.py"
+    spec = importlib.util.spec_from_file_location("report_model_published", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        raise TrainingQueueError("Missing publication reporter: {0}".format(path))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def flush_pending(
     repo_root: Path = REPO_ROOT,
     queue: Optional[TrainingQueue] = None,
@@ -418,6 +436,28 @@ def flush_pending(
         course_id = str(entry.get("courseId") or "")
         kind = str(entry.get("kind") or "")
         payload = entry.get("payload") or {}
+
+        if kind == "published":
+            # A publication that happened on the cluster while the backend was
+            # unreachable. The adapter is already in the serving tree; this is
+            # the application catching up with it, and until it does, inference
+            # keeps resolving the previously published version rather than
+            # failing.
+            try:
+                _load_publication_reporter().send_publication(
+                    client, payload, repo_root=repo_root
+                )
+            except TrainingQueueError as exc:
+                print("  {0}: still undelivered ({1})".format(run_id, exc))
+                summary["failed"] += 1
+                continue
+            summary["delivered"] += 1
+            print(
+                "  {0}: delivered (published {1} {2})".format(
+                    run_id, payload.get("courseId"), payload.get("version")
+                )
+            )
+            continue
 
         if kind != "completed":
             # Submission reports are replayed by the worker itself, which has

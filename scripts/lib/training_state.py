@@ -229,7 +229,13 @@ def unreported_submissions(repo_root: Path) -> List[Dict[str, Any]]:
 # Pending callbacks
 # --------------------------------------------------------------------------- #
 
-CALLBACK_KINDS = ("submitted", "completed")
+#: What a pending report can be about.
+#:
+#: `published` describes a course and a version rather than a run, and is filed
+#: under a synthetic key built from those two. It is here for the same reason
+#: the other two are: the operation spans two machines, and the half that
+#: already happened must survive the half that could not be delivered.
+CALLBACK_KINDS = ("submitted", "completed", "published")
 
 
 def pending_callback_path(repo_root: Path, run_id: str, kind: str) -> Path:

@@ -233,5 +233,186 @@ class EnqueueRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
 
 
+
+
+class RetrainEnqueueTests(unittest.TestCase):
+    """Queueing another run for a course that already finished one.
+
+    Audited before anything was written, and the answer was that the backend
+    already allows this: `enqueue_training_run` consults `training_runs` and
+    nothing else, so the only thing it refuses is a second *outstanding* run.
+    The model request's status is not part of the decision, which is why a
+    `ready` course can be retrained through the route that already exists.
+
+    These pin that down, because the gap was entirely in the browser — the
+    Queue training control is gated on `status === 'preparing'` — and a future
+    change that added a request-status check here would silently reintroduce it.
+    """
+
+    def setUp(self) -> None:
+        self.client = TestClient(app)
+
+    @contextmanager
+    def _store(self, existing: list[dict[str, Any]]) -> Iterator[list[dict[str, Any]]]:
+        """A store holding this course's history, with the real active-run rule."""
+        runs = list(existing)
+
+        def _enqueue(connection: Any, course_id: str, **kwargs: Any) -> dict[str, Any]:
+            if any(
+                run["courseId"] == course_id
+                and run["state"] not in ("succeeded", "failed")
+                for run in runs
+            ):
+                raise ActiveTrainingRunError(
+                    f'Course "{course_id}" already has an active training run.'
+                )
+            created = _queued_run(course_id, run_id="run-20260902t080000z-abcdef")
+            created["datasetRef"] = kwargs["dataset_ref"]
+            created["trainExamples"] = kwargs["train_examples"]
+            created["validationExamples"] = kwargs["validation_examples"]
+            created["approvedExampleCount"] = kwargs["approved_example_count"]
+            runs.append(created)
+            return created
+
+        with (
+            patch("app.main.db_connection", _fake_connection),
+            patch("app.main.course_exists", return_value=True),
+            patch("app.main.enqueue_training_run", side_effect=_enqueue),
+        ):
+            yield runs
+
+    def _succeeded_run(self) -> dict[str, Any]:
+        run = _queued_run(OTHER_COURSE, run_id="run-20260827t064701z-1cf650")
+        run.update(
+            {
+                "state": "succeeded",
+                "jobId": "264787",
+                "trainExamples": 37,
+                "validationExamples": 5,
+                "approvedExampleCount": 42,
+                "attempt": 1,
+            }
+        )
+        return run
+
+    def test_a_course_whose_run_succeeded_can_queue_another(self) -> None:
+        """The exact CSS 350 state: ready, v1 registered, run succeeded."""
+        with self._store([self._succeeded_run()]) as runs:
+            response = self.client.post(
+                f"/api/courses/{OTHER_COURSE}/training-runs",
+                json={
+                    "mode": "full",
+                    "datasetRef": f"exports/{OTHER_COURSE}",
+                    "approvedExampleCount": 42,
+                    "trainExamples": 37,
+                    "validationExamples": 5,
+                },
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["runId"], "run-20260902t080000z-abcdef")
+        self.assertEqual(len(runs), 2)
+
+    def test_the_succeeded_run_is_left_exactly_as_it_was(self) -> None:
+        """A retrain supersedes nothing. This is the whole difference from retry."""
+        original = self._succeeded_run()
+
+        with self._store([original]) as runs:
+            self.client.post(
+                f"/api/courses/{OTHER_COURSE}/training-runs",
+                json={
+                    "mode": "full",
+                    "datasetRef": f"exports/{OTHER_COURSE}",
+                    "approvedExampleCount": 42,
+                    "trainExamples": 37,
+                    "validationExamples": 5,
+                },
+            )
+
+        kept = runs[0]
+        self.assertEqual(kept["state"], "succeeded")
+        self.assertEqual(kept["jobId"], "264787")
+        self.assertEqual(kept["runId"], "run-20260827t064701z-1cf650")
+
+    def test_the_new_run_carries_the_reused_dataset_unchanged(self) -> None:
+        """Reuse, not re-export: the counts are the ones already prepared."""
+        with self._store([self._succeeded_run()]) as runs:
+            self.client.post(
+                f"/api/courses/{OTHER_COURSE}/training-runs",
+                json={
+                    "mode": "full",
+                    "datasetRef": f"exports/{OTHER_COURSE}",
+                    "approvedExampleCount": 42,
+                    "trainExamples": 37,
+                    "validationExamples": 5,
+                },
+            )
+
+        created = runs[1]
+        self.assertEqual(created["datasetRef"], f"exports/{OTHER_COURSE}")
+        self.assertEqual(created["trainExamples"], 37)
+        self.assertEqual(created["validationExamples"], 5)
+        self.assertEqual(created["approvedExampleCount"], 42)
+
+    def test_the_new_run_gets_a_fresh_id(self) -> None:
+        with self._store([self._succeeded_run()]) as runs:
+            response = self.client.post(
+                f"/api/courses/{OTHER_COURSE}/training-runs",
+                json={
+                    "mode": "full",
+                    "datasetRef": f"exports/{OTHER_COURSE}",
+                    "approvedExampleCount": 42,
+                    "trainExamples": 37,
+                    "validationExamples": 5,
+                },
+            )
+
+        self.assertNotEqual(response.json()["runId"], runs[0]["runId"])
+
+    def test_a_second_retrain_is_still_refused_while_the_first_is_outstanding(
+        self,
+    ) -> None:
+        """The one guard that matters, and it is atomic on the insert."""
+        body = {
+            "mode": "full",
+            "datasetRef": f"exports/{OTHER_COURSE}",
+            "approvedExampleCount": 42,
+            "trainExamples": 37,
+            "validationExamples": 5,
+        }
+
+        with self._store([self._succeeded_run()]):
+            first = self.client.post(
+                f"/api/courses/{OTHER_COURSE}/training-runs", json=body
+            )
+            second = self.client.post(
+                f"/api/courses/{OTHER_COURSE}/training-runs", json=body
+            )
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 409)
+
+    def test_the_route_never_reads_the_model_request(self) -> None:
+        """A `ready` request must not become a reason to refuse a retrain.
+
+        Asserted by construction: nothing in this route's stubs provides a model
+        request, and it returns 201 regardless. If a status check were ever
+        added here, this test would need a request fixture to pass — which is
+        the signal.
+        """
+        with self._store([self._succeeded_run()]):
+            response = self.client.post(
+                f"/api/courses/{OTHER_COURSE}/training-runs",
+                json={
+                    "mode": "full",
+                    "datasetRef": f"exports/{OTHER_COURSE}",
+                    "approvedExampleCount": 42,
+                    "trainExamples": 37,
+                    "validationExamples": 5,
+                },
+            )
+
+        self.assertEqual(response.status_code, 201)
+
 if __name__ == "__main__":
     unittest.main()
