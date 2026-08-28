@@ -20,7 +20,7 @@ interface UseEvaluationsResult {
   clearSaveError: () => void;
 }
 
-/** Course-scoped evaluations from courses/{courseId}/evaluations. */
+/** Course-scoped evaluations from the `evaluations` table. */
 export function useEvaluations(): UseEvaluationsResult {
   const courseId = useCourseId();
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>([]);

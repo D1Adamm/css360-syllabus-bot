@@ -239,8 +239,13 @@ describe('every composed URL starts with the configured base', () => {
     const { listCourseSeeds } = await import('./api');
     await listCourseSeeds(COURSE);
 
-    // A base without the /api prefix composes the backend route directly,
-    // which is what a developer running uvicorn locally needs.
+    // Composition only: the fragment is appended to whatever base is set.
+    //
+    // Note that a base *without* the /api prefix is not a usable local
+    // configuration, despite composing a real-looking URL here. Only six of the
+    // backend's routes have root-level aliases; this one does not, and dbApi's
+    // /db/... paths never do. Local development wants
+    // VITE_API_BASE_URL=http://127.0.0.1:8001/api.
     expect(requestedUrl()).toBe(`http://localhost:8001/courses/${COURSE}/seeds`);
 
     vi.stubEnv('VITE_API_BASE_URL', 'http://aiswe.uwb.edu/api');

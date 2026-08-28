@@ -4,7 +4,7 @@ import type { CourseMetadata, StoredStarterSeedGeneration } from '../types';
  * Whether a course's starter examples are still being written.
  *
  * The state is already durable and already course-scoped: the generation job
- * writes it to `courses/{courseId}/metadata/starterSeedGeneration` as it goes.
+ * writes it to the course's `starter_seed_generation` row as it goes.
  * Nothing here starts, polls, or infers anything — it reads the record the job
  * left and says what it means to a professor. A refresh therefore shows the
  * same thing, because the answer never lived in the browser.

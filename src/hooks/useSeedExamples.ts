@@ -20,7 +20,7 @@ interface UseSeedExamplesResult {
   clearSaveError: () => void;
 }
 
-/** Course-scoped seed examples from courses/{courseId}/seedExamples. */
+/** Course-scoped seed examples from the `seed_examples` table. */
 export function useSeedExamples(): UseSeedExamplesResult {
   const courseId = useCourseId();
   const [seeds, setSeeds] = useState<SeedExample[]>([]);

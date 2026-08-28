@@ -8,7 +8,7 @@ import type { CourseModelRequest, CourseModelRequestTraining } from '../types';
  *
  * @deprecated Superseded by `queueTraining.ts`. Nothing in the application
  * calls this any more: an administrator enqueues a run at
- * `courses/{courseId}/trainingRuns` and a runner on the cluster picks it up.
+ * the `training_runs` queue and a runner on the cluster picks it up.
  *
  * The direct path could never work from a browser. It needed the backend to
  * reach the cluster without a person present, and the cluster requires the

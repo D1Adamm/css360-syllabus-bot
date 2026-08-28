@@ -31,7 +31,7 @@ describe('createCourse', () => {
     createCourseMetadataMock.mockResolvedValue(undefined);
   });
 
-  it('saves metadata to courses/{courseId}/metadata', async () => {
+  it('saves metadata as the course’s row', async () => {
     generateCourseIdMock.mockReturnValue('css-430-summer-2026-a82f');
     courseExistsMock.mockResolvedValue(false);
 

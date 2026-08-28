@@ -115,17 +115,24 @@ export function AdminSystemPage() {
         <div className="ui-prose">
           <p>
             Authentication and access control; student enrolment and course join
-            codes; fine-tuning request records; training job submission and
-            status; a model version registry with promotion and rollback. Training
-            currently runs through Slurm scripts on Tillicum, outside this
-            application.
+            codes; retention and redaction policies; reproducible evaluation
+            provenance — an evaluation records which approach a student preferred,
+            but not the answers as generated or the model versions that produced
+            them.
           </p>
           <p>
-            Syllabus artifacts and retrieval indexes are written to local disk by
-            the backend, under <code>backend/course_data/</code> and{' '}
-            <code>backend/data/indexes/</code>. Course records, examples, and
-            evaluations live in the Realtime Database and are readable
-            independently of the backend.
+            Model requests, the training queue, job status, automatic
+            registration, and publication are implemented. Training and
+            fine-tuned inference execute on Tillicum, which this application
+            reaches through an authenticated queue API rather than by running
+            anything itself.
+          </p>
+          <p>
+            Course records, examples, evaluations, the model registry, and the
+            training queue are stored in PostgreSQL and reached only through the
+            backend. Syllabus artifacts and retrieval indexes are written to
+            local disk, under <code>backend/course_data/</code> and{' '}
+            <code>backend/data/indexes/</code>.
           </p>
         </div>
       </section>

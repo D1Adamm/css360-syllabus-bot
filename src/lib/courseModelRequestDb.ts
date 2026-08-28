@@ -9,7 +9,7 @@ import type {
 import { assertValidCourseId } from './courseId';
 
 /**
- * Course model requests at `courses/{courseId}/modelRequest`.
+ * Course model requests: the `model_requests` table, read through `/api/db`.
  *
  * Course-scoped like everything else under `courses/`: the path is built from a
  * validated id, so one course can never read or write another's request.
@@ -90,7 +90,7 @@ export function parseCourseModelRequest(value: unknown): CourseModelRequest | nu
       ? { launchError: record.launchError }
       : {}),
     // A pointer to the operational record, never the record itself. Everything
-    // about the run lives under `trainingRuns`.
+    // about the run lives in `training_runs`.
     ...(typeof record.currentRunId === 'string' && record.currentRunId.trim() !== ''
       ? { currentRunId: record.currentRunId }
       : {}),

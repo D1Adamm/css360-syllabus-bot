@@ -10,7 +10,7 @@ import type {
 import { assertValidCourseId } from './courseId';
 
 /**
- * Training runs at `courses/{courseId}/trainingRuns/{runId}`.
+ * Training runs: the `training_runs` table, read through `/api/db`.
  *
  * The durable queue. A run is the unit of work a cluster runner claims and acts
  * on; the professor-facing `modelRequest` keeps only a `currentRunId` pointer,
@@ -157,7 +157,7 @@ export function parseTrainingRun(runId: string, value: unknown): TrainingRun | n
   };
 }
 
-/** Reads a whole `trainingRuns` node, dropping anything unreadable. */
+/** Reads a whole list of runs, dropping anything unreadable. */
 export function parseTrainingRuns(value: unknown): TrainingRun[] {
   if (!value || typeof value !== 'object') {
     return [];

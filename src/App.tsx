@@ -40,7 +40,7 @@ import { AdminTrainingPage } from './pages/admin/AdminTrainingPage';
 export function AppRoutes() {
   return (
     <Routes>
-      {/* TEMPORARY (Phase 1): design-system review page, outside the app shell. */}
+      {/* Design-system review page, outside the app shell. Development only. */}
       <Route path="/styleguide" element={<StyleguidePage />} />
 
       <Route element={<AppShell />}>

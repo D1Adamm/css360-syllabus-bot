@@ -1,7 +1,12 @@
-# CSS 360 QLoRA training (Tillicum)
+# Per-course QLoRA training (Tillicum)
 
-Fine-tunes **LoRA adapters only** on top of `meta-llama/Llama-3.2-3B-Instruct`
-using the **approved** course export under `data/exports/<courseId>/`.
+Fine-tunes **LoRA adapters only** on top of `meta-llama/Llama-3.2-3B-Instruct`,
+using the **approved** examples of one course, exported to
+`data/exports/<courseId>/`.
+
+Training is per course throughout. Every job, output directory, adapter, and
+registered version is keyed by `courseId`; nothing here is specific to any one
+course.
 
 This is the **canonical** training workflow. Inference deployment is separate
 (see `training/inference_service/README.md`). The full operational reference is
@@ -72,13 +77,18 @@ Automation writes versioned outputs under:
 
 including `adapter/`. This does **not** overwrite the live inference adapter.
 
-### B2) Tillicum — the training queue (claim only, no submission yet)
+### B2) Tillicum — the training queue
 
-An administrator queues a run from the web application instead of trying to
-launch one through a backend. The run is stored course-scoped at
-`courses/<courseId>/trainingRuns/<runId>` and waits there. Nothing about it
-reaches the cluster until someone runs the queue **in a normal interactive
-session** — the usual login and two-factor prompt. Nothing here bypasses that.
+**This is the normal path.** An administrator queues a run from the web
+application instead of trying to launch one through a backend. The run is a row
+in the PostgreSQL `training_runs` table, keyed `(course_id, run_id)`, and it
+waits there. Nothing about it reaches the cluster until someone runs the queue
+**in a normal interactive session** — the usual login and two-factor prompt.
+Nothing here bypasses that.
+
+The cluster reaches the queue through the backend's `/api/training-queue`
+endpoints over outbound HTTPS, authenticated with `TRAINING_WORKER_TOKEN`. It
+never holds a database connection.
 
 ```bash
 cd /gpfs/projects/simswe/$USER/css360-syllabus-bot
@@ -101,7 +111,11 @@ What it does:
 - submits through `start_qlora_training.sh`, and records the submission locally
   before reporting it
 
-It never calls `sbatch` itself and never promotes an adapter. `--dry-run` claims
+- **reports the result when the job ends** — the Slurm job itself calls back with
+  the outcome, and a successful full run registers its model version
+  automatically
+
+It never calls `sbatch` itself and never publishes an adapter. `--dry-run` claims
 nothing, writes nothing, and downloads nothing.
 
 It needs `TRAINING_API_BASE_URL` and `TRAINING_WORKER_TOKEN` in the environment
@@ -274,12 +288,17 @@ python3 -m unittest \
 
 ---
 
-## Legacy data docs (not used by current QLoRA training)
+## Recovery and debugging tools
 
-The older root-level pipeline in `docs/export-dataset.md`,
-`docs/prepare-dataset.md`, and `docs/split-dataset.md`
-(`scripts/export_seed_dataset.py` → `prepare_seed_dataset.py` →
-`split_training_dataset.py` producing `data/splits/` with a 70/15/15 split)
-is **legacy**. Current QLoRA training uses **approved** seeds read from
-PostgreSQL via `backend` export + `prepare_training_split` into
-`data/exports/<courseId>/`.
+Neither is part of the normal path. Both are kept because they are the way back
+when something in the automatic path has gone wrong.
+
+**`scripts/register_course_model.py`** — registers a model version by hand.
+A successful run registers its own version through the completion callback; this
+exists for an artifact that was produced but never reported, or one an operator
+wants recorded deliberately. **Recovery only.**
+
+**`scripts/sync_training_data_to_tillicum.sh`** — copies one course's prepared
+export to the cluster over `rsync`. The worker downloads its own dataset from the
+backend, so this is not needed normally. **Debugging and recovery only**, for
+when the download path itself is what you are investigating.

@@ -32,7 +32,7 @@ import { professorCoursePath } from '../../lib/roleRoutes';
  * only from this course's registry record.
  *
  * A professor whose course has no model, and enough approved examples, can
- * request one. That writes a durable record at `courses/{courseId}/modelRequest`
+ * request one. That writes a durable row in `model_requests`
  * — separate from the registry, because a request is work asked for and the
  * registry is artifacts that exist. Nothing here starts a training run; the
  * request is a queue entry an administrator picks up.

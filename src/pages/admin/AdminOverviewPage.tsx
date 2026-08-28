@@ -181,8 +181,8 @@ export function AdminOverviewPage() {
           does not probe the local model runtime or the database. The fine-tuned
           and generation checks are proxied through the backend, so when it is
           offline they read &ldquo;not checked&rdquo; rather than offline.
-          Course metadata comes straight from the Realtime Database and stays
-          readable either way.
+          Course metadata is read from PostgreSQL through the backend, so it is
+          unavailable for the same reasons the backend is.
         </p>
       </section>
 

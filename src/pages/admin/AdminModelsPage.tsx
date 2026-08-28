@@ -272,11 +272,14 @@ export function AdminModelsPage() {
         )}
       </section>
 
-      <Callout tone="info" title="Registration is manual">
-        Records are written by <code>scripts/register_course_model.py</code> after
-        a run is promoted. Training submission, job status, and automatic
-        promotion still have no endpoint — see{' '}
-        <code>docs/frontend-backend-gaps.md</code>.
+      <Callout tone="info" title="Registered is not published">
+        A successful training run registers its version automatically, as{' '}
+        <code>ready</code> and <code>not published</code>. Publishing it to the
+        cluster is a separate, deliberate step —{' '}
+        <code>training/promote_qlora_adapter.sh</code> — and until then inference
+        keeps answering from the previously published version.{' '}
+        <code>scripts/register_course_model.py</code> remains as a recovery tool
+        for an artifact that was produced but never reported.
       </Callout>
     </div>
   );

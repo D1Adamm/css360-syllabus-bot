@@ -6,8 +6,10 @@ Tillicum GPU.
 - Base model: `meta-llama/Llama-3.2-3B-Instruct`, loaded once
 - Adapters: `<SERVING_ROOT>/<courseId>/<version>/adapter`, attached on top
 - Does **not** merge LoRA adapters into the base model
-- Slurm job name: `css360-ft-infer` (debug QOS; a bounded session, 2 hours by
-  default — workshop/research infrastructure, not always-on production hosting)
+- Slurm job name: `css360-ft-infer`, under the `debug` QOS by default
+- A session is **bounded**, and its length is bounded by the QOS: `debug` caps a
+  job at **1 hour**, which is both the default and the maximum under it.
+  Workshop/research infrastructure, not always-on production hosting.
 
 ## Why per course
 
@@ -62,13 +64,17 @@ The Slurm compute hostname is **not** stable. Helper scripts discover it from
 ```bash
 ssh $USER@tillicum.hyak.uw.edu
 cd /gpfs/projects/simswe/$USER/css360-syllabus-bot
-./training/start_finetuned_service.sh          # 2 hours; --hours 3 for longer
+./training/start_finetuned_service.sh          # 1 hour, the most `debug` allows
 ```
 
 This submits `training/inference_service/serve.slurm` only if no active
 `css360-ft-infer` job exists, waits for allocation and for the base model to
 load, records the session — node, port, expiry, published courses — with the
 application, and prints what is being served.
+
+Session length is capped by the configured QOS. A request over the ceiling is
+refused here rather than left pending forever; `SERVICE_QOS=normal` submits under
+a QOS that permits longer sessions.
 
 The session ends when the Slurm allocation does. A dropped login session, a
 closed laptop, or a forgotten stop command all resolve themselves at exactly the
@@ -122,7 +128,7 @@ Use `hyakusage` on Tillicum to inspect GPU usage / cost / credits.
 ## Important limitations
 
 - **Duo is still manual** for establishing the SSH tunnel. Helpers never store UW passwords or automate interactive auth. This is the one remaining manual step in the serving path, and it is manual because opening the tunnel authenticates to UW.
-- A session has a **bounded wall time** (2 hours by default, `--hours` to extend, 8 hours maximum). This is intentional workshop/research infrastructure, not permanent production GPU hosting.
+- A session has a **bounded wall time**, and the bound comes from the QOS rather than from preference. Under the default `debug` QOS that is 1 hour. Asking for longer is refused before submission, because Slurm would otherwise accept the job and leave it `PENDING` forever with `QOSMaxWallDurationPerJobLimit` — which looks like a busy cluster rather than a request that can never be satisfied. For a longer sitting, submit under a QOS that permits it: `SERVICE_QOS=normal ./training/start_finetuned_service.sh --hours 3`. This is intentional workshop/research infrastructure, not permanent production GPU hosting.
 - A course with no published adapter gets a clear 409, not another course's answer.
 - The website does **not** submit GPU jobs automatically.
 - Helpers refuse to submit a second `css360-ft-infer` job when one is already PENDING/RUNNING.

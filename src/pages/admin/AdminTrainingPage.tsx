@@ -266,7 +266,7 @@ function runTone(state: TrainingRun['state']) {
  * Model requests professors have submitted, and the runs queued for them.
  *
  * Queueing is the whole of this page's involvement in training. It writes a run
- * to `courses/{courseId}/trainingRuns` and stops — no connection is held open,
+ * to the `training_runs` queue and stops — no connection is held open,
  * nothing is submitted from here, and no job id is invented. The run is picked
  * up later on the cluster by someone who has logged in the normal way.
  *

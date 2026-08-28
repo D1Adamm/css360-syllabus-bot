@@ -3,7 +3,7 @@
 DEPRECATED — superseded by the training queue
 ---------------------------------------------
 Nothing in the application calls this any more. Administrators enqueue a run at
-`courses/{courseId}/trainingRuns` from the browser, and `training/
+the `training_runs` queue from the browser, and `training/
 run_training_queue.sh` claims it on Tillicum inside a session a person has
 already logged into normally. That removes the requirement this module could
 never satisfy: a non-interactive session to a cluster that only offers

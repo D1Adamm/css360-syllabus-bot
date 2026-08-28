@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Phase 7 multi-course verification (inventory + allocation + optional 5-seed smoke).
+"""Multi-course verification: fact inventory, seed allocation, optional 5-seed smoke.
+
+The file name is historical; the check itself is not tied to any milestone.
 
 Runs ONE course at a time. Does not generate 50 live seeds.
 """

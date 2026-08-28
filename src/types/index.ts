@@ -115,7 +115,7 @@ export type SyllabusStatus =
   | 'error';
 
 /**
- * Metadata stored at courses/{courseId}/metadata.
+ * Course metadata: the `courses` row, as the API returns it.
  * File-related fields are nullable until a syllabus is uploaded.
  */
 export interface CourseMetadata {
@@ -162,7 +162,7 @@ export interface StoredStarterSeedGeneration {
 /* ------------------------------------------------------------------------ *
  * Course model registry
  *
- * Stored at `courses/{courseId}/model`, alongside the course's other durable
+ * The `course_models` / `course_model_versions` registry, alongside the other durable
  * records. Two things are deliberately kept apart:
  *
  *   - `status` — does a trained model exist for this course, and is it usable?
@@ -294,7 +294,7 @@ export interface CourseModelRegistry {
 /* ------------------------------------------------------------------------ *
  * Course model requests
  *
- * Stored at `courses/{courseId}/modelRequest`, deliberately outside the model
+ * The `model_requests` table, deliberately outside the model
  * registry. The registry describes artifacts that exist; a request describes
  * work that has been asked for and has not produced one yet. A course can have
  * a request and no model, a model and no request, or both.
@@ -347,7 +347,7 @@ export interface CourseModelRequest {
    *
    * A pointer and nothing else. Operational state — claims, attempts, job
    * identifiers — lives on the run itself at
-   * `courses/{courseId}/trainingRuns/{runId}`, so a professor-facing record
+   * the `training_runs` row, so a professor-facing record
    * never has to carry it.
    */
   currentRunId?: string;
@@ -380,7 +380,7 @@ export interface CourseModelRequestPreparation {
 /* ------------------------------------------------------------------------ *
  * Training runs
  *
- * Stored at `courses/{courseId}/trainingRuns/{runId}`: the durable queue a
+ * The `training_runs` table: the durable queue a
  * runner on the cluster reads. Operational only. It is kept apart from
  * `modelRequest` because the two answer different questions — a professor asks
  * "is my model coming?", an operator asks "what is queued, who holds it, and

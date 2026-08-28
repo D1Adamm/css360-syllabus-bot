@@ -139,7 +139,7 @@ describe('course-scoped seed and evaluation data', () => {
     cleanup();
   });
 
-  it('Seed Data page subscribes to courses/{courseId}/seedExamples', async () => {
+  it('Seed Data page subscribes to that course’s seed examples', async () => {
     const courseId = 'css360-default';
     mockSeedSubscription(courseId);
 
@@ -176,7 +176,7 @@ describe('course-scoped seed and evaluation data', () => {
     ).toBeInTheDocument();
   });
 
-  it('Results reads from courses/{courseId}/evaluations', async () => {
+  it('Results reads only that course’s evaluations', async () => {
     const courseId = 'css360-default';
     mockEvaluationSubscription(courseId);
 
@@ -271,7 +271,7 @@ describe('course-scoped create/delete helpers via hooks', () => {
     vi.clearAllMocks();
   });
 
-  it('Evaluate saves to courses/{courseId}/evaluations', async () => {
+  it('Evaluate saves an evaluation scoped to that course', async () => {
     const { renderHook, act } = await import('@testing-library/react');
     const { useEvaluations } = await import('./useEvaluations');
 
@@ -323,7 +323,7 @@ describe('course-scoped create/delete helpers via hooks', () => {
     );
   });
 
-  it('Seed Data creates under courses/{courseId}/seedExamples', async () => {
+  it('Seed Data creates a seed scoped to that course', async () => {
     const { renderHook, act } = await import('@testing-library/react');
     const { useSeedExamples } = await import('./useSeedExamples');
 

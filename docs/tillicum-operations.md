@@ -155,8 +155,8 @@ Publishing an adapter for a course:
 
 ```bash
 ./training/promote_qlora_adapter.sh \
-  --course css-350-spring-2026-n3h9 --version v1 \
-  /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/css-350-spring-2026-n3h9/<run>-full/adapter
+  --course <courseId> --version <version> \
+  /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<run>-full/adapter
 ```
 
 A version is written once. Re-publishing over an existing version is refused,
@@ -417,81 +417,21 @@ lost; a run stays queued.
 
 ---
 
-## Deploying this
+## Deploying a change
 
-Nothing here is run automatically. `main` is the deployed branch: review on a
-feature branch, merge, then pull `main` on both hosts.
-
-### 1. Local
+Deployment of the application and the cluster checkout is documented separately:
+**[deployment.md](deployment.md)**. The Tillicum half in brief:
 
 ```bash
-git checkout -b tillicum-workflow-hardening
-git add -A
-git commit -m "Automate the Tillicum training and serving workflow"
-git push -u origin tillicum-workflow-hardening
+cd /gpfs/projects/simswe/$USER/css360-syllabus-bot && git pull origin main
 ```
-
-Review, then merge into `main` and push it:
-
 ```bash
-git checkout main
-git merge --no-ff tillicum-workflow-hardening
-git push origin main
-```
-
-### 2. UWB VM
-
-```bash
-cd ~/css360-syllabus-bot
-git pull origin main
-```
-
-Load the database URL from the file the backend already uses:
-
-```bash
-set -a
-source backend/.env
-set +a
-```
-
-Apply the migration (idempotent; safe to re-run):
-
-```bash
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/migrations/001_training_provenance_and_serving.sql
-```
-
-Rebuild and publish the frontend:
-
-```bash
-npm ci
-npm run build
-sudo cp -a dist/. /usr/share/nginx/html/
-sudo restorecon -R /usr/share/nginx/html
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-Restart the backend and check it:
-
-```bash
-systemctl --user restart aiswe-backend
-curl -s http://127.0.0.1:8001/api/health
-```
-
-The backend test suite is now safe to run here — that is one of the things this
-change fixes:
-
-```bash
-backend/.venv/bin/python -m pytest backend/tests -q
-```
-
-### 3. Tillicum
-
-```bash
-cd /gpfs/projects/simswe/$USER/css360-syllabus-bot
-git pull origin main
 mkdir -p /gpfs/projects/simswe/$USER/training_outputs/serving
+```
+```bash
 chmod 600 .env.local
+```
+```bash
 ./training/run_training_queue.sh --once --dry-run
 ```
 
@@ -499,10 +439,11 @@ chmod 600 .env.local
 
 This was an open question. It is not any more.
 
-Slurm job **265323** ran on **g002**, finished training, and reported its own
-completion straight to `aiswe.uwb.edu` — the run went `succeeded`, the model
-request went `ready`, and `v2` registered, with **no file left in
-`training/state/pending/`**. Direct callbacks work.
+A real training job finished on a compute node and reported its own completion
+straight to `aiswe.uwb.edu` — the run went `succeeded`, the model request went
+`ready`, and a new version registered, with **no file left in
+`training/state/pending/`**. Direct callbacks work. (Details:
+[verification-history.md](verification-history.md).)
 
 That is one observation on one node, not a property of the cluster. Nodes,
 routing and firewall policy differ and change, and the backend can be down for
@@ -523,58 +464,28 @@ way — this is diagnostic only.
 
 ---
 
-## What has been verified against production
-
-The whole workflow has been run end to end for real. Recorded here because the
-next person to read this should know which parts are proven rather than
-designed.
-
-| Proven | Evidence |
-| --- | --- |
-| Per-course serving and isolation | CSS 350 answered from its own adapter; CSS 360, with nothing published, returned 409 rather than CSS 350's answer |
-| **Train new version** preserves history | A fresh run was queued while `v1` stayed registered and published |
-| Automatic dataset transfer | The worker downloaded the prepared dataset from UWB; no `rsync`, no second Duo prompt |
-| Dataset integrity checking | 42 approved / 37 train / 5 validation verified against the manifest checksums |
-| Dataset-derived wall clock | Submitted at 1 hour instead of a flat 8 |
-| Infrastructure failure handling | A GPU preflight failure reported back automatically: run `failed`, request `failed`, `failureStage = preflight` |
-| Retry after infrastructure failure | **Retry training** queued a replacement, which trained cleanly |
-| Training length validation | Slurm 265323, 15/15 optimizer steps, `trainingLengthSatisfied = true` |
-| Automatic completion callback | Delivered directly from compute node g002 with nothing left pending |
-| Automatic registration | `v2` registered without `register_course_model.py` |
-| Ready ≠ published | With `currentVersion = v2` and `v2` ready but unpublished, inference kept resolving `v1` |
-| Publication switches serving | Publishing `v2` moved it online, `v1` offline, and the **running** service returned `modelVersion = v2` on the next request with no restart |
-
-Neither `sync_training_data_to_tillicum.sh` nor `register_course_model.py` was
-run at any point.
-
----
-
-## Verifying it, in two stages
+## Verifying a change, in two stages
 
 Deliberately two stages. Running training and inference together for the first
 time means a failure could be in either, and the two have completely different
 causes.
 
-### Stage A — serve the model CSS 350 already has
+Concrete evidence from the production run that first exercised all of this is in
+[verification-history.md](verification-history.md).
 
-CSS 350 already has `v1` (run `run-20260827t064701z-1cf650`, Slurm job 264787,
-`status = ready`, `deployment = offline`). Per-course serving can be proven
+### Stage A — serve a model the course already has
+
+If a course already has a registered version, per-course serving can be proven
 against it without spending another GPU allocation.
 
-On Tillicum:
+On Tillicum, publish the existing version:
 
 ```bash
-./training/promote_qlora_adapter.sh \
-  --course css-350-spring-2026-n3h9 \
-  --version v1 \
-  --run-id run-20260827t064701z-1cf650 \
-  /gpfs/projects/simswe/madamk/training_outputs/qlora-runs/css-350-spring-2026-n3h9/20260827T064810Z-full/adapter
+./training/promote_qlora_adapter.sh --course <courseId> --version <version> --run-id <runId> /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<run>-full/adapter
 ```
-
 ```bash
 ./training/start_finetuned_service.sh
 ```
-
 ```bash
 ./training/status_finetuned_service.sh
 ```
@@ -584,98 +495,84 @@ On the UWB VM:
 ```bash
 ./scripts/start_finetuned_tunnel.sh --from-backend
 ```
-
 ```bash
 curl -s http://127.0.0.1:8001/api/fine-tuned/health
 ```
 
-Ask CSS 350 a fine-tuned question and check the answer names the right model:
+Ask that course a fine-tuned question and check which model answered:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate \
-  -H 'Content-Type: application/json' \
-  -d '{"courseId":"css-350-spring-2026-n3h9","question":"When does the course meet?"}'
+curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate -H 'Content-Type: application/json' -d '{"courseId":"<courseId>","question":"When does the course meet?"}'
 ```
 
-Expect `"courseId": "css-350-spring-2026-n3h9"` and `"modelVersion": "v1"`.
+Expect the response to echo `"courseId": "<courseId>"` and the version you
+published.
 
-Then prove isolation — a course with no published adapter must not quietly get
-CSS 350's:
+Then prove isolation — a course with **no** published adapter must not quietly
+receive another course's:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate \
-  -H 'Content-Type: application/json' \
-  -d '{"courseId":"css-360-winter-2026-a7rp","question":"When does the course meet?"}'
+curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate -H 'Content-Type: application/json' -d '{"courseId":"<other-courseId>","question":"When does the course meet?"}'
 ```
 
-Expect a **409** naming CSS 360 — not an answer, and not CSS 350's adapter.
+Expect a **409** naming that course. Not an answer, and not the first course's
+adapter.
 
 Stop when finished:
 
 ```bash
-./scripts/stop_finetuned_tunnel.sh          # UWB VM
-./training/stop_finetuned_service.sh        # Tillicum
+./scripts/stop_finetuned_tunnel.sh
+```
+```bash
+./training/stop_finetuned_service.sh
 ```
 
 ### Stage B — the automated training lifecycle
 
-Only after Stage A works — and Stage A must end with **v1 reported as
-published**, which the `promote_qlora_adapter.sh` command above now does. Check
-it before starting:
+Only after Stage A works, and only once the course's published version is
+recorded as `deployment: online`:
 
 ```bash
-curl -s http://127.0.0.1:8001/api/db/courses/css-350-spring-2026-n3h9/model
+curl -s http://127.0.0.1:8001/api/db/courses/<courseId>/model
 ```
 
-Expect `v1` with `"deployment": "online"`. If it says `offline`, re-run the
-Stage A publish command — it is idempotent — so that inference has a published
-version to hold on to while `v2` trains.
+If it still says `offline`, re-run the Stage A publish command — it is idempotent
+— so inference has a published version to hold on to while the new one trains.
 
-1. Admin → Training, on the CSS 350 row: **Train new version**, and confirm.
-   (Not **Queue training** — that control belongs to a course's first run and
-   is not offered here. Not **Retry training** either: CSS 350's run succeeded,
-   and retry would retire it.) The dialog names the dataset being reused —
-   37 train / 5 validation from 42 approved. Nothing is re-exported.
-2. Tillicum: `./training/run_training_queue.sh --once --dry-run` — expect
-   `37 train / 5 validation`, either `already matches` or `would download`, and
-   `Wall clock: 01:00:00`.
-3. Tillicum: `./training/run_training_queue.sh --once` — expect a job id and
-   `trainingRun.state=submitted`. No rsync, no second Duo prompt.
-4. `squeue -u $USER` — the job's `TIME_LIMIT` is `1:00:00`, not `8:00:00`.
-5. When it finishes, Admin → **Training jobs**: state `succeeded`, `15/15`
-   optimizer steps, measured GPU hours, and a registered model version.
+1. Admin → Training: **Prepare training data**, then **Queue training** (or
+   **Train new version** for a course that has already finished a run).
+2. Tillicum: `./training/run_training_queue.sh --once --dry-run` — expect the
+   train/validation counts, either `already matches` or `would download`, and a
+   dataset-derived wall clock.
+3. Tillicum: `./training/run_training_queue.sh --once` — expect a Slurm job id
+   and `trainingRun.state=submitted`. No rsync, no second Duo prompt.
+4. `squeue -u $USER` — the job's `TIME_LIMIT` reflects the dataset size, not a
+   flat 8 hours.
+5. When it finishes, Admin → **Training jobs**: `succeeded`, full optimizer-step
+   count, measured GPU hours, and a registered model version.
 
-**The new version is `v2`, not `v1`.** CSS 350's `v1` already exists, and
-registration allocates the next unused version for a run it has never seen
-before. Nothing overwrites `v1`.
+**The new version is the next unused one**, not `v1`, for any course that already
+has a version. Nothing overwrites an existing version.
 
-**And `v1` keeps serving.** While `v2` is `ready` / `offline`, every fine-tuned
-answer still comes from `v1` — check it:
+**And the previously published version keeps serving** while the new one is
+`ready` / `offline`. Check it:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate -H 'Content-Type: application/json' -d '{"courseId":"css-350-spring-2026-n3h9","question":"When does the course meet?"}'
+curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate -H 'Content-Type: application/json' -d '{"courseId":"<courseId>","question":"When does the course meet?"}'
 ```
 
-Expect `"modelVersion": "v1"` even though the registry's current version is now
-`v2`. Then publish `v2` deliberately:
+It still names the published version even though the registry's current version
+has moved. Then publish the new one deliberately:
 
 ```bash
-./training/promote_qlora_adapter.sh --course css-350-spring-2026-n3h9 --version v2 --run-id <new-run-id> /gpfs/projects/simswe/madamk/training_outputs/qlora-runs/css-350-spring-2026-n3h9/<new-run>-full/adapter
+./training/promote_qlora_adapter.sh --course <courseId> --version <newVersion> --run-id <newRunId> /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<new-run>-full/adapter
 ```
 
-Re-run the same question. It now answers `"modelVersion": "v2"`, and `v1`
-remains registered and ready with `deployment: offline`.
+Re-run the same question. It now names the new version, and the old one remains
+registered and `ready` with `deployment: offline`.
 
-The earlier run `run-20260827t064701z-1cf650` stays `succeeded` with job
-`264787` throughout, and appears in **Training jobs** alongside the new one.
-
-While the retrain is under way the professor's Model page keeps saying their
-model is ready, with one line noting an updated version is being prepared. It
-does not report "training", because the model they have is still registered and
-still working.
-
-Neither `sync_training_data_to_tillicum.sh` nor `register_course_model.py` is
-run at any point.
+Neither `sync_training_data_to_tillicum.sh` nor `register_course_model.py` is run
+at any point.
 
 ---
 

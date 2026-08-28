@@ -1,43 +1,57 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-.venv
-training/.venv
-training/inference_service/.venv
-**/venv/
-**/__pycache__/
-*.pyc
+# ---------------------------------------------------------------------------
+# Secrets. Nothing matching these may ever be committed.
+# ---------------------------------------------------------------------------
 .env
-*.env.local
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 HF_TOKEN
 .hf_token
 *.pem
-backend/data/syllabus_index.json
-backend/data/indexes/
-backend/course_data/
-data/exports/*
-!data/exports/.gitkeep
-data/prepared/*
-!data/prepared/.gitkeep
-data/splits/*
-!data/splits/.gitkeep
+
+# ---------------------------------------------------------------------------
+# Dependencies and build output
+# ---------------------------------------------------------------------------
+node_modules
+dist
 dist-ssr
 *.local
+.venv
+**/.venv/
+**/venv/
+**/__pycache__/
+*.pyc
+.pytest_cache/
 
-# QLoRA / Hugging Face / Slurm artifacts (never commit)
+# ---------------------------------------------------------------------------
+# Course content and derived artifacts
+#
+# Uploaded syllabi and everything computed from them. Real course material,
+# often a real instructor's document, and none of it is reproducible from the
+# repository — so it is kept out of Git rather than merely untracked.
+# ---------------------------------------------------------------------------
+backend/course_data/
+backend/data/indexes/
+backend/data/syllabus_index.json
+
+# Prepared training datasets, per course. Regenerated from approved seeds by
+# the backend export + split, and fetched by the cluster worker over HTTPS.
+data/exports/*
+!data/exports/.gitkeep
+
+# ---------------------------------------------------------------------------
+# Model weights, training runs, and scheduler output
+#
+# Adapters are tens of megabytes and checkpoints are far larger. The registry
+# in PostgreSQL records where they live; the files themselves stay on the
+# cluster filesystem.
+# ---------------------------------------------------------------------------
 training/logs/
 training/outputs/
-# The cluster's own durable record: run id -> Slurm job id -> output directory,
-# and completion reports not yet accepted by the application. Machine-local by
-# definition, and losing it costs reconciliation information rather than data.
+# The cluster's own record of run id -> Slurm job id -> output directory, and
+# reports not yet accepted by the application. Machine-local by definition.
 training/state/
 **/training_outputs/
 **/hf_cache/
@@ -55,7 +69,37 @@ training/state/
 *.ckpt
 *.onnx
 
-# Editor directories and files
+# ---------------------------------------------------------------------------
+# Generated diagnostics
+#
+# Written by scripts in backend/scripts/ and read by nobody. Reproducible by
+# re-running the script that produced them.
+# ---------------------------------------------------------------------------
+backend/scripts/*.log
+backend/scripts/last_fact_inventory.json
+backend/scripts/phase7_summary.json
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ---------------------------------------------------------------------------
+# Archived Firebase snapshots, kept for the one-time PostgreSQL import
+# (backend/scripts/import_firebase_snapshot.py). Never committed; never deleted
+# by anything in this repository.
+# ---------------------------------------------------------------------------
+backups/firebase/
+local-artifact-backup/
+
+# ---------------------------------------------------------------------------
+# Editor, tooling, and OS
+# ---------------------------------------------------------------------------
+.claude/
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -65,20 +109,3 @@ training/state/
 *.njsproj
 *.sln
 *.sw?
-
-# Local environment configuration
-.env
-.env.local
-.env.*.local
-
-# Generated course artifacts
-backend/course_data/
-backend/data/indexes/
-
-# Local backup
-local-artifact-backup/
-
-# Archived Firebase snapshots kept for the one-time PostgreSQL import
-# (backend/scripts/import_firebase_snapshot.py). Never committed; never deleted
-# by anything in this repository.
-backups/firebase/

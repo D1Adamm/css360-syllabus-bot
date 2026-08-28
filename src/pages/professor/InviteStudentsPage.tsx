@@ -19,7 +19,7 @@ import { studentCourseHomePath } from '../../lib/roleRoutes';
  * restricted.
  *
  * The join-code layout below is the shape this page takes once the backend can
- * issue and redeem codes. See `docs/frontend-backend-gaps.md`.
+ * issue and redeem codes. See `docs/remaining-work.md`.
  */
 export function InviteStudentsPage() {
   const courseId = useCourseId();

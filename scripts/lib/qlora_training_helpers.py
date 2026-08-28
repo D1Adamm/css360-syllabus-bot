@@ -309,7 +309,7 @@ TRAINING_OUTPUTS_MARKER = "training_outputs/"
 def relative_training_output_ref(path: str | Path) -> str:
     """Turn an absolute run directory into a stored, machine-independent ref.
 
-    ``/gpfs/projects/simswe/madamk/training_outputs/qlora-runs/css-350-.../
+    ``/gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/
     20260827T064701Z-full`` becomes ``qlora-runs/css-350-.../20260827T064701Z-full``.
 
     The stored reference must not embed a cluster home directory or a username:

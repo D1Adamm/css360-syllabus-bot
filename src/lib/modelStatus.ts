@@ -6,7 +6,7 @@ import type { CourseModelRequest, CourseModelVersion } from '../types';
  * Two independent questions, deliberately never merged:
  *
  *   1. Does a trained model exist for this course, and did training succeed?
- *      Answered only by the registry record at `courses/{courseId}/model`.
+ *      Answered only by that course's model registry record.
  *   2. Is that model reachable for inference right now? Answered only by the
  *      live service check.
  *

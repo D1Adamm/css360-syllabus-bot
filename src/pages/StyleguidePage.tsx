@@ -16,10 +16,11 @@ import { StatusPill } from '../components/ui/StatusPill';
 import { Surface } from '../components/ui/Surface';
 
 /**
- * TEMPORARY — Phase 1 review surface.
+ * Development-only design-system review surface.
  *
  * This page exists so the design system can be inspected before any feature
- * page is redesigned. It is not part of the product and is removed in Phase 10.
+ * page is redesigned. It is not part of the product and is not linked from
+ * anywhere in the application's navigation.
  */
 
 const SWATCHES: { group: string; tokens: string[] }[] = [
@@ -98,7 +99,7 @@ export function StyleguidePage() {
     <div className="ui-root sg-page">
       <div className="ui-container ui-stack ui-stack--section">
         <PageHeader
-          eyebrow="Phase 1 · temporary review surface"
+          eyebrow="Development · design-system reference"
           title="Design system"
           description="Tokens, typography and UI primitives for the Syllabus Model Lab redesign. No feature page uses these yet."
           actions={<Button variant="secondary" iconLeft="settings">Placeholder action</Button>}
@@ -444,7 +445,7 @@ export function StyleguidePage() {
         </section>
 
         <p className="ui-text-xs ui-text-muted sg-footer">
-          Temporary Phase 1 review page. Removed in Phase 10.
+          Development-only reference page. Not part of the product.
         </p>
       </div>
     </div>

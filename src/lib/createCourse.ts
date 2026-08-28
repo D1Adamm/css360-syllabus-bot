@@ -31,7 +31,7 @@ function buildCourseMetadata(input: CreateCourseInput): CourseMetadata {
 }
 
 /**
- * Generate a unique courseId, then save CourseMetadata at courses/{courseId}/metadata.
+ * Generate a unique courseId, then save CourseMetadata as its `courses` row.
  * Regenerates the random suffix if courseExists reports a collision.
  */
 export async function createCourse(input: CreateCourseInput): Promise<CreateCourseResult> {
