@@ -612,3 +612,49 @@ class ValidationTests(CompletionTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrainingExampleCountSemanticsTests(CompletionTestCase):
+    """What `trainingExampleCount` counts, pinned.
+
+    A real discrepancy in production made this worth writing down: CSS 350 `v1`
+    holds 42 and `v2` holds 37, from the same 42-approved / 37-train / 5-val
+    dataset. `v1` was registered by hand with the approved count before this was
+    settled; `v2` was registered automatically with the train split.
+
+    The train split is the right reading. The column is named
+    `training_example_count`, the approved and validation counts are recorded
+    separately in provenance, and a model is not trained on its validation set.
+    `v1` stays as it is — it is a historical row, not a bug to migrate away.
+    """
+
+    def test_the_count_is_the_train_split_not_the_approved_total(self) -> None:
+        self._post(
+            _success_payload(
+                approvedExampleCount=42, trainExamples=37, validationExamples=5
+            )
+        )
+
+        self.assertEqual(self.registered[0]["trainingExampleCount"], 37)
+
+    def test_the_approved_total_is_still_recorded_in_provenance(self) -> None:
+        """Nothing is lost by not overloading the one field."""
+        self._post(
+            _success_payload(
+                approvedExampleCount=42, trainExamples=37, validationExamples=5
+            )
+        )
+
+        provenance = self.registered[0]["provenance"]
+        self.assertEqual(provenance["approvedExampleCount"], 42)
+        self.assertEqual(provenance["trainExamples"], 37)
+        self.assertEqual(provenance["validationExamples"], 5)
+
+    def test_the_run_row_is_the_fallback_when_the_job_reported_no_count(self) -> None:
+        """Also the train count — the run row's `trainExamples`, not approved."""
+        payload = _success_payload()
+        payload.pop("trainExamples")
+
+        self._post(payload, run=_run(trainExamples=37, approvedExampleCount=42))
+
+        self.assertEqual(self.registered[0]["trainingExampleCount"], 37)

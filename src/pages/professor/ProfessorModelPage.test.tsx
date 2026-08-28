@@ -128,8 +128,8 @@ describe('ProfessorModelPage', () => {
     mockRegistry(CSS360_REGISTRY);
     renderPage();
 
-    expect(screen.getByText(/Your course model is ready, but offline/i)).toBeInTheDocument();
-    expect(screen.getByText('Ready · offline')).toBeInTheDocument();
+    expect(screen.getByText(/ready, but not published yet/i)).toBeInTheDocument();
+    expect(screen.getByText('Ready · not published')).toBeInTheDocument();
     // The wording that denied the model existed.
     expect(screen.queryByText('Not available yet')).not.toBeInTheDocument();
   });
@@ -138,7 +138,7 @@ describe('ProfessorModelPage', () => {
     mockRegistry(CSS360_REGISTRY);
     renderPage();
 
-    expect(screen.getByText('54 approved examples')).toBeInTheDocument();
+    expect(screen.getByText('54 examples')).toBeInTheDocument();
     expect(screen.getByText('v1')).toBeInTheDocument();
   });
 
@@ -517,7 +517,7 @@ describe('ProfessorModelPage while a new version trains', () => {
     renderPage();
 
     expect(
-      screen.getByText(/Your course model is ready, but offline/i),
+      screen.getByText(/ready, but not published yet/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/Your course model is training/i),
@@ -529,7 +529,7 @@ describe('ProfessorModelPage while a new version trains', () => {
     mockRequest(retrainingRequest('training'));
     renderPage();
 
-    expect(screen.getByText('Ready · offline')).toBeInTheDocument();
+    expect(screen.getByText('Ready · not published')).toBeInTheDocument();
     expect(screen.queryByText('Training')).not.toBeInTheDocument();
   });
 
@@ -559,7 +559,7 @@ describe('ProfessorModelPage while a new version trains', () => {
     renderPage();
 
     expect(
-      screen.getByText(/Your course model is ready, but offline/i),
+      screen.getByText(/ready, but not published yet/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/An updated version is being prepared/i),

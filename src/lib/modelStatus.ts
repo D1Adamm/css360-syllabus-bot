@@ -149,9 +149,9 @@ export function describeCourseModel({
     return {
       presence,
       availability,
-      title: 'Your course model is ready, but offline',
+      title: 'Your course model is ready, but not published yet',
       detail:
-        'It has been trained from your approved examples and is saved. It is not running right now, so it cannot answer questions until it is brought back online.',
+        'It has been trained from your approved examples and is saved. It has not been published to the research cluster yet, so the assistant is not answering with it.',
       tone: 'warning',
     };
   }

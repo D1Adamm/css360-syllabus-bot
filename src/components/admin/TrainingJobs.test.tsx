@@ -211,7 +211,7 @@ describe('training jobs', () => {
     render(<TrainingJobs />);
 
     const list = await screen.findByRole('list', { name: 'Training jobs' });
-    expect(list).toHaveTextContent('v1 · ready · offline');
+    expect(list).toHaveTextContent('v1 · ready · not published');
   });
 
   it('labels a retried run as superseded rather than as a plain failure', async () => {
@@ -414,5 +414,159 @@ describe('serving session banner', () => {
     ).toBeInTheDocument();
     const list = await screen.findByRole('list', { name: 'Training jobs' });
     expect(list).toHaveTextContent(RUN_ID);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * Published is not the same as serving, and an infrastructure failure is not
+ * the same as a training failure
+ *
+ * Both distinctions came out of the real end-to-end run. `deployment = online`
+ * means the adapter is in the cluster's serving tree — durable — while whether
+ * a GPU session is up right now is the serving-session banner's business. And a
+ * run that died in preflight (`Failed to get device handle for GPU 0`) needs a
+ * different response from an admin than one whose training went wrong.
+ * ------------------------------------------------------------------------ */
+
+describe('published versus serving', () => {
+  it('calls a published version published, not in use', async () => {
+    fetchCourseTrainingRuns.mockResolvedValue([SUCCEEDED_RUN]);
+    fetchCourseModel.mockResolvedValue({
+      currentVersion: 'v1',
+      versions: { v1: { ...READY_VERSION, deployment: 'online' } },
+    });
+
+    render(<TrainingJobs />);
+
+    const list = await screen.findByRole('list', { name: 'Training jobs' });
+    expect(list).toHaveTextContent('v1 · ready · published');
+  });
+
+  it('says a ready version is not published rather than offline', async () => {
+    // "offline" read as "the service is down". It is not — the version simply
+    // has not been copied to the cluster yet.
+    fetchCourseTrainingRuns.mockResolvedValue([SUCCEEDED_RUN]);
+    fetchCourseModel.mockResolvedValue({
+      currentVersion: 'v1',
+      versions: { v1: { ...READY_VERSION, deployment: 'offline' } },
+    });
+
+    render(<TrainingJobs />);
+
+    const list = await screen.findByRole('list', { name: 'Training jobs' });
+    expect(list).toHaveTextContent('v1 · ready · not published');
+  });
+
+  it('does not claim a published version is being served right now', async () => {
+    fetchCourseTrainingRuns.mockResolvedValue([SUCCEEDED_RUN]);
+    fetchCourseModel.mockResolvedValue({
+      currentVersion: 'v1',
+      versions: { v1: { ...READY_VERSION, deployment: 'online' } },
+    });
+    fetchCurrentServingSession.mockResolvedValue(null);
+
+    render(<TrainingJobs />);
+
+    const list = await screen.findByRole('list', { name: 'Training jobs' });
+    expect(list).not.toHaveTextContent('in use');
+    expect(list).not.toHaveTextContent('serving now');
+  });
+
+  it('reports an unrecorded deployment as unknown rather than guessing', async () => {
+    fetchCourseTrainingRuns.mockResolvedValue([SUCCEEDED_RUN]);
+    fetchCourseModel.mockResolvedValue({
+      currentVersion: 'v1',
+      versions: { v1: { ...READY_VERSION, deployment: 'unknown' } },
+    });
+
+    render(<TrainingJobs />);
+
+    const list = await screen.findByRole('list', { name: 'Training jobs' });
+    expect(list).toHaveTextContent('publication unknown');
+  });
+});
+
+describe('infrastructure failures', () => {
+  function failedRun(stage: string, error: string) {
+    return {
+      ...SUCCEEDED_RUN,
+      state: 'failed' as const,
+      error,
+      completion: {
+        outcome: 'failed' as const,
+        receivedAt: '2026-09-02T08:10:00.000Z',
+        jobId: '265300',
+        failureStage: stage,
+        error,
+      },
+    };
+  }
+
+  it('says plainly that a preflight failure trained nothing', async () => {
+    /*
+     * The real one: a node whose GPU had gone. The run never trained, so the
+     * dataset and every earlier version are untouched and a retry is the whole
+     * remedy — which is not obvious from "exited with status 6".
+     */
+    fetchCourseTrainingRuns.mockResolvedValue([
+      failedRun('preflight', 'The Slurm job exited with status 6.'),
+    ]);
+
+    render(<TrainingJobs />);
+
+    const list = await screen.findByRole('list', { name: 'Training jobs' });
+    expect(list).toHaveTextContent('preflight failed before training started');
+    expect(list).toHaveTextContent('Retry training');
+  });
+
+  it('keeps the operator-facing error alongside the plain summary', async () => {
+    // The summary is for deciding what to do; the raw text is for debugging.
+    fetchCourseTrainingRuns.mockResolvedValue([
+      failedRun('preflight', 'The Slurm job exited with status 6.'),
+    ]);
+
+    render(<TrainingJobs />);
+
+    const list = await screen.findByRole('list', { name: 'Training jobs' });
+    expect(list).toHaveTextContent('exited with status 6');
+    expect(list).toHaveTextContent('preflight');
+  });
+
+  it('does not blame the hardware it cannot diagnose', async () => {
+    fetchCourseTrainingRuns.mockResolvedValue([
+      failedRun('preflight', 'The Slurm job exited with status 6.'),
+    ]);
+
+    render(<TrainingJobs />);
+
+    const list = await screen.findByRole('list', { name: 'Training jobs' });
+    // No node name, no claim about which GPU or why.
+    expect(list).not.toHaveTextContent('g018');
+    expect(list).not.toHaveTextContent('broken');
+  });
+
+  it('describes a training failure differently from an infrastructure one', async () => {
+    fetchCourseTrainingRuns.mockResolvedValue([
+      failedRun('training', 'Loss became NaN at step 4.'),
+    ]);
+
+    render(<TrainingJobs />);
+
+    const list = await screen.findByRole('list', { name: 'Training jobs' });
+    expect(list).toHaveTextContent('Check the run logs before retrying');
+    expect(list).not.toHaveTextContent('preflight failed before training started');
+  });
+
+  it('adds no summary for a failure stage it does not recognise', async () => {
+    // Better to show only the real error than to invent an explanation.
+    fetchCourseTrainingRuns.mockResolvedValue([
+      failedRun('something-new', 'Unrecognised failure.'),
+    ]);
+
+    render(<TrainingJobs />);
+
+    const list = await screen.findByRole('list', { name: 'Training jobs' });
+    expect(list).toHaveTextContent('Unrecognised failure.');
+    expect(list).not.toHaveTextContent('Retry training to queue a replacement');
   });
 });

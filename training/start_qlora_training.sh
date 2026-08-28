@@ -15,6 +15,15 @@ DEPLOY_HELPERS="${REPO_ROOT}/scripts/lib/finetuned_deploy_helpers.py"
 COURSE_ID=""
 MODE=""
 ASSUME_YES=0
+
+# Nodes to keep this submission off. Empty by default, and never persisted.
+#
+# Temporary infrastructure troubleshooting only. A node whose GPU preflight
+# fails today — `Failed to get device handle for GPU 0` — is usually repaired
+# within a day or two, and Slurm must stay free to schedule it the moment it is.
+# So no node is ever named in this repository, and an exclusion lives exactly as
+# long as the operator keeps typing it.
+EXCLUDE_NODES="${TRAINING_EXCLUDE_NODES:-}"
 QUEUE_RUN_ID=""
 WALLTIME_OVERRIDE="${QLORA_WALLTIME:-}"
 WALLTIME_CEILING="${QLORA_MAX_WALLTIME:-}"
@@ -30,6 +39,11 @@ Usage:
 Exactly one of --smoke or --full is required. Full is never auto-submitted after smoke.
 
 Options:
+  --exclude-node NODE     Do not schedule on NODE. Repeatable, or comma-separated.
+                          TEMPORARY troubleshooting for a node failing its GPU
+                          preflight right now. Nothing is remembered between
+                          runs; set TRAINING_EXCLUDE_NODES to default it for one
+                          shell.
   --queue-run-id <runId>  PostgreSQL training run this job is executing. Passed
                           into the Slurm job so it can report its own completion
                           back to the application. Set automatically by
@@ -118,6 +132,15 @@ while [[ $# -gt 0 ]]; do
       WALLTIME_OVERRIDE="$2"
       shift 2
       ;;
+    --exclude-node)
+      [[ $# -ge 2 ]] || die "--exclude-node requires a node name"
+      if [[ -n "${EXCLUDE_NODES}" ]]; then
+        EXCLUDE_NODES="${EXCLUDE_NODES},$2"
+      else
+        EXCLUDE_NODES="$2"
+      fi
+      shift 2
+      ;;
     --yes|-y)
       ASSUME_YES=1
       shift
@@ -140,6 +163,10 @@ require_cmd python3
 [[ -f "${REPO_ROOT}/training/train.slurm" ]] || die "Does not look like the repo root."
 
 COURSE_ID="$(helpers validate-course-id "${COURSE_ID}")" || die "Invalid course ID."
+if [[ -n "${EXCLUDE_NODES}" ]]; then
+  EXCLUDE_NODES="$(python3 "${DEPLOY_HELPERS}" validate-exclude-nodes "${EXCLUDE_NODES}")" \
+    || die "Invalid --exclude-node value."
+fi
 EXPORT_DIR="${REPO_ROOT}/data/exports/${COURSE_ID}"
 COUNTS_JSON="$(helpers validate-export-dir "${EXPORT_DIR}")" || die "Export validation failed for ${EXPORT_DIR}"
 TRAIN_COUNT="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["train_count"])' "${COUNTS_JSON}")"
@@ -217,6 +244,9 @@ echo "Train examples: ${TRAIN_COUNT}"
 echo "Validation examples: ${VAL_COUNT}"
 echo "Slurm script: ${SLURM_SCRIPT}"
 echo "Job name: ${JOB_NAME}"
+if [[ -n "${EXCLUDE_NODES}" ]]; then
+  echo "Excluded nodes: ${EXCLUDE_NODES}  (temporary, this submission only)"
+fi
 echo "Wall clock: ${WALLTIME} (${WALLTIME_REASON})"
 if [[ "${WALLTIME_CLAMPED}" == "ceiling" ]]; then
   echo "  Note: the estimate exceeded the maximum request and was capped."
@@ -264,6 +294,7 @@ META_FILE="${REPO_ROOT}/training/logs/last-qlora-${MODE}.env"
 cat > "${META_FILE}" <<EOF
 COURSE_ID=${COURSE_ID}
 MODE=${MODE}
+EXCLUDE_NODES=${EXCLUDE_NODES}
 RUN_ID=${RUN_ID}
 QUEUE_RUN_ID=${QUEUE_RUN_ID}
 WALLTIME=${WALLTIME}
@@ -281,7 +312,11 @@ EOF
 # own completion — but it reads it from .env.local on the shared filesystem,
 # where it is already protected by file permissions, rather than travelling
 # through the scheduler.
-SBATCH_OUT="$(env -u TRAINING_WORKER_TOKEN sbatch -J "${JOB_NAME}" --time="${WALLTIME}" "${SLURM_SCRIPT}")" \
+SBATCH_OUT="$(env -u TRAINING_WORKER_TOKEN sbatch \
+  -J "${JOB_NAME}" \
+  --time="${WALLTIME}" \
+  ${EXCLUDE_NODES:+--exclude="${EXCLUDE_NODES}"} \
+  "${SLURM_SCRIPT}")" \
   || die "sbatch failed."
 echo "${SBATCH_OUT}"
 if [[ -f "${DEPLOY_HELPERS}" ]]; then

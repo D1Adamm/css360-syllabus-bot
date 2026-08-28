@@ -40,8 +40,11 @@ helpers() {
 }
 
 is_active_state() {
+  # CG/COMPLETING counts: the job is still in the queue and still holds the
+  # allocation, and an operator watching a session end should see that rather
+  # than be told nothing is running.
   case "$1" in
-    PD|PENDING|R|RUNNING|CF|CONFIGURING) return 0 ;;
+    PD|PENDING|R|RUNNING|CF|CONFIGURING|CG|COMPLETING) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -55,6 +58,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 command -v squeue >/dev/null 2>&1 || die "Required command not found: squeue"
+command -v sacct >/dev/null 2>&1 || die "Required command not found: sacct"
 command -v python3 >/dev/null 2>&1 || die "Required command not found: python3"
 [[ -f "${HELPERS}" ]] || die "Missing helpers module: ${HELPERS}"
 
@@ -75,10 +79,25 @@ while IFS= read -r candidate; do
     LINE="${candidate}"
     break
   fi
-done < <(squeue -u "${USER}" -n "${JOB_NAME}" -h -o "%i %t %N %M %L" 2>/dev/null || true)
+done < <(squeue -u "${USER}" -n "${JOB_NAME}" -h -o "%i|%t|%N|%M|%L|%R" 2>/dev/null || true)
 
 if [[ -z "${LINE}" ]]; then
   echo "No active ${JOB_NAME} job found for user ${USER}."
+  # A job that has left the queue is only visible through sacct. Showing how the
+  # last one ended is the difference between "nothing is running" and "the last
+  # session failed and nobody noticed".
+  LAST="$(sacct -u "${USER}" --name "${JOB_NAME}" -X --parsable2 --noheader \
+    -o JobID,State,ExitCode,Elapsed,End 2>/dev/null | tail -n 1 || true)"
+  if [[ -n "${LAST}" ]]; then
+    IFS='|' read -r LAST_ID LAST_STATE LAST_EXIT LAST_ELAPSED LAST_END <<< "${LAST}"
+    echo "Most recent session"
+    echo "  Job ID: ${LAST_ID}"
+    echo "  State: $(helpers describe-state "${LAST_STATE}") (${LAST_STATE})"
+    echo "  Exit code: ${LAST_EXIT:-unknown}"
+    echo "  Ran for: ${LAST_ELAPSED:-unknown}"
+    echo "  Ended: ${LAST_END:-unknown}"
+    echo "  Logs: ${REPO_ROOT}/training/logs/infer-${LAST_ID%%.*}.err"
+  fi
   echo "Start one with: ./training/start_finetuned_service.sh"
   exit 1
 fi
@@ -88,13 +107,31 @@ STATE="$(printf '%s\n' "${LINE}" | helpers parse-squeue-line --field state)"
 NODE="$(printf '%s\n' "${LINE}" | helpers parse-squeue-line --field node)"
 ELAPSED="$(printf '%s\n' "${LINE}" | helpers parse-squeue-line --field elapsed)"
 TIME_LEFT="$(printf '%s\n' "${LINE}" | helpers parse-squeue-line --field time_left)"
+REASON="$(printf '%s\n' "${LINE}" | helpers parse-squeue-line --field reason)"
 
 echo "Slurm job"
 echo "  Job ID: ${JOB_ID}"
-echo "  State: ${STATE}"
-echo "  Elapsed: ${ELAPSED:-unknown}"
-echo "  Time left: ${TIME_LEFT:-unknown}"
-echo "  Node: ${NODE:-"(none yet)"}"
+echo "  State: $(helpers describe-state "${STATE}") (${STATE})"
+
+# A pending job has no elapsed time and no node, and saying so is more useful
+# than printing whichever field happened to land in that column. The previous
+# format could not tell the difference: `%N` is empty for a pending job, so
+# every field after it shifted left and a time *limit* was displayed as elapsed.
+case "${STATE}" in
+  PD|PENDING|CF|CONFIGURING)
+    echo "  Waiting since: submitted (not started, so no elapsed run time)"
+    echo "  Requested wall clock: ${TIME_LEFT:-unknown}"
+    if [[ -n "${REASON}" ]]; then
+      echo "  Pending because: $(helpers describe-pending-reason "${REASON}")"
+    fi
+    echo "  Node: (not allocated yet)"
+    ;;
+  *)
+    echo "  Elapsed: ${ELAPSED:-unknown}"
+    echo "  Time left: ${TIME_LEFT:-unknown}"
+    echo "  Node: ${NODE:-"(none yet)"}"
+    ;;
+esac
 
 case "${STATE}" in
   R|RUNNING)
@@ -125,8 +162,24 @@ if isinstance(remaining, (int, float)):
     echo "  Logs: ${REPO_ROOT}/training/logs/infer-${JOB_ID}.err"
     exit 1
     ;;
+  CG|COMPLETING)
+    echo "  Health: n/a (the job is finishing; the session is ending)"
+    exit 0
+    ;;
+  PD|PENDING|CF|CONFIGURING)
+    echo "  Health: n/a (no allocation yet)"
+    case "${REASON}" in
+      QOSMaxWallDurationPerJobLimit|PartitionTimeLimit)
+        echo "  This job will never start. Cancel it and request less time:"
+        echo "    scancel ${JOB_ID}"
+        echo "    ./training/start_finetuned_service.sh"
+        exit 1
+        ;;
+    esac
+    exit 0
+    ;;
   *)
-    echo "  Health: n/a (job not RUNNING yet)"
+    echo "  Health: n/a (state ${STATE})"
     exit 0
     ;;
 esac

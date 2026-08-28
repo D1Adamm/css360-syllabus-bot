@@ -784,6 +784,17 @@ def _provenance_record(
 def _training_example_count(request: CompletionRequest, run: dict[str, Any]) -> int:
     """How many examples this model was actually trained on.
 
+    The **train split**, not the approved set it was drawn from. For CSS 350's
+    42 approved examples split 37/5, this is 37. The column is named
+    `training_example_count` and the approved and validation counts are recorded
+    separately in the run's provenance, so this one does not have to stand in
+    for either.
+
+    CSS 350 `v1` holds 42 because a person registered it by hand and passed the
+    approved count before this was written down. That row is historical and is
+    deliberately not rewritten; every automatic registration since has written
+    the train split.
+
     The reported train count first, because it was counted on the file the job
     read. The run's enqueued count is the fallback: it was recorded at queue
     time and can have been superseded by a re-preparation since.

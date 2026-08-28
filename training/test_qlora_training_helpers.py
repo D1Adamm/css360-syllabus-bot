@@ -257,7 +257,7 @@ class SlurmJobNameIsolationTests(unittest.TestCase):
         text = (
             Path(__file__).resolve().parent / "start_qlora_training.sh"
         ).read_text(encoding="utf-8")
-        self.assertIn('sbatch -J "${JOB_NAME}"', text)
+        self.assertIn('-J "${JOB_NAME}"', text)
         self.assertIn("slurm-job-name", text)
         self.assertIn("select-active-training-job", text)
         self.assertNotIn('JOB_NAME="css360-qlora-smoke"', text)

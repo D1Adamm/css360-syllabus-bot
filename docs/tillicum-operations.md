@@ -87,7 +87,7 @@ Before a class or a demo:
 ```bash
 ssh $USER@tillicum.hyak.uw.edu           # UW password + Duo, by hand
 cd /gpfs/projects/simswe/$USER/css360-syllabus-bot
-./training/start_finetuned_service.sh    # 2 hours by default; --hours 3 for longer
+./training/start_finetuned_service.sh    # one hour, the most the debug QOS allows
 ```
 
 Then, on the application VM:
@@ -101,6 +101,21 @@ cd ~/css360-syllabus-bot
 `--from-backend` looks the compute node up from the session Tillicum recorded,
 instead of the operator reading a hostname off one machine and typing it into
 another.
+
+**Session length is bounded by the QOS, not by preference.** `serve.slurm` runs
+under `debug`, which caps a job at one hour, and that is the default. Asking for
+more is refused before submission with the reason — Slurm would otherwise accept
+a two-hour job and leave it `PENDING` forever with
+`QOSMaxWallDurationPerJobLimit`, which looks like a busy cluster rather than a
+request that can never be satisfied. That cost a session. For a longer sitting,
+submit under a QOS that permits it:
+
+```bash
+SERVICE_QOS=normal ./training/start_finetuned_service.sh --hours 3
+```
+
+Re-running the command extends nothing: an active session is reused. Start a
+fresh one after it expires.
 
 Status and stop:
 
@@ -191,6 +206,53 @@ resident.
    course's question with another's weights.
 4. The response echoes the course it used, and the backend discards a response
    whose course does not match what it asked for.
+
+---
+
+## When a node is unhealthy
+
+GPU device failures happen. In one session a node repeatedly failed its
+preflight:
+
+```text
+Failed to get device handle for GPU 0
+nvidia-smi: No devices were found
+```
+
+The workflow handled it correctly on its own — the job failed at preflight, the
+failure callback marked the run `failed` with `failureStage = preflight`, the
+model request went `failed`, and **Retry training** queued a replacement that
+trained successfully. Nothing was lost and no history was rewritten.
+
+What the workaround exposed is that an operator sometimes needs to keep one
+submission off one node *right now*:
+
+```bash
+./training/start_finetuned_service.sh --exclude-node g018
+```
+```bash
+./training/run_training_queue.sh --once --exclude-node g018
+```
+
+Both accept the flag repeatedly, or a comma-separated list. It is passed
+straight through as `sbatch --exclude=`.
+
+**This is temporary troubleshooting and nothing else.** No node is named
+anywhere in this repository, the default is no exclusions, and nothing is
+remembered between runs — Hyak repairs nodes, and Slurm has to be free to
+schedule one the moment it is healthy again. A test in
+`training/test_finetuned_deploy_helpers.py` fails if a node name is ever
+hardcoded into an `--exclude=`.
+
+To default it for one shell only:
+
+```bash
+export TRAINING_EXCLUDE_NODES=g018     # training
+export SERVICE_EXCLUDE_NODES=g018      # serving
+```
+
+If a node is failing repeatedly, report it to Hyak. Excluding it is a way to get
+through the afternoon, not a fix.
 
 ---
 
@@ -433,19 +495,57 @@ chmod 600 .env.local
 ./training/run_training_queue.sh --once --dry-run
 ```
 
-### Optional: does a compute node reach UWB directly?
+### Compute-node connectivity: observed working, fallback still required
 
-Read-only, five minutes of a debug allocation, and it changes nothing either
-way — the persist-to-GPFS fallback already covers "no".
+This was an open question. It is not any more.
+
+Slurm job **265323** ran on **g002**, finished training, and reported its own
+completion straight to `aiswe.uwb.edu` — the run went `succeeded`, the model
+request went `ready`, and `v2` registered, with **no file left in
+`training/state/pending/`**. Direct callbacks work.
+
+That is one observation on one node, not a property of the cluster. Nodes,
+routing and firewall policy differ and change, and the backend can be down for
+reasons that have nothing to do with the compute node. **The persist-to-GPFS
+fallback stays, permanently.** Every report is written to
+`training/state/pending/` *before* the send is attempted, so the difference
+between the two cases is only how quickly the application finds out.
+
+To check it again on some other node:
 
 ```bash
-srun --account=simswe --qos=debug --time=00:05:00 --pty \
-  curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://aiswe.uwb.edu/api/health
+srun --account=simswe --qos=debug --time=00:05:00 --pty curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 https://aiswe.uwb.edu/api/health
 ```
 
-`200` means completion callbacks land the moment a job ends. Anything else means
-they are written to `training/state/pending/` and delivered by the next
-`./training/run_training_queue.sh --once`. No code changes on either answer.
+`200` means callbacks land the moment a job ends. Anything else means they wait
+for the next `./training/run_training_queue.sh --once`. No code changes either
+way — this is diagnostic only.
+
+---
+
+## What has been verified against production
+
+The whole workflow has been run end to end for real. Recorded here because the
+next person to read this should know which parts are proven rather than
+designed.
+
+| Proven | Evidence |
+| --- | --- |
+| Per-course serving and isolation | CSS 350 answered from its own adapter; CSS 360, with nothing published, returned 409 rather than CSS 350's answer |
+| **Train new version** preserves history | A fresh run was queued while `v1` stayed registered and published |
+| Automatic dataset transfer | The worker downloaded the prepared dataset from UWB; no `rsync`, no second Duo prompt |
+| Dataset integrity checking | 42 approved / 37 train / 5 validation verified against the manifest checksums |
+| Dataset-derived wall clock | Submitted at 1 hour instead of a flat 8 |
+| Infrastructure failure handling | A GPU preflight failure reported back automatically: run `failed`, request `failed`, `failureStage = preflight` |
+| Retry after infrastructure failure | **Retry training** queued a replacement, which trained cleanly |
+| Training length validation | Slurm 265323, 15/15 optimizer steps, `trainingLengthSatisfied = true` |
+| Automatic completion callback | Delivered directly from compute node g002 with nothing left pending |
+| Automatic registration | `v2` registered without `register_course_model.py` |
+| Ready ≠ published | With `currentVersion = v2` and `v2` ready but unpublished, inference kept resolving `v1` |
+| Publication switches serving | Publishing `v2` moved it online, `v1` offline, and the **running** service returned `modelVersion = v2` on the next request with no restart |
+
+Neither `sync_training_data_to_tillicum.sh` nor `register_course_model.py` was
+run at any point.
 
 ---
 

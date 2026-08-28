@@ -37,18 +37,18 @@ describe('presenceFromVersion', () => {
 });
 
 describe('describeCourseModel', () => {
-  it('says a trained model exists even though it is offline', () => {
+  it('says a trained model exists even though it is not published', () => {
     const result = describeCourseModel({ version: READY_OFFLINE });
 
     expect(result.presence).toBe('ready');
     expect(result.availability).toBe('offline');
     expect(result.title).toMatch(/ready/i);
-    expect(result.title).toMatch(/offline/i);
+    expect(result.title).toMatch(/not published/i);
     // The old wording, which denied the model's existence.
     expect(result.title).not.toMatch(/not available yet/i);
   });
 
-  it('reports a served model as in use', () => {
+  it('reports a published model as the one that answers', () => {
     const result = describeCourseModel({
       version: { ...READY_OFFLINE, deployment: 'online' },
     });

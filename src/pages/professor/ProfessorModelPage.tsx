@@ -134,9 +134,9 @@ export function ProfessorModelPage() {
                 ? describeModelRequest(activeRequest).label
                 : presentation.presence === 'ready'
                 ? presentation.availability === 'online'
-                  ? 'Ready · in use'
+                  ? 'Ready · published'
                   : presentation.availability === 'offline'
-                    ? 'Ready · offline'
+                    ? 'Ready · not published'
                     : 'Ready'
                 : presentation.presence === 'training'
                   ? 'Preparing'
@@ -180,9 +180,14 @@ export function ProfessorModelPage() {
             {hasModel && version && (
               <dl className="model-facts">
                 <div>
-                  <dt>Trained from</dt>
+                  {/* "approved examples" was wrong here: the count is the train
+                      split, which is a subset of what was approved. A professor
+                      who approved 42 and read "42 approved examples" against a
+                      model trained on 37 was being told something untrue about
+                      their own work. */}
+                  <dt>Trained on</dt>
                   <dd>
-                    {version.trainingExampleCount} approved example
+                    {version.trainingExampleCount} example
                     {version.trainingExampleCount === 1 ? '' : 's'}
                   </dd>
                 </div>

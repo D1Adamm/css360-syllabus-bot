@@ -30,32 +30,78 @@ def parse_sbatch_job_id(sbatch_output: str) -> str:
     )
 
 
-def parse_squeue_job_line(line: str) -> dict[str, str] | None:
-    """Parse one ``squeue -h -o '%i %t %N %M %L'`` style line.
+#: The delimiter every squeue call in this repository now asks for.
+#:
+#: Whitespace-separated output cannot be parsed positionally, and believing it
+#: could be produced visibly wrong status for a pending job. `%N` is *empty* for
+#: a job that has no node yet — not "(null)", not a placeholder — so
+#: `%i %t %N %M %L` collapses from five fields to four, and every field after
+#: the node shifts left by one. A job pending on a QOS limit reported
+#: `Node: 0:00`, `Elapsed: 2:00:00` (its time *limit*), and `Time left: unknown`.
+#:
+#: A delimiter that never appears inside a Slurm field keeps empty fields
+#: positional, so an absent node stays an absent node.
+SQUEUE_DELIMITER = "|"
 
-    Returns None for blank lines. Fields after the first two may be empty when
-    the job is still pending (no node yet).
+#: What the shell helpers ask squeue for: id, state, node, elapsed, left, reason.
+SQUEUE_FORMAT = "%i|%t|%N|%M|%L|%R"
+
+SQUEUE_FIELDS = ("job_id", "state", "node", "elapsed", "time_left", "reason")
+
+
+def _clean_node(value: str) -> str:
+    """A node list reduced to one hostname, or empty when there is none.
+
+    A parenthesised value is a *reason*, not a node — squeue puts the reason in
+    the NODELIST(REASON) column for pending jobs — so it never becomes one here.
+    """
+    node = value.strip()
+    if not node or node in {"(null)", "N/A"} or node.startswith("("):
+        return ""
+    return node.split(",")[0]
+
+
+def parse_squeue_job_line(line: str) -> dict[str, str] | None:
+    """Parse one ``squeue -h -o '%i|%t|%N|%M|%L|%R'`` line.
+
+    Returns None for blank lines.
+
+    Whitespace-separated input is still accepted, because older callers and
+    hand-run commands produce it, but it is parsed conservatively: only the two
+    fields that cannot be empty — the job id and the state — are read
+    positionally, and everything after them is left blank rather than guessed
+    at. Guessing is what produced a pending job's time limit displayed as its
+    elapsed time.
     """
     stripped = line.strip()
     if not stripped:
         return None
-    parts = stripped.split()
-    if len(parts) < 2:
+
+    if SQUEUE_DELIMITER in stripped:
+        parts = [part.strip() for part in stripped.split(SQUEUE_DELIMITER)]
+        parts += [""] * (len(SQUEUE_FIELDS) - len(parts))
+        if not parts[0] or not parts[1]:
+            raise ValueError(
+                f"Unexpected squeue line (need jobid and state): {stripped!r}"
+            )
+        record = dict(zip(SQUEUE_FIELDS, parts))
+        record["node"] = _clean_node(record["node"])
+        record["reason"] = record["reason"].strip("()")
+        return record
+
+    words = stripped.split()
+    if len(words) < 2:
         raise ValueError(f"Unexpected squeue line (need jobid state): {stripped!r}")
-    job_id, state = parts[0], parts[1]
-    node = parts[2] if len(parts) >= 3 and parts[2] not in {"", "(null)"} else ""
-    elapsed = parts[3] if len(parts) >= 4 else ""
-    time_left = parts[4] if len(parts) >= 5 else ""
-    # Pending jobs sometimes show node as "(null)" already handled; also
-    # collapse multi-token node lists to the first hostname token.
-    if node.startswith("("):
-        node = ""
+
+    # Only the two unambiguous fields. See the docstring: positions past the
+    # state are not trustworthy without a delimiter.
     return {
-        "job_id": job_id,
-        "state": state,
-        "node": node.split(",")[0] if node else "",
-        "elapsed": elapsed,
-        "time_left": time_left,
+        "job_id": words[0],
+        "state": words[1],
+        "node": _clean_node(words[2]) if len(words) >= 3 else "",
+        "elapsed": "",
+        "time_left": "",
+        "reason": "",
     }
 
 
@@ -68,6 +114,92 @@ def is_active_slurm_state(state: str) -> bool:
 def is_running_slurm_state(state: str) -> bool:
     normalized = state.strip().upper()
     return normalized in {"R", "RUNNING"}
+
+
+#: Slurm state codes an operator sees, in words.
+#:
+#: Both the abbreviation squeue prints with `%t` and the long form sacct prints,
+#: because a job that has left the queue is only visible through sacct and an
+#: operator should not have to know which command produced the row they are
+#: reading.
+SLURM_STATE_LABELS = {
+    "PD": "pending",
+    "PENDING": "pending",
+    "CF": "configuring",
+    "CONFIGURING": "configuring",
+    "R": "running",
+    "RUNNING": "running",
+    "CG": "completing",
+    "COMPLETING": "completing",
+    "CD": "completed",
+    "COMPLETED": "completed",
+    "F": "failed",
+    "FAILED": "failed",
+    "CA": "cancelled",
+    "CANCELLED": "cancelled",
+    "TO": "timed out",
+    "TIMEOUT": "timed out",
+    "NF": "node failure",
+    "NODE_FAIL": "node failure",
+    "OOM": "out of memory",
+    "PR": "preempted",
+    "PREEMPTED": "preempted",
+    "S": "suspended",
+    "SUSPENDED": "suspended",
+}
+
+
+def describe_slurm_state(state: str) -> str:
+    """A state code in words, or the code itself when it is not recognised.
+
+    Unknown codes are returned as-is rather than mapped to "unknown": Slurm has
+    more states than are worth enumerating, and showing the real code lets an
+    operator look it up.
+    """
+    raw = (state or "").strip()
+    if not raw:
+        return "unknown"
+    # sacct writes "CANCELLED by 12345"; the first word is the state.
+    head = raw.split()[0].upper()
+    return SLURM_STATE_LABELS.get(head, raw)
+
+
+def is_pending_slurm_state(state: str) -> bool:
+    normalized = (state or "").strip().upper()
+    return normalized in {"PD", "PENDING", "CF", "CONFIGURING"}
+
+
+def describe_pending_reason(reason: str) -> str:
+    """Turn a squeue pending reason into something worth reading.
+
+    The reasons that cost real time here get a sentence; everything else is
+    passed through. A job pending on `QOSMaxWallDurationPerJobLimit` will never
+    start, and an operator watching it "queue" is watching nothing happen.
+    """
+    value = (reason or "").strip().strip("()")
+    if not value:
+        return ""
+    explanations = {
+        "QOSMaxWallDurationPerJobLimit": (
+            "the requested wall clock is longer than this QOS allows — this job "
+            "will never start; cancel it and request less time"
+        ),
+        "PartitionTimeLimit": (
+            "the requested wall clock is longer than the partition allows — this "
+            "job will never start"
+        ),
+        "QOSMaxJobsPerUserLimit": "you already have the most jobs this QOS allows",
+        "Resources": "waiting for a node with the requested resources",
+        "Priority": "waiting behind higher-priority work",
+        "ReqNodeNotAvail": (
+            "a requested node is unavailable — check any --exclude list and any "
+            "reservation or maintenance window"
+        ),
+        "BeginTime": "held until a scheduled start time",
+        "Dependency": "waiting on another job",
+    }
+    detail = explanations.get(value)
+    return f"{value} ({detail})" if detail else value
 
 
 def validate_compute_hostname(hostname: str) -> str:
@@ -85,6 +217,42 @@ def validate_compute_hostname(hostname: str) -> str:
     if ".." in value or value.startswith("-") or value.endswith("-"):
         raise ValueError(f"Invalid compute node hostname: {value!r}")
     return value
+
+
+def validate_exclude_nodes(nodes: str) -> str:
+    """Normalise a comma-separated node list for `sbatch --exclude=`.
+
+    Temporary operator troubleshooting only. A node that fails its GPU preflight
+    today is usually repaired within a day or two, and Slurm should be free to
+    schedule it again the moment it is — so nothing in this repository ever
+    names a node, and a list only exists for as long as the operator types one.
+
+    Each entry goes through the same hostname rule the tunnel helper uses, so an
+    exclusion cannot smuggle a shell metacharacter into an sbatch argument.
+    Returns the cleaned, de-duplicated, comma-joined list. Empty input returns
+    empty, which is the default and means no exclusions at all.
+    """
+    raw = (nodes or "").strip()
+    if not raw:
+        return ""
+
+    cleaned: list[str] = []
+    for entry in raw.split(","):
+        candidate = entry.strip()
+        if not candidate:
+            continue
+        validate_compute_hostname(candidate)
+        if candidate not in cleaned:
+            cleaned.append(candidate)
+
+    if not cleaned:
+        return ""
+    if len(cleaned) > 16:
+        raise ValueError(
+            "Refusing to exclude more than 16 nodes. Excluding this much of the "
+            "cluster is a scheduling problem to raise with Hyak, not a workaround."
+        )
+    return ",".join(cleaned)
 
 
 def parse_wait_for_node_stdout(stdout: str) -> str:
@@ -221,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
     p_squeue = sub.add_parser("parse-squeue-line", help="Parse one squeue line from stdin")
     p_squeue.add_argument(
         "--field",
-        choices=("job_id", "state", "node", "elapsed", "time_left"),
+        choices=SQUEUE_FIELDS,
         default=None,
     )
     p_squeue.set_defaults(func=_cli_parse_squeue)
@@ -235,6 +403,32 @@ def main(argv: list[str] | None = None) -> int:
         help="Require stdin to be exactly one compute hostname line",
     )
     p_wait_node.set_defaults(func=_cli_parse_wait_node_stdout)
+
+    p_fmt = sub.add_parser(
+        "squeue-format", help="Print the delimited squeue format string to use"
+    )
+    p_fmt.set_defaults(func=lambda args: (print(SQUEUE_FORMAT), 0)[1])
+
+    p_state = sub.add_parser("describe-state", help="A Slurm state code in words")
+    p_state.add_argument("state")
+    p_state.set_defaults(func=lambda args: (print(describe_slurm_state(args.state)), 0)[1])
+
+    p_reason = sub.add_parser(
+        "describe-pending-reason", help="Explain a squeue pending reason"
+    )
+    p_reason.add_argument("reason")
+    p_reason.set_defaults(
+        func=lambda args: (print(describe_pending_reason(args.reason)), 0)[1]
+    )
+
+    p_excl = sub.add_parser(
+        "validate-exclude-nodes",
+        help="Validate a comma-separated node list for sbatch --exclude",
+    )
+    p_excl.add_argument("nodes")
+    p_excl.set_defaults(
+        func=lambda args: (print(validate_exclude_nodes(args.nodes)), 0)[1]
+    )
 
     p_health = sub.add_parser("health-ready", help="Exit 0 if stdin JSON health is ready")
     p_health.set_defaults(func=_cli_health_ready)
