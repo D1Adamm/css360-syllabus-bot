@@ -115,6 +115,27 @@ def _load_qlora_helpers() -> Any:
     return module
 
 
+def _validate_exclude_nodes(nodes: str) -> str:
+    """Reuse the deploy helper's rule rather than restating it here.
+
+    The value becomes an sbatch argument, so it is validated wherever it enters
+    — and validated by the one function that already knows what a compute
+    hostname may look like.
+    """
+    import importlib.util
+
+    path = SCRIPTS_LIB / "finetuned_deploy_helpers.py"
+    spec = importlib.util.spec_from_file_location("finetuned_deploy_helpers", path)
+    if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        raise TrainingQueueError(f"Missing deploy helpers: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        return module.validate_exclude_nodes(nodes)
+    except ValueError as exc:
+        raise TrainingQueueError(str(exc)) from exc
+
+
 def default_owner() -> str:
     import getpass
 
@@ -189,14 +210,20 @@ def validate_run_against_prepared_data(
     }, warnings
 
 
-def describe_planned_launch(run: TrainingRun, *, helpers: Any) -> dict[str, str]:
+def describe_planned_launch(
+    run: TrainingRun, *, helpers: Any, exclude_nodes: str = ""
+) -> dict[str, str]:
     """Exactly what would be invoked, using the launcher's own job naming."""
     job_name = helpers.slurm_training_job_name(course_id=run.course_id, mode=run.mode)
-    command = " ".join(launcher_argv(run))
-    return {"jobName": job_name, "command": command}
+    command = " ".join(launcher_argv(run, exclude_nodes=exclude_nodes))
+    return {
+        "jobName": job_name,
+        "command": command,
+        "excludeNodes": exclude_nodes,
+    }
 
 
-def launcher_argv(run: TrainingRun) -> list[str]:
+def launcher_argv(run: TrainingRun, *, exclude_nodes: str = "") -> list[str]:
     """The launcher invocation, carrying the queue run id into the Slurm job.
 
     `--queue-run-id` is what lets the job report its own completion. Without it
@@ -204,15 +231,20 @@ def launcher_argv(run: TrainingRun) -> list[str]:
     PostgreSQL run it is finishing, and the completion callback has nothing to
     address itself to — which is exactly why job 253552 could not report itself.
     """
-    return [
+    argv = [
         START_SCRIPT,
         "--course",
         run.course_id,
         f"--{run.mode}",
         "--queue-run-id",
         run.run_id,
-        "--yes",
     ]
+    # Absent unless an operator asked for it on this invocation. The queue
+    # worker has no opinion about node health and keeps none between runs.
+    if exclude_nodes:
+        argv += ["--exclude-node", exclude_nodes]
+    argv.append("--yes")
+    return argv
 
 
 def subprocess_launcher(
@@ -464,6 +496,7 @@ def run_once(
     helpers: Any,
     owner: str,
     dry_run: bool,
+    exclude_nodes: str = "",
     lease_seconds: int,
     course_ids: Optional[list[str]],
     now: Optional[datetime] = None,
@@ -488,7 +521,14 @@ def run_once(
     course_id, candidate = candidates[0]
 
     if dry_run:
-        return _dry_run(candidate, course_id, queue=queue, helpers=helpers, root=root)
+        return _dry_run(
+            candidate,
+            course_id,
+            queue=queue,
+            helpers=helpers,
+            root=root,
+            exclude_nodes=exclude_nodes,
+        )
 
     try:
         run = queue.claim(
@@ -557,11 +597,13 @@ def run_once(
         print("Released back to queued; nothing was submitted.")
         return 1
 
-    plan = describe_planned_launch(run, helpers=helpers)
+    plan = describe_planned_launch(run, helpers=helpers, exclude_nodes=exclude_nodes)
     for warning in warnings:
         print(f"  Warning: {warning}")
     print(f"  Prepared: {counts['train_count']} train / {counts['validation_count']} validation")
     print(f"  Job name: {plan['jobName']}")
+    if plan["excludeNodes"]:
+        print(f"  Excluding: {plan['excludeNodes']} (temporary, this run only)")
     print(f"  Running: {plan['command']}")
 
     # Written before the launcher runs, so a submission that succeeds while this
@@ -579,7 +621,7 @@ def run_once(
     )
 
     invoke = launcher if launcher is not None else subprocess_launcher
-    result = invoke(launcher_argv(run), root)
+    result = invoke(launcher_argv(run, exclude_nodes=exclude_nodes), root)
     if result.stdout:
         print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
     if result.stderr:
@@ -657,6 +699,7 @@ def _dry_run(
     queue: TrainingQueue,
     helpers: Any,
     root: Path,
+    exclude_nodes: str = "",
 ) -> int:
     """Describe what would happen. Claims nothing, writes nothing, sends nothing.
 
@@ -705,8 +748,12 @@ def _dry_run(
         print(f"  Would refuse: {exc}")
         return 1
 
-    plan = describe_planned_launch(candidate, helpers=helpers)
+    plan = describe_planned_launch(
+        candidate, helpers=helpers, exclude_nodes=exclude_nodes
+    )
     print(f"  Job name: {plan['jobName']}")
+    if plan["excludeNodes"]:
+        print(f"  Excluding: {plan['excludeNodes']} (temporary, this run only)")
     print(f"  Would run: {plan['command']}")
     print("Not submitted (--dry-run never calls the launcher).")
     return 0
@@ -736,6 +783,17 @@ def build_parser() -> argparse.ArgumentParser:
         dest="courses",
         metavar="COURSE_ID",
         help="Limit to one course. Repeatable.",
+    )
+    parser.add_argument(
+        "--exclude-node",
+        action="append",
+        dest="exclude_nodes",
+        metavar="NODE",
+        help=(
+            "Do not schedule this submission on NODE. Repeatable. TEMPORARY "
+            "infrastructure troubleshooting only — nothing is remembered "
+            "between runs, and no node is ever excluded by default."
+        ),
     )
     parser.add_argument(
         "--owner",
@@ -769,6 +827,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             if args.courses
             else None
         )
+        exclude_nodes = ""
+        if args.exclude_nodes:
+            exclude_nodes = _validate_exclude_nodes(",".join(args.exclude_nodes))
         helpers = _load_qlora_helpers()
         queue = build_queue()
         return run_once(
@@ -778,6 +839,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             dry_run=args.dry_run,
             lease_seconds=args.lease_seconds,
             course_ids=course_ids,
+            exclude_nodes=exclude_nodes,
         )
     except TrainingQueueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

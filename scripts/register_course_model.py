@@ -37,7 +37,7 @@ Usage:
   python scripts/register_course_model.py \\
       --course-id css-360-winter-2026-a7rp \\
       --base-model meta-llama/Llama-3.2-3B-Instruct \\
-      --training-examples 54 \\
+      --training-examples 48 \\  # the train split, not the approved count
       --artifact-ref css-360-qlora/adapter \\
       --status ready --deployment offline
 
@@ -72,7 +72,17 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--course-id", required=True)
     parser.add_argument("--base-model", required=True)
-    parser.add_argument("--training-examples", type=int, required=True)
+    parser.add_argument(
+        "--training-examples",
+        type=int,
+        required=True,
+        help=(
+            "Examples actually passed into training — the TRAIN split, not the "
+            "approved count it came from. For a 42-approved course split 37/5 "
+            "this is 37. CSS 350 v1 holds 42 because it was registered by hand "
+            "before this was written down; that row is left alone."
+        ),
+    )
     parser.add_argument(
         "--artifact-ref",
         required=True,

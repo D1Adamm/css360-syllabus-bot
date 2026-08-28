@@ -2,10 +2,10 @@
 # Launch the per-course fine-tuned inference service on one Tillicum GPU.
 # Preferred (from repository root on Tillicum):
 #   ./training/start_finetuned_service.sh
-#   ./training/start_finetuned_service.sh --hours 3
+#   ./training/start_finetuned_service.sh --exclude-node g018
 #
 # Manual submit:
-#   sbatch --time=02:00:00 training/inference_service/serve.slurm
+#   sbatch training/inference_service/serve.slurm
 # Then discover NODE via squeue (not hardcoded), and on aiswe.uwb.edu:
 #   ./scripts/start_finetuned_tunnel.sh --from-backend
 #
@@ -20,11 +20,16 @@
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=200G
-# Default only. start_finetuned_service.sh overrides it with `sbatch --time` to
-# give the session an explicit, bounded lifetime (2 hours by default). The
-# allocation ending is what makes a session expire without anyone having to
+# Default only. start_finetuned_service.sh overrides it with `sbatch --time`.
+# The allocation ending is what makes a session expire without anyone having to
 # remember to stop it — including when the operator's login session drops.
-#SBATCH --time=02:00:00
+#
+# One hour, because that is the most the `debug` QOS above allows. A longer
+# request here does not fail at submission: Slurm accepts it and leaves the job
+# PENDING forever with QOSMaxWallDurationPerJobLimit, which looks like a busy
+# cluster rather than a request that can never be satisfied. This default is
+# what makes a hand-run `sbatch training/inference_service/serve.slurm` work.
+#SBATCH --time=01:00:00
 #SBATCH --output=training/logs/infer-%j.out
 #SBATCH --error=training/logs/infer-%j.err
 

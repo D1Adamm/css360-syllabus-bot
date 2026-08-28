@@ -199,7 +199,19 @@ export interface CourseModelVersion {
   version: string;
   /** Model the adapter was trained on, e.g. `meta-llama/Llama-3.2-3B-Instruct`. */
   baseModel: string;
-  /** Approved examples the version was trained from. */
+  /**
+   * Examples actually passed into training — the train split, not the approved
+   * set it was drawn from.
+   *
+   * For CSS 350's 42 approved examples split 37/5, this is 37. The approved
+   * count and the validation count are recorded separately in the run's
+   * provenance, so this field does not have to stand in for either.
+   *
+   * `v1` of CSS 350 holds 42 because it was registered by hand before automatic
+   * registration existed and an operator passed the approved count. That row is
+   * historical and is deliberately left alone; every automatic write since has
+   * been the train split.
+   */
   trainingExampleCount: number;
   status: CourseModelStatus;
   deployment: CourseModelDeploymentStatus;

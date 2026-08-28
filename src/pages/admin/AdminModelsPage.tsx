@@ -174,7 +174,7 @@ export function AdminModelsPage() {
                       <p className="ui-text-xs ui-text-muted">
                         current <code>{current.version}</code> · base{' '}
                         <code>{current.baseModel}</code> ·{' '}
-                        {current.trainingExampleCount} training examples · artifact{' '}
+                        {current.trainingExampleCount} train examples · artifact{' '}
                         <code>{current.artifactRef}</code>
                       </p>
                     )}
@@ -186,7 +186,7 @@ export function AdminModelsPage() {
                           {history.map((version) => (
                             <li key={version.version}>
                               <code>{version.version}</code> · {version.status} ·{' '}
-                              {version.trainingExampleCount} examples ·{' '}
+                              {version.trainingExampleCount} train examples ·{' '}
                               {new Date(version.createdAt).toLocaleDateString()}
                               {version.version === registry.currentVersion
                                 ? ' · current'

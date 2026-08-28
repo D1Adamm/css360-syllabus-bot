@@ -77,6 +77,59 @@ function isSuperseded(run: TrainingRun): boolean {
   return run.state === 'failed' && (run.error ?? '').startsWith(SUPERSEDED_ERROR);
 }
 
+/**
+ * What a version's `deployment` means, in words.
+ *
+ * `online` records that the adapter has been published into the cluster's
+ * serving tree and is the version inference resolves — a durable fact. It does
+ * not record that a GPU session is up this second; that is what the serving
+ * session banner above is for, and conflating the two is how "in use" ended up
+ * on a page describing a course nothing was serving.
+ */
+function describeDeployment(deployment: string): string {
+  switch (deployment) {
+    case 'online':
+      return 'published';
+    case 'offline':
+      return 'not published';
+    default:
+      return 'publication unknown';
+  }
+}
+
+/**
+ * A short, honest headline for a failed run.
+ *
+ * The point is to separate "the cluster was broken" from "the training was
+ * wrong", because they need completely different responses from an admin and
+ * the raw text does not distinguish them. A preflight failure — the real one
+ * here was `Failed to get device handle for GPU 0` on a node whose GPU had gone
+ * — is retryable as-is; a data or configuration failure is not.
+ *
+ * Deliberately does not diagnose hardware. It says which stage failed and what
+ * an admin can do, and leaves the operator-facing error text below it.
+ */
+function describeFailure(
+  stage: string | undefined,
+  error: string | undefined,
+): string | null {
+  if (!stage && !error) {
+    return null;
+  }
+  switch (stage) {
+    case 'preflight':
+      return 'Node or GPU preflight failed before training started — nothing was trained. Retry training to queue a replacement run.';
+    case 'submission':
+      return 'The job was never submitted to Slurm. The dataset is unchanged; queue it again.';
+    case 'dataset':
+      return 'The prepared dataset did not validate on the cluster. Rebuild the dataset and prepare the split again.';
+    case 'training':
+      return 'Training started and did not finish. Check the run logs before retrying.';
+    default:
+      return null;
+  }
+}
+
 function stateLabel(run: TrainingRun): string {
   return isSuperseded(run) ? 'superseded' : run.state;
 }
@@ -292,7 +345,7 @@ function JobDetails({ row }: { row: JobRow }) {
         <div>
           <dt>Model version</dt>
           <dd>
-            {version.version} · {version.status} · {version.deployment}
+            {version.version} · {version.status} · {describeDeployment(version.deployment)}
           </dd>
         </div>
       )}
@@ -402,6 +455,17 @@ export function TrainingJobs() {
                 {row.run.error && (
                   <p className="admin-row__error">{row.run.error}</p>
                 )}
+                {describeFailure(
+                  row.run.completion?.failureStage,
+                  row.run.completion?.error,
+                ) && (
+                  <p className="admin-row__value">
+                    {describeFailure(
+                      row.run.completion?.failureStage,
+                      row.run.completion?.error,
+                    )}
+                  </p>
+                )}
                 {row.run.completion?.error && (
                   <p className="admin-row__error">
                     {row.run.completion.error}
@@ -413,8 +477,16 @@ export function TrainingJobs() {
                   {stateLabel(row.run)}
                 </StatusPill>
                 {row.version && (
-                  <StatusPill tone={row.version.status === 'ready' ? 'success' : 'neutral'}>
-                    {row.version.version} {row.version.deployment}
+                  <StatusPill
+                    tone={
+                      row.version.deployment === 'online'
+                        ? 'success'
+                        : row.version.status === 'ready'
+                          ? 'info'
+                          : 'neutral'
+                    }
+                  >
+                    {row.version.version} · {describeDeployment(row.version.deployment)}
                   </StatusPill>
                 )}
               </div>

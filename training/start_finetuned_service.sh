@@ -3,12 +3,13 @@
 #
 # The one command to run after SSH + Duo, before a class or a demo:
 #   ./training/start_finetuned_service.sh
-#   ./training/start_finetuned_service.sh --hours 3
+#   ./training/start_finetuned_service.sh --exclude-node g018
 #   ./training/start_finetuned_service.sh --no-wait
 #
 # What it does, in order:
 #   1. refuse to start a second session when one is already active
-#   2. submit the serving job with a bounded wall clock (2 hours by default)
+#   2. submit the serving job with a bounded wall clock (the most the configured
+#      QOS allows — one hour under the default `debug` QOS)
 #   3. wait for the allocation and for the model to finish loading
 #   4. record the session — node, port, expiry, published courses — with the
 #      application, so the UWB VM can find the service without anyone typing a
@@ -27,8 +28,26 @@ HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-900}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
 INFERENCE_PORT="${INFERENCE_PORT:-8001}"
 NO_WAIT=0
-HOURS="${SERVICE_HOURS:-2}"
-MAX_HOURS="${SERVICE_MAX_HOURS:-8}"
+EXCLUDE_NODES="${SERVICE_EXCLUDE_NODES:-}"
+
+# The QOS this session runs under, and the wall clock that QOS actually allows.
+#
+# `debug` caps a job at one hour. A two-hour request under it does not fail at
+# submission — it is accepted and then sits PENDING forever with
+# `QOSMaxWallDurationPerJobLimit`, which looks exactly like a busy cluster until
+# somebody reads the reason. That happened, and cost a session.
+#
+# So the default session length is the QOS ceiling rather than a number picked
+# independently of it, and a request over the ceiling is refused here, before
+# sbatch, with the reason. A longer session is a QOS change, not a --hours
+# change: set SERVICE_QOS to one that permits it.
+SERVICE_QOS="${SERVICE_QOS:-debug}"
+declare -A QOS_MAX_HOURS=( [debug]=1 [normal]=8 )
+QOS_CEILING="${QOS_MAX_HOURS[${SERVICE_QOS}]:-}"
+if [[ -n "${SERVICE_MAX_HOURS:-}" ]]; then
+  QOS_CEILING="${SERVICE_MAX_HOURS}"
+fi
+HOURS="${SERVICE_HOURS:-${QOS_CEILING:-1}}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -42,13 +61,18 @@ Start or reuse the per-course fine-tuned inference session on Tillicum.
 
 Usage:
   ./training/start_finetuned_service.sh
-  ./training/start_finetuned_service.sh --hours 3
+  ./training/start_finetuned_service.sh --exclude-node g018
   ./training/start_finetuned_service.sh --no-wait
 
 Options:
-  --hours N   Session length in hours (default 2, maximum 8)
-  --no-wait   Submit/reuse the job, print the job ID, and return immediately
-  -h, --help  Show this help
+  --hours N            Session length in hours. Defaults to the most the
+                       configured QOS allows (debug: 1). A longer request is
+                       refused here rather than left pending forever.
+  --exclude-node NODE  Do not schedule on NODE. Repeatable, or comma-separated.
+                       TEMPORARY troubleshooting for a node failing its GPU
+                       preflight right now — nothing is remembered between runs.
+  --no-wait            Submit/reuse the job, print the job ID, and return
+  -h, --help           Show this help
 
 Environment overrides:
   ALLOC_TIMEOUT_SECONDS   Max seconds to wait for RUNNING (default: 600)
@@ -56,7 +80,9 @@ Environment overrides:
   POLL_SECONDS            Poll interval (default: 5)
   INFERENCE_PORT          Service port on the compute node (default: 8001)
   SERVING_ROOT            Where published per-course adapters live
-  SERVICE_MAX_HOURS       Ceiling for --hours (default: 8)
+  SERVICE_QOS             QOS to submit under (default: debug, max 1 hour)
+  SERVICE_MAX_HOURS       Override the QOS ceiling, when you know it differs
+  SERVICE_EXCLUDE_NODES   Default --exclude-node list for this shell
 
 Safe to re-run. An active session is reused and its record refreshed; a second
 GPU job is never submitted.
@@ -97,7 +123,7 @@ find_active_job_line() {
       printf '%s\n' "${line}"
       return 0
     fi
-  done < <(squeue -u "${USER}" -n "${JOB_NAME}" -h -o "%i %t %N %M %L" 2>/dev/null || true)
+  done < <(squeue -u "${USER}" -n "${JOB_NAME}" -h -o "%i|%t|%N|%M|%L|%R" 2>/dev/null || true)
   return 1
 }
 
@@ -124,19 +150,37 @@ wait_for_running_node() {
   # NODE="$(wait_for_running_node ...)" cannot be contaminated.
   local job_id="$1"
   local deadline=$((SECONDS + ALLOC_TIMEOUT_SECONDS))
-  local line state node
+  local line state node reason explained
 
   while (( SECONDS < deadline )); do
-    line="$(squeue -j "${job_id}" -h -o "%i %t %N %M %L" 2>/dev/null | head -n 1 || true)"
+    line="$(squeue -j "${job_id}" -h -o "%i|%t|%N|%M|%L|%R" 2>/dev/null | head -n 1 || true)"
     if [[ -z "${line}" ]]; then
       print_sacct_failure "${job_id}"
       exit 1
     fi
     state="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field state)"
     node="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field node)"
+    reason="$(printf '%s\n' "${line}" | helpers parse-squeue-line --field reason)"
     case "${state}" in
       PD|PENDING|CF|CONFIGURING)
-        echo "State: ${state} (waiting for allocation...)" >&2
+        # Some pending reasons never resolve. Waiting out the full allocation
+        # timeout on one of those is time spent watching a job that cannot
+        # start, so they are called out and given up on immediately.
+        case "${reason}" in
+          QOSMaxWallDurationPerJobLimit|PartitionTimeLimit)
+            explained="$(helpers describe-pending-reason "${reason}")"
+            echo "Job ${job_id} cannot start: ${explained}" >&2
+            echo "Cancel it and request less time:" >&2
+            echo "  scancel ${job_id}" >&2
+            echo "  ./training/start_finetuned_service.sh" >&2
+            exit 1
+            ;;
+        esac
+        if [[ -n "${reason}" ]]; then
+          echo "State: ${state} — $(helpers describe-pending-reason "${reason}")" >&2
+        else
+          echo "State: ${state} (waiting for allocation...)" >&2
+        fi
         ;;
       R|RUNNING)
         if [[ -n "${node}" ]]; then
@@ -230,6 +274,15 @@ while [[ $# -gt 0 ]]; do
       usage
       exit 0
       ;;
+    --exclude-node)
+      [[ $# -ge 2 ]] || die "--exclude-node requires a node name"
+      if [[ -n "${EXCLUDE_NODES}" ]]; then
+        EXCLUDE_NODES="${EXCLUDE_NODES},$2"
+      else
+        EXCLUDE_NODES="$2"
+      fi
+      shift 2
+      ;;
     --hours)
       [[ $# -ge 2 ]] || die "--hours requires a value"
       HOURS="$2"
@@ -247,7 +300,27 @@ done
 
 [[ "${HOURS}" =~ ^[0-9]+$ ]] || die "--hours must be a whole number of hours."
 (( HOURS >= 1 )) || die "--hours must be at least 1."
-(( HOURS <= MAX_HOURS )) || die "--hours must not exceed ${MAX_HOURS} (raise SERVICE_MAX_HOURS deliberately)."
+
+# Refuse here rather than let Slurm accept a job that can never start.
+if [[ -n "${QOS_CEILING}" ]] && (( HOURS > QOS_CEILING )); then
+  die "$(cat <<EOF
+--hours ${HOURS} is longer than the '${SERVICE_QOS}' QOS allows (${QOS_CEILING}h).
+
+Slurm would accept this job and then leave it PENDING forever with
+QOSMaxWallDurationPerJobLimit, which looks like a busy cluster rather than a
+request that cannot be satisfied.
+
+Either ask for ${QOS_CEILING} hours or fewer, or submit under a QOS that permits
+longer sessions:
+  SERVICE_QOS=normal ./training/start_finetuned_service.sh --hours ${HOURS}
+EOF
+)"
+fi
+
+if [[ -n "${EXCLUDE_NODES}" ]]; then
+  EXCLUDE_NODES="$(helpers validate-exclude-nodes "${EXCLUDE_NODES}")" \
+    || die "Invalid --exclude-node value."
+fi
 WALLTIME="$(printf '%02d:00:00' "${HOURS}")"
 
 cd "${REPO_ROOT}"
@@ -279,9 +352,16 @@ if EXISTING_LINE="$(find_active_job_line)"; then
   echo "Job ID: ${JOB_ID}"
   echo "A second GPU allocation is never started for the same service."
 else
-  echo "Submitting ${SLURM_SCRIPT} for ${WALLTIME} ..."
+  echo "Submitting ${SLURM_SCRIPT} for ${WALLTIME} under QOS ${SERVICE_QOS} ..."
+  if [[ -n "${EXCLUDE_NODES}" ]]; then
+    echo "Excluding node(s): ${EXCLUDE_NODES}  (temporary, this submission only)"
+  fi
   SBATCH_OUT="$(SERVING_ROOT="${SERVING_ROOT}" INFERENCE_PORT="${INFERENCE_PORT}" \
-    env -u TRAINING_WORKER_TOKEN sbatch --time="${WALLTIME}" "${SLURM_SCRIPT}")" \
+    env -u TRAINING_WORKER_TOKEN sbatch \
+      --time="${WALLTIME}" \
+      --qos="${SERVICE_QOS}" \
+      ${EXCLUDE_NODES:+--exclude="${EXCLUDE_NODES}"} \
+      "${SLURM_SCRIPT}")" \
     || die "sbatch failed."
   echo "${SBATCH_OUT}"
   JOB_ID="$(printf '%s\n' "${SBATCH_OUT}" | helpers parse-sbatch-job-id)" \
@@ -293,7 +373,10 @@ echo "Job ID: ${JOB_ID}"
 if [[ "${REUSED}" -eq 1 ]]; then
   echo "Mode: reusing an existing session"
 else
-  echo "Mode: newly submitted (${WALLTIME})"
+  echo "Mode: newly submitted (${WALLTIME}, QOS ${SERVICE_QOS})"
+  if [[ -n "${EXCLUDE_NODES}" ]]; then
+    echo "Excluded: ${EXCLUDE_NODES}"
+  fi
 fi
 
 if [[ "${NO_WAIT}" -eq 1 ]]; then

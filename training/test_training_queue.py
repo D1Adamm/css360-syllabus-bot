@@ -1671,6 +1671,101 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class NodeExclusionTests(unittest.TestCase):
+    """Temporary exclusion reaches the launcher, and is absent by default.
+
+    g018 failed its GPU preflight several times in one session. The workaround
+    was useful; hardcoding it would not be — Hyak repairs nodes, and an
+    exclusion nobody remembers keeps the scheduler off a healthy machine
+    indefinitely. So the default is no exclusions and nothing is remembered
+    between runs.
+    """
+
+    RUN = queue_module.TrainingRun(
+        run_id="run-1",
+        course_id=COURSE_A,
+        mode="full",
+        state="queued",
+        enqueued_at="2026-09-02T08:00:00Z",
+        updated_at="2026-09-02T08:00:00Z",
+        dataset_ref=f"exports/{COURSE_A}",
+        approved_example_count=42,
+        train_examples=37,
+        validation_examples=5,
+        attempt=0,
+    )
+
+    def test_no_exclusion_by_default(self) -> None:
+        argv = runner.launcher_argv(self.RUN)
+
+        self.assertNotIn("--exclude-node", argv)
+
+    def test_the_default_invocation_is_unchanged(self) -> None:
+        """The normal worker path must be byte-for-byte what it was."""
+        self.assertEqual(
+            runner.launcher_argv(self.RUN),
+            [
+                "./training/start_qlora_training.sh",
+                "--course",
+                COURSE_A,
+                "--full",
+                "--queue-run-id",
+                "run-1",
+                "--yes",
+            ],
+        )
+
+    def test_an_exclusion_is_passed_through_to_the_launcher(self) -> None:
+        argv = runner.launcher_argv(self.RUN, exclude_nodes="g018")
+
+        self.assertIn("--exclude-node", argv)
+        self.assertEqual(argv[argv.index("--exclude-node") + 1], "g018")
+
+    def test_several_nodes_travel_as_one_list(self) -> None:
+        argv = runner.launcher_argv(self.RUN, exclude_nodes="g018,g007")
+
+        self.assertEqual(argv[argv.index("--exclude-node") + 1], "g018,g007")
+
+    def test_the_confirmation_flag_stays_last(self) -> None:
+        # So an exclusion cannot be swallowed as the value of --yes.
+        self.assertEqual(runner.launcher_argv(self.RUN, exclude_nodes="g018")[-1], "--yes")
+
+    def test_the_plan_reports_the_exclusion(self) -> None:
+        helpers = runner._load_qlora_helpers()
+
+        plan = runner.describe_planned_launch(
+            self.RUN, helpers=helpers, exclude_nodes="g018"
+        )
+
+        self.assertEqual(plan["excludeNodes"], "g018")
+        self.assertIn("--exclude-node g018", plan["command"])
+
+    def test_the_plan_reports_no_exclusion_when_there_is_none(self) -> None:
+        helpers = runner._load_qlora_helpers()
+
+        plan = runner.describe_planned_launch(self.RUN, helpers=helpers)
+
+        self.assertEqual(plan["excludeNodes"], "")
+        self.assertNotIn("--exclude-node", plan["command"])
+
+    def test_the_cli_validates_before_anything_runs(self) -> None:
+        with self.assertRaises(queue_module.TrainingQueueError):
+            runner._validate_exclude_nodes("g018; rm -rf /")
+
+    def test_the_cli_normalises_a_repeated_flag(self) -> None:
+        self.assertEqual(runner._validate_exclude_nodes("g018,g018,g007"), "g018,g007")
+
+    def test_the_flag_exists_on_the_worker(self) -> None:
+        args = runner.build_parser().parse_args(
+            ["--once", "--exclude-node", "g018", "--exclude-node", "g007"]
+        )
+
+        self.assertEqual(args.exclude_nodes, ["g018", "g007"])
+
+    def test_the_flag_defaults_to_nothing(self) -> None:
+        self.assertIsNone(runner.build_parser().parse_args(["--once"]).exclude_nodes)
+
+
 class EnvFilePermissionTests(unittest.TestCase):
     """`.env.local` is the only thing protecting the worker token on the cluster.
 
