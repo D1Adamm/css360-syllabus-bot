@@ -14,6 +14,7 @@ import { getCurrentVersion } from '../../lib/courseModelDb';
 import {
   describeCourseModel,
   describeModelRequest,
+  summariseCourseModel,
   getModelReadiness,
   RECOMMENDED_APPROVED_EXAMPLES,
 } from '../../lib/modelStatus';
@@ -87,6 +88,13 @@ export function ProfessorModelPage() {
   const buildingNewVersion = hasModel && outstandingRequest !== null;
   const activeRequest = buildingNewVersion ? null : outstandingRequest;
 
+  const summary = summariseCourseModel({
+    version,
+    request,
+    registryUnavailable: modelState.status === 'unavailable',
+    requestUnavailable: requestState.status === 'unavailable',
+  });
+
   /*
    * The Request button appears only when all four are true:
    *   - the registry has been read and this course has no model
@@ -129,23 +137,9 @@ export function ProfessorModelPage() {
           <Illustration name="model-ready" size="lg" />
 
           <div className="model-state__body">
-            <StatusPill tone={activeRequest ? describeModelRequest(activeRequest).tone : presentation.tone}>
-              {activeRequest
-                ? describeModelRequest(activeRequest).label
-                : presentation.presence === 'ready'
-                ? presentation.availability === 'online'
-                  ? 'Ready · published'
-                  : presentation.availability === 'offline'
-                    ? 'Ready · not published'
-                    : 'Ready'
-                : presentation.presence === 'training'
-                  ? 'Preparing'
-                  : presentation.presence === 'failed'
-                    ? 'Needs attention'
-                    : presentation.presence === 'none'
-                      ? 'Not created yet'
-                      : 'Unknown'}
-            </StatusPill>
+            {/* The same summary the Course overview row shows, from the same
+                helper, so the two pages cannot disagree about one course. */}
+            <StatusPill tone={summary.tone}>{summary.label}</StatusPill>
 
             <h2 className="model-state__title">
               {activeRequest ? describeModelRequest(activeRequest).title : presentation.title}

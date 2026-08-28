@@ -10,8 +10,11 @@ import {
   useCourseMetadata,
   type CourseMetadataState,
 } from '../../hooks/useCourseMetadata';
+import { useCourseModel } from '../../hooks/useCourseModel';
+import { useCourseModelRequest } from '../../hooks/useCourseModelRequest';
 import { useEvaluations } from '../../hooks/useEvaluations';
-import { getModelReadiness } from '../../lib/modelStatus';
+import { getCurrentVersion } from '../../lib/courseModelDb';
+import { getModelReadiness, summariseCourseModel } from '../../lib/modelStatus';
 import { professorCoursePath } from '../../lib/roleRoutes';
 import { getStarterGeneration } from '../../lib/starterSeedGeneration';
 import type { SyllabusStatus } from '../../types';
@@ -73,9 +76,31 @@ export function CourseOverviewPage() {
   const courseId = useCourseId();
   const { state: metadataState, metadata, retry: retryMetadata } = useCourseMetadata(courseId);
   const countsState = useCourseExampleCounts(courseId);
+  const { state: modelState } = useCourseModel(courseId);
+  const { state: requestState } = useCourseModelRequest(courseId);
   const { evaluations } = useEvaluations();
 
   const counts = countsState.status === 'ready' ? countsState.counts : null;
+
+  /*
+   * The real model state for this course, from the same two records and the
+   * same helper the Model page uses.
+   *
+   * This row used to be a hardcoded "Not available yet", which was wrong for
+   * every course that had requested, trained, or published anything — and said
+   * the opposite of the Model page one click away. Both hooks are course-scoped
+   * and re-subscribe when `courseId` changes, so one course's state cannot be
+   * shown against another's.
+   */
+  const model = summariseCourseModel({
+    version:
+      modelState.status === 'ready' ? getCurrentVersion(modelState.registry) : null,
+    request: requestState.status === 'ready' ? requestState.request : null,
+    loading:
+      modelState.status === 'loading' || requestState.status === 'loading',
+    registryUnavailable: modelState.status === 'unavailable',
+    requestUnavailable: requestState.status === 'unavailable',
+  });
   const syllabus = syllabusPresentation(metadataState);
   const readiness = getModelReadiness(counts?.approved ?? 0);
 
@@ -222,7 +247,7 @@ export function CourseOverviewPage() {
           <div className="overview__row">
             <dt className="overview__label">Course model</dt>
             <dd className="overview__value">
-              <StatusPill tone="neutral">Not available yet</StatusPill>
+              <StatusPill tone={model.tone}>{model.label}</StatusPill>
             </dd>
             <Link to={professorCoursePath(courseId, 'model')} className="overview__link">
               Details

@@ -42,7 +42,43 @@ vi.mock('../../hooks/useEvaluations', () => ({
   useEvaluations: () => ({ evaluations: [] }),
 }));
 
-import type { CourseMetadata, StoredStarterSeedGeneration } from '../../types';
+/*
+ * The two model records, keyed by course.
+ *
+ * Keyed rather than a single return value so that "does CSS 350's model leak
+ * into CSS 360's overview?" is a question these tests can actually ask. The
+ * real hooks re-subscribe on `courseId`; these mirror that by looking the
+ * course up on every call.
+ */
+const modelStateByCourse = new Map<string, CourseModelState>();
+const requestStateByCourse = new Map<string, CourseModelRequestState>();
+
+vi.mock('../../hooks/useCourseModel', () => ({
+  useCourseModel: (id: string | null) => ({
+    state: (id && modelStateByCourse.get(id)) || ({ status: 'none' } as const),
+    retry: vi.fn(),
+  }),
+}));
+
+vi.mock('../../hooks/useCourseModelRequest', () => ({
+  useCourseModelRequest: (id: string | null) => ({
+    state: (id && requestStateByCourse.get(id)) || ({ status: 'none' } as const),
+    submitting: false,
+    submitError: null,
+    submit: vi.fn(),
+    clearSubmitError: vi.fn(),
+  }),
+}));
+
+import type { CourseModelState } from '../../hooks/useCourseModel';
+import type { CourseModelRequestState } from '../../hooks/useCourseModelRequest';
+import type {
+  CourseMetadata,
+  CourseModelRegistry,
+  CourseModelRequest,
+  CourseModelVersion,
+  StoredStarterSeedGeneration,
+} from '../../types';
 import { CourseOverviewPage } from './CourseOverviewPage';
 
 const BASE_METADATA: CourseMetadata = {
@@ -83,11 +119,57 @@ function trainingExamplesRow(): HTMLElement {
   return term.closest('.overview__row') as HTMLElement;
 }
 
+/** The Course model row of the course-status list. */
+function courseModelRow(): HTMLElement {
+  const term = screen.getByText('Course model');
+  return term.closest('.overview__row') as HTMLElement;
+}
+
+const READY_VERSION: CourseModelVersion = {
+  version: 'v1',
+  baseModel: 'meta-llama/Llama-3.2-3B-Instruct',
+  trainingExampleCount: 37,
+  status: 'ready',
+  deployment: 'offline',
+  artifactRef: 'serving/css-350-winter-2026-drlb/v1/adapter',
+  createdAt: '2026-08-27T06:48:00.000Z',
+};
+
+function registry(version: CourseModelVersion): CourseModelRegistry {
+  return { currentVersion: version.version, versions: { [version.version]: version } };
+}
+
+function setModel(id: string, version: CourseModelVersion | null) {
+  modelStateByCourse.set(
+    id,
+    version ? { status: 'ready', registry: registry(version) } : { status: 'none' },
+  );
+}
+
+function request(status: CourseModelRequest['status']): CourseModelRequest {
+  return {
+    courseId: 'css-350-winter-2026-drlb',
+    status,
+    requestedAt: '2026-08-20T09:00:00.000Z',
+    updatedAt: '2026-08-20T09:00:00.000Z',
+    approvedExampleCount: 42,
+  };
+}
+
+function setRequest(id: string, status: CourseModelRequest['status'] | null) {
+  requestStateByCourse.set(
+    id,
+    status ? { status: 'ready', request: request(status) } : { status: 'none' },
+  );
+}
+
 describe('CourseOverviewPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     courseId = 'css-350-winter-2026-drlb';
     metadataByCourse.clear();
+    modelStateByCourse.clear();
+    requestStateByCourse.clear();
     setGeneration(courseId, undefined);
     useCourseExampleCounts.mockReturnValue({ status: 'ready', counts: NO_EXAMPLES });
   });
@@ -198,5 +280,177 @@ describe('CourseOverviewPage', () => {
 
     const row = trainingExamplesRow();
     expect(within(row).getByText('Not available right now')).toBeInTheDocument();
+  });
+
+  /* --------------------------------------------------------------------- *
+   * The Course model row
+   *
+   * It used to be a hardcoded "Not available yet" pill: wrong for every course
+   * that had requested, trained, or published anything, and the exact opposite
+   * of what the Model page said one click away. It now reads the same two
+   * records through the same helper that page uses.
+   * --------------------------------------------------------------------- */
+
+  describe('course model row', () => {
+    it('never shows the old hardcoded text', () => {
+      setModel(courseId, READY_VERSION);
+
+      renderPage();
+
+      expect(courseModelRow()).not.toHaveTextContent('Not available yet');
+    });
+
+    it('says nothing has been created for a course with no model or request', () => {
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Not created yet');
+    });
+
+    it('shows a request that has been submitted but not started', () => {
+      setRequest(courseId, 'requested');
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Requested');
+    });
+
+    it('shows a request whose data is being prepared', () => {
+      setRequest(courseId, 'preparing');
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Being prepared');
+    });
+
+    it('shows a run that is training', () => {
+      setRequest(courseId, 'training');
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Training');
+      expect(courseModelRow()).not.toHaveTextContent('Not available yet');
+    });
+
+    it('shows a registered model as ready, and says it is not published', () => {
+      // Registered and published are different facts. A trained model that has
+      // not been copied to the cluster is real, and is not answering questions.
+      setModel(courseId, READY_VERSION);
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Ready · not published');
+    });
+
+    it('shows a published model as published', () => {
+      setModel(courseId, { ...READY_VERSION, deployment: 'online' });
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Ready · published');
+    });
+
+    it('keeps showing the model while a newer version is being trained', () => {
+      // The professor still has a working model. Replacing "ready" with
+      // "training" here would tell them they have nothing.
+      setModel(courseId, { ...READY_VERSION, deployment: 'online' });
+      setRequest(courseId, 'training');
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Ready · published');
+      expect(courseModelRow()).not.toHaveTextContent('Training');
+    });
+
+    it('surfaces a failed request rather than calling it not created', () => {
+      setRequest(courseId, 'failed');
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Needs attention');
+      expect(courseModelRow()).not.toHaveTextContent('Not created yet');
+    });
+
+    it('does not claim a course has no model while it is still loading', () => {
+      // The bug in miniature: a guess made for a fraction of a second is
+      // indistinguishable from the permanent wrong answer it replaced.
+      modelStateByCourse.set(courseId, { status: 'loading' });
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Checking…');
+      expect(courseModelRow()).not.toHaveTextContent('Not created yet');
+    });
+
+    it('does not claim a course has no model when the registry cannot be read', () => {
+      modelStateByCourse.set(courseId, {
+        status: 'unavailable',
+        message: 'network',
+      });
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Temporarily unavailable');
+      expect(courseModelRow()).not.toHaveTextContent('Not created yet');
+    });
+
+    it('does not claim nothing was requested when the request cannot be read', () => {
+      requestStateByCourse.set(courseId, {
+        status: 'unavailable',
+        message: 'network',
+      });
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Temporarily unavailable');
+    });
+
+    it('still shows the model when only the request record is unreadable', () => {
+      // A model that exists is a fact we already have. A failed request read
+      // does not take it away.
+      setModel(courseId, { ...READY_VERSION, deployment: 'online' });
+      requestStateByCourse.set(courseId, {
+        status: 'unavailable',
+        message: 'network',
+      });
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Ready · published');
+    });
+
+    it('keeps one course’s model state out of another’s overview', () => {
+      setModel('css-350-winter-2026-drlb', { ...READY_VERSION, deployment: 'online' });
+      courseId = 'css-360-winter-2026-a7rp';
+      setGeneration(courseId, undefined);
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Not created yet');
+      expect(courseModelRow()).not.toHaveTextContent('Ready');
+    });
+
+    it('keeps one course’s request state out of another’s overview', () => {
+      setRequest('css-350-winter-2026-drlb', 'training');
+      courseId = 'css-360-winter-2026-a7rp';
+      setGeneration(courseId, undefined);
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Not created yet');
+      expect(courseModelRow()).not.toHaveTextContent('Training');
+    });
+
+    it('still links to the course model page', () => {
+      // Unchanged by the fix, and the reason the row is worth having.
+      setModel(courseId, READY_VERSION);
+
+      renderPage();
+
+      const link = within(courseModelRow()).getByRole('link', { name: 'Details' });
+      expect(link).toHaveAttribute(
+        'href',
+        `/professor/course/${courseId}/model`,
+      );
+    });
   });
 });

@@ -261,3 +261,133 @@ export function describeModelRequest(request: CourseModelRequest): RequestPresen
       };
   }
 }
+
+
+/* ------------------------------------------------------------------------ *
+ * One-line summary, for a status row
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The short label a status pill shows for a course's model.
+ *
+ * Extracted from the professor Model page, which composed it inline, so that
+ * the Course overview can show the same answer instead of a second one. The
+ * overview previously hardcoded "Not available yet", which was wrong for every
+ * course that had requested, trained, or published anything — and directly
+ * contradicted the Model page one click away.
+ *
+ * Two records decide it, and the order matters:
+ *
+ *   1. Outstanding work wins, but only when there is no model yet. A request
+ *      that is still `requested`/`preparing`/`training` is the whole story for
+ *      a course with nothing registered.
+ *   2. Once a model exists, the model wins. A second version being built must
+ *      not replace "you have a model" with "training" — the registered one is
+ *      still theirs and still answering.
+ *
+ * Terminology is the terminology already in use: `describeModelRequest` for
+ * request states, and published/not published for a registered version, because
+ * `deployment = online` records that a version is in the cluster's serving tree
+ * rather than that a GPU is running this second.
+ */
+export interface CourseModelSummaryInput {
+  /** The course's current registered version, when the registry has been read. */
+  version: CourseModelVersion | null;
+  /** The course's model request, when one exists. */
+  request: CourseModelRequest | null;
+  /** True while either record is still being read. */
+  loading?: boolean;
+  /** True when the registry could not be read. */
+  registryUnavailable?: boolean;
+  /** True when the request record could not be read. */
+  requestUnavailable?: boolean;
+}
+
+export interface CourseModelSummary {
+  label: string;
+  tone: 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent' | 'progress';
+}
+
+/**
+ * Whether outstanding work should be the headline, rather than the model.
+ *
+ * Exported because the Model page needs the same decision for its title and
+ * detail text, and two implementations of "is this course building its first
+ * model or its next one?" would eventually disagree.
+ */
+export function findActiveModelRequest(
+  request: CourseModelRequest | null,
+  hasModel: boolean,
+): CourseModelRequest | null {
+  if (!request || request.status === 'ready' || request.status === 'failed') {
+    return null;
+  }
+  return hasModel ? null : request;
+}
+
+export function summariseCourseModel({
+  version,
+  request,
+  loading = false,
+  registryUnavailable = false,
+  requestUnavailable = false,
+}: CourseModelSummaryInput): CourseModelSummary {
+  // Never claim a course has no model while we are still finding out. That
+  // guess, made for a fraction of a second, is indistinguishable from the
+  // permanent wrong answer this function replaced.
+  if (loading) {
+    return { label: 'Checking…', tone: 'neutral' };
+  }
+
+  const presentation = describeCourseModel({ version, registryUnavailable });
+
+  if (presentation.presence === 'unknown') {
+    return { label: 'Temporarily unavailable', tone: 'warning' };
+  }
+
+  const hasModel = presentation.presence === 'ready';
+  const activeRequest = findActiveModelRequest(request, hasModel);
+
+  if (activeRequest) {
+    const described = describeModelRequest(activeRequest);
+    return { label: described.label, tone: described.tone };
+  }
+
+  // A course with no model whose request could not be read. Saying "not
+  // requested" would be a claim about a record we failed to fetch.
+  if (!hasModel && requestUnavailable) {
+    return { label: 'Temporarily unavailable', tone: 'warning' };
+  }
+
+  if (hasModel) {
+    if (presentation.availability === 'online') {
+      return { label: 'Ready · published', tone: presentation.tone };
+    }
+    if (presentation.availability === 'offline') {
+      return { label: 'Ready · not published', tone: presentation.tone };
+    }
+    return { label: 'Ready', tone: presentation.tone };
+  }
+
+  if (presentation.presence === 'training') {
+    return { label: 'Preparing', tone: presentation.tone };
+  }
+  if (presentation.presence === 'failed') {
+    return { label: 'Needs attention', tone: presentation.tone };
+  }
+
+  // No model, and no outstanding request.
+  //
+  // A failed request is terminal, so it is not "active" — but it is the most
+  // important thing true of this course, and a summary that said "not created
+  // yet" beside a failure would be hiding it. `describeModelRequest` already
+  // has the wording for it.
+  if (request?.status === 'failed') {
+    const described = describeModelRequest(request);
+    return { label: described.label, tone: described.tone };
+  }
+
+  // `Not created yet` rather than a new phrase: this is the label the Model
+  // page has always shown for a course with no model.
+  return { label: 'Not created yet', tone: 'neutral' };
+}
