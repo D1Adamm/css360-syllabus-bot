@@ -81,7 +81,7 @@ first thing to hit if this grows.
 
 Fine-tuned inference requires a GPU session opened by hand, because the tunnel
 authenticates to UW and two-factor is deliberately not automated. That makes the
-Course-Trained paths unavailable outside a scheduled session.
+Fine-Tuned paths unavailable outside a scheduled session.
 
 An experiment worth running later: serve a merged or quantised adapter on the
 UWB VM's CPU and measure whether latency is tolerable for classroom use. If it

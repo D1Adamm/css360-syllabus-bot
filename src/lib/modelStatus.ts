@@ -140,7 +140,7 @@ export function describeCourseModel({
       availability,
       title: 'Your course model is ready',
       detail:
-        'It is the version the assistant uses when it answers with your course model on the Compare page.',
+        'It is the version behind the Fine-Tuned and Fine-Tuned + RAG answers on the Compare page.',
       tone: 'accent',
     };
   }

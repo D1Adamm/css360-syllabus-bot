@@ -46,12 +46,12 @@ export interface UseComparisonRunResult {
  * The control flow here is carried over unchanged from the original compare
  * page and must stay that way:
  *
- *   - Base and retrieval share one CPU-bound local model process, so they run
- *     strictly in sequence — retrieval only starts once base has settled.
- *   - The two course-trained paths hit a separate service and overlap with
+ *   - Base and RAG share one CPU-bound local model process, so they run
+ *     strictly in sequence — RAG only starts once Base has settled.
+ *   - The two fine-tuned paths hit a separate service and overlap with
  *     that chain.
  *   - A failure in one path never cancels another; each loader owns its own
- *     card state, and retrieval still runs when base fails.
+ *     card state, and RAG still runs when Base fails.
  *   - `requestIdRef` discards results from a superseded run, and
  *     `isRunningRef` blocks a second submission while one is in flight.
  *
@@ -167,10 +167,9 @@ export function useComparisonRun(
 
       try {
         // Local model paths share one CPU-bound process. Run them sequentially
-        // (base, then retrieval) to avoid contention. The course-trained paths
-        // use a separate service and may overlap with the base -> retrieval
-        // chain. A base failure must not skip retrieval; each loader isolates
-        // its own card state.
+        // (Base, then RAG) to avoid contention. The fine-tuned paths use a
+        // separate service and may overlap with the Base -> RAG chain. A Base
+        // failure must not skip RAG; each loader isolates its own card state.
         await Promise.all([
           (async () => {
             await loadBase();

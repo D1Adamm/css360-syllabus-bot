@@ -68,7 +68,7 @@ Isolation is mostly *structural* rather than checked:
 
 ## Request flows
 
-### Base and Syllabus-Aware (local, no GPU)
+### Base and RAG (local, no GPU)
 
 ```
 POST /api/base-model/generate     → Ollama llama3.2:3b, no context
@@ -83,7 +83,7 @@ the ordering is covered by tests.
 Retrieval is course-local: the index is built from that course's uploaded
 syllabus at upload time and lives beside it on disk.
 
-### Course-Trained and Course-Trained + Syllabus (Tillicum)
+### Fine-Tuned and Fine-Tuned + RAG (Tillicum)
 
 ```
 POST /api/fine-tuned/generate     { courseId, question }
@@ -101,7 +101,7 @@ local end of an SSH tunnel to whichever compute node currently holds the GPU
 allocation. Compute hostnames change every job, so nothing hardcodes one — the
 cluster records the session and the tunnel script looks it up.
 
-The two Course-Trained paths use a separate service from Base and RAG, so they
+The two fine-tuned paths use a separate service from Base and RAG, so they
 overlap with them rather than queueing behind them.
 
 ---

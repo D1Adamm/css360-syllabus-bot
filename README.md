@@ -13,21 +13,20 @@ Not an official University of Washington service.
 
 ## The four approaches
 
-Internally `base`, `rag`, `fineTuned`, and `fineTunedRag`. Students never see
-those names:
+Internally `base`, `rag`, `fineTuned`, and `fineTunedRag`. What everyone sees:
 
-| Shown to students | What it is | Runs on |
+| Shown in the UI | What it is | Runs on |
 | --- | --- | --- |
-| Base Model | A general model with no course context at all | Local Ollama |
-| Syllabus-Aware | Retrieval: syllabus passages are found and put in the prompt | Local Ollama |
-| Course-Trained | A LoRA adapter fine-tuned on this course's approved examples | Tillicum GPU |
-| Course-Trained + Syllabus | The fine-tuned adapter, prompted with retrieved passages | Tillicum GPU |
+| Base | A base model with no course context at all | Local Ollama |
+| RAG | Retrieval: syllabus passages are found and put in the prompt | Local Ollama |
+| Fine-Tuned | A LoRA adapter fine-tuned on this course's approved examples | Tillicum GPU |
+| Fine-Tuned + RAG | The fine-tuned adapter, prompted with retrieved passages | Tillicum GPU |
 
 All four are real. Nothing is simulated.
 
-Base and Syllabus-Aware share one CPU-bound local model process, so they are
-issued **sequentially**; the two Course-Trained paths use a separate GPU service
-and overlap with them. That ordering is load-bearing and covered by tests.
+Base and RAG share one CPU-bound local model process, so they are issued
+**sequentially**; the two fine-tuned paths use a separate GPU service and
+overlap with them. That ordering is load-bearing and covered by tests.
 
 ---
 
@@ -61,7 +60,7 @@ Browser (React 19 + TypeScript + Vite)
 FastAPI  ───────────────►  PostgreSQL          system of record for all
   │                                            application state
   │
-  ├──►  Ollama (local)                         Base + Syllabus-Aware generation
+  ├──►  Ollama (local)                         Base + RAG generation
   │       llama3.2:3b, nomic-embed-text        and embeddings
   │
   ├──►  local disk                             uploaded syllabi, extracted text,
@@ -84,7 +83,7 @@ the VM does not have.
 compute node authenticates to UW, and UW two-factor is deliberately not
 automated, stored, or worked around. So a fine-tuned session starts with someone
 running one command in a session they logged into normally. Everything after that
-authentication is automatic. Base and Syllabus-Aware do not depend on any of it.
+authentication is automatic. Base and RAG do not depend on any of it.
 
 Deeper detail: **[docs/architecture.md](docs/architecture.md)**.
 
@@ -167,19 +166,18 @@ query strings; see `src/app/LegacyRedirects.tsx`.
 | Node.js 20+ and npm | Frontend | |
 | Python 3.11+ | Backend | 3.13 is what the checked-in venv uses |
 | PostgreSQL 14+ | Everything | The backend refuses to start a request without it |
-| Ollama | Base + Syllabus-Aware | Not needed if you only work on the UI |
+| Ollama | Base + RAG | Not needed if you only work on the UI |
 
 **Optional, and not required for local Base/RAG development:**
 
 - **Tillicum access** — only for fine-tuned inference and training. Without it,
-  Base and Syllabus-Aware work normally and the two Course-Trained paths report
-  that no service is configured.
+  Base and RAG work normally and the two fine-tuned paths report that no
+  service is configured.
 - **`TRAINING_WORKER_TOKEN`** — only for the training queue API. Leave it unset
   and that router refuses every request with 503, which is the correct behaviour
   for an unconfigured deployment.
 - **`qwen3:8b` / `qwen3:4b`** — only for starter-seed generation, which writes
-  example questions from an uploaded syllabus. Base and Syllabus-Aware do not use
-  them.
+  example questions from an uploaded syllabus. Base and RAG do not use them.
 
 ---
 

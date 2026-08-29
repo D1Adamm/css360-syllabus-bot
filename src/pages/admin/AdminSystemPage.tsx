@@ -80,8 +80,8 @@ export function AdminSystemPage() {
           </p>
           <ul>
             <li>
-              <strong>Answering model</strong> — serves the Base Model and
-              Syllabus-Aware paths through Ollama.
+              <strong>Answering model</strong> — serves the Base and RAG paths
+              through Ollama.
             </li>
             <li>
               <strong>Embedding model</strong> — <code>nomic-embed-text</code>,
@@ -95,17 +95,17 @@ export function AdminSystemPage() {
             <li>
               <strong>Fine-tuned inference service</strong> — a separate service
               named by <code>FINETUNED_SERVICE_URL</code>, serving the
-              Course-Trained and Course-Trained + Syllabus paths.
+              Fine-Tuned and Fine-Tuned + RAG paths.
             </li>
           </ul>
           <p>
-            All four comparison paths are implemented. Base and Syllabus-Aware
-            depend on the local model runtime; Course-Trained availability
-            depends on the configured inference service, which may or may not be
-            running at any given moment — see Overview for its live state. The
-            base and retrieval paths share one CPU-bound process and are
-            therefore issued sequentially; the two fine-tuned paths run against
-            the separate service and overlap with them.
+            All four comparison paths are implemented. Base and RAG depend on
+            the local model runtime; Fine-Tuned availability depends on the
+            configured inference service, which may or may not be running at any
+            given moment — see Overview for its live state. Base and RAG share
+            one CPU-bound process and are therefore issued sequentially; the two
+            fine-tuned paths run against the separate service and overlap with
+            them.
           </p>
         </div>
       </section>

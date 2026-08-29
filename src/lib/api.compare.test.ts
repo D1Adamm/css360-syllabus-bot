@@ -8,7 +8,7 @@ describe('compare live API client courseId', () => {
     vi.restoreAllMocks();
   });
 
-  it('includes courseId in the Base Model request body', async () => {
+  it('includes courseId in the Base request body', async () => {
     vi.stubEnv('VITE_API_BASE_URL', 'http://127.0.0.1:8001');
 
     const fetchMock = vi.fn().mockResolvedValue({

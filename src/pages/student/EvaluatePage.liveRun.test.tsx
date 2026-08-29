@@ -35,8 +35,8 @@ function storeRun(run: Partial<ComparisonRun> = {}) {
     createdAt: '2026-01-01T00:00:00.000Z',
     responses: {
       base: { text: 'Base answer text', error: null, sources: [] },
-      rag: { text: 'Syllabus-aware answer text', error: null, sources: ['Grading'] },
-      fineTuned: { text: 'Course-trained answer text', error: null, sources: [] },
+      rag: { text: 'RAG answer text', error: null, sources: ['Grading'] },
+      fineTuned: { text: 'Fine-tuned answer text', error: null, sources: [] },
       fineTunedRag: { text: 'Combined answer text', error: null, sources: [] },
     },
     ...run,
@@ -64,7 +64,7 @@ function renderPage() {
   );
 }
 
-function chooseAllCriteria(marker = 'Base Model') {
+function chooseAllCriteria(marker = 'Base') {
   for (const legend of [
     'Which answer was most accurate?',
     'Which was most helpful?',
@@ -107,12 +107,26 @@ describe('EvaluatePage live run', () => {
     renderPage();
 
     expect(screen.getByText('Base answer text')).toBeInTheDocument();
-    expect(screen.getByText('Syllabus-aware answer text')).toBeInTheDocument();
-    expect(screen.getByText('Course-trained answer text')).toBeInTheDocument();
+    expect(screen.getByText('RAG answer text')).toBeInTheDocument();
+    expect(screen.getByText('Fine-tuned answer text')).toBeInTheDocument();
     expect(screen.getByText('Combined answer text')).toBeInTheDocument();
     expect(
       screen.getByText('How much of my grade is the final project?'),
     ).toBeInTheDocument();
+  });
+
+  it('names the four approaches by their technical approach', () => {
+    storeRun();
+    renderPage();
+
+    const group = screen.getByRole('radiogroup', {
+      name: 'Which answer was most accurate?',
+    });
+    const options = Array.from(group.querySelectorAll('.criterion__option-label')).map(
+      (option) => option.textContent,
+    );
+
+    expect(options).toEqual(['Base', 'RAG', 'Fine-Tuned', 'Fine-Tuned + RAG']);
   });
 
   it('survives a reload by reading the run back from session storage', () => {
@@ -197,8 +211,8 @@ describe('EvaluatePage live run', () => {
     storeRun({
       responses: {
         base: { text: '', error: 'This response is temporarily unavailable.', sources: [] },
-        rag: { text: 'Syllabus-aware answer text', error: null, sources: [] },
-        fineTuned: { text: 'Course-trained answer text', error: null, sources: [] },
+        rag: { text: 'RAG answer text', error: null, sources: [] },
+        fineTuned: { text: 'Fine-tuned answer text', error: null, sources: [] },
         fineTunedRag: { text: 'Combined answer text', error: null, sources: [] },
       },
     });

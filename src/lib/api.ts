@@ -164,7 +164,7 @@ export async function generateBaseModel(
   return postJson<BaseModelGenerateResponse>(
     '/base-model/generate',
     { courseId, question },
-    'The backend could not generate a base model response.',
+    'The backend could not generate a Base response.',
     'The service could not be reached.',
   );
 }
@@ -176,8 +176,8 @@ export async function generateFineTuned(
   return postJson<FineTunedGenerateResponse>(
     '/fine-tuned/generate',
     { courseId, question },
-    'The backend could not generate a fine-tuned model response.',
-    'The course-trained model service could not be reached.',
+    'The backend could not generate a Fine-Tuned response.',
+    'The fine-tuned model service could not be reached.',
   );
 }
 
@@ -190,7 +190,7 @@ export async function generateFineTunedRag(
     '/fine-tuned-rag/generate',
     { courseId, question, topK },
     'The backend could not generate a Fine-Tuned + RAG response.',
-    'The course-trained model service could not be reached.',
+    'The fine-tuned model service could not be reached.',
   );
 }
 
