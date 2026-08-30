@@ -189,6 +189,63 @@ export function getModelReadiness(approved: number): ModelReadiness {
   };
 }
 
+/**
+ * Whether a first course model can be requested right now.
+ *
+ * Four things must all be true, and the reason each one is here is that
+ * getting any of them wrong puts an action in front of a professor who has
+ * nothing to do:
+ *
+ *   - the registry has been read, and this course has no model. A course that
+ *     already has one is not requesting its first.
+ *   - enough approved examples to be worth training on.
+ *   - no request record exists yet. An outstanding one is already under way,
+ *     and a failed one is the administrator's to follow up.
+ *   - the request record itself was readable. Offering to create a second
+ *     request because we could not see the first is the worst outcome here.
+ *
+ * Extracted from the Model page, which is where it has always lived, so the
+ * Course overview can gate its call to action on the same answer instead of on
+ * the approved count alone. The overview used to show "you have N approved
+ * examples — enough for a course model" under NEEDS YOUR ATTENTION whenever the
+ * count was high enough, including directly above a row reading
+ * "Ready · published". Nothing needed the professor's attention; the model had
+ * been trained weeks earlier.
+ */
+export interface ModelRequestOfferInput {
+  /** Current registered version, when the registry has been read. */
+  version: CourseModelVersion | null;
+  /** The course's request record, when one exists and could be read. */
+  request: CourseModelRequest | null;
+  /** Approved examples. Pass 0 when the count could not be read. */
+  approved: number;
+  registryLoading?: boolean;
+  registryUnavailable?: boolean;
+  requestLoading?: boolean;
+  requestUnavailable?: boolean;
+}
+
+export function canRequestCourseModel({
+  version,
+  request,
+  approved,
+  registryLoading = false,
+  registryUnavailable = false,
+  requestLoading = false,
+  requestUnavailable = false,
+}: ModelRequestOfferInput): boolean {
+  if (registryLoading || registryUnavailable) {
+    return false;
+  }
+  if (describeCourseModel({ version }).presence !== 'none') {
+    return false;
+  }
+  if (request !== null || requestLoading || requestUnavailable) {
+    return false;
+  }
+  return getModelReadiness(approved).hasEnough;
+}
+
 /* ------------------------------------------------------------------------ *
  * Request status, in plain language
  * ------------------------------------------------------------------------ */

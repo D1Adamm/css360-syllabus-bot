@@ -12,6 +12,7 @@ import { useCourseModelRequest } from '../../hooks/useCourseModelRequest';
 import { formatCourseCode } from '../../lib/courseLabels';
 import { getCurrentVersion } from '../../lib/courseModelDb';
 import {
+  canRequestCourseModel,
   describeCourseModel,
   describeModelRequest,
   summariseCourseModel,
@@ -105,12 +106,15 @@ export function ProfessorModelPage() {
    * CSS 360 fails the first, so its page keeps the Ready/Offline treatment and
    * never offers a first-model request. Retraining is a separate feature.
    */
-  const canRequest =
-    modelState.status !== 'loading' &&
-    modelState.status !== 'unavailable' &&
-    presentation.presence === 'none' &&
-    readiness.hasEnough &&
-    requestState.status === 'none';
+  const canRequest = canRequestCourseModel({
+    version,
+    request,
+    approved: counts?.approved ?? 0,
+    registryLoading: modelState.status === 'loading',
+    registryUnavailable: modelState.status === 'unavailable',
+    requestLoading: requestState.status === 'loading',
+    requestUnavailable: requestState.status === 'unavailable',
+  });
 
   return (
     <div className="ui-stack ui-stack--section">

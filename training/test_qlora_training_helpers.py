@@ -70,28 +70,28 @@ class JsonlValidationTests(unittest.TestCase):
 class VersionedOutputTests(unittest.TestCase):
     def test_versioned_path(self) -> None:
         path = helpers.versioned_training_output_dir(
-            user="madamk",
+            user="testuser",
             course_id="css-360-winter-2026-a7rp",
             run_id="20260809T234500Z",
             mode="full",
         )
         self.assertEqual(
             path,
-            "/gpfs/projects/simswe/madamk/training_outputs/qlora-runs/"
+            "/gpfs/projects/simswe/testuser/training_outputs/qlora-runs/"
             "css-360-winter-2026-a7rp/20260809T234500Z-full",
         )
         self.assertNotIn("css-360-qlora/adapter", path)
 
     def test_live_adapter_detection(self) -> None:
-        live = helpers.live_adapter_dir(user="madamk")
-        self.assertTrue(helpers.is_live_adapter_path(live, user="madamk"))
+        live = helpers.live_adapter_dir(user="testuser")
+        self.assertTrue(helpers.is_live_adapter_path(live, user="testuser"))
         versioned = helpers.versioned_training_output_dir(
-            user="madamk",
+            user="testuser",
             course_id="css-360-winter-2026-a7rp",
             run_id="20260809T234500Z",
             mode="smoke",
         )
-        self.assertFalse(helpers.is_live_adapter_path(f"{versioned}/adapter", user="madamk"))
+        self.assertFalse(helpers.is_live_adapter_path(f"{versioned}/adapter", user="testuser"))
 
 
 class AdapterValidationTests(unittest.TestCase):
@@ -276,42 +276,42 @@ class SlurmJobNameIsolationTests(unittest.TestCase):
 
 class BackupPathTests(unittest.TestCase):
     def test_backup_dir(self) -> None:
-        path = helpers.backup_destination_dir(user="madamk", stamp="20260809T234500Z")
+        path = helpers.backup_destination_dir(user="testuser", stamp="20260809T234500Z")
         self.assertEqual(
             path,
-            "/gpfs/projects/simswe/madamk/training_outputs/adapter-backups/20260809T234500Z",
+            "/gpfs/projects/simswe/testuser/training_outputs/adapter-backups/20260809T234500Z",
         )
 
 
 class RequireTrainingOutputDirTests(unittest.TestCase):
     def test_missing_raises_with_helper_guidance(self) -> None:
         with self.assertRaises(ValueError) as ctx:
-            helpers.require_training_output_dir(None, user="madamk")
+            helpers.require_training_output_dir(None, user="testuser")
         msg = str(ctx.exception)
         self.assertIn("TRAINING_OUTPUT_DIR is required", msg)
         self.assertIn("start_qlora_training.sh", msg)
 
     def test_empty_raises(self) -> None:
         with self.assertRaises(ValueError):
-            helpers.require_training_output_dir("   ", user="madamk")
+            helpers.require_training_output_dir("   ", user="testuser")
 
     def test_refuses_live_parent_and_adapter(self) -> None:
-        live = helpers.live_adapter_dir(user="madamk")
+        live = helpers.live_adapter_dir(user="testuser")
         parent = str(Path(live).parent)
         for bad in (live, parent, f"{parent}/"):
             with self.assertRaises(ValueError) as ctx:
-                helpers.require_training_output_dir(bad, user="madamk")
+                helpers.require_training_output_dir(bad, user="testuser")
             self.assertIn("live inference adapter", str(ctx.exception))
 
     def test_accepts_versioned_run_dir(self) -> None:
         path = helpers.versioned_training_output_dir(
-            user="madamk",
+            user="testuser",
             course_id="css-360-winter-2026-a7rp",
             run_id="20260809T234500Z",
             mode="full",
         )
         self.assertEqual(
-            helpers.require_training_output_dir(path, user="madamk"),
+            helpers.require_training_output_dir(path, user="testuser"),
             path,
         )
 
@@ -354,7 +354,7 @@ class TrainSlurmSafetyTests(unittest.TestCase):
         env = os.environ.copy()
         env.pop("TRAINING_OUTPUT_DIR", None)
         proc = subprocess.run(
-            [sys.executable, str(helper), "require-training-output-dir", "--user", "madamk"],
+            [sys.executable, str(helper), "require-training-output-dir", "--user", "testuser"],
             capture_output=True,
             text=True,
             env=env,
@@ -489,10 +489,10 @@ class CourseServingPathTests(unittest.TestCase):
         course either.
         """
         css350 = helpers.course_version_adapter_dir(
-            user="madamk", course_id="css-350-spring-2026-n3h9", version="v1"
+            user="testuser", course_id="css-350-spring-2026-n3h9", version="v1"
         )
         css360 = helpers.course_version_adapter_dir(
-            user="madamk", course_id="css-360-winter-2026-a7rp", version="v1"
+            user="testuser", course_id="css-360-winter-2026-a7rp", version="v1"
         )
 
         self.assertNotEqual(css350, css360)
@@ -501,10 +501,10 @@ class CourseServingPathTests(unittest.TestCase):
 
     def test_versions_of_one_course_do_not_collide(self) -> None:
         first = helpers.course_version_adapter_dir(
-            user="madamk", course_id="css-350-spring-2026-n3h9", version="v1"
+            user="testuser", course_id="css-350-spring-2026-n3h9", version="v1"
         )
         second = helpers.course_version_adapter_dir(
-            user="madamk", course_id="css-350-spring-2026-n3h9", version="v2"
+            user="testuser", course_id="css-350-spring-2026-n3h9", version="v2"
         )
 
         self.assertNotEqual(first, second)
@@ -513,7 +513,7 @@ class CourseServingPathTests(unittest.TestCase):
         for bad in ("../etc", "CSS-350", "css_350", ""):
             with self.subTest(course_id=bad):
                 with self.assertRaises(ValueError):
-                    helpers.course_serving_dir(user="madamk", course_id=bad)
+                    helpers.course_serving_dir(user="testuser", course_id=bad)
 
     def test_an_invalid_version_never_becomes_a_path(self) -> None:
         for bad in ("latest", "1", "v", "../v1", ""):
@@ -526,14 +526,14 @@ class RelativeOutputRefTests(unittest.TestCase):
     def test_the_machine_specific_prefix_is_stripped(self) -> None:
         """A stored reference outlives the account and the cluster home it came from."""
         ref = helpers.relative_training_output_ref(
-            "/gpfs/projects/simswe/madamk/training_outputs/"
+            "/gpfs/projects/simswe/testuser/training_outputs/"
             "qlora-runs/css-350-spring-2026-n3h9/20260827T064701Z-full"
         )
 
         self.assertEqual(
             ref, "qlora-runs/css-350-spring-2026-n3h9/20260827T064701Z-full"
         )
-        self.assertNotIn("madamk", ref)
+        self.assertNotIn("testuser", ref)
         self.assertFalse(ref.startswith("/"))
 
     def test_a_trailing_slash_is_ignored(self) -> None:

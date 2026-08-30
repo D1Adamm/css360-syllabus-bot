@@ -87,9 +87,18 @@ export interface EvaluationRecord {
    */
   comparisonId: string;
   mostAccurate: ModelKey;
-  mostHelpful: ModelKey;
-  mostConcise: ModelKey;
-  bestGrounded: ModelKey;
+  /**
+   * Criteria the evaluation form no longer asks for.
+   *
+   * Optional rather than removed. Every evaluation recorded before the form was
+   * cut down carries all three, they are real research data, and nothing
+   * deletes or rewrites them. What changed is that a new rating may legitimately
+   * omit them — so anything reading these must treat absent as "not asked",
+   * never as a zero. Aggregation counts only the records that answered.
+   */
+  mostHelpful?: ModelKey;
+  mostConcise?: ModelKey;
+  bestGrounded?: ModelKey;
   preferredModel: ModelKey;
   hallucinationFlags: ModelKey[];
   comment?: string;

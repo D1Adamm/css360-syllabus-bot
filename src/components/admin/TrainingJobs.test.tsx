@@ -285,7 +285,7 @@ describe('training jobs', () => {
         jobId: undefined,
         completion: undefined,
         claim: {
-          owner: 'madamk@tillicum',
+          owner: 'testuser@tillicum',
           claimedAt: '2026-08-27T06:41:00.000Z',
           expiresAt: '2026-08-27T06:56:00.000Z',
         },
@@ -295,7 +295,7 @@ describe('training jobs', () => {
     render(<TrainingJobs />);
 
     const list = await screen.findByRole('list', { name: 'Training jobs' });
-    expect(list).toHaveTextContent('madamk@tillicum');
+    expect(list).toHaveTextContent('testuser@tillicum');
   });
 
   it('keeps each course to its own runs', async () => {

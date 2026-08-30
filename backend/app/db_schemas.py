@@ -213,10 +213,13 @@ class EvaluationRecordModel(DbRecord):
     course_id: str = Field(alias="courseId")
     comparison_id: str = Field(alias="comparisonId")
     most_accurate: str = Field(alias="mostAccurate")
-    most_helpful: str = Field(alias="mostHelpful")
-    most_concise: str = Field(alias="mostConcise")
-    best_grounded: str = Field(alias="bestGrounded")
     preferred_model: str = Field(alias="preferredModel")
+    # Retired from the student form. Present on every record made before that
+    # and absent on newer ones; never emitted as an empty string, so a reader
+    # can tell "not asked" from an answer.
+    most_helpful: str | None = Field(default=None, alias="mostHelpful")
+    most_concise: str | None = Field(default=None, alias="mostConcise")
+    best_grounded: str | None = Field(default=None, alias="bestGrounded")
     hallucination_flags: list[str] = Field(
         default_factory=list, alias="hallucinationFlags"
     )
@@ -240,10 +243,12 @@ class EvaluationCreateRequest(BaseModel):
     id: str | None = None
     comparison_id: str = Field(alias="comparisonId", min_length=1)
     most_accurate: str = Field(alias="mostAccurate", min_length=1)
-    most_helpful: str = Field(alias="mostHelpful", min_length=1)
-    most_concise: str = Field(alias="mostConcise", min_length=1)
-    best_grounded: str = Field(alias="bestGrounded", min_length=1)
     preferred_model: str = Field(alias="preferredModel", min_length=1)
+    # Optional: a client that still sends them is accepted unchanged, and one
+    # that omits them is not rejected. Nothing invents a value for them.
+    most_helpful: str | None = Field(default=None, alias="mostHelpful")
+    most_concise: str | None = Field(default=None, alias="mostConcise")
+    best_grounded: str | None = Field(default=None, alias="bestGrounded")
     hallucination_flags: list[str] = Field(
         default_factory=list, alias="hallucinationFlags"
     )

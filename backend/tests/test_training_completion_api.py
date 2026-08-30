@@ -279,7 +279,7 @@ class SuccessTests(CompletionTestCase):
     def test_an_absolute_artifact_ref_is_refused(self) -> None:
         """A stored reference must not embed a cluster home directory."""
         response = self._post(
-            _success_payload(artifactRef="/gpfs/projects/simswe/madamk/x/adapter")
+            _success_payload(artifactRef="/gpfs/projects/simswe/testuser/x/adapter")
         )
 
         self.assertEqual(response.status_code, 422)

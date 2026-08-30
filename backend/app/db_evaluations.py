@@ -24,10 +24,24 @@ EVALUATION_COLUMNS = """
 REQUIRED_FIELDS = (
     ("comparisonId", "comparison_id"),
     ("mostAccurate", "most_accurate"),
+    ("preferredModel", "preferred_model"),
+)
+
+#: Criteria the student form no longer asks for.
+#:
+#: Every evaluation recorded before the form was cut down carries all three, and
+#: nothing here deletes or rewrites one. What changed is that a new rating may
+#: omit them, so they moved out of REQUIRED_FIELDS.
+#:
+#: The columns stay `NOT NULL`. Making them nullable would be a migration
+#: against a database holding live research data to record something the empty
+#: string already records, so an unanswered criterion is stored as `''` and
+#: `map_evaluation` omits it from the API record — the same "absent means not
+#: asked" the TypeScript parsers apply to every other optional field.
+RETIRED_FIELDS = (
     ("mostHelpful", "most_helpful"),
     ("mostConcise", "most_concise"),
     ("bestGrounded", "best_grounded"),
-    ("preferredModel", "preferred_model"),
 )
 
 
@@ -41,13 +55,14 @@ def map_evaluation(row: Mapping[str, Any]) -> dict[str, Any]:
         "courseId": row["course_id"],
         "comparisonId": row["comparison_id"],
         "mostAccurate": row["most_accurate"],
-        "mostHelpful": row["most_helpful"],
-        "mostConcise": row["most_concise"],
-        "bestGrounded": row["best_grounded"],
         "preferredModel": row["preferred_model"],
         "hallucinationFlags": string_list(row.get("hallucination_flags")),
         "createdAt": to_iso(row.get("created_at")),
     }
+    # An empty retired column means the student was never asked. Omitted rather
+    # than emitted as "", so aggregation counts answers and nothing else.
+    for field, column in RETIRED_FIELDS:
+        put_optional(record, field, optional_string(row.get(column)))
     put_optional(record, "comment", optional_string(row.get("comment")))
     put_optional(record, "runId", optional_string(row.get("run_id")))
     put_optional(record, "questionText", optional_string(row.get("question_text")))
@@ -108,6 +123,9 @@ def create_evaluation(
         if not value:
             raise ValueError(f"Evaluation is missing required field '{field}'.")
         parameters[column] = value
+
+    for field, column in RETIRED_FIELDS:
+        parameters[column] = optional_string(evaluation.get(field)) or ""
 
     parameters["hallucination_flags"] = Json(
         string_list(evaluation.get("hallucinationFlags"))

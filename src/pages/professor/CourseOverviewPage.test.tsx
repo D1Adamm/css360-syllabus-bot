@@ -453,4 +453,120 @@ describe('CourseOverviewPage', () => {
       );
     });
   });
+  /* --------------------------------------------------------------------- *
+   * The attention banner
+   *
+   * "You have N approved examples — enough for a course model" was decided by
+   * the approved count alone, so it kept appearing under NEEDS YOUR ATTENTION
+   * for a course whose model had been trained, registered and published weeks
+   * earlier — directly above a Course model row reading "Ready · published".
+   * Attention is now only claimed when the action behind it exists.
+   * --------------------------------------------------------------------- */
+
+  describe('the course-model attention item', () => {
+    const ENOUGH = { total: 50, approved: 42, pending: 0, rejected: 0, edited: 0 };
+
+    function attentionSection(): HTMLElement | null {
+      return document.querySelector('.attention');
+    }
+
+    beforeEach(() => {
+      useCourseExampleCounts.mockReturnValue({ status: 'ready', counts: ENOUGH });
+    });
+
+    it('asks for a model when there are enough examples and none exists', () => {
+      renderPage();
+
+      const section = attentionSection();
+      expect(section).not.toBeNull();
+      expect(section).toHaveTextContent(
+        '42 approved examples — enough to request a course model',
+      );
+    });
+
+    it('does not ask for a model when one is ready and published', () => {
+      setModel(courseId, { ...READY_VERSION, deployment: 'online' });
+
+      renderPage();
+
+      expect(document.body.textContent ?? '').not.toMatch(/enough .* course model/);
+      expect(courseModelRow()).toHaveTextContent('Ready · published');
+    });
+
+    it('hides the attention section entirely when the model is the only thing that would be in it', () => {
+      setModel(courseId, { ...READY_VERSION, deployment: 'online' });
+
+      renderPage();
+
+      expect(attentionSection()).toBeNull();
+    });
+
+    it('does not ask for a model when one is ready but not published yet', () => {
+      // Registered and unpublished is still a model. There is nothing to
+      // request; publishing is an administrator's step.
+      setModel(courseId, READY_VERSION);
+
+      renderPage();
+
+      expect(document.body.textContent ?? '').not.toMatch(/enough .* course model/);
+      expect(courseModelRow()).toHaveTextContent('Ready · not published');
+    });
+
+    it('does not ask for a model while a request is already outstanding', () => {
+      setRequest(courseId, 'training');
+
+      renderPage();
+
+      expect(document.body.textContent ?? '').not.toMatch(/enough .* course model/);
+    });
+
+    it('does not ask for a model while the registry is still being read', () => {
+      modelStateByCourse.set(courseId, { status: 'loading' });
+
+      renderPage();
+
+      expect(document.body.textContent ?? '').not.toMatch(/enough .* course model/);
+    });
+
+    it('does not ask for a model when the registry could not be read', () => {
+      modelStateByCourse.set(courseId, { status: 'unavailable', message: 'network' });
+
+      renderPage();
+
+      expect(document.body.textContent ?? '').not.toMatch(/enough .* course model/);
+    });
+
+    it('does not ask for a second request when the request record is unreadable', () => {
+      requestStateByCourse.set(courseId, { status: 'unavailable', message: 'network' });
+
+      renderPage();
+
+      expect(document.body.textContent ?? '').not.toMatch(/enough .* course model/);
+    });
+
+    it('leaves the other attention items alone for a course with a published model', () => {
+      // The model item is the only one this change touches.
+      setModel(courseId, { ...READY_VERSION, deployment: 'online' });
+      useCourseExampleCounts.mockReturnValue({
+        status: 'ready',
+        counts: { ...ENOUGH, pending: 3 },
+      });
+
+      renderPage();
+
+      expect(attentionSection()).toHaveTextContent('3 examples waiting for your review');
+      expect(attentionSection()).not.toHaveTextContent('course model');
+    });
+
+    it('says nothing about a model when there are too few approved examples', () => {
+      useCourseExampleCounts.mockReturnValue({
+        status: 'ready',
+        counts: { total: 20, approved: 4, pending: 0, rejected: 0, edited: 0 },
+      });
+
+      renderPage();
+
+      expect(document.body.textContent ?? '').not.toMatch(/enough .* course model/);
+    });
+  });
 });

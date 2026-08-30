@@ -291,6 +291,33 @@ class EvaluationMappingTests(unittest.TestCase):
         for key in ("comment", "runId", "questionText"):
             self.assertNotIn(key, record)
 
+    def test_retired_criteria_are_returned_for_records_that_carry_them(self) -> None:
+        """Older evaluations answered five criteria. All five still come back."""
+        record = map_evaluation(self.ROW)
+        self.assertEqual(record["mostHelpful"], "fineTunedRag")
+        self.assertEqual(record["mostConcise"], "base")
+        self.assertEqual(record["bestGrounded"], "rag")
+
+    def test_retired_criteria_omitted_when_the_student_was_not_asked(self) -> None:
+        """The simplified form stores `''`, which is not an answer.
+
+        Omitted rather than emitted, so aggregation counts the records that
+        answered and never charts a criterion nobody was asked as four zeroes.
+        """
+        record = map_evaluation(
+            {
+                **self.ROW,
+                "most_helpful": "",
+                "most_concise": "",
+                "best_grounded": "",
+            }
+        )
+        for key in ("mostHelpful", "mostConcise", "bestGrounded"):
+            self.assertNotIn(key, record)
+        # What the form does still ask is unaffected.
+        self.assertEqual(record["mostAccurate"], "rag")
+        self.assertEqual(record["preferredModel"], "fineTunedRag")
+
 
 class ModelRegistryMappingTests(unittest.TestCase):
     ROW = {

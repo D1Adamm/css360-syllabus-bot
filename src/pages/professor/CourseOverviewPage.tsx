@@ -14,7 +14,7 @@ import { useCourseModel } from '../../hooks/useCourseModel';
 import { useCourseModelRequest } from '../../hooks/useCourseModelRequest';
 import { useEvaluations } from '../../hooks/useEvaluations';
 import { getCurrentVersion } from '../../lib/courseModelDb';
-import { getModelReadiness, summariseCourseModel } from '../../lib/modelStatus';
+import { canRequestCourseModel, summariseCourseModel } from '../../lib/modelStatus';
 import { professorCoursePath } from '../../lib/roleRoutes';
 import { getStarterGeneration } from '../../lib/starterSeedGeneration';
 import type { SyllabusStatus } from '../../types';
@@ -92,17 +92,40 @@ export function CourseOverviewPage() {
    * and re-subscribe when `courseId` changes, so one course's state cannot be
    * shown against another's.
    */
+  const version =
+    modelState.status === 'ready' ? getCurrentVersion(modelState.registry) : null;
+  const request = requestState.status === 'ready' ? requestState.request : null;
+
   const model = summariseCourseModel({
-    version:
-      modelState.status === 'ready' ? getCurrentVersion(modelState.registry) : null,
-    request: requestState.status === 'ready' ? requestState.request : null,
+    version,
+    request,
     loading:
       modelState.status === 'loading' || requestState.status === 'loading',
     registryUnavailable: modelState.status === 'unavailable',
     requestUnavailable: requestState.status === 'unavailable',
   });
   const syllabus = syllabusPresentation(metadataState);
-  const readiness = getModelReadiness(counts?.approved ?? 0);
+
+  /*
+   * Whether a first model can be asked for, from the same helper that decides
+   * whether the Model page offers the button.
+   *
+   * The approved count alone used to decide it, so a course whose model was
+   * trained, registered and published still carried "you have 42 approved
+   * examples — enough for a course model" under NEEDS YOUR ATTENTION, directly
+   * above a Course model row reading "Ready · published". Nothing needed the
+   * professor's attention. Attention is now only claimed when the action behind
+   * it actually exists.
+   */
+  const canRequestModel = canRequestCourseModel({
+    version,
+    request,
+    approved: counts?.approved ?? 0,
+    registryLoading: modelState.status === 'loading',
+    registryUnavailable: modelState.status === 'unavailable',
+    requestLoading: requestState.status === 'loading',
+    requestUnavailable: requestState.status === 'unavailable',
+  });
 
   /*
    * Starter examples are still being written for this course.
@@ -137,10 +160,10 @@ export function CourseOverviewPage() {
     });
   }
 
-  if (counts && readiness.hasEnough) {
+  if (counts && canRequestModel) {
     attention.push({
       key: 'model',
-      text: `You have ${counts.approved} approved examples — enough for a course model`,
+      text: `You have ${counts.approved} approved examples — enough to request a course model`,
       to: professorCoursePath(courseId, 'model'),
       action: 'See course model',
     });

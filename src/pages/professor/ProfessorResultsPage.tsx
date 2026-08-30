@@ -16,7 +16,6 @@ import {
 import type { ComparisonRecord } from '../../types';
 import { exportEvaluationsJson } from '../../utils/exportData';
 import {
-  countByField,
   countHallucinationFlags,
   extractRecentComments,
   formatTopModels,
@@ -25,6 +24,7 @@ import {
   getUniqueQuestionCount,
   groupByQuestion,
   MODEL_KEYS,
+  tallyCriterion,
 } from '../../utils/evaluationUtils';
 
 /*
@@ -47,16 +47,26 @@ export function ProfessorResultsPage() {
   const courseId = useCourseId();
   const { evaluations, loading, error } = useEvaluations();
 
+  /*
+   * Each criterion is tallied with its own denominator.
+   *
+   * "Closest to the syllabus" was retired from the student form, so a course
+   * whose ratings are all recent has nobody who answered it. Charting that
+   * against the evaluation total would draw four bars at 0% and read as
+   * students having rejected every approach, which is the opposite of what
+   * happened — they were never asked. It is charted only where there are
+   * answers, and labelled with how many.
+   */
   const preferred = useMemo(
-    () => countByField(evaluations, 'preferredModel'),
+    () => tallyCriterion(evaluations, 'preferredModel'),
     [evaluations],
   );
   const accurate = useMemo(
-    () => countByField(evaluations, 'mostAccurate'),
+    () => tallyCriterion(evaluations, 'mostAccurate'),
     [evaluations],
   );
   const grounded = useMemo(
-    () => countByField(evaluations, 'bestGrounded'),
+    () => tallyCriterion(evaluations, 'bestGrounded'),
     [evaluations],
   );
   const flags = useMemo(() => countHallucinationFlags(evaluations), [evaluations]);
@@ -144,7 +154,7 @@ export function ProfessorResultsPage() {
       <section className="results-headline">
         <div className="results-headline__main">
           <p className="results-headline__label">Students preferred</p>
-          <p className="results-headline__value">{formatTopModels(preferred)}</p>
+          <p className="results-headline__value">{formatTopModels(preferred.counts)}</p>
         </div>
         <dl className="results-headline__meta">
           <div>
@@ -172,22 +182,30 @@ export function ProfessorResultsPage() {
           <ModelBarChart
             id="chart-preference"
             title="Preferred overall"
-            counts={preferred}
-            total={total}
+            counts={preferred.counts}
+            total={preferred.answered}
           />
           <ModelBarChart
             id="chart-accuracy"
             title="Most accurate"
-            counts={accurate}
-            total={total}
+            counts={accurate.counts}
+            total={accurate.answered}
           />
-          <ModelBarChart
-            id="chart-grounding"
-            title="Closest to the syllabus"
-            counts={grounded}
-            total={total}
-          />
+          {grounded.answered > 0 && (
+            <ModelBarChart
+              id="chart-grounding"
+              title="Closest to the syllabus"
+              counts={grounded.counts}
+              total={grounded.answered}
+            />
+          )}
         </div>
+        {grounded.answered > 0 && grounded.answered < total && (
+          <p className="ui-text-xs ui-text-muted">
+            Closest to the syllabus was asked of earlier evaluations only:{' '}
+            {grounded.answered} of {total} answered it.
+          </p>
+        )}
       </section>
 
       {totalFlags > 0 && (

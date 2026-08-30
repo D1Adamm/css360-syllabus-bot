@@ -64,14 +64,21 @@ function renderPage() {
   );
 }
 
+/** The two single-choice criteria the form still asks for. */
+const CRITERION_LEGENDS = [
+  'Which answer was most accurate?',
+  'Which answer would you prefer overall?',
+];
+
+/** Criteria the form used to ask and no longer does. */
+const RETIRED_LEGENDS = [
+  'Which was most helpful?',
+  'Which was most concise?',
+  'Which stayed closest to the syllabus?',
+];
+
 function chooseAllCriteria(marker = 'Base') {
-  for (const legend of [
-    'Which answer was most accurate?',
-    'Which was most helpful?',
-    'Which was most concise?',
-    'Which stayed closest to the syllabus?',
-    'Which did you prefer overall?',
-  ]) {
+  for (const legend of CRITERION_LEGENDS) {
     const group = screen.getByRole('radiogroup', { name: legend });
     fireEvent.click(
       Array.from(group.querySelectorAll('label')).find((label) =>
@@ -147,7 +154,9 @@ describe('EvaluatePage live run', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit evaluation' }));
 
     await waitFor(() => {
-      expect(screen.getAllByText('Choose one answer.').length).toBe(5);
+      expect(screen.getAllByText('Choose one answer.').length).toBe(
+        CRITERION_LEGENDS.length,
+      );
     });
     expect(addEvaluationMock).not.toHaveBeenCalled();
   });
@@ -237,5 +246,80 @@ describe('EvaluatePage live run', () => {
     expect(
       await screen.findByText('Thanks — your ratings were recorded'),
     ).toBeInTheDocument();
+  });
+  /* --------------------------------------------------------------------- *
+   * The simplified form
+   *
+   * Five single-choice criteria over the same four answers was enough friction
+   * that ratings stopped getting finished. Three of them — helpfulness,
+   * concision, closeness to the syllabus — were retired. The data they produced
+   * is untouched; the questions are simply no longer asked.
+   * --------------------------------------------------------------------- */
+
+  it('asks only the two single-choice criteria that remain', () => {
+    storeRun();
+    renderPage();
+
+    for (const legend of CRITERION_LEGENDS) {
+      expect(screen.getByRole('radiogroup', { name: legend })).toBeInTheDocument();
+    }
+    expect(screen.getAllByRole('radiogroup')).toHaveLength(CRITERION_LEGENDS.length);
+  });
+
+  it('no longer asks the retired criteria', () => {
+    storeRun();
+    renderPage();
+
+    for (const legend of RETIRED_LEGENDS) {
+      expect(screen.queryByRole('radiogroup', { name: legend })).not.toBeInTheDocument();
+    }
+    expect(document.body.textContent ?? '').not.toMatch(/most helpful|most concise/i);
+  });
+
+  it('still asks which answers were unsupported, and still takes a comment', () => {
+    storeRun();
+    renderPage();
+
+    expect(
+      screen.getByText('Did any answer include information the syllabus does not support?'),
+    ).toBeInTheDocument();
+    const flagged = screen
+      .getAllByRole('checkbox')
+      .map((box) => box.closest('label')?.textContent?.replace(/^[A-D]/, '') ?? '');
+    expect(flagged).toEqual(['Base', 'RAG', 'Fine-Tuned', 'Fine-Tuned + RAG']);
+    expect(screen.getByPlaceholderText(/What made one answer better/)).toBeInTheDocument();
+  });
+
+  it('omits the retired criteria from a new record rather than inventing answers', async () => {
+    storeRun();
+    renderPage();
+
+    chooseAllCriteria();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit evaluation' }));
+
+    await waitFor(() => {
+      expect(addEvaluationMock).toHaveBeenCalledTimes(1);
+    });
+
+    const saved = addEvaluationMock.mock.calls[0][0];
+    expect(saved.mostAccurate).toBe('base');
+    expect(saved.preferredModel).toBe('base');
+    expect(saved.mostHelpful).toBeUndefined();
+    expect(saved.mostConcise).toBeUndefined();
+    expect(saved.bestGrounded).toBeUndefined();
+  });
+
+  it('records the approaches a student flagged as unsupported', async () => {
+    storeRun();
+    renderPage();
+
+    chooseAllCriteria();
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Submit evaluation' }));
+
+    await waitFor(() => {
+      expect(addEvaluationMock).toHaveBeenCalledTimes(1);
+    });
+    expect(addEvaluationMock.mock.calls[0][0].hallucinationFlags).toEqual(['base']);
   });
 });

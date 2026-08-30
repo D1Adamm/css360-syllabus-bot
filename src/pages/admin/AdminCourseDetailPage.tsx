@@ -9,6 +9,10 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { useCourseId } from '../../context/CourseContext';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourseMetadata } from '../../hooks/useCourseMetadata';
+import { useCourseModel } from '../../hooks/useCourseModel';
+import { useCourseModelRequest } from '../../hooks/useCourseModelRequest';
+import { getCurrentVersion, sortVersionsNewestFirst } from '../../lib/courseModelDb';
+import { summariseCourseModel } from '../../lib/modelStatus';
 import {
   ApiError,
   fetchCourseChunks,
@@ -42,6 +46,8 @@ export function AdminCourseDetailPage() {
   const courseId = useCourseId();
   const { metadata } = useCourseMetadata(courseId);
   const countsState = useCourseExampleCounts(courseId);
+  const { state: modelState } = useCourseModel(courseId);
+  const { state: requestState } = useCourseModelRequest(courseId);
 
   const [chunks, setChunks] = useState<Probe<CourseChunksResponse>>({ status: 'idle' });
   const [facts, setFacts] = useState<Probe<FactInventoryResponse>>({ status: 'idle' });
@@ -77,6 +83,28 @@ export function AdminCourseDetailPage() {
   }, [courseId]);
 
   const counts = countsState.status === 'ready' ? countsState.counts : null;
+
+  /*
+   * The registered model for this course, from the registry record itself.
+   *
+   * This section used to be a fixed sentence saying no per-course registry
+   * existed. It has existed since the `course_models` tables landed, and Admin
+   * Models, Admin Training and the professor Model page have all been reading
+   * it — so this page alone said `unknown` about a course whose model was
+   * current, ready and online. It now reads the same two course-scoped records
+   * through `summariseCourseModel`, the same helper the professor overview
+   * uses, so the four surfaces cannot disagree again.
+   */
+  const registry = modelState.status === 'ready' ? modelState.registry : null;
+  const currentVersion = registry ? getCurrentVersion(registry) : null;
+  const model = summariseCourseModel({
+    version: currentVersion,
+    request: requestState.status === 'ready' ? requestState.request : null,
+    loading: modelState.status === 'loading' || requestState.status === 'loading',
+    registryUnavailable: modelState.status === 'unavailable',
+    requestUnavailable: requestState.status === 'unavailable',
+  });
+  const history = registry ? sortVersionsNewestFirst(registry.versions) : [];
 
   return (
     <div className="ui-stack ui-stack--loose">
@@ -274,15 +302,68 @@ export function AdminCourseDetailPage() {
       </Callout>
 
       <section className="ui-stack ui-stack--snug">
-        <SectionHeader title="Model state" divider />
+        <SectionHeader
+          title="Model state"
+          description="This course's registry record. Independent of whether anything is serving it right now."
+          divider
+        />
         <ul className="admin-rows" aria-label="Model state">
           <li className="admin-row">
             <span className="admin-row__label">Course model</span>
             <span className="admin-row__value">
-              No per-course model registry exists, so this cannot be answered.
+              {currentVersion ? (
+                <>
+                  <code>{currentVersion.version}</code> · base{' '}
+                  <code>{currentVersion.baseModel}</code> ·{' '}
+                  {currentVersion.trainingExampleCount} train examples · artifact{' '}
+                  <code>{currentVersion.artifactRef}</code>
+                </>
+              ) : modelState.status === 'loading' ? (
+                'reading the registry…'
+              ) : modelState.status === 'unavailable' ? (
+                'The registry could not be read. This says nothing about whether a model exists.'
+              ) : (
+                'No model version is registered for this course.'
+              )}
             </span>
-            <StatusPill tone="neutral">unknown</StatusPill>
+            <StatusPill tone={model.tone}>{model.label}</StatusPill>
           </li>
+
+          {currentVersion && (
+            <li className="admin-row">
+              <span className="admin-row__label">Version state</span>
+              <span className="admin-row__value">
+                status <code>{currentVersion.status}</code> · deployment{' '}
+                <code>{currentVersion.deployment}</code>
+                {currentVersion.runId ? (
+                  <>
+                    {' '}
+                    · run <code>{currentVersion.runId}</code>
+                  </>
+                ) : null}
+              </span>
+            </li>
+          )}
+
+          {history.length > 1 && (
+            <li className="admin-row admin-row--stacked">
+              <div className="admin-row__main">
+                <p className="admin-row__label">Version history</p>
+                <ul className="admin-chunks">
+                  {history.map((version) => (
+                    <li key={version.version}>
+                      <code>{version.version}</code> · {version.status} ·{' '}
+                      {version.deployment} · {version.trainingExampleCount} train
+                      examples
+                      {registry && version.version === registry.currentVersion
+                        ? ' · current'
+                        : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </li>
+          )}
         </ul>
       </section>
     </div>

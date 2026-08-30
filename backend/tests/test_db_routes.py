@@ -425,12 +425,40 @@ class EvaluationRouteTests(DbRouteTestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["id"], "-Oeval001")
 
-    def test_create_requires_every_rating(self) -> None:
+    def test_create_requires_the_ratings_the_form_still_asks_for(self) -> None:
+        """`mostAccurate` and `preferredModel` are not optional."""
         response = self.client.post(
             f"/api/db/courses/{COURSE}/evaluations",
             json={"comparisonId": "cmp-1", "mostAccurate": "rag"},
         )
         self.assertEqual(response.status_code, 422)
+
+        response = self.client.post(
+            f"/api/db/courses/{COURSE}/evaluations",
+            json={"comparisonId": "cmp-1", "preferredModel": "rag"},
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_create_accepts_a_body_without_the_retired_criteria(self) -> None:
+        """The simplified student form sends four fields, not seven."""
+        self.patch_repo("db_courses.course_exists", return_value=True)
+        created = self.patch_repo(
+            "db_evaluations.create_evaluation", return_value=EVALUATION
+        )
+        response = self.client.post(
+            f"/api/db/courses/{COURSE}/evaluations",
+            json={
+                "comparisonId": "cmp-1",
+                "mostAccurate": "rag",
+                "preferredModel": "rag",
+                "hallucinationFlags": ["base"],
+            },
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = created.call_args[0][2]
+        for field in ("mostHelpful", "mostConcise", "bestGrounded"):
+            self.assertNotIn(field, payload)
 
     def test_delete_one_is_404_when_absent(self) -> None:
         self.patch_repo("db_evaluations.delete_evaluation", return_value=False)

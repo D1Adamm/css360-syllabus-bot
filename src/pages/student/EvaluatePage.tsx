@@ -14,12 +14,23 @@ import { studentCoursePath } from '../../lib/roleRoutes';
 import type { EvaluationRecord, ModelKey } from '../../types';
 import { generateEvaluationId } from '../../utils/evaluationUtils';
 
+/*
+ * What a student is asked, and nothing more.
+ *
+ * The form used to ask five single-choice questions: accuracy, helpfulness,
+ * concision, closeness to the syllabus, and overall preference. Answering the
+ * same four responses five times over is enough friction that a rating stops
+ * getting finished, and three of those five did not bear on the question this
+ * project exists to answer — whether retrieval and fine-tuning improve syllabus
+ * QA. Accuracy, overall preference, unsupported claims, and whatever the
+ * student wants to say do.
+ *
+ * `mostHelpful`, `mostConcise` and `bestGrounded` are retired from the form,
+ * not from the data. Records that carry them keep them and keep aggregating.
+ */
 const CRITERIA = [
   { key: 'mostAccurate' as const, legend: 'Which answer was most accurate?' },
-  { key: 'mostHelpful' as const, legend: 'Which was most helpful?' },
-  { key: 'mostConcise' as const, legend: 'Which was most concise?' },
-  { key: 'bestGrounded' as const, legend: 'Which stayed closest to the syllabus?' },
-  { key: 'preferredModel' as const, legend: 'Which did you prefer overall?' },
+  { key: 'preferredModel' as const, legend: 'Which answer would you prefer overall?' },
 ];
 
 type CriterionKey = (typeof CRITERIA)[number]['key'];
@@ -28,9 +39,6 @@ const COMMENT_MAX_LENGTH = 1000;
 
 interface FormValues {
   mostAccurate: ModelKey | '';
-  mostHelpful: ModelKey | '';
-  mostConcise: ModelKey | '';
-  bestGrounded: ModelKey | '';
   preferredModel: ModelKey | '';
   hallucinationFlags: ModelKey[];
   comment: string;
@@ -38,9 +46,6 @@ interface FormValues {
 
 const INITIAL_VALUES: FormValues = {
   mostAccurate: '',
-  mostHelpful: '',
-  mostConcise: '',
-  bestGrounded: '',
   preferredModel: '',
   hallucinationFlags: [],
   comment: '',
@@ -127,9 +132,9 @@ export function EvaluatePage() {
       id: generateEvaluationId(),
       comparisonId: run.matchedComparisonId ?? `question-${run.runId}`,
       mostAccurate: values.mostAccurate as ModelKey,
-      mostHelpful: values.mostHelpful as ModelKey,
-      mostConcise: values.mostConcise as ModelKey,
-      bestGrounded: values.bestGrounded as ModelKey,
+      // The retired criteria are omitted rather than filled in with a guess.
+      // An absent field reads as "not asked"; a fabricated one would read as a
+      // student's answer.
       preferredModel: values.preferredModel as ModelKey,
       hallucinationFlags: values.hallucinationFlags,
       comment: values.comment.trim() || undefined,
@@ -292,7 +297,7 @@ export function EvaluatePage() {
 
         <fieldset className="evaluate__flags">
           <legend className="criterion__legend">
-            Did any answer include something the syllabus doesn&apos;t support?
+            Did any answer include information the syllabus does not support?
           </legend>
           <p className="criterion__hint">
             Leave these unchecked if nothing looked invented.

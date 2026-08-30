@@ -165,7 +165,7 @@ class PayloadTests(ReporterTestCase):
     def test_the_artifact_reference_is_relative_and_carries_no_username(self) -> None:
         """A stored reference outlives the account that produced it.
 
-        `/gpfs/projects/simswe/madamk/training_outputs/...` embeds a cluster home
+        `/gpfs/projects/simswe/$USER/training_outputs/...` embeds a cluster home
         directory and a username, and admin surfaces display this string.
         """
         self.write_run_output()

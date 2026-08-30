@@ -906,6 +906,104 @@ class QueueClaimSqlTests(unittest.TestCase):
         self.assertNotIn("FOR UPDATE", connection.sql[0])
 
 
+class EvaluationWriteTests(unittest.TestCase):
+    """What a rating stores, now that the student form asks for less.
+
+    `mostHelpful`, `mostConcise` and `bestGrounded` were retired from the form.
+    Their columns are `NOT NULL` and stay that way — a migration against a
+    database holding live research data would record nothing the empty string
+    does not — so an unanswered criterion is written as `''` and read back as
+    absent.
+    """
+
+    SIMPLIFIED = {
+        "id": "-Oeval900",
+        "comparisonId": "question-run-9",
+        "mostAccurate": "fineTuned",
+        "preferredModel": "fineTunedRag",
+        "hallucinationFlags": ["base"],
+        "createdAt": "2026-03-01T00:00:00+00:00",
+    }
+
+    def created_row(self, **overrides: Any) -> dict[str, Any]:
+        row = {
+            "evaluation_id": "-Oeval900",
+            "course_id": COURSE,
+            "comparison_id": "question-run-9",
+            "most_accurate": "fineTuned",
+            "most_helpful": "",
+            "most_concise": "",
+            "best_grounded": "",
+            "preferred_model": "fineTunedRag",
+            "hallucination_flags": ["base"],
+            "comment": None,
+            "created_at": UTC_NOON,
+            "run_id": None,
+            "question_text": None,
+        }
+        row.update(overrides)
+        return row
+
+    def test_a_rating_without_the_retired_criteria_is_accepted(self) -> None:
+        connection = FakeConnection([1, [self.created_row()]])
+        created = db_evaluations.create_evaluation(
+            connection, COURSE, self.SIMPLIFIED
+        )
+
+        parameters = connection.params_for("INSERT INTO evaluations")
+        self.assertEqual(parameters["most_helpful"], "")
+        self.assertEqual(parameters["most_concise"], "")
+        self.assertEqual(parameters["best_grounded"], "")
+        self.assertEqual(parameters["most_accurate"], "fineTuned")
+        self.assertEqual(parameters["preferred_model"], "fineTunedRag")
+        # Read back, an unanswered criterion is absent rather than empty.
+        for key in ("mostHelpful", "mostConcise", "bestGrounded"):
+            self.assertNotIn(key, created)
+
+    def test_a_rating_that_still_sends_them_stores_them_unchanged(self) -> None:
+        connection = FakeConnection(
+            [
+                1,
+                [
+                    self.created_row(
+                        most_helpful="rag", most_concise="base", best_grounded="rag"
+                    )
+                ],
+            ]
+        )
+        created = db_evaluations.create_evaluation(
+            connection,
+            COURSE,
+            {
+                **self.SIMPLIFIED,
+                "mostHelpful": "rag",
+                "mostConcise": "base",
+                "bestGrounded": "rag",
+            },
+        )
+
+        parameters = connection.params_for("INSERT INTO evaluations")
+        self.assertEqual(parameters["most_helpful"], "rag")
+        self.assertEqual(created["bestGrounded"], "rag")
+
+    def test_the_criteria_the_form_still_asks_for_stay_required(self) -> None:
+        for missing in ("mostAccurate", "preferredModel"):
+            payload = {
+                key: value
+                for key, value in self.SIMPLIFIED.items()
+                if key != missing
+            }
+            with self.assertRaises(ValueError):
+                db_evaluations.create_evaluation(FakeConnection([1]), COURSE, payload)
+
+    def test_the_write_is_course_scoped(self) -> None:
+        connection = FakeConnection([1, [self.created_row()]])
+        db_evaluations.create_evaluation(connection, COURSE, self.SIMPLIFIED)
+
+        parameters = connection.params_for("INSERT INTO evaluations")
+        self.assertEqual(parameters["course_id"], COURSE)
+
+
 class OrderingTests(unittest.TestCase):
     """Ordering matches the frontend parsers, so no list reshuffles."""
 

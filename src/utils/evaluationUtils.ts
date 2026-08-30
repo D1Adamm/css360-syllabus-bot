@@ -17,6 +17,30 @@ export function isValidModelKey(value: unknown): value is ModelKey {
   return typeof value === 'string' && MODEL_KEYS.includes(value as ModelKey);
 }
 
+/**
+ * An optional field that was not set.
+ *
+ * `null` counts, not only `undefined`. The API serializes an unset optional
+ * column as JSON `null` — `comment`, `runId`, `questionText` and now the
+ * retired criteria all arrive that way — and a guard that accepted only
+ * `undefined` rejected the whole record, which for `comment` meant every
+ * rating a student submitted without a note was dropped before it reached the
+ * results page.
+ */
+function isAbsent(value: unknown): boolean {
+  return value === undefined || value === null;
+}
+
+/**
+ * A criterion the form no longer asks for: valid when absent, and valid when
+ * present with a real approach. Never valid as some other value — a record
+ * carrying `mostHelpful: "gpt4"` is a record we cannot read, and dropping it is
+ * still the right answer.
+ */
+function isOptionalModelKey(value: unknown): value is ModelKey | undefined {
+  return isAbsent(value) || isValidModelKey(value);
+}
+
 export function isEvaluationRecord(value: unknown): value is EvaluationRecord {
   if (typeof value !== 'object' || value === null) {
     return false;
@@ -28,13 +52,13 @@ export function isEvaluationRecord(value: unknown): value is EvaluationRecord {
     typeof record.id === 'string' &&
     typeof record.comparisonId === 'string' &&
     isValidModelKey(record.mostAccurate) &&
-    isValidModelKey(record.mostHelpful) &&
-    isValidModelKey(record.mostConcise) &&
-    isValidModelKey(record.bestGrounded) &&
+    isOptionalModelKey(record.mostHelpful) &&
+    isOptionalModelKey(record.mostConcise) &&
+    isOptionalModelKey(record.bestGrounded) &&
     isValidModelKey(record.preferredModel) &&
     Array.isArray(record.hallucinationFlags) &&
     record.hallucinationFlags.every(isValidModelKey) &&
-    (record.comment === undefined || typeof record.comment === 'string') &&
+    (isAbsent(record.comment) || typeof record.comment === 'string') &&
     typeof record.createdAt === 'string'
   );
 }
@@ -68,20 +92,54 @@ export function createEmptyModelCounts(): ModelCounts {
   return { base: 0, rag: 0, fineTuned: 0, fineTunedRag: 0 };
 }
 
-export function countByField(
+/**
+ * A single-choice criterion on the evaluation form.
+ *
+ * `mostAccurate` and `preferredModel` are what every rating carries. The other
+ * three were retired from the form and survive only on records made before
+ * that, so any tally over them has to say how many records actually answered.
+ */
+export type EvaluationCriterion = keyof Pick<
+  EvaluationRecord,
+  'preferredModel' | 'mostAccurate' | 'mostHelpful' | 'mostConcise' | 'bestGrounded'
+>;
+
+export interface CriterionTally {
+  counts: ModelCounts;
+  /**
+   * Records that answered this criterion — the denominator, and the only
+   * honest one. Using the evaluation total instead would show a criterion that
+   * three of forty records answered as though thirty-seven students had chosen
+   * nothing.
+   */
+  answered: number;
+}
+
+export function tallyCriterion(
   evaluations: EvaluationRecord[],
-  field: keyof Pick<
-    EvaluationRecord,
-    'preferredModel' | 'mostAccurate' | 'mostHelpful' | 'mostConcise' | 'bestGrounded'
-  >,
-): ModelCounts {
+  field: EvaluationCriterion,
+): CriterionTally {
   const counts = createEmptyModelCounts();
+  let answered = 0;
 
   for (const evaluation of evaluations) {
-    counts[evaluation[field]] += 1;
+    const choice = evaluation[field];
+    // A record that did not answer is skipped rather than counted anywhere.
+    if (!isValidModelKey(choice)) {
+      continue;
+    }
+    counts[choice] += 1;
+    answered += 1;
   }
 
-  return counts;
+  return { counts, answered };
+}
+
+export function countByField(
+  evaluations: EvaluationRecord[],
+  field: EvaluationCriterion,
+): ModelCounts {
+  return tallyCriterion(evaluations, field).counts;
 }
 
 export function countHallucinationFlags(evaluations: EvaluationRecord[]): ModelCounts {
@@ -141,7 +199,13 @@ export interface PerQuestionResult {
   evaluationCount: number;
   mostPreferred: string;
   mostAccurate: string;
-  mostGrounded: string;
+  /**
+   * Retired from the form. `null` for a question whose ratings were all made
+   * after that, so a caller can leave it out rather than print "No data".
+   */
+  mostGrounded: string | null;
+  /** Ratings that answered the retired grounding criterion. */
+  groundedResponseCount: number;
   hallucinationFlags: ModelCounts;
 }
 
@@ -167,6 +231,7 @@ export function groupByQuestion(
     const storedQuestion = questionEvaluations.find((item) =>
       Boolean(item.questionText?.trim()),
     )?.questionText;
+    const grounded = tallyCriterion(questionEvaluations, 'bestGrounded');
     results.push({
       comparisonId,
       question: comparison?.question ?? storedQuestion ?? comparisonId,
@@ -174,7 +239,8 @@ export function groupByQuestion(
       evaluationCount: questionEvaluations.length,
       mostPreferred: formatTopModels(countByField(questionEvaluations, 'preferredModel')),
       mostAccurate: formatTopModels(countByField(questionEvaluations, 'mostAccurate')),
-      mostGrounded: formatTopModels(countByField(questionEvaluations, 'bestGrounded')),
+      mostGrounded: grounded.answered > 0 ? formatTopModels(grounded.counts) : null,
+      groundedResponseCount: grounded.answered,
       hallucinationFlags: countHallucinationFlags(questionEvaluations),
     });
   }
