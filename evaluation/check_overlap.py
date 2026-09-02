@@ -1,32 +1,48 @@
 #!/usr/bin/env python3
-"""Read-only overlap check: held-out questions vs. every training corpus on disk.
-
-Nothing here writes, trains, or touches the database. It exists so the
-"clearly held out" verdicts in held_out_questions.json can be re-derived.
+"""Overlap check: held-out questions vs. the dataset that trained THAT course's adapter.
 
     python3 evaluation/check_overlap.py
+    python3 evaluation/check_overlap.py --course css-350-spring-2026-n3h9
 
-Overlap is judged WITHIN a course: adapters are trained per course, so a CSS 360
-training example cannot leak into a CSS 350 answer. Matches in other courses'
-corpora are printed as informational only.
+Read-only. Opens no database, starts no job, writes no file.
 
-Two independent similarity measures are reported per candidate:
+The rule this enforces
+----------------------
+A held-out question must not overlap with the dataset used to train that
+course's adapter. Adapters are per course, so a CSS 360 training example cannot
+leak into a CSS 350 answer; cross-course matches are printed as informational
+and never change a verdict.
 
-  jaccard  - overlap of content words (stopwords dropped), which catches
-             reworded near-duplicates like "When does class meet?" vs
-             "What time are the course meetings?"
-  ratio    - difflib character-level similarity, which catches light edits
+Why it refuses rather than guesses
+----------------------------------
+An earlier version of this script scored questions against every JSONL under
+data/exports/, including stale directories for courses that are no longer
+deployed. That produced confident verdicts derived from the wrong corpus. So
+each course now declares the export directory AND the dataset fingerprint it
+expects (dataset version and example counts). If the directory is absent, or
+the manifest disagrees, the course is reported BLOCKED and no verdict is
+issued for it. A missing dataset is a missing answer, not a passing grade.
 
-Thresholds are deliberately conservative:
+Similarity
+----------
+Three measures, because "same intent, trivial rewording" hides from any one:
 
-  >= 0.60 jaccard or >= 0.75 ratio  ->  REJECT (too similar)
-  >= 0.45 jaccard or >= 0.60 ratio  ->  POSSIBLE OVERLAP (resolve by hand)
-  otherwise                         ->  clearly held out
+  jaccard      content-word overlap; catches reworded near-duplicates
+               ("When does class meet?" / "What time are the course meetings?")
+  containment  |A n B| / min(|A|,|B|); catches a trained question restated with
+               padding, where jaccard is diluted by the extra words
+  ratio        difflib character similarity; catches light edits
+
+  REJECT  at jaccard >= 0.60, containment >= 0.75, or ratio >= 0.75
+  REVIEW  at jaccard >= 0.45, containment >= 0.60, or ratio >= 0.60
+
+A REVIEW verdict is not a pass. Per the research protocol, a question stays out
+of the final set unless a human resolves it and records the reason.
 """
 
 from __future__ import annotations
 
-import glob
+import argparse
 import json
 import re
 import sys
@@ -34,6 +50,24 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+BANK = ROOT / "evaluation" / "held_out_questions.json"
+
+#: Per course: where its prepared dataset lives, and what it must be.
+#: Counts and datasetVersion come from the deployed VM, not from this checkout.
+#: A course whose dataset is not present here is BLOCKED, never "clean".
+DATASETS: dict[str, dict[str, object]] = {
+    "css-350-spring-2026-n3h9": {
+        "exportDir": "data/exports/css-350-spring-2026-n3h9",
+        "datasetVersion": "css-350-spring-2026-n3h9-approved-split-seed360-n42",
+        "approvedExamples": 42,
+        "trainExamples": 37,
+        "validationExamples": 5,
+        "modelVersion": "v2",
+        "trainingRunId": "run-20260827t205310z-8c3cdb",
+    },
+}
+
+DATASET_FILES = ("approved-finetune.jsonl", "train.jsonl", "validation.jsonl")
 
 STOPWORDS = {
     "a", "am", "an", "and", "any", "are", "as", "at", "be", "by", "can", "course",
@@ -43,113 +77,177 @@ STOPWORDS = {
     "who", "why", "will", "with", "you", "your",
 }
 
-REJECT_JACCARD, REJECT_RATIO = 0.60, 0.75
-REVIEW_JACCARD, REVIEW_RATIO = 0.45, 0.60
+REJECT = {"jaccard": 0.60, "containment": 0.75, "ratio": 0.75}
+REVIEW = {"jaccard": 0.45, "containment": 0.60, "ratio": 0.60}
 
 
 def tokens(text: str) -> set[str]:
-    words = re.findall(r"[a-z0-9]+", text.lower())
-    return {w for w in words if w not in STOPWORDS}
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in STOPWORDS}
 
 
-def jaccard(a: set[str], b: set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
+def scores(a: str, b: str) -> dict[str, float]:
+    ta, tb = tokens(a), tokens(b)
+    inter = len(ta & tb)
+    return {
+        "jaccard": inter / len(ta | tb) if ta and tb else 0.0,
+        "containment": inter / min(len(ta), len(tb)) if ta and tb else 0.0,
+        "ratio": SequenceMatcher(None, a.lower(), b.lower()).ratio(),
+    }
 
 
-def load_corpus() -> list[tuple[str, str, str]]:
-    """(courseId, source label, question) for every training-side question on disk."""
-    corpus: list[tuple[str, str, str]] = []
-
-    for path in sorted(ROOT.glob("data/exports/*/*.jsonl")):
-        course_id = path.parent.name
-        label = f"{path.parent.name}/{path.name}"
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            record = json.loads(line)
-            question = (record.get("instruction") or "").strip()
-            if question:
-                corpus.append((course_id, label, question))
-
-    for path in sorted(glob.glob(str(ROOT / "data/exports/*/generated-snapshot-latest.json"))):
-        payload = json.loads(Path(path).read_text())
-        course_id = Path(path).parent.name
-        label = f"{course_id}/generated-snapshot-latest.json"
-        for seed in payload.get("seeds", []):
-            question = (seed.get("question") or seed.get("instruction") or "").strip()
-            if question:
-                corpus.append((course_id, label, question))
-
-    smoke = ROOT / "training" / "heldout_questions.json"
-    if smoke.exists():
-        payload = json.loads(smoke.read_text())
-        entries = payload.get("questions", payload) if isinstance(payload, dict) else payload
-        for entry in entries:
-            question = entry if isinstance(entry, str) else (entry.get("question") or "")
-            if question.strip():
-                corpus.append((
-                    "css-360-winter-2026-a7rp",
-                    "training/heldout_questions.json",
-                    question.strip(),
-                ))
-
-    return corpus
-
-
-def nearest(question: str, corpus: list[tuple[str, str, str]]) -> tuple[float, float, str, str]:
-    q_tokens = tokens(question)
-    best = (0.0, 0.0, "", "")
-    for _course_id, label, other in corpus:
-        j = jaccard(q_tokens, tokens(other))
-        r = SequenceMatcher(None, question.lower(), other.lower()).ratio()
-        if max(j, r) > max(best[0], best[1]):
-            best = (j, r, label, other)
-
-    return best
-
-
-def verdict_for(j: float, r: float) -> str:
-    if j >= REJECT_JACCARD or r >= REJECT_RATIO:
+def verdict_for(s: dict[str, float]) -> str:
+    if any(s[k] >= REJECT[k] for k in REJECT):
         return "REJECT (too similar)"
-    if j >= REVIEW_JACCARD or r >= REVIEW_RATIO:
-        return "POSSIBLE OVERLAP"
+    if any(s[k] >= REVIEW[k] for k in REVIEW):
+        return "REVIEW (resolve by hand)"
     return "clearly held out"
 
 
+def read_jsonl_instructions(path: Path) -> list[str]:
+    out = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        record = json.loads(line)
+        question = (record.get("instruction") or record.get("question") or "").strip()
+        if question:
+            out.append(question)
+    return out
+
+
+def load_dataset(course_id: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """Return ((label, question) rows, problems). Non-empty problems means BLOCKED."""
+    spec = DATASETS.get(course_id)
+    if spec is None:
+        return [], [f"No dataset is declared for {course_id} in DATASETS."]
+
+    export_dir = ROOT / str(spec["exportDir"])
+    if not export_dir.is_dir():
+        return [], [
+            f"Dataset directory not present: {spec['exportDir']}",
+            "This dataset lives on the UWB VM and has not been copied here.",
+        ]
+
+    problems: list[str] = []
+    rows: list[tuple[str, str]] = []
+    for name in DATASET_FILES:
+        path = export_dir / name
+        if not path.is_file():
+            problems.append(f"Missing {spec['exportDir']}/{name}")
+            continue
+        for question in read_jsonl_instructions(path):
+            rows.append((name, question))
+
+    manifest_path = export_dir / "manifest.json"
+    if not manifest_path.is_file():
+        problems.append(f"Missing {spec['exportDir']}/manifest.json")
+    else:
+        manifest = json.loads(manifest_path.read_text())
+        for key, expected in (
+            ("datasetVersion", spec["datasetVersion"]),
+            ("trainExamples", spec["trainExamples"]),
+            ("validationExamples", spec["validationExamples"]),
+        ):
+            actual = manifest.get(key)
+            if actual != expected:
+                problems.append(
+                    f"manifest {key} is {actual!r}, expected {expected!r} "
+                    "- this is not the dataset the current model was trained on"
+                )
+
+    for name, expected in (
+        ("approved-finetune.jsonl", spec["approvedExamples"]),
+        ("train.jsonl", spec["trainExamples"]),
+        ("validation.jsonl", spec["validationExamples"]),
+    ):
+        actual = sum(1 for label, _ in rows if label == name)
+        if (export_dir / name).is_file() and actual != expected:
+            problems.append(f"{name} has {actual} examples, expected {expected}")
+
+    return rows, problems
+
+
+def other_course_rows(exclude: str) -> list[tuple[str, str]]:
+    """Informational corpus only. Never affects a verdict."""
+    rows = []
+    for path in sorted(ROOT.glob("data/exports/*/*.jsonl")):
+        if path.parent.name == exclude:
+            continue
+        for question in read_jsonl_instructions(path):
+            rows.append((f"{path.parent.name}/{path.name}", question))
+    return rows
+
+
+def nearest(question: str, corpus: list[tuple[str, str]]):
+    best_label, best_other, best = "", "", {"jaccard": 0.0, "containment": 0.0, "ratio": 0.0}
+    for label, other in corpus:
+        s = scores(question, other)
+        if max(s.values()) > max(best.values()):
+            best, best_label, best_other = s, label, other
+    return best, best_label, best_other
+
+
 def main() -> int:
-    corpus = load_corpus()
-    bank = json.loads((ROOT / "evaluation" / "held_out_questions.json").read_text())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--course", help="Only check this courseId")
+    args = parser.parse_args()
 
-    print(f"Training-side questions loaded: {len(corpus)}")
-    print()
+    bank = json.loads(BANK.read_text())
+    exit_code = 0
 
-    flagged = 0
     for course in bank["courses"]:
         course_id = course["courseId"]
-        in_course = [row for row in corpus if row[0] == course_id]
-        other_courses = [row for row in corpus if row[0] != course_id]
-        print(f"=== {course['courseCode']} ({course_id}) ===")
-        print(f"    in-course training questions: {len(in_course)}")
+        if args.course and course_id != args.course:
+            continue
+
+        status = course.get("status", "")
+        print(f"=== {course.get('courseCode', course_id)} ({course_id}) ===")
+        print(f"    bank status: {status}")
+
+        if str(status).startswith(("UNVERIFIED", "INVALID")):
+            print("    SKIPPED - this block is not cleared for use; no verdicts issued.\n")
+            exit_code = 1
+            continue
+
+        rows, problems = load_dataset(course_id)
+        if problems:
+            print("    BLOCKED - cannot check overlap:")
+            for problem in problems:
+                print(f"      - {problem}")
+            print("    No verdicts issued. Absence of a dataset is not a pass.\n")
+            exit_code = 1
+            continue
+
+        spec = DATASETS[course_id]
+        print(f"    dataset: {spec['datasetVersion']}")
+        print(f"    model {spec['modelVersion']} / run {spec['trainingRunId']}")
+        print(f"    training-side questions: {len(rows)}")
+
+        informational = other_course_rows(course_id)
+        flagged = 0
         for item in course["questions"]:
-            j, r, label, other = nearest(item["question"], in_course)
-            verdict = verdict_for(j, r)
-            marker = " " if verdict == "clearly held out" else "!"
+            s, label, other = nearest(item["question"], rows)
+            verdict = verdict_for(s)
+            mark = " " if verdict == "clearly held out" else "!"
             if verdict != "clearly held out":
                 flagged += 1
-            print(f"{marker} {item['id']}  jaccard={j:.2f} ratio={r:.2f}  {verdict}")
+                exit_code = 1
+            print(
+                f"{mark} {item['id']}  j={s['jaccard']:.2f} c={s['containment']:.2f} "
+                f"r={s['ratio']:.2f}  {verdict}"
+            )
             if verdict != "clearly held out":
-                print(f"      nearest in-course: [{label}] {other}")
-            xj, xr, xlabel, xother = nearest(item["question"], other_courses)
-            if verdict_for(xj, xr) != "clearly held out":
-                print(f"      (other-course match, informational only: "
-                      f"jaccard={xj:.2f} ratio={xr:.2f} [{xlabel}] {xother})")
-        print()
+                print(f"      nearest in-dataset: [{label}] {other}")
+            xs, xlabel, xother = nearest(item["question"], informational)
+            if verdict_for(xs) != "clearly held out":
+                print(
+                    f"      (other course, informational only: j={xs['jaccard']:.2f} "
+                    f"c={xs['containment']:.2f} r={xs['ratio']:.2f} [{xlabel}] {xother})"
+                )
+        print(f"    flagged: {flagged}\n")
 
-    print(f"Flagged for human resolution (in-course): {flagged}")
-    return 1 if flagged else 0
+    return exit_code
 
 
 if __name__ == "__main__":

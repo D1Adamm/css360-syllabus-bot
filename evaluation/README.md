@@ -1,24 +1,45 @@
 # Held-out evaluation questions
 
-> **STATUS 2026-08-30 — the CSS 350 block in `held_out_questions.json` is INVALID.**
-> It was written against `css-350-winter-2026-drlb`, a stale July 2026 artifact on a
-> developer laptop. The deployed CSS 350 course is `css-350-spring-2026-n3h9`
-> (42 approved / 37 train / 5 validation, model v2, run `run-20260827t205310z-8c3cdb`),
-> and none of its training examples exist in this repository. Those questions have not
-> been overlap-checked against the real training data and must not be used.
-> The CSS 360 block is unverified pending confirmation that
-> `css-360-winter-2026-a7rp` is the current course and that its July 21 export is the
-> dataset behind the current model.
+> **STATUS 2026-09-02**
+>
+> | Course | Status | Questions |
+> | --- | --- | --- |
+> | `css-350-spring-2026-n3h9` | `VERIFIED_FOR_CURRENT_MODEL` | 20 (3 unanswerable) — checked against the v2 dataset, 0 flagged |
+> | `css-350-winter-2026-drlb` | `INVALID_WRONG_COURSE` | 20 — superseded, reference only, do not use |
+> | `css-360-winter-2026-a7rp` | `UNVERIFIED_DO_NOT_USE` | 20 — deferred until the v2 retrain |
+>
+> **The authoritative source is the deployed UWB VM.** Other content under
+> `backend/course_data/` and `data/exports/` in this checkout is July 2026 leftover
+> from a developer laptop and is not evidence of deployed state.
 
-Research evaluation data for the Syllabus Model Lab. **This is test material, not
-study material.**
+## CSS 350 — verified
 
-The approved seed examples in the database are the study material: they are what a
-course's QLoRA adapter is fine-tuned on. The questions in this directory are the
-exam. They are written from the same syllabi but ask about facts and phrasings that
-do not appear in any approved example, so that comparing **Base**, **RAG**,
-**Fine-Tuned**, and **Fine-Tuned + RAG** on them measures generalization rather than
-memorization.
+Checked against the exact dataset behind the live adapter: model **v2**, run
+`run-20260827t205310z-8c3cdb`, dataset version
+`css-350-spring-2026-n3h9-approved-split-seed360-n42` — 42 approved / 37 train /
+5 validation, 84 training-side questions compared, **0 flagged**.
+
+Re-run any time with:
+
+```bash
+python3 evaluation/check_overlap.py --course css-350-spring-2026-n3h9
+```
+
+**One data issue for the researchers.** The syllabus uploaded to this Spring 2026
+course is byte-identical to the Winter 2026 document (SHA-256
+`1da7f30a…6569fe8`) and its own title line reads *Management Principles (Winter
+2026)*. Reference answers are grounded in that uploaded document, because it is what
+the v2 adapter trained on and what RAG retrieves — so the answers are correct for the
+deployed system. But the course record says Spring while its syllabus says Winter,
+which is worth confirming with the instructor before results are published.
+
+## CSS 360 — deferred
+
+Current model is **v1**, `trainingExampleCount` 54, trained through the legacy/manual
+workflow. Its exact train/validation split is not available in the VM export
+directory, so these questions cannot be checked against what the live adapter saw.
+CSS 360 will be retrained as **v2** on the current pipeline; validate then. The v1
+split must not be reconstructed or guessed.
 
 ## Rules
 
