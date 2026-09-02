@@ -1,0 +1,475 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Held-out research evaluation set for the Syllabus Model Lab. NOT training data.",
+  "usage": "Ask each question to Base, RAG, Fine-Tuned, and Fine-Tuned + RAG through the existing Compare -> Evaluate -> Results workflow. referenceAnswer is for the human researcher scoring correctness and MUST NEVER be placed in a model prompt.",
+  "createdAt": "2026-08-30",
+  "status": {
+    "css-360-winter-2026-a7rp": "unverified - overlap checked against a 2026-07-21 export on a developer laptop; not confirmed to be the dataset behind the current CSS 360 model",
+    "css-350-winter-2026-drlb": "INVALID - wrong course. The deployed CSS 350 course is css-350-spring-2026-n3h9. Do not use these questions until re-checked against that course's 42 approved / 37 train / 5 validation examples."
+  },
+  "generatedFrom": [
+    "backend/course_data/css-350-winter-2026-drlb/syllabus.txt",
+    "backend/course_data/css-360-winter-2026-a7rp/syllabus.txt"
+  ],
+  "overlapCheckedAgainst": [
+    "data/exports/css-360-winter-2026-a7rp/approved-finetune.jsonl (54 approved examples)",
+    "data/exports/css-360-winter-2026-a7rp/train.jsonl (48)",
+    "data/exports/css-360-winter-2026-a7rp/validation.jsonl (6)",
+    "data/exports/*/generated-snapshot-latest.json (unreviewed generated seeds)",
+    "training/heldout_questions.json (existing offline compare smoke input)"
+  ],
+  "categories": [
+    "instructor_contact",
+    "course_meetings",
+    "assignments",
+    "deadlines",
+    "grading",
+    "late_policy",
+    "attendance_absence",
+    "course_resources",
+    "project_requirements",
+    "communication_policies",
+    "ai_policy",
+    "course_logistics",
+    "unusual_rules"
+  ],
+  "courses": [
+    {
+      "courseId": "css-360-winter-2026-a7rp",
+      "courseCode": "CSS 360",
+      "courseTitle": "Software Engineering",
+      "syllabusFile": "backend/course_data/css-360-winter-2026-a7rp/syllabus.txt",
+      "trainingCorpusOnDisk": {
+        "approvedExamples": 54,
+        "trainExamples": 48,
+        "validationExamples": 6,
+        "datasetVersion": "css-360-winter-2026-a7rp-approved-split-seed360-n54"
+      },
+      "questionCount": 20,
+      "unanswerableCount": 4,
+      "questions": [
+        {
+          "id": "css360-eval-001",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "How much of my final grade comes from the third sprint?",
+          "category": "grading",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Sprint 3 is 15% of the final grade. The full weighting is in-class activities including case discussion 50%, Sprint 1 10%, Sprint 2 15%, Sprint 3 15%, Presentation (pre-made demo and feedback) 5%, and Reflection 5%.",
+          "sourceSection": "Grading",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-002",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "What overall percentage do I need to end up with a 4.0 in this course?",
+          "category": "grading",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "97.0%. The instructor maps an overall 97.0% to a 4.0 and 60.0% to a 0.7, with even spacing in between, which means a 2.0 requires 74.6%.",
+          "sourceSection": "Mapping Percentage to the 4.0 Scale",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-003",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "I think one of my scores was entered wrong. How long do I have to bring it up?",
+          "category": "grading",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Within 1 week of the grade being released, by booking a private timeslot on the instructor's calendar. In that consultation you are expected to take the lead and show in specific detail how your work fulfills the rubric for the assignment type, how you met the criteria for that specific assignment, and how it meets the course learning goals.",
+          "sourceSection": "Grade Questions",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-004",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "Professor Champion has not replied to my message in three days. What does the syllabus tell me to do?",
+          "category": "communication_policies",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Nudge her with a Discord DM. She commits to responding within 48 hours and asks that you nudge her via Discord DM if she has not; a missed message is unintentional and is not your fault. A polite and focused request gets a faster reply.",
+          "sourceSection": "Turnaround time commitment",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-005",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "How long is the Reflection essay supposed to be?",
+          "category": "assignments",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "800 to 1200 words. Under 800 is unlikely to achieve the depth the instructor is looking for, and over 1200 is described as unfair to others. It must be a standard essay with an introduction, key points, and a conclusion, in a consistent formatting standard such as APA, Chicago, or ACM.",
+          "sourceSection": "Reflection on Software Engineering and the Bot Project",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-006",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "How long should our pre-made demo video be, and does the whole group share one recording?",
+          "category": "project_requirements",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "2 to 5 minutes, and no, the group does not share one. Each group member records their own screen capture video of the bot in action with a voiceover and uploads their own video to Canvas, one per student. It is due Monday, November 24 at 11:59 p.m.",
+          "sourceSection": "Demonstration of Bot 2.0 - Pre-made Demos",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-007",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "For the live demo, do we plug our laptop into the projector?",
+          "category": "course_logistics",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. To avoid awkwardness around switching laptops, the podium computer drives the projector and all presenting laptops join a Zoom room and screenshare to present. Live demos are in class on Tuesday, November 25, in a 10 minute slot, with time for questions afterward.",
+          "sourceSection": "Demonstration of Bot 2.0 - Live Demos",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-008",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "What are we supposed to do if the bot breaks in the middle of our live demo?",
+          "category": "project_requirements",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Fall back on the pre-made demos. In case of live demo failure the syllabus says to be prepared to share 2 of your pre-made demos so that you can still get good feedback.",
+          "sourceSection": "Demonstration of Bot 2.0 - Live Demos (Tips)",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-009",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "Which Bot Project task covers releasing version 2.0, and what date is it set for?",
+          "category": "deadlines",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Bot Project Task #6, due November 21, a Friday, at 11:59 p.m. Seattle time. It requires each member to complete at least one user story from the second sprint, deploy version 2.0 to the production environment, and tag the code so it is clear which version is 2.0.",
+          "sourceSection": "Bot Project Task #6",
+          "overlapVerdict": "clearly held out",
+          "note": "Reworded from a plain 'When is version 2.0 due?' phrasing, which tripped the surface-form check against the trained 'When is the Bot Feedback due?'. The underlying fact (Task #6 / v2.0 / November 21) appears in no training or validation example."
+        },
+        {
+          "id": "css360-eval-010",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "Besides the written report, what does Task 5 want from us?",
+          "category": "project_requirements",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "User stories. Task 5 is done when the group has published a single shared code analysis report to the main group repository and created user stories drawn from both the problems found and any new ideas for improving the bot. There is no artifact turn-in; the state of your repository and project board is graded directly.",
+          "sourceSection": "Bot Project Task #5",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-011",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "Do I need to buy a textbook for this course?",
+          "category": "course_resources",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. There is no required textbook. You engage with material from a wide range of sources, all of which should be free of charge as long as you use the version on Canvas or the UW Library Proxy. If you have trouble accessing any material, tell the instructor right away with a public message on Discord.",
+          "sourceSection": "Textbook",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-012",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "Could I actually be dropped from CSS 360 for missing the first week?",
+          "category": "unusual_rules",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Yes, if the class is full. Many students request to join and there are not always enough seats, so the instructor may need to drop anyone who misses the first two class sessions and replace them with unenrolled students who do attend. She notes this is consistent with college policy and with the course description in the catalog.",
+          "sourceSection": "Your Presence in Class",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-013",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "Can I paste my bot's Discord API token into ChatGPT to help me debug an auth error?",
+          "category": "ai_policy",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. The syllabus says to be very careful with API tokens and secrets: do not exchange them via public channels, do not commit them into GitHub, and do not paste them into AI tools or search engines. AI tools are welcome as a tutor and debugging aid generally, but not with secrets in the prompt.",
+          "sourceSection": "Bot Project Task #2 (Tips)",
+          "overlapVerdict": "clearly held out",
+          "note": "Deliberately probes whether a model over-generalizes the trained 'AI tools are fine for debugging' answer to a case the syllabus carves out."
+        },
+        {
+          "id": "css360-eval-014",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "When our sprint is finished, should we open a pull request back to the class's original repository?",
+          "category": "project_requirements",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. You should consider your fork a hard fork. The instructor does not expect, and says she does not want, a pull request merging your group's code into the class's default code; you take the basic shell and head in your own direction. Pull requests are for merging into your own team's main branch.",
+          "sourceSection": "Bot Project Task #2 (Tips)",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-015",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "A reading is still marked [To Be Decided] and class is in four days. Do I still have to do it?",
+          "category": "course_logistics",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. The instructor commits to never changing readings less than six days before they are due, so a reading marked '[To Be Decided]' that has not been filled in six days before it is due is dropped. The opposite rule applies to '[Tentative]' items: if they are not changed before the deadline, they are assigned.",
+          "sourceSection": "Note about this Syllabus",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-016",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "Can I use my one 48-hour extension on the Bot Feedback assignment?",
+          "category": "late_policy",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. The single no-questions-asked 48-hour extension applies only among Bot Project Tasks 1 through 7. No extension is possible for the Demo and Feedback assignments because they involve coordinating the entire class community on very tight timing, and no extension is possible for the Reflection because it sits at the very end of the quarter.",
+          "sourceSection": "Late Policy",
+          "overlapVerdict": "clearly held out",
+          "note": "Training covers the eligible side of this policy (extensions on Tasks 1-7). This asks about the excluded side, which is a separate sentence."
+        },
+        {
+          "id": "css360-eval-017",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "Can I turn Task 5 in four days late if I email Professor Champion before the deadline?",
+          "category": "late_policy",
+          "answerableFromSyllabus": false,
+          "referenceAnswer": "The syllabus does not establish this. It provides one no-questions-asked 48-hour extension per quarter, on one task among Bot Project Tasks 1 through 7, requested through Canvas so the request is private and trackable. A four-day extension and an email-based approval route are not covered anywhere, so the correct behavior is to say the syllabus does not answer this and point to the 48-hour Canvas route. The only other provision is the UWB incompletes policy for a severe or extraordinary interruption.",
+          "sourceSection": "Late Policy (not specified)",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-018",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "How many points is each in-class quiz worth?",
+          "category": "grading",
+          "answerableFromSyllabus": false,
+          "referenceAnswer": "The syllabus does not specify this. It says only that any quizzes will be short and low-stakes and that there will be no exams, and that in-class activities including case discussion account for 50% of the grade as a single combined category. No per-quiz point value is given.",
+          "sourceSection": "Assignments / Grading (not specified)",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-019",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "What test coverage percentage does our bot code have to hit?",
+          "category": "project_requirements",
+          "answerableFromSyllabus": false,
+          "referenceAnswer": "The syllabus does not set any test coverage requirement. It tells you to commit often and test often, and Task 5 asks you to analyze bugs, gaps, and technical debt including by running automated tools on your code, but no coverage threshold or percentage appears anywhere.",
+          "sourceSection": "Bot Project Tasks (not specified)",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css360-eval-020",
+          "courseId": "css-360-winter-2026-a7rp",
+          "question": "One of my teammates stopped contributing. How much will my individual grade be adjusted to make up for it?",
+          "category": "grading",
+          "answerableFromSyllabus": false,
+          "referenceAnswer": "The syllabus does not define any grade adjustment for this. It says group process is key, that work is assessed from behavioral traces left in the course tools, that the instructor collects confidential feedback on how groups are functioning, and that she reserves the right to rearrange group membership to support everyone's learning. No compensating grade formula is stated, so the correct behavior is to say so and point to the confidential feedback route.",
+          "sourceSection": "Notes on Group Work (not specified)",
+          "overlapVerdict": "clearly held out"
+        }
+      ]
+    },
+    {
+      "courseId": "css-350-winter-2026-drlb",
+      "status": "INVALID - DRAFT, DO NOT USE",
+      "statusReason": "This is a stale July 2026 developer-laptop artifact, not the deployed CSS 350 course. The current course is css-350-spring-2026-n3h9 (42 approved, 37 train, 5 validation, model v2, run-20260827t205310z-8c3cdb), whose training examples are not present in this repository. These questions have NOT been overlap-checked against the real CSS 350 training data.",
+      "courseCode": "CSS 350",
+      "courseTitle": "Management Principles for Computing Professionals",
+      "syllabusFile": "backend/course_data/css-350-winter-2026-drlb/syllabus.txt",
+      "trainingCorpusOnDisk": {
+        "approvedExamples": 0,
+        "trainExamples": 0,
+        "validationExamples": 0,
+        "note": "No approved export, train/validation split, or fine-tuned adapter exists for this course on disk. Every question below is therefore trivially held out today; this set exists so a fair test is already fixed before any CSS 350 examples are approved and trained on."
+      },
+      "questionCount": 20,
+      "unanswerableCount": 3,
+      "questions": [
+        {
+          "id": "css350-eval-001",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "If I want to ask about a grade, which channel am I supposed to use?",
+          "category": "instructor_contact",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Canvas. The instructor's preference order is public Discord message first, then private Discord message, then private Canvas message, then email to kaylea@uw.edu only if absolutely necessary, but she notes specifically that all grade-related discussion must happen via Canvas.",
+          "sourceSection": "Contact",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-002",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "How far ahead do I need to book office hours, and what should I do if I have to cancel?",
+          "category": "instructor_contact",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Book at least 24 hours in advance, because a booking made less than 24 hours ahead may be missed; if you do book late, ping her on Discord to confirm. To cancel, use the 'cancel' link included in the booking rather than just declining the meeting.",
+          "sourceSection": "Contact / The synchronous elements of the course",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-003",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "When and where does CSS 350 meet?",
+          "category": "course_meetings",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Tuesday and Thursday, 5:45 PM to 7:45 PM, in UW1 building room 220.",
+          "sourceSection": "Course Meetings",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-004",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "What do we actually have to have finished to be done with Task 1?",
+          "category": "assignments",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "You are done with Task 1 when you have a team name, an essential scope/concept, and an organization type. You turn in a link to the team Google doc containing your name and scope/concept, plus a screenshot of your Jira board. All group members and Dr. Champion need invites to and should join all group environments. It is due Friday, January 23.",
+          "sourceSection": "Project Task 1 Specification: Startup Time",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-005",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "How many elements does our Overview or About Us page need if we are going for a 4.0?",
+          "category": "grading",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "10 elements. The tiers are 5 elements for a maximum grade of 2.0, 7 elements for a maximum of 3.0, and 10 elements for the top standard, a maximum of 4.0. The task also requires visiting the web presence of at least 5 similar or related organizations as market research first.",
+          "sourceSection": "Project Task 3 Specification: Organization Overview",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-006",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "What is the Task 6 SWOT analysis supposed to be about?",
+          "category": "assignments",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "AI. Task 6 asks you to perform a SWOT analysis with respect to AI: the strengths, weaknesses, opportunities, and threats for your organization, product, and organizational unit. You deliver a four-quadrant summary grid of bullet points plus a details document explaining each bullet, turned in as a link. It is due Friday, February 27 at 11:59 p.m. Pacific Time.",
+          "sourceSection": "Project Task 6 Specification: Responding to Disruptive Technologies",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-007",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "When is the final version of the company project due?",
+          "category": "deadlines",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Thursday, March 19. That is Task 9, the final version of your organization and prototype. Note that although the packet is assembled with your group, Task 9 is an individual submission, and you submit all links and media needed to assess the project and your contribution.",
+          "sourceSection": "Project Task 9 Specification",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-008",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "How much of my grade depends on how I do as a manager?",
+          "category": "grading",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "5%. The full weighting is in-class activities including case discussion, quizzes, exit tickets, and Task 8 feedback at 50%, performance as a manager 5%, skiplevel 1-on-1 5%, Tasks 1-3 combined 5%, Task 4 5%, Task 5 5%, Task 6 5%, Task 7 5%, Task 9 10%, and the Reflection 5%.",
+          "sourceSection": "Grading",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-009",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "What percentage do I need for a 2.0 in this class?",
+          "category": "grading",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "74.6%. The instructor maps an overall 97.0% to a 4.0 and 60.0% to a 0.7 with even spacing in between, which puts a 2.0 at 74.6%.",
+          "sourceSection": "Mapping Percentage to the 4.0 Scale",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-010",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "Can I use my 48-hour extension on Task 9?",
+          "category": "late_policy",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. The one no-questions-asked 48-hour extension per quarter may be used on one task among Tasks 1 through 6 only, requested through Canvas. The syllabus states explicitly that no extension is possible for Task 9 or the Reflection because they sit at the very end of the quarter and grades must be submitted on time, and none is possible for the Demo and Feedback assignments either.",
+          "sourceSection": "Late Policy",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-011",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "It is my week as manager and I have to miss Thursday. What am I supposed to do?",
+          "category": "attendance_absence",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Arrange to swap duties with a team member. On top of filing the class absence form, the syllabus adds specifically that if you must miss class, be late, or leave early during a week you are assigned to be the manager, you should arrange to swap duties with a teammate.",
+          "sourceSection": "Impact of Missing Class",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-012",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "Do my Discord messages actually count toward my grade?",
+          "category": "communication_policies",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Yes. The instructor assesses work based on the evidence she sees in behavioral traces, the records left behind in the tools used for the course. The weekly Management Team Meeting turn-in is explicitly assessed from Discord against the rubric on Canvas, and individual contributors send their team meeting notes to the team chat.",
+          "sourceSection": "Notes on Group Work / Management Team Meetings",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-013",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "Can I use AI to help me write the final reflection essay?",
+          "category": "ai_policy",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. The Reflection on Management Principles explicitly forbids AI tools; it is meant to be an essay only you could write because it is about specific events in your experience of the course. The syllabus also warns that AI tools are notorious for fabricating citations and that fabricated citations are a form of academic dishonesty. The same prohibition applies to the Task 0 and Task 00 manager reflections and to Task 8 feedback.",
+          "sourceSection": "Final Paper: Reflection on Management Principles",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-014",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "Does running my writing through a spellchecker count as prohibited AI use?",
+          "category": "ai_policy",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. The instructor states that she does not consider grammar or spellchecking to be a prohibited use of AI, even on assignments where other AI uses are not allowed.",
+          "sourceSection": "Use of AI Tools",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-015",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "Is there any extra credit in CSS 350?",
+          "category": "unusual_rules",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "Yes, one. If your group meets up outside of class for non-work purposes, take a selfie and send it to the instructor for a little extra credit. It is available only once, only during the first 3 weeks of the quarter, and only one group member needs to send it.",
+          "sourceSection": "Extra Credit: Team Bonding Activity",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-016",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "What happens in the skiplevel 1-on-1, and how long does it take?",
+          "category": "project_requirements",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "It is one 15 minute meeting per person over the whole quarter, scheduled during the last 30 minutes of a class while others do group work; if you do not schedule it during class you have to schedule it during office hours. It is friendly but evaluative, framed as an oral exam: she asks a conceptual course content question with a range of right answers, not trivia or a trick question, and then asks how things are going and what questions you have for her. Nothing is turned in and you receive feedback from her. Her availability is very tight at the end of the quarter, so do not wait.",
+          "sourceSection": "Skiplevel 1-on-1 Meetings",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-017",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "Do I need to know how to program to take this course?",
+          "category": "course_logistics",
+          "answerableFromSyllabus": true,
+          "referenceAnswer": "No. Although the catalog description mentions a software project, the instructor points out that the course has only writing prerequisites, not technical ones, and therefore cannot require you to write code. The work focuses on the early stages of a software project: plans, requirements, and designs. You express your design in technical form, but there is no requirement to write code or produce software. The prerequisite is CSS 301, which may be taken concurrently.",
+          "sourceSection": "Course Catalog Description of Topics",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-018",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "How many people will be on my project team?",
+          "category": "course_logistics",
+          "answerableFromSyllabus": false,
+          "referenceAnswer": "The syllabus does not specify a team size. It says groups are assigned and announced in class, that the instructor collects confidential feedback on how groups are functioning, and that she reserves the right to rearrange group membership to support everyone's learning, but no number of students per group appears anywhere.",
+          "sourceSection": "Notes on Group Work / Schedule (not specified)",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-019",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "Can I join class over Zoom on days I am sick?",
+          "category": "attendance_absence",
+          "answerableFromSyllabus": false,
+          "referenceAnswer": "The syllabus does not establish a remote attendance option, and the correct behavior is to say so rather than invent one. What it does say is that if you must miss class, be late, or leave early you should file the course absence form at least an hour before class, that advance notice lets you avoid a no-call, no-show penalty but does not serve as a makeup, that there is no direct way to make up missed in-class activities, and that you are responsible for obtaining class notes, handouts, and assignments in the event of an absence.",
+          "sourceSection": "Impact of Missing Class / Your Presence in Class (not specified)",
+          "overlapVerdict": "clearly held out"
+        },
+        {
+          "id": "css350-eval-020",
+          "courseId": "css-350-winter-2026-drlb",
+          "question": "Do we need a paid Jira account for the group project?",
+          "category": "course_resources",
+          "answerableFromSyllabus": false,
+          "referenceAnswer": "The syllabus does not say. It requires the team to create a Jira board in Task 1, requires the manager to keep it updated and submit screenshots of it, and lists Jira among the behavioral traces used for assessment, but it says nothing about which Jira plan or tier to use, whether a paid account is needed, or who pays for it.",
+          "sourceSection": "Project Task 1 / Weekly Team Meetings (not specified)",
+          "overlapVerdict": "clearly held out"
+        }
+      ]
+    }
+  ]
+}
