@@ -346,9 +346,13 @@ def training_run_retry_block(
         if _claim_has_expired(run, moment):
             return None
         claim = run.get("claim") or {}
-        owner = claim.get("owner") or "a worker"
+        # Deliberately not the stored `claim.owner`. That value is
+        # `<account>@<host>` and this refusal is returned to the browser as a
+        # 409 body; naming the account would publish it just as surely as
+        # serializing the claim would. It also adds nothing an admin can act
+        # on: the lease expires on its own, which is what the sentence says.
         return (
-            f"This run is held by {owner} until {claim.get('expiresAt')}. "
+            f"This run is held by a worker until {claim.get('expiresAt')}. "
             "Wait for the lease to expire before retrying."
         )
 

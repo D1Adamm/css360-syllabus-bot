@@ -18,11 +18,14 @@ request and has no course-agnostic default to fall back to.
 
 from __future__ import annotations
 
+import logging
 import os
-from typing import Any
+from typing import Any, Mapping
 
 import httpx
 from fastapi import HTTPException
+
+from app.upstream_errors import log_upstream_failure
 
 DEFAULT_FINETUNED_TIMEOUT_SECONDS = 120.0
 
@@ -33,6 +36,33 @@ def get_finetuned_service_url() -> str | None:
     if not raw:
         return None
     return raw.rstrip("/")
+
+
+logger = logging.getLogger(__name__)
+
+def _log_upstream_failure(
+    action: str, *, url: str, status_code: int, body: Any
+) -> None:
+    """Record an upstream failure server-side, in full.
+
+    The body of a failed response from the inference service is the useful half
+    of the diagnostic and the unsafe half of the answer. It is written by
+    whatever answered — the service, or an SSH tunnel, or a proxy in front of
+    it — so it can name a compute node, a listening port, a serving root under
+    `/gpfs`, or the tunnel's own `localhost:<port>`. None of that may reach a
+    browser through `/api/fine-tuned/*`, which needs no credential.
+
+    So it goes here instead. An operator reading the backend log gets the whole
+    body and the URL that produced it; the client gets the status code, which is
+    the part it can act on.
+
+    The shared implementation lives in `upstream_errors` — the local Ollama
+    server needs the same rule — and this module's own logger is passed in so
+    the record still says which upstream failed.
+    """
+    log_upstream_failure(
+        logger, action, url=url, status_code=status_code, body=body
+    )
 
 
 def get_finetuned_timeout_seconds() -> float:
@@ -190,11 +220,18 @@ async def check_finetuned_service_health() -> dict[str, Any]:
         ) from exc
 
     if response.status_code != 200:
+        _log_upstream_failure(
+            "health check",
+            url=base_url,
+            status_code=response.status_code,
+            body=response.text,
+        )
         raise HTTPException(
             status_code=503,
             detail=(
-                f"Fine-tuned inference service health check failed "
-                f"(HTTP {response.status_code}): {response.text[:200]}"
+                "Fine-tuned inference service health check failed "
+                f"(HTTP {response.status_code}). See the backend log for the "
+                "service's own response."
             ),
         )
 
@@ -227,6 +264,57 @@ async def check_finetuned_service_health() -> dict[str, Any]:
         "courses": courses if isinstance(courses, list) else [],
         "secondsRemaining": data.get("secondsRemaining"),
     }
+
+
+#: What one course entry in a public health response may say. The service also
+#: knows where each adapter lives on disk; a browser is told which courses can
+#: be answered and with which versions, which is the whole of what a status page
+#: can act on.
+PUBLIC_COURSE_FIELDS = ("courseId", "versions", "currentVersion")
+
+
+def public_service_health(health: Mapping[str, Any]) -> dict[str, Any]:
+    """The browser-safe view of the inference service's health.
+
+    `hostname`, `port` and `serviceUrl` are dropped. They describe how to reach
+    a machine rather than what the application is doing, and
+    `GET /api/fine-tuned/health` is reachable without a credential — the same
+    reasoning `db_serving_sessions.public_serving_session` already applies to a
+    serving session's compute node and port. The values here are worse in one
+    respect: `serviceUrl` is the SSH tunnel destination this backend dials, and
+    `hostname` is the Tillicum compute node a Slurm allocation happened to land
+    on.
+
+    What survives is what a status page is for: whether the service answered,
+    which base model it is running, whether an adapter is loaded, which courses
+    it can serve and at which versions, and how much wall clock the allocation
+    has left.
+
+    The per-course entries are rebuilt from a fixed field list rather than
+    forwarded, because they come from a remote service: a future build of it
+    cannot widen this response by adding a key.
+
+    `check_finetuned_service_health` is unchanged and still returns the exact
+    hostname, port and URL. Nothing internal reads this view.
+    """
+    record: dict[str, Any] = {
+        "status": health.get("status", "unknown"),
+        "model": health.get("model"),
+        "adapterLoaded": health.get("adapterLoaded"),
+        "secondsRemaining": health.get("secondsRemaining"),
+    }
+
+    courses = health.get("courses")
+    record["courses"] = [
+        {
+            field: course.get(field)
+            for field in PUBLIC_COURSE_FIELDS
+            if course.get(field) is not None
+        }
+        for course in (courses if isinstance(courses, list) else [])
+        if isinstance(course, Mapping)
+    ]
+    return record
 
 
 async def generate_finetuned_response(
@@ -288,11 +376,18 @@ async def generate_finetuned_response(
         ) from exc
 
     if response.status_code >= 500:
+        _log_upstream_failure(
+            "generation",
+            url=base_url,
+            status_code=response.status_code,
+            body=response.text,
+        )
         raise HTTPException(
             status_code=503,
             detail=(
-                "Fine-tuned inference service returned a server error. "
-                f"(HTTP {response.status_code}): {response.text[:200]}"
+                "Fine-tuned inference service returned a server error "
+                f"(HTTP {response.status_code}). See the backend log for the "
+                "service's own response."
             ),
         )
 
@@ -300,21 +395,34 @@ async def generate_finetuned_response(
         # The service is healthy and this course simply has nothing published.
         # Forwarded as 409 rather than flattened into 502 because it is an
         # operator action away from being fixed, and the detail says which.
+        _log_upstream_failure(
+            "generation",
+            url=base_url,
+            status_code=response.status_code,
+            body=response.text,
+        )
         raise HTTPException(
             status_code=409,
             detail=(
                 "No fine-tuned adapter is published on the inference service "
                 f'for course "{safe_course_id}". '
-                f"({response.text[:200]})"
+                "Publish one for this course, then try again."
             ),
         )
 
     if response.status_code >= 400:
+        _log_upstream_failure(
+            "generation",
+            url=base_url,
+            status_code=response.status_code,
+            body=response.text,
+        )
         raise HTTPException(
             status_code=502,
             detail=(
-                "Fine-tuned inference service rejected the request. "
-                f"(HTTP {response.status_code}): {response.text[:200]}"
+                "Fine-tuned inference service rejected the request "
+                f"(HTTP {response.status_code}). See the backend log for the "
+                "service's own response."
             ),
         )
 

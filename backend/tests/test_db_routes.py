@@ -18,6 +18,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app import db_courses, db_model_requests, db_training_runs
+from app.provenance_privacy import PUBLIC_CLAIM_OWNER
 from app.main import app
 
 COURSE = "css-350-spring-2026-n3h9"
@@ -596,7 +597,12 @@ class TrainingRunRouteTests(DbRouteTestCase):
 
         self.assertEqual(response.status_code, 200)
         run = response.json()["runs"][0]
-        self.assertEqual(run["claim"]["owner"], "tillicum-runner")
+        # The lease still nests, with its real timestamps. The owner is the
+        # public stand-in — the stored value is an operator account, and this
+        # route needs no credential. See `provenance_privacy`.
+        self.assertEqual(run["claim"]["owner"], PUBLIC_CLAIM_OWNER)
+        self.assertEqual(run["claim"]["claimedAt"], "2026-08-12T01:05:00+00:00")
+        self.assertEqual(run["claim"]["expiresAt"], "2026-08-12T02:05:00+00:00")
         self.assertEqual(run["jobId"], "123456")
         self.assertEqual(run["attempt"], 1)
 

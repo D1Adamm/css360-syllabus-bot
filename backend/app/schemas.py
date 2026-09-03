@@ -55,12 +55,22 @@ class FineTunedGenerateResponse(BaseModel):
 
 
 class FineTunedHealthResponse(BaseModel):
+    """What the browser is told about the inference service.
+
+    `hostname`, `port` and `serviceUrl` are deliberately absent. This route
+    needs no credential, and those three describe how to reach a machine — a
+    Tillicum compute node, a listening port, and the SSH tunnel destination this
+    backend dials — rather than what the application is doing. The same rule
+    `ServingSessionResponse` follows via
+    `db_serving_sessions.public_serving_session`.
+
+    `finetuned_client.check_finetuned_service_health` still returns all three;
+    `finetuned_client.public_service_health` is what drops them.
+    """
+
     status: str
     model: str | None = None
     adapter_loaded: bool | None = Field(default=None, alias="adapterLoaded")
-    hostname: str | None = None
-    port: int | None = None
-    service_url: str | None = Field(default=None, alias="serviceUrl")
     #: Courses the running service has a published adapter for, each with its
     #: available versions. Empty from a service that predates per-course serving.
     courses: list[dict[str, Any]] = Field(default_factory=list)

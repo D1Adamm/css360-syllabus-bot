@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException
 
 from app import db_courses, db_evaluations, db_model_requests, db_models
 from app import db_seeds, db_serving_sessions, db_training_runs
+from app import provenance_privacy
 from app.course_id import assert_valid_course_id
 from app.db import db_connection, translate_db_errors
 from app.db_schemas import (
@@ -421,7 +422,9 @@ def get_course_model(course_id: str) -> ModelRegistryResponse:
             status_code=404,
             detail=f'Course "{safe_course_id}" has no registered model.',
         )
-    return ModelRegistryResponse(**registry)
+    # Stored provenance keeps the cluster's exact run directories; the browser
+    # does not get them. See `provenance_privacy`.
+    return ModelRegistryResponse(**provenance_privacy.public_model_registry(registry))
 
 
 # --------------------------------------------------------------------------- #
@@ -443,7 +446,9 @@ def get_course_model_request(course_id: str) -> ModelRequestRecord:
             status_code=404,
             detail=f'Course "{safe_course_id}" has no model request.',
         )
-    return ModelRequestRecord(**request_record)
+    return ModelRequestRecord(
+        **provenance_privacy.public_model_request(request_record)
+    )
 
 
 @router.post(
@@ -470,7 +475,7 @@ def create_course_model_request(
         created = _run("creating a model request", work)
     except db_model_requests.ActiveModelRequestError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return ModelRequestRecord(**created)
+    return ModelRequestRecord(**provenance_privacy.public_model_request(created))
 
 
 @router.patch("/courses/{course_id}/model-request", response_model=ModelRequestRecord)
@@ -492,7 +497,7 @@ def update_course_model_request(
             status_code=404,
             detail=f'Course "{safe_course_id}" has no model request.',
         )
-    return ModelRequestRecord(**updated)
+    return ModelRequestRecord(**provenance_privacy.public_model_request(updated))
 
 
 # --------------------------------------------------------------------------- #
@@ -512,7 +517,9 @@ def list_course_training_runs(course_id: str) -> TrainingRunListResponse:
         ),
     )
     return TrainingRunListResponse(
-        courseId=safe_course_id, count=len(runs), runs=runs
+        courseId=safe_course_id,
+        count=len(runs),
+        runs=[provenance_privacy.public_training_run(run) for run in runs],
     )
 
 
@@ -531,7 +538,7 @@ def get_course_training_run(course_id: str, run_id: str) -> TrainingRunRecord:
         raise HTTPException(
             status_code=404, detail=f'Training run "{run_id}" was not found.'
         )
-    return TrainingRunRecord(**run)
+    return TrainingRunRecord(**provenance_privacy.public_training_run(run))
 
 
 @router.post(
@@ -567,7 +574,7 @@ def enqueue_course_training_run(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return TrainingRunRecord(**created)
+    return TrainingRunRecord(**provenance_privacy.public_training_run(created))
 
 
 @router.patch(
@@ -596,7 +603,7 @@ def update_course_training_run(
         raise HTTPException(
             status_code=404, detail=f'Training run "{run_id}" was not found.'
         )
-    return TrainingRunRecord(**updated)
+    return TrainingRunRecord(**provenance_privacy.public_training_run(updated))
 
 
 

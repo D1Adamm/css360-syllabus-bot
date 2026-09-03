@@ -330,20 +330,33 @@ class RetryEligibilityTests(unittest.TestCase):
         self.assertIsNotNone(block)
         self.assertIn("already queued", block or "")
 
-    def test_a_live_claim_is_refused_and_names_who_holds_it(self) -> None:
+    def test_a_live_claim_is_refused_without_naming_the_account(self) -> None:
+        """The refusal says a lease is held and when it lapses, not by whom.
+
+        This string is returned to the browser as a 409 body, and the stored
+        owner is `<account>@<host>`. Naming it would publish an operator's
+        account on an unauthenticated endpoint, and it is not something an
+        admin reading the message could act on — the lease expires by itself,
+        which is what the sentence tells them to wait for.
+        """
+        expires_at = (NOW + timedelta(minutes=15)).isoformat()
         block = training_run_retry_block(
             self._run(
                 state="claimed",
                 claim={
                     "owner": "adam@tillicum",
                     "claimedAt": NOW.isoformat(),
-                    "expiresAt": (NOW + timedelta(minutes=15)).isoformat(),
+                    "expiresAt": expires_at,
                 },
             ),
             now=NOW,
         )
         self.assertIsNotNone(block)
-        self.assertIn("adam@tillicum", block or "")
+        self.assertNotIn("adam", block or "")
+        self.assertNotIn("tillicum", block or "")
+        # Still a usable refusal: it is held, and here is when that ends.
+        self.assertIn("held by a worker", block or "")
+        self.assertIn(expires_at, block or "")
 
     def test_an_expired_claim_may_be_retried(self) -> None:
         """The one claimed case the backend can prove is stale.

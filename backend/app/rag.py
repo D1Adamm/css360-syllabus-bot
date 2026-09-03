@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -7,6 +8,10 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException
+
+from app.upstream_errors import log_upstream_failure
+
+logger = logging.getLogger(__name__)
 
 APP_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = APP_DIR.parent
@@ -503,9 +508,22 @@ async def get_embedding(text: str) -> list[float]:
         )
 
     if response.status_code >= 400:
+        # RAG retrieval's embedding call. Same rule as everywhere else: the
+        # upstream's prose is a log line, not a response body.
+        log_upstream_failure(
+            logger,
+            "RAG embedding",
+            url=f"{OLLAMA_BASE_URL}/api/embeddings",
+            status_code=response.status_code,
+            body=response.text,
+        )
         raise HTTPException(
             status_code=502,
-            detail=f"Ollama rejected the embedding request: {response.text}",
+            detail=(
+                "Ollama rejected the RAG embedding request "
+                f"(HTTP {response.status_code}). See the backend log for the "
+                "service's own response."
+            ),
         )
 
     try:

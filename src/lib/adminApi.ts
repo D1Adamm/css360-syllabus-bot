@@ -32,13 +32,28 @@ export interface BackendHealth {
   service: string;
 }
 
+/** What the shared inference service reports about itself, as a browser may read it.
+ *
+ * No hostname, port or service URL. `/api/fine-tuned/health` needs no
+ * credential, and those three describe how to reach a Tillicum compute node
+ * rather than what the service is doing — the same rule `ServingSession`
+ * already follows. The backend drops them in
+ * `finetuned_client.public_service_health`.
+ */
 export interface FineTunedHealth {
   status: string;
   model?: string | null;
   adapterLoaded?: boolean | null;
-  hostname?: string | null;
-  port?: number | null;
-  serviceUrl?: string | null;
+  /** Courses the running service can answer for, and with which versions. */
+  courses?: FineTunedHealthCourse[];
+  /** Wall clock left in the serving allocation, when the service reports one. */
+  secondsRemaining?: number | null;
+}
+
+export interface FineTunedHealthCourse {
+  courseId?: string;
+  versions?: string[];
+  currentVersion?: string;
 }
 
 export interface StarterGenerationStatus {

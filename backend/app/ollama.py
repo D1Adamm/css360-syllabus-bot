@@ -7,6 +7,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.ollama_coordination import ollama_generation_slot
+from app.upstream_errors import log_upstream_failure
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
@@ -172,9 +173,23 @@ async def generate_ollama_completion(
             )
 
         if response.status_code >= 400:
+            # The body names the model cache, the listening port, and whatever
+            # else the local server felt like saying. It goes to the log; the
+            # client gets the operation and the code. See `upstream_errors`.
+            log_upstream_failure(
+                logger,
+                "base model generation",
+                url=f"{OLLAMA_BASE_URL}/api/generate",
+                status_code=response.status_code,
+                body=response.text,
+            )
             raise HTTPException(
                 status_code=502,
-                detail=f"Ollama rejected the request: {response.text}",
+                detail=(
+                    "Ollama rejected the base model request "
+                    f"(HTTP {response.status_code}). See the backend log for "
+                    "the service's own response."
+                ),
             )
 
         data = response.json()
@@ -396,9 +411,20 @@ async def embed_ollama_texts(
         )
 
     if response.status_code >= 400:
+        log_upstream_failure(
+            logger,
+            "batch embedding",
+            url=f"{OLLAMA_BASE_URL}/api/embed",
+            status_code=response.status_code,
+            body=response.text,
+        )
         raise HTTPException(
             status_code=502,
-            detail=f"Ollama rejected the embedding request: {response.text}",
+            detail=(
+                "Ollama rejected the embedding request "
+                f"(HTTP {response.status_code}). See the backend log for the "
+                "service's own response."
+            ),
         )
 
     data = response.json()

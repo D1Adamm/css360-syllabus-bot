@@ -18,6 +18,7 @@ from app.db_routes import router as db_router
 from app.training_queue_routes import router as training_queue_router
 from app.finetuned_client import (
     check_finetuned_service_health,
+    public_service_health,
     generate_finetuned_response,
 )
 from app.finetuned_rag import generate_course_finetuned_rag_answer
@@ -85,6 +86,13 @@ from app.db_training_runs import (
 from app.training_retry import RetryNotEligibleError, retry_training_run
 from app.starter_status import reconcile_starter_seed_generation
 from app.seed_dataset_quality import inspect_seed_dataset
+from app.provenance_privacy import public_training_run
+from app.export_privacy import (
+    public_export_status,
+    public_export_summary,
+    public_message,
+    public_snapshot_ref,
+)
 from app.seed_export import FinetuneJsonlValidationError, export_approved_seeds
 from app.seed_split import (
     DEFAULT_SPLIT_SEED,
@@ -196,14 +204,13 @@ async def generate_base_model(
 @app.get("/api/fine-tuned/health", response_model=FineTunedHealthResponse)
 @app.get("/fine-tuned/health", response_model=FineTunedHealthResponse)
 async def fine_tuned_health() -> FineTunedHealthResponse:
-    result = await check_finetuned_service_health()
+    # The probe keeps the exact hostname, port and tunnel URL — this route does
+    # not hand them to a browser. See `finetuned_client.public_service_health`.
+    result = public_service_health(await check_finetuned_service_health())
     return FineTunedHealthResponse(
         status=result["status"],
         model=result.get("model"),
         adapterLoaded=result.get("adapterLoaded"),
-        hostname=result.get("hostname"),
-        port=result.get("port"),
-        serviceUrl=result.get("serviceUrl"),
         courses=result.get("courses") or [],
         secondsRemaining=result.get("secondsRemaining"),
     )
@@ -529,7 +536,7 @@ async def generate_course_starter_seeds(
         seeds=[GeneratedSeedExample(**seed) for seed in result["seeds"]],
         progress=StarterSeedProgress(**result["progress"]),
         persistence=persistence,
-        localSnapshotPath=result.get("localSnapshotPath"),
+        localSnapshotPath=public_snapshot_ref(result.get("localSnapshotPath")),
     )
 
 
@@ -581,7 +588,7 @@ async def top_up_course_starter_seeds(
         seeds=[GeneratedSeedExample(**seed) for seed in result["seeds"]],
         progress=StarterSeedProgress(**result["progress"]),
         persistence=persistence,
-        localSnapshotPath=result.get("localSnapshotPath"),
+        localSnapshotPath=public_snapshot_ref(result.get("localSnapshotPath")),
     )
 
 
@@ -637,10 +644,12 @@ def enqueue_course_training_run(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # Same browser-safe view the `/api/db` training-run routes return: no
+    # operator account on the claim, no cluster directory in the completion.
     return EnqueueTrainingRunResponse(
         courseId=safe_course_id,
         runId=created["runId"],
-        run=created,
+        run=public_training_run(created),
     )
 
 
@@ -703,9 +712,9 @@ def retry_course_training_run(course_id: str) -> RetryTrainingRunResponse:
     return RetryTrainingRunResponse(
         courseId=safe_course_id,
         runId=created["runId"],
-        run=created,
+        run=public_training_run(created),
         supersededRunId=superseded.get("runId", ""),
-        supersededRun=superseded,
+        supersededRun=public_training_run(superseded),
         requestStatus=updated_request.get("status"),
     )
 
@@ -983,8 +992,12 @@ async def export_approved_course_seeds(
     try:
         summary = export_approved_seeds(course_id=safe_course_id, seeds=seeds)
     except FinetuneJsonlValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return SeedExportApprovedResponse(courseId=safe_course_id, summary=summary)
+        raise HTTPException(status_code=422, detail=public_message(exc)) from exc
+    # The summary written to disk keeps the absolute paths it always had; only
+    # the copy that leaves over HTTP is made repository-relative.
+    return SeedExportApprovedResponse(
+        courseId=safe_course_id, summary=public_export_summary(summary)
+    )
 
 
 @app.get(
@@ -998,7 +1011,7 @@ async def get_approved_export_status(course_id: str) -> ApprovedExportStatusResp
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    status = approved_export_status(safe_course_id)
+    status = public_export_status(approved_export_status(safe_course_id))
     return ApprovedExportStatusResponse(
         courseId=status["courseId"],
         exists=status["exists"],
@@ -1086,5 +1099,9 @@ async def prepare_course_training_split(
             split_seed=split_seed,
         )
     except TrainingSplitError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return PrepareTrainingSplitResponse(courseId=safe_course_id, summary=summary)
+        raise HTTPException(status_code=422, detail=public_message(exc)) from exc
+    # `manifest.json` on disk is unchanged — the cluster worker verifies against
+    # it — and this is the browser's copy of the same summary.
+    return PrepareTrainingSplitResponse(
+        courseId=safe_course_id, summary=public_export_summary(summary)
+    )

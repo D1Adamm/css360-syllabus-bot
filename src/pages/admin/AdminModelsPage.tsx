@@ -253,19 +253,35 @@ export function AdminModelsPage() {
                 {String(health.adapterLoaded ?? 'unknown')}
               </span>
             </li>
+            {/*
+              * Where the service runs is deliberately not shown, and not sent:
+              * a compute node and a tunnel URL describe how to reach a machine,
+              * and this page is served over a route that needs no credential.
+              * What replaces them is what an operator can actually act on —
+              * which courses the running service can answer for, and how much
+              * of its allocation is left.
+              */}
             <li className="admin-row">
-              <span className="admin-row__label">Service URL</span>
+              <span className="admin-row__label">Serving</span>
               <span className="admin-row__value">
-                <code>{health.serviceUrl ?? '—'}</code>
+                {health.courses && health.courses.length > 0
+                  ? health.courses
+                      .map(
+                        (course) =>
+                          `${course.courseId ?? 'unknown'} ${
+                            course.currentVersion ?? '?'
+                          }`,
+                      )
+                      .join(' · ')
+                  : 'No published adapters'}
               </span>
             </li>
             <li className="admin-row">
-              <span className="admin-row__label">Host</span>
+              <span className="admin-row__label">Allocation left</span>
               <span className="admin-row__value">
-                <code>
-                  {health.hostname ?? '—'}
-                  {health.port ? `:${health.port}` : ''}
-                </code>
+                {typeof health.secondsRemaining === 'number'
+                  ? `${Math.max(0, Math.round(health.secondsRemaining / 60))} min`
+                  : '—'}
               </span>
             </li>
           </ul>
