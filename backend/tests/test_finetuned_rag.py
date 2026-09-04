@@ -247,6 +247,52 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["sources"][0]["chunkId"], "css430-late-1")
         self.assertEqual(second["sources"][0]["chunkId"], "css360-late-1")
 
+    async def test_a_course_without_a_ready_model_never_reaches_the_service(self) -> None:
+        """Retrieval succeeds, resolution refuses: 409, and the cluster is not asked.
+
+        The plain Fine-Tuned route has this guarantee in
+        `test_generate_endpoint_without_a_ready_model`. This path resolves the
+        model *after* retrieval, so it is the one place a fully built, course-
+        grounded prompt could still be sent to whichever adapter the service
+        happened to hold. It must not be.
+        """
+        from app.course_model_resolution import NoReadyCourseModel
+
+        mock_ft = AsyncMock()
+        with (
+            patch(
+                "app.finetuned_rag.retrieve_course_syllabus_chunks",
+                new=AsyncMock(
+                    return_value=(
+                        "nomic-embed-text",
+                        [
+                            {
+                                "chunk_id": "css430-late-1",
+                                "section": "CSS 430 Late Policy",
+                                "text": "Late policy text",
+                                "score": 0.9,
+                            }
+                        ],
+                    )
+                ),
+            ),
+            patch(
+                "app.finetuned_rag.resolve_current_course_model",
+                side_effect=NoReadyCourseModel(
+                    self.css430_id, "no fine-tuned model yet"
+                ),
+            ),
+            patch("app.finetuned_rag.generate_finetuned_response", new=mock_ft),
+            self.assertRaises(HTTPException) as ctx,
+        ):
+            await generate_course_finetuned_rag_answer(
+                course_id=self.css430_id,
+                question="What is the late policy?",
+            )
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        mock_ft.assert_not_awaited()
+
     async def test_no_retrieval_results_does_not_call_model(self) -> None:
         mock_ft = AsyncMock()
         with (
