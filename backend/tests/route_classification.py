@@ -106,6 +106,7 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     ("PATCH", f"{_DB}/seeds/{{seed_id}}"): REQUIRE_COURSE_STAFF,
     ("DELETE", f"{_DB}/seeds/{{seed_id}}"): REQUIRE_COURSE_ACCESS,
     ("POST", f"{_DB}/seeds/{{seed_id}}/review"): REQUIRE_COURSE_STAFF,
+    ("GET", f"{_DB}/activity"): REQUIRE_COURSE_ACCESS,
     ("GET", f"{_DB}/evaluations"): REQUIRE_COURSE_ACCESS,
     ("POST", f"{_DB}/evaluations"): REQUIRE_PARTICIPANT,
     ("DELETE", f"{_DB}/evaluations"): REQUIRE_ADMIN,

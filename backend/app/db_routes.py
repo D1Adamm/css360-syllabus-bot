@@ -38,9 +38,11 @@ from app.auth.dependencies import (
     require_user,
 )
 from app.auth.principal import Principal
+from app.student_visibility import contribution_payload, seeds_for_participant
 from app.course_id import assert_valid_course_id
 from app.db import db_connection, translate_db_errors
 from app.db_schemas import (
+    CourseActivityResponse,
     CourseCreateRequest,
     CourseListResponse,
     CourseRecord,
@@ -99,6 +101,19 @@ def _run(action: str, work: Callable[[Any], Any]) -> Any:
     with translate_db_errors(action):
         with db_connection() as connection:
             return work(connection)
+
+
+def _student_view(principal: Principal, course_id: str) -> str | None:
+    """The participant id when this request should get the student's view.
+
+    A professor who also joined their own course as a student still gets the
+    staff view — the projection exists to keep review detail and classmates'
+    drafts from students, not from the instructor.
+    """
+    participant = principal.participant_for(course_id)
+    if participant is None or principal.can_staff_course(course_id):
+        return None
+    return participant.participant_id
 
 
 # --------------------------------------------------------------------------- #
@@ -261,18 +276,24 @@ def update_starter_seed_generation(
 def list_course_seeds(course_id: str, principal: Principal = Depends(require_course_access)) -> SeedListResponse:
     safe_course_id = _safe_course_id(course_id)
 
-    def work(connection: Any) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    student = _student_view(principal, safe_course_id)
+
+    def work(connection: Any) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, int]]:
         return (
             db_seeds.list_seeds(connection, safe_course_id),
             db_seeds.count_seeds_by_review_status(connection, safe_course_id),
+            db_seeds.count_seeds_by_origin(connection, safe_course_id),
         )
 
-    seeds, counts = _run("listing course seeds", work)
+    seeds, counts, origins = _run("listing course seeds", work)
+    if student is not None:
+        seeds = seeds_for_participant(seeds, student)
     return SeedListResponse(
         courseId=safe_course_id,
         count=len(seeds),
         seeds=seeds,
         reviewStatusCounts=counts,
+        originCounts=origins,
     )
 
 
@@ -294,18 +315,27 @@ def get_course_seed(course_id: str, seed_id: str, principal: Principal = Depends
 def create_course_seed(course_id: str, request: SeedCreateRequest, principal: Principal = Depends(require_course_access)) -> SeedResponse:
     safe_course_id = _safe_course_id(course_id)
     payload = _patch_fields(request)
+    student = _student_view(principal, safe_course_id)
+    if student is not None:
+        # A contribution: the student chooses the question and answer, the
+        # server decides everything about its provenance and review state.
+        payload = contribution_payload(payload)
 
     def work(connection: Any) -> dict[str, Any]:
         if not db_courses.course_exists(connection, safe_course_id):
             raise HTTPException(
                 status_code=404, detail=f'Course "{safe_course_id}" was not found.'
             )
-        return db_seeds.create_seed(connection, safe_course_id, payload)
+        return db_seeds.create_seed(
+            connection, safe_course_id, payload, participant_id=student
+        )
 
     try:
         created = _run("creating a seed", work)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if student is not None:
+        created = seeds_for_participant([created], student)[0]
     return SeedResponse(
         courseId=safe_course_id, seedId=created["id"], seed=created
     )
@@ -378,10 +408,22 @@ def review_course_seed(
 @router.delete("/courses/{course_id}/seeds/{seed_id}", response_model=DeleteResponse)
 def delete_course_seed(course_id: str, seed_id: str, principal: Principal = Depends(require_course_access)) -> DeleteResponse:
     safe_course_id = _safe_course_id(course_id)
-    deleted = _run(
-        "deleting a seed",
-        lambda connection: db_seeds.delete_seed(connection, safe_course_id, seed_id),
-    )
+    student = _student_view(principal, safe_course_id)
+
+    def work(connection: Any) -> bool:
+        if student is not None:
+            # A participant removes only what they contributed. Anything else
+            # in the course is not theirs to delete, approved or not.
+            existing = db_seeds.get_seed(connection, safe_course_id, seed_id)
+            if existing is None:
+                return False
+            if existing.get("participantId") != student:
+                raise HTTPException(
+                    status_code=403, detail="You can only remove questions you added."
+                )
+        return db_seeds.delete_seed(connection, safe_course_id, seed_id)
+
+    deleted = _run("deleting a seed", work)
     if not deleted:
         raise HTTPException(status_code=404, detail=f'Seed "{seed_id}" was not found.')
     return DeleteResponse(courseId=safe_course_id, deleted=1)
@@ -394,16 +436,27 @@ def delete_course_seed(course_id: str, seed_id: str, principal: Principal = Depe
 
 @router.get("/courses/{course_id}/evaluations", response_model=EvaluationListResponse)
 def list_course_evaluations(course_id: str, principal: Principal = Depends(require_course_access)) -> EvaluationListResponse:
+    """Staff see the course's ratings; a participant sees only their own."""
     safe_course_id = _safe_course_id(course_id)
+    student = _student_view(principal, safe_course_id)
     evaluations = _run(
         "listing evaluations",
-        lambda connection: db_evaluations.list_evaluations(connection, safe_course_id),
+        lambda connection: db_evaluations.list_evaluations(
+            connection, safe_course_id, participant_id=student
+        ),
     )
+    if student is not None:
+        evaluations = [_without_participant(record) for record in evaluations]
     return EvaluationListResponse(
         courseId=safe_course_id,
         count=len(evaluations),
         evaluations=evaluations,
     )
+
+
+def _without_participant(record: dict[str, Any]) -> dict[str, Any]:
+    """A participant's own record, minus the id they have no use for."""
+    return {key: value for key, value in record.items() if key != "participantId"}
 
 
 @router.post(
@@ -416,21 +469,60 @@ def create_course_evaluation(
     request: EvaluationCreateRequest,
     principal: Principal = Depends(require_participant),
 ) -> EvaluationRecordModel:
+    """Record a rating, attributed to the session's participant.
+
+    The participant comes from the cookie, never the body, and the id is
+    allocated here: a client cannot choose either.
+    """
     safe_course_id = _safe_course_id(course_id)
     payload = request.model_dump(by_alias=True, exclude_unset=True)
+    payload.pop("id", None)
+    participant = principal.participant_for(safe_course_id)
+    assert participant is not None  # require_participant guarantees it
 
     def work(connection: Any) -> dict[str, Any]:
         if not db_courses.course_exists(connection, safe_course_id):
             raise HTTPException(
                 status_code=404, detail=f'Course "{safe_course_id}" was not found.'
             )
-        return db_evaluations.create_evaluation(connection, safe_course_id, payload)
+        return db_evaluations.create_evaluation(
+            connection,
+            safe_course_id,
+            payload,
+            participant_id=participant.participant_id,
+        )
 
     try:
         created = _run("creating an evaluation", work)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return EvaluationRecordModel(**created)
+    return EvaluationRecordModel(**_without_participant(created))
+
+
+@router.get("/courses/{course_id}/activity", response_model=CourseActivityResponse)
+def get_course_activity(
+    course_id: str, principal: Principal = Depends(require_course_access)
+) -> CourseActivityResponse:
+    """Class-wide counts for the student home page.
+
+    Counts only. The home page used to download every evaluation — comments
+    included — to show a number; a participant now never receives another
+    student's rating at all.
+    """
+    safe_course_id = _safe_course_id(course_id)
+
+    def work(connection: Any) -> tuple[int, int]:
+        origins = db_seeds.count_seeds_by_origin(connection, safe_course_id)
+        return origins.get("user", 0), db_evaluations.count_evaluations(
+            connection, safe_course_id
+        )
+
+    contributed, evaluations = _run("reading course activity", work)
+    return CourseActivityResponse(
+        courseId=safe_course_id,
+        contributedQuestions=contributed,
+        evaluations=evaluations,
+    )
 
 
 @router.delete(

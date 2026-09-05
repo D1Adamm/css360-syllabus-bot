@@ -296,6 +296,7 @@ class StarterGenerationRouteTests(DbRouteTestCase):
 class SeedRouteTests(DbRouteTestCase):
     def test_list_returns_seeds_and_review_counts(self) -> None:
         self.patch_repo("db_seeds.list_seeds", return_value=[SEED])
+        self.patch_repo("db_seeds.count_seeds_by_origin", return_value={"ai_generated": 1})
         self.patch_repo(
             "db_seeds.count_seeds_by_review_status",
             return_value={"generated": 41, "approved": 9},
@@ -310,6 +311,7 @@ class SeedRouteTests(DbRouteTestCase):
     def test_seed_response_carries_both_name_pairs(self) -> None:
         self.patch_repo("db_seeds.list_seeds", return_value=[SEED])
         self.patch_repo("db_seeds.count_seeds_by_review_status", return_value={})
+        self.patch_repo("db_seeds.count_seeds_by_origin", return_value={})
         seed = self.client.get(f"/api/db/courses/{COURSE}/seeds").json()["seeds"][0]
 
         self.assertEqual(seed["instruction"], seed["question"])

@@ -18,7 +18,7 @@ from app.db_mapping import optional_string, put_optional, string_list, to_iso
 EVALUATION_COLUMNS = """
     evaluation_id, course_id, comparison_id, most_accurate, most_helpful,
     most_concise, best_grounded, preferred_model, hallucination_flags,
-    comment, created_at, run_id, question_text
+    comment, created_at, run_id, question_text, participant_id
 """
 
 REQUIRED_FIELDS = (
@@ -66,23 +66,57 @@ def map_evaluation(row: Mapping[str, Any]) -> dict[str, Any]:
     put_optional(record, "comment", optional_string(row.get("comment")))
     put_optional(record, "runId", optional_string(row.get("run_id")))
     put_optional(record, "questionText", optional_string(row.get("question_text")))
+    # The pseudonymous participant, when one was recorded. Absent on every
+    # row written before participants existed; those stay anonymous as they
+    # were. Staff responses carry it; a participant's own view drops it.
+    participant_id = row.get("participant_id")
+    if participant_id is not None:
+        record["participantId"] = str(participant_id)
     return record
 
 
-def list_evaluations(conn: Any, course_id: str) -> list[dict[str, Any]]:
-    """Newest first, matching `parseEvaluationsFromSnapshot`."""
+def list_evaluations(
+    conn: Any, course_id: str, *, participant_id: str | None = None
+) -> list[dict[str, Any]]:
+    """Newest first, matching `parseEvaluationsFromSnapshot`.
+
+    `participant_id` narrows the list to one participant's own ratings — what
+    a student is shown. Staff pass nothing and see the course.
+    """
+    safe_course_id = assert_valid_course_id(course_id)
+    with conn.cursor() as cursor:
+        if participant_id is None:
+            cursor.execute(
+                f"""
+                SELECT {EVALUATION_COLUMNS} FROM evaluations
+                WHERE course_id = %s
+                ORDER BY created_at DESC, evaluation_id ASC
+                """,
+                (safe_course_id,),
+            )
+        else:
+            cursor.execute(
+                f"""
+                SELECT {EVALUATION_COLUMNS} FROM evaluations
+                WHERE course_id = %s AND participant_id = %s
+                ORDER BY created_at DESC, evaluation_id ASC
+                """,
+                (safe_course_id, participant_id),
+            )
+        rows = cursor.fetchall()
+    return [map_evaluation(row) for row in rows]
+
+
+def count_evaluations(conn: Any, course_id: str) -> int:
+    """How many ratings the course has, for the student home page."""
     safe_course_id = assert_valid_course_id(course_id)
     with conn.cursor() as cursor:
         cursor.execute(
-            f"""
-            SELECT {EVALUATION_COLUMNS} FROM evaluations
-            WHERE course_id = %s
-            ORDER BY created_at DESC, evaluation_id ASC
-            """,
+            "SELECT count(*) AS total FROM evaluations WHERE course_id = %s",
             (safe_course_id,),
         )
-        rows = cursor.fetchall()
-    return [map_evaluation(row) for row in rows]
+        row = cursor.fetchone()
+    return int(row["total"]) if row else 0
 
 
 def get_evaluation(
@@ -103,7 +137,15 @@ def create_evaluation(
     conn: Any,
     course_id: str,
     evaluation: Mapping[str, Any],
+    *,
+    participant_id: str | None = None,
 ) -> dict[str, Any]:
+    """Insert one rating.
+
+    `participant_id` is the session's participant, supplied by the route and
+    never read from the body: attribution is a fact about who was asking, not
+    a field a client fills in.
+    """
     from psycopg.types.json import Json
 
     safe_course_id = assert_valid_course_id(course_id)
@@ -111,6 +153,7 @@ def create_evaluation(
     parameters: dict[str, Any] = {
         "evaluation_id": optional_string(evaluation.get("id")) or new_evaluation_id(),
         "course_id": safe_course_id,
+        "participant_id": participant_id,
         "created_at": optional_string(evaluation.get("createdAt"))
         or datetime.now(timezone.utc).isoformat(),
         "comment": optional_string(evaluation.get("comment")),

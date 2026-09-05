@@ -125,6 +125,7 @@ from app.starter_jobs import (
     try_queue_starter_seed_generation,
 )
 from app.storage import get_course_artifact_storage
+from app.student_visibility import seeds_for_participant
 from app.syllabus_extract import extract_clean_syllabus_text
 from app.syllabus_upload import SyllabusUploadError, validate_syllabus_upload
 from app.training_launch import (
@@ -942,6 +943,11 @@ async def list_course_seeds(course_id: str, principal: Principal = Depends(requi
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     seeds = _course_seed_records(safe_course_id)
+    # A participant gets the student projection: reviewed examples plus their
+    # own contributions, without review detail. Staff get every record.
+    participant = principal.participant_for(safe_course_id)
+    if participant is not None and not principal.can_staff_course(safe_course_id):
+        seeds = seeds_for_participant(seeds, participant.participant_id)
     return CourseSeedListResponse(
         courseId=safe_course_id,
         count=len(seeds),

@@ -36,7 +36,7 @@ SEED_COLUMNS = """
     difficulty, directly_answered, origin, notes, created_at, status,
     question_type, source_chunk_ids, validation, review_status, review_notes,
     reviewed_at, fact_id, evidence_quote, normalized_question_key,
-    original_question, original_answer, was_edited
+    original_question, original_answer, was_edited, participant_id
 """
 
 # camelCase API field -> column, and the allowlist for patches. The dual names
@@ -140,6 +140,13 @@ def map_seed(row: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(validation, dict):
         record["validation"] = validation
 
+    # The pseudonymous participant who contributed it, when one was recorded.
+    # Absent on AI-generated seeds and on contributions from before
+    # participants existed.
+    participant_id = row.get("participant_id")
+    if participant_id is not None:
+        record["participantId"] = str(participant_id)
+
     return record
 
 
@@ -199,14 +206,36 @@ def count_seeds_by_review_status(conn: Any, course_id: str) -> dict[str, int]:
     return {row["bucket"]: as_int(row["total"]) for row in rows}
 
 
+def count_seeds_by_origin(conn: Any, course_id: str) -> dict[str, int]:
+    """How many seeds each origin contributed: the class-wide activity figures."""
+    safe_course_id = assert_valid_course_id(course_id)
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT origin, COUNT(*) AS total
+            FROM seed_examples
+            WHERE course_id = %s
+            GROUP BY origin
+            """,
+            (safe_course_id,),
+        )
+        rows = cursor.fetchall()
+    return {row["origin"]: as_int(row["total"]) for row in rows}
+
+
 def create_seed(
     conn: Any,
     course_id: str,
     seed: Mapping[str, Any],
     *,
     seed_id: str | None = None,
+    participant_id: str | None = None,
 ) -> dict[str, Any]:
-    """Insert one seed, filling the same defaults the generator writes."""
+    """Insert one seed, filling the same defaults the generator writes.
+
+    `participant_id` attributes a student contribution to the session's
+    participant. It comes from the route, never from the body.
+    """
     safe_course_id = assert_valid_course_id(course_id)
 
     instruction = optional_string(seed.get("instruction")) or optional_string(
@@ -253,6 +282,7 @@ def create_seed(
         "original_question": optional_string(seed.get("originalQuestion")),
         "original_answer": optional_string(seed.get("originalAnswer")),
         "was_edited": as_bool(seed.get("wasEdited")),
+        "participant_id": participant_id,
     }
 
     columns = list(parameters)
