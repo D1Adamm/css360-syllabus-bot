@@ -82,6 +82,21 @@ describe('toUserMessage', () => {
     expect(result.message).not.toMatch(/backend\/data/);
   });
 
+  it('shows a student the neutral no-model refusal exactly as the backend wrote it', () => {
+    // The 409 a course without a fine-tuned model returns. It is written for
+    // the student, so it must pass through unchanged rather than be replaced
+    // by the generic "temporarily unavailable" line, which would suggest a
+    // retry could help.
+    const result = toUserMessage(
+      new ApiError('A fine-tuned model is not available for this course yet.', 409),
+      { audience: 'student', context: 'model-response' },
+    );
+    expect(result.message).toBe(
+      'A fine-tuned model is not available for this course yet.',
+    );
+    expect(result.message).not.toMatch(/train one|before asking/i);
+  });
+
   it('does not pass a 5xx message through, even when it looks harmless', () => {
     const result = toUserMessage(new ApiError('Internal error', 500), {
       audience: 'student',

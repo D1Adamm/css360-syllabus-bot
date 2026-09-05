@@ -575,6 +575,44 @@ class ModelRequestRouteTests(DbRouteTestCase):
         )
         self.assertEqual(response.status_code, 409)
 
+    def test_a_course_with_a_ready_model_and_no_request_can_open_one(self) -> None:
+        """CSS 360 in production: a ready v1 registered by hand, no request row.
+
+        The professor's "Request updated model" action posts here exactly as a
+        first request does. The route asks the request repository and nothing
+        else — an existing ready model is not a reason to refuse, and the
+        registry is not read at all, so nothing about that model can change.
+        """
+        self.patch_repo("db_courses.course_exists", return_value=True)
+        registry = self.patch_repo(
+            "db_models.get_model_registry",
+            return_value={
+                "courseId": OTHER_COURSE,
+                "currentVersion": "v1",
+                "versions": {"v1": {"version": "v1", "status": "ready"}},
+            },
+        )
+        create = self.patch_repo(
+            "db_model_requests.create_model_request",
+            return_value={
+                "courseId": OTHER_COURSE,
+                "status": "requested",
+                "requestedAt": "2026-09-04T00:00:00+00:00",
+                "updatedAt": "2026-09-04T00:00:00+00:00",
+                "approvedExampleCount": 54,
+            },
+        )
+
+        response = self.client.post(
+            f"/api/db/courses/{OTHER_COURSE}/model-request",
+            json={"approvedExampleCount": 54},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["status"], "requested")
+        self.assertEqual(create.call_args.args[1:], (OTHER_COURSE, 54))
+        registry.assert_not_called()
+
     def test_patch_merges_only_supplied_fields(self) -> None:
         update = self.patch_repo(
             "db_model_requests.update_model_request", return_value=self.REQUEST

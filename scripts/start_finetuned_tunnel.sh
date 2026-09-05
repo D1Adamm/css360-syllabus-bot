@@ -47,8 +47,10 @@ Examples:
   ./scripts/start_finetuned_tunnel.sh g014             # name it explicitly
 
 --from-backend reads the session ./training/start_finetuned_service.sh recorded
-on Tillicum. It needs TRAINING_API_BASE_URL and TRAINING_WORKER_TOKEN in the
-environment or .env.local — the same pair the training worker uses.
+on Tillicum. It needs TRAINING_API_BASE_URL and TRAINING_WORKER_TOKEN — the same
+pair the training worker uses — and reads them from backend/.env, the file the
+backend service itself loads, so no shell export is needed. A variable already
+exported in the environment (or set in .env.local) takes precedence.
 
 Environment overrides:
   TILLICUM_LOGIN     SSH target (default: $USER@tillicum.hyak.uw.edu)
@@ -168,9 +170,20 @@ done
 if [[ "${FROM_BACKEND}" -eq 1 ]]; then
   [[ -z "${NODE}" ]] || die "Pass either --from-backend or a hostname, not both."
   echo "Looking up the current serving session..."
+  # serving_session.py reads the backend URL and worker token from the
+  # environment, then .env.local/.env, then backend/.env. Exit 2 means it could
+  # not ask the backend at all; exit 1 means it asked and there is no session.
+  lookup_status=0
   SESSION_JSON="$(python3 "${REPO_ROOT}/training/serving_session.py" show --json)" \
-    || die "No serving session is recorded. Start one on Tillicum first:
+    || lookup_status=$?
+  if [[ "${lookup_status}" -eq 2 ]]; then
+    die "Could not look up the serving session (see the message above).
+  --from-backend needs TRAINING_API_BASE_URL and TRAINING_WORKER_TOKEN, read from
+  ${ENV_FILE} or the environment, and a reachable backend."
+  elif [[ "${lookup_status}" -ne 0 ]]; then
+    die "No serving session is recorded. Start one on Tillicum first:
   ./training/start_finetuned_service.sh"
+  fi
   NODE="$(printf '%s' "${SESSION_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("node") or "")')"
   REMOTE_PORT="$(printf '%s' "${SESSION_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("port") or 8001)')"
   SESSION_EXPIRES="$(printf '%s' "${SESSION_JSON}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("expiresAt") or "")')"

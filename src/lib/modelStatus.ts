@@ -246,6 +246,57 @@ export function canRequestCourseModel({
   return getModelReadiness(approved).hasEnough;
 }
 
+/**
+ * Whether a new version of an existing course model can be requested.
+ *
+ * The counterpart to `canRequestCourseModel` for a course that already has a
+ * ready model. It exists because of a production state neither helper covered:
+ * CSS 360 had a ready model registered by hand and no request record at all.
+ * The Model page offered nothing (a model existed), the admin Training page
+ * listed nothing (no request), and the only way to train again was to create
+ * the record with curl.
+ *
+ * The rules mirror the first-model ones with the model's presence inverted:
+ *
+ *   - the registry has been read, and this course has a ready model. A
+ *     training or failed version is not something to ask another of; the page
+ *     already describes it and the administrator is on it.
+ *   - enough approved examples to be worth training on.
+ *   - no request is outstanding, and the last one did not fail. A `ready`
+ *     request is a finished one; a failed one is the administrator's to follow
+ *     up, exactly as for a first model.
+ *   - the request record itself was readable.
+ *
+ * Submitting goes through the same backend workflow as a first request: the
+ * row is created, or refreshed from its terminal state, by the same POST. The
+ * model the course has is untouched — a new version is registered beside it
+ * when the run finishes, and only a deliberate publication changes which one
+ * answers.
+ */
+export function canRequestNewModelVersion({
+  version,
+  request,
+  approved,
+  registryLoading = false,
+  registryUnavailable = false,
+  requestLoading = false,
+  requestUnavailable = false,
+}: ModelRequestOfferInput): boolean {
+  if (registryLoading || registryUnavailable) {
+    return false;
+  }
+  if (describeCourseModel({ version }).presence !== 'ready') {
+    return false;
+  }
+  if (requestLoading || requestUnavailable) {
+    return false;
+  }
+  if (request !== null && request.status !== 'ready') {
+    return false;
+  }
+  return getModelReadiness(approved).hasEnough;
+}
+
 /* ------------------------------------------------------------------------ *
  * Request status, in plain language
  * ------------------------------------------------------------------------ */

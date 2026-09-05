@@ -20,6 +20,16 @@ The session expires on its own. `expiresAt` is the end of the Slurm allocation,
 so a dropped login session, a closed laptop or a forgotten stop command all
 resolve themselves at exactly the moment the GPU is released.
 
+Where the backend URL and worker token come from
+------------------------------------------------
+The process environment first, then the repository's `.env.local` / `.env`,
+then `backend/.env`. The last of those is what makes `show` work on the UWB VM
+without a shell export: the token there lives in `backend/.env`, because that
+is the file the backend service itself loads, and `--from-backend` in
+`scripts/start_finetuned_tunnel.sh` used to fail with "Missing
+TRAINING_WORKER_TOKEN" until an operator sourced it by hand. On Tillicum there
+is no `backend/.env`, and `.env.local` is read exactly as before.
+
 Usage
 -----
     python3 training/serving_session.py register \\
@@ -40,6 +50,11 @@ from typing import Any, Dict, List, Optional
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_LIB = REPO_ROOT / "scripts" / "lib"
 
+#: Exit status when the backend could not be asked at all — configuration
+#: missing or the request failing — as opposed to 1, which `show` uses for
+#: "asked, and there is no session". The tunnel script tells the two apart.
+EXIT_CANNOT_REACH_BACKEND = 2
+
 sys.path.insert(0, str(SCRIPTS_LIB))
 
 from list_published_adapters import published_courses  # noqa: E402
@@ -51,6 +66,23 @@ from training_queue import (  # noqa: E402
 )
 
 SESSION_STATES = ("starting", "ready", "stopped")
+
+
+def load_configuration(root: Path = REPO_ROOT) -> None:
+    """Populate the environment from the repo's env files, then `backend/.env`.
+
+    `load_env_file` never overwrites a variable that is already set, so the
+    order is the precedence: an exported variable wins over every file, the
+    repository's `.env.local` / `.env` win over the backend's, and `backend/.env`
+    is consulted last. Values are only ever placed in `os.environ`; nothing
+    here prints one.
+
+    The permission warning is suppressed for `backend/.env`. Its wording is
+    about the cluster copy on a shared filesystem, which training jobs read; the
+    VM's file is the backend service's own configuration and is not on GPFS.
+    """
+    load_env_file(root)
+    load_env_file(root / "backend", warn=False)
 
 
 def session_id_for_job(job_id: str) -> str:
@@ -210,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-    load_env_file(REPO_ROOT)
+    load_configuration()
     try:
         return int(args.func(args))
     except TrainingQueueError as exc:
@@ -218,7 +250,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # find it. A backend that is unreachable is worth reporting, and worth
         # not treating as a failure of the thing that actually matters.
         print("Could not reach the application: {0}".format(exc), file=sys.stderr)
-        return 1
+        return EXIT_CANNOT_REACH_BACKEND
 
 
 if __name__ == "__main__":

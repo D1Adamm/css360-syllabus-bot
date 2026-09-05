@@ -341,6 +341,11 @@ class FineTunedEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 409)
         generate.assert_not_awaited()
+        # The body is the student-facing sentence, not the operator reason.
+        self.assertEqual(
+            response.json()["detail"],
+            "A fine-tuned model is not available for this course yet.",
+        )
 
     def test_generate_endpoint_missing_url(self) -> None:
         os.environ.pop("FINETUNED_SERVICE_URL", None)

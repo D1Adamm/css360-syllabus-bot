@@ -496,6 +496,57 @@ class ModelRequestRepositoryTests(unittest.TestCase):
         self.assertNotIn("ready", db_model_requests.ACTIVE_STATUSES)
         self.assertNotIn("failed", db_model_requests.ACTIVE_STATUSES)
 
+    def test_a_course_with_no_request_row_can_open_one_whatever_it_has_trained(
+        self,
+    ) -> None:
+        """The state that stuck CSS 360: a ready model, and no request row.
+
+        Opening a request is a write to `model_requests` alone. The registry is
+        never consulted, so a course whose model was registered by hand — and
+        which therefore never had a request — asks for a new version the same
+        way a course asks for its first: one conditional INSERT, guarded only
+        by an *active* request, which this course does not have.
+        """
+        created = {
+            "course_id": COURSE,
+            "status": "requested",
+            "requested_at": UTC_NOON,
+            "updated_at": UTC_NOON,
+            "approved_example_count": 54,
+            "failure_message": None,
+            "preparation": None,
+            "preparation_error": None,
+            "training": None,
+            "launch_error": None,
+            "current_run_id": None,
+        }
+        connection = FakeConnection([1, [created]])
+
+        request = db_model_requests.create_model_request(connection, COURSE, 54)
+
+        self.assertEqual(request["status"], "requested")
+        self.assertEqual(request["courseId"], COURSE)
+        insert = connection.sql[0]
+        self.assertIn("INSERT INTO model_requests", insert)
+        self.assertNotIn("course_models", connection.all_text())
+        self.assertNotIn("course_model_versions", connection.all_text())
+
+    def test_a_finished_request_is_refreshed_in_place_for_the_next_version(self) -> None:
+        """A `ready` row is not a second slot; the same INSERT resets it.
+
+        The ON CONFLICT branch is what turns a course's finished request back
+        into a fresh `requested` one, clearing everything the previous run left
+        on it. Nothing here touches the model that run registered.
+        """
+        connection = FakeConnection([0])
+        with self.assertRaises(db_model_requests.ActiveModelRequestError):
+            db_model_requests.create_model_request(connection, COURSE, 54)
+
+        statement = connection.sql[0]
+        self.assertIn("ON CONFLICT (course_id) DO UPDATE", statement)
+        for column in ("preparation", "training", "current_run_id", "launch_error"):
+            self.assertIn(f"{column} = NULL", statement)
+
     def test_update_merges_and_stamps_updated_at(self) -> None:
         existing = {
             "course_id": COURSE,

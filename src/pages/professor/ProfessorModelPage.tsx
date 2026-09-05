@@ -13,6 +13,7 @@ import { formatCourseCode } from '../../lib/courseLabels';
 import { getCurrentVersion } from '../../lib/courseModelDb';
 import {
   canRequestCourseModel,
+  canRequestNewModelVersion,
   describeCourseModel,
   describeModelRequest,
   summariseCourseModel,
@@ -38,6 +39,11 @@ import { professorCoursePath } from '../../lib/roleRoutes';
  * — separate from the registry, because a request is work asked for and the
  * registry is artifacts that exist. Nothing here starts a training run; the
  * request is a queue entry an administrator picks up.
+ *
+ * A professor whose course already has a ready model can ask for an updated
+ * one the same way. It is the same row and the same POST — created if the
+ * course never had one, refreshed if the last one finished — and the model
+ * they have keeps answering until a new version is deliberately published.
  */
 export function ProfessorModelPage() {
   const courseId = useCourseId();
@@ -104,9 +110,10 @@ export function ProfessorModelPage() {
    *   - the request record itself was readable
    *
    * CSS 360 fails the first, so its page keeps the Ready/Offline treatment and
-   * never offers a first-model request. Retraining is a separate feature.
+   * never offers a first-model request. It gets the updated-model offer below
+   * instead, under the same conditions with the model's presence inverted.
    */
-  const canRequest = canRequestCourseModel({
+  const offerInput = {
     version,
     request,
     approved: counts?.approved ?? 0,
@@ -114,7 +121,19 @@ export function ProfessorModelPage() {
     registryUnavailable: modelState.status === 'unavailable',
     requestLoading: requestState.status === 'loading',
     requestUnavailable: requestState.status === 'unavailable',
-  });
+  };
+  const canRequest = canRequestCourseModel(offerInput);
+  /*
+   * The same request, for a course that already has a ready model.
+   *
+   * CSS 360 in production: a ready model registered by hand and no request
+   * record at all. Nothing on this page or the admin Training page could
+   * create one, so a new version could only be started with curl. The offer
+   * is quiet — a secondary control — because the course is not missing
+   * anything; and the row it writes is the one the administrator's normal
+   * prepare-and-queue flow picks up.
+   */
+  const canRequestNewVersion = canRequestNewModelVersion(offerInput);
 
   return (
     <div className="ui-stack ui-stack--section">
@@ -222,6 +241,18 @@ export function ProfessorModelPage() {
                   onClick={() => void submit(counts?.approved ?? 0)}
                 >
                   Request course model
+                </Button>
+              )}
+              {canRequestNewVersion && (
+                <Button
+                  variant="secondary"
+                  iconLeft="model"
+                  loading={submitting}
+                  loadingLabel="Sending…"
+                  onClick={() => void submit(counts?.approved ?? 0)}
+                  title="Ask for a new version trained from the examples you have approved. The model you have keeps working until it is ready."
+                >
+                  Request updated model
                 </Button>
               )}
               <LinkButton

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { CourseModelVersion } from '../types';
+import type { CourseModelRequest, CourseModelVersion } from '../types';
 import {
+  canRequestCourseModel,
+  canRequestNewModelVersion,
   describeCourseModel,
   getModelReadiness,
   presenceFromVersion,
@@ -132,5 +134,115 @@ describe('getModelReadiness', () => {
       hasEnough: false,
       remaining: RECOMMENDED_APPROVED_EXAMPLES - 10,
     });
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * Requesting a new version of a model that already exists
+ *
+ * The production state that stuck CSS 360: a ready model registered by hand
+ * and no `model_requests` row at all. `canRequestCourseModel` refused (a model
+ * existed) and the admin Training page listed nothing (no request), so the
+ * only way to train again was to create the row with curl.
+ * ------------------------------------------------------------------------ */
+
+describe('canRequestNewModelVersion', () => {
+  function request(status: CourseModelRequest['status']): CourseModelRequest {
+    return {
+      courseId: 'css-360-winter-2026-a7rp',
+      status,
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T10:00:00.000Z',
+      approvedExampleCount: 54,
+    };
+  }
+
+  const READY_NO_REQUEST = { version: READY_OFFLINE, request: null, approved: 54 };
+
+  it('offers a new version for a ready model with no request record at all', () => {
+    expect(canRequestNewModelVersion(READY_NO_REQUEST)).toBe(true);
+    // And it is not mistaken for a first-model request.
+    expect(canRequestCourseModel(READY_NO_REQUEST)).toBe(false);
+  });
+
+  it('offers a new version once the previous request has finished', () => {
+    expect(
+      canRequestNewModelVersion({ ...READY_NO_REQUEST, request: request('ready') }),
+    ).toBe(true);
+  });
+
+  it('does not depend on the model being published', () => {
+    const published = { ...READY_OFFLINE, deployment: 'online' as const };
+    expect(canRequestNewModelVersion({ ...READY_NO_REQUEST, version: published })).toBe(
+      true,
+    );
+  });
+
+  it('refuses while a request is outstanding', () => {
+    for (const status of ['requested', 'preparing', 'training'] as const) {
+      expect(
+        canRequestNewModelVersion({ ...READY_NO_REQUEST, request: request(status) }),
+      ).toBe(false);
+    }
+  });
+
+  it('leaves a failed request to the administrator, as a first request does', () => {
+    expect(
+      canRequestNewModelVersion({ ...READY_NO_REQUEST, request: request('failed') }),
+    ).toBe(false);
+  });
+
+  it('is not the first-model path', () => {
+    const noModel = { ...READY_NO_REQUEST, version: null };
+    expect(canRequestNewModelVersion(noModel)).toBe(false);
+    expect(canRequestCourseModel(noModel)).toBe(true);
+  });
+
+  it('refuses a model that is still training or has failed', () => {
+    for (const status of ['training', 'failed'] as const) {
+      expect(
+        canRequestNewModelVersion({
+          ...READY_NO_REQUEST,
+          version: { ...READY_OFFLINE, status },
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it('needs enough approved examples, like a first request', () => {
+    expect(
+      canRequestNewModelVersion({
+        ...READY_NO_REQUEST,
+        approved: RECOMMENDED_APPROVED_EXAMPLES - 1,
+      }),
+    ).toBe(false);
+  });
+
+  it('refuses while either record is loading or could not be read', () => {
+    expect(canRequestNewModelVersion({ ...READY_NO_REQUEST, registryLoading: true })).toBe(
+      false,
+    );
+    expect(
+      canRequestNewModelVersion({ ...READY_NO_REQUEST, registryUnavailable: true }),
+    ).toBe(false);
+    expect(canRequestNewModelVersion({ ...READY_NO_REQUEST, requestLoading: true })).toBe(
+      false,
+    );
+    expect(
+      canRequestNewModelVersion({ ...READY_NO_REQUEST, requestUnavailable: true }),
+    ).toBe(false);
+  });
+
+  it('never offers both a first model and an updated one at once', () => {
+    const versions = [null, READY_OFFLINE, { ...READY_OFFLINE, status: 'failed' as const }];
+    const requests = [null, request('ready'), request('failed'), request('training')];
+    for (const version of versions) {
+      for (const req of requests) {
+        const input = { version, request: req, approved: 54 };
+        expect(
+          canRequestCourseModel(input) && canRequestNewModelVersion(input),
+        ).toBe(false);
+      }
+    }
   });
 });

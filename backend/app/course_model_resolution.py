@@ -40,6 +40,7 @@ once anything has been published for a course, the answer is exact.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import HTTPException
@@ -48,6 +49,15 @@ from app import db_models
 from app.course_id import assert_valid_course_id
 from app.db import db_connection, translate_db_errors
 
+logger = logging.getLogger(__name__)
+
+#: The one sentence a browser is told when a course cannot be answered by a
+#: fine-tuned model. The routes that raise it need no credential and are asked
+#: from the student Compare page, so this is student-facing copy: it names no
+#: version, no status, and no action, because a student can take none. What was
+#: actually wrong goes to the backend log instead (see `NoReadyCourseModel`).
+PUBLIC_UNAVAILABLE_DETAIL = "A fine-tuned model is not available for this course yet."
+
 
 class NoReadyCourseModel(HTTPException):
     """This course has no fine-tuned model to answer with.
@@ -55,11 +65,25 @@ class NoReadyCourseModel(HTTPException):
     409 rather than 404: the course exists and the route is right. What is
     missing is a trained model, which is a state the professor's own page
     already describes and an admin can act on.
+
+    `detail` — the HTTP body — is always `PUBLIC_UNAVAILABLE_DETAIL`. The
+    specific reason is kept on `diagnostic` for the log and for tests. It used
+    to be the body itself, which put "Train one before asking the fine-tuned
+    model a question" in front of students, who cannot train anything.
     """
 
-    def __init__(self, course_id: str, detail: str) -> None:
-        super().__init__(status_code=409, detail=detail)
+    def __init__(self, course_id: str, diagnostic: str) -> None:
+        super().__init__(status_code=409, detail=PUBLIC_UNAVAILABLE_DETAIL)
         self.course_id = course_id
+        self.diagnostic = diagnostic
+
+
+def _unavailable(course_id: str, diagnostic: str) -> NoReadyCourseModel:
+    """Log the operator-facing reason, and return the student-facing refusal."""
+    logger.warning(
+        "Fine-tuned model unavailable for course %s: %s", course_id, diagnostic
+    )
+    return NoReadyCourseModel(course_id, diagnostic)
 
 
 def select_servable_version(registry: dict[str, Any]) -> tuple[str | None, str]:
@@ -123,7 +147,7 @@ def resolve_current_course_model(course_id: str) -> dict[str, Any]:
             registry = db_models.get_model_registry(connection, safe_course_id)
 
     if not registry:
-        raise NoReadyCourseModel(
+        raise _unavailable(
             safe_course_id,
             f'Course "{safe_course_id}" has no fine-tuned model yet. Train one '
             "before asking the fine-tuned model a question.",
@@ -133,7 +157,7 @@ def resolve_current_course_model(course_id: str) -> dict[str, Any]:
     resolved_version, source = select_servable_version(registry)
 
     if resolved_version is None:
-        raise NoReadyCourseModel(
+        raise _unavailable(
             safe_course_id,
             f'Course "{safe_course_id}" has no model version to answer with. '
             "Register one, or publish an existing one to the cluster.",
@@ -142,7 +166,7 @@ def resolve_current_course_model(course_id: str) -> dict[str, Any]:
     version_record = versions.get(resolved_version)
 
     if not isinstance(version_record, dict):
-        raise NoReadyCourseModel(
+        raise _unavailable(
             safe_course_id,
             f'Course "{safe_course_id}" points at model version '
             f'"{resolved_version}", which is not registered. Re-register or '
@@ -150,7 +174,7 @@ def resolve_current_course_model(course_id: str) -> dict[str, Any]:
         )
 
     if version_record.get("status") != "ready":
-        raise NoReadyCourseModel(
+        raise _unavailable(
             safe_course_id,
             f'Course "{safe_course_id}" has no ready fine-tuned model: version '
             f'"{resolved_version}" is "{version_record.get("status")}".',

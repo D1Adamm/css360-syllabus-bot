@@ -271,7 +271,7 @@ class TheRetrainLifecycleTests(ResolutionTestCase):
         with self.assertRaises(NoReadyCourseModel) as caught:
             resolve_current_course_model(CSS350)
 
-        self.assertIn("no fine-tuned model yet", str(caught.exception.detail))
+        self.assertIn("no fine-tuned model yet", caught.exception.diagnostic)
 
 
 class CourseIsolationTests(ResolutionTestCase):

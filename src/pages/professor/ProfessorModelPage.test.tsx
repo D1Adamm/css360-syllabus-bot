@@ -588,3 +588,116 @@ describe('ProfessorModelPage while a new version trains', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+/* ------------------------------------------------------------------------ *
+ * A course that already has a model, asking for an updated one
+ *
+ * The production state that stuck CSS 360: a ready model registered by hand
+ * and no `model_requests` row. This page refused a first-model request (a
+ * model existed) and the admin Training page listed nothing (no request), so
+ * the only way to train a new version was to create the row with curl.
+ *
+ * The offer goes through the same backend workflow as a first request — the
+ * same POST creates the row, or refreshes a finished one — and the model the
+ * course has stays exactly where it is.
+ * ------------------------------------------------------------------------ */
+
+describe('ProfessorModelPage for a course that already has a model', () => {
+  function finishedRequest(status: 'ready' | 'failed'): CourseModelRequest {
+    return {
+      courseId: 'css-360-winter-2026-a7rp',
+      status,
+      requestedAt: '2026-08-11T10:00:00.000Z',
+      updatedAt: '2026-08-11T11:00:00.000Z',
+      approvedExampleCount: 54,
+    };
+  }
+
+  it('offers an updated model when no request has ever been recorded', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(null);
+    renderPage();
+
+    expect(
+      screen.getByRole('button', { name: /Request updated model/i }),
+    ).toBeInTheDocument();
+    // Still not a first-model request.
+    expect(
+      screen.queryByRole('button', { name: /Request course model/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('creates the request through the same backend workflow as a first model', async () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(null);
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Request updated model/i }));
+
+    await waitFor(() => {
+      expect(createCourseModelRequest).toHaveBeenCalledWith(
+        'css-360-winter-2026-a7rp',
+        54,
+      );
+    });
+  });
+
+  it('offers an updated model again once the previous request is finished', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(finishedRequest('ready'));
+    renderPage();
+
+    expect(
+      screen.getByRole('button', { name: /Request updated model/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the model it has on the page beside the offer', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(null);
+    renderPage();
+
+    expect(screen.getByText(/ready, but not published yet/i)).toBeInTheDocument();
+    expect(screen.getByText('v1')).toBeInTheDocument();
+    expect(screen.getByText('54 examples')).toBeInTheDocument();
+  });
+
+  it('offers nothing while an updated version is already under way', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest({
+      courseId: 'css-360-winter-2026-a7rp',
+      status: 'requested',
+      requestedAt: '2026-09-04T10:00:00.000Z',
+      updatedAt: '2026-09-04T10:00:00.000Z',
+      approvedExampleCount: 54,
+    });
+    renderPage();
+
+    expect(
+      screen.queryByRole('button', { name: /Request updated model/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/An updated version is being prepared/i),
+    ).toBeInTheDocument();
+  });
+
+  it('leaves a failed request to the administrator', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(finishedRequest('failed'));
+    renderPage();
+
+    expect(
+      screen.queryByRole('button', { name: /Request updated model/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('adds no infrastructure vocabulary with the offer', () => {
+    mockRegistry(CSS360_REGISTRY);
+    mockRequest(null);
+    renderPage();
+
+    expect(document.body.textContent ?? '').not.toMatch(
+      /tillicum|slurm|sbatch|ssh|duo|gpu|node|adapter|qlora|curl|model_request/i,
+    );
+  });
+});

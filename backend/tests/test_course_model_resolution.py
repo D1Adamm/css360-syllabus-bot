@@ -18,6 +18,7 @@ from typing import Any, Iterator
 from unittest.mock import patch
 
 from app.course_model_resolution import (
+    PUBLIC_UNAVAILABLE_DETAIL,
     NoReadyCourseModel,
     resolve_current_course_model,
 )
@@ -56,7 +57,7 @@ def _fake_connection(**kwargs: Any) -> Iterator[object]:
     yield object()
 
 
-class ResolutionTests(unittest.TestCase):
+class ResolutionTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self._connection = patch(
             "app.course_model_resolution.db_connection", _fake_connection
@@ -72,6 +73,8 @@ class ResolutionTests(unittest.TestCase):
         ):
             yield
 
+
+class ResolutionTests(ResolutionTestCase):
     def test_a_ready_course_resolves_its_current_version(self) -> None:
         with self.registry(_registry()):
             resolved = resolve_current_course_model(COURSE)
@@ -86,7 +89,7 @@ class ResolutionTests(unittest.TestCase):
                 resolve_current_course_model(COURSE)
 
         self.assertEqual(caught.exception.status_code, 409)
-        self.assertIn("no fine-tuned model yet", caught.exception.detail)
+        self.assertIn("no fine-tuned model yet", caught.exception.diagnostic)
 
     def test_a_course_whose_current_version_is_not_ready_is_refused(self) -> None:
         """`ready` is the only status that may answer a student's question.
@@ -102,14 +105,14 @@ class ResolutionTests(unittest.TestCase):
             with self.assertRaises(NoReadyCourseModel) as caught:
                 resolve_current_course_model(COURSE)
 
-        self.assertIn("training", caught.exception.detail)
+        self.assertIn("training", caught.exception.diagnostic)
 
     def test_a_dangling_current_version_is_refused(self) -> None:
         with self.registry(_registry(current="v9")):
             with self.assertRaises(NoReadyCourseModel) as caught:
                 resolve_current_course_model(COURSE)
 
-        self.assertIn("v9", caught.exception.detail)
+        self.assertIn("v9", caught.exception.diagnostic)
 
     def test_deployment_status_does_not_gate_resolution(self) -> None:
         """`ready` and `deployed` stay distinct concepts, in both directions.
@@ -171,6 +174,66 @@ class ResolutionTests(unittest.TestCase):
                 resolve_current_course_model("../etc")
 
         registry.assert_not_called()
+
+
+class StudentFacingRefusalTests(ResolutionTestCase):
+    """What a student reads when the fine-tuned model cannot answer.
+
+    The refusal reaches the Compare page verbatim: it is a 4xx with no
+    infrastructure vocabulary, so the browser shows it as written. The audit
+    found it ending "Train one before asking the fine-tuned model a question",
+    which is an instruction to an operator delivered to someone who cannot act
+    on it. The body is now one neutral sentence for every reason the model is
+    missing, and the reason itself goes to the log.
+    """
+
+    OPERATOR_WORDS = ("train", "register", "publish", "re-point", "version")
+
+    def _refusals(self) -> list[NoReadyCourseModel]:
+        dangling = _registry(current="v9")
+        not_ready = _registry()
+        not_ready["versions"]["v1"]["status"] = "training"
+        empty = _registry(current="", versions={})
+        caught: list[NoReadyCourseModel] = []
+        for registry in (None, dangling, not_ready, empty):
+            with self.registry(registry):
+                with self.assertRaises(NoReadyCourseModel) as raised:
+                    resolve_current_course_model(COURSE)
+            caught.append(raised.exception)
+        return caught
+
+    def test_every_refusal_uses_the_same_neutral_wording(self) -> None:
+        for refusal in self._refusals():
+            self.assertEqual(refusal.status_code, 409)
+            self.assertEqual(refusal.detail, PUBLIC_UNAVAILABLE_DETAIL)
+
+    def test_the_public_wording_gives_a_student_nothing_to_do(self) -> None:
+        lowered = PUBLIC_UNAVAILABLE_DETAIL.lower()
+        for word in self.OPERATOR_WORDS:
+            self.assertNotIn(word, lowered)
+        self.assertNotIn(COURSE, PUBLIC_UNAVAILABLE_DETAIL)
+
+    def test_the_specific_reason_is_kept_for_operators(self) -> None:
+        no_registry, dangling, not_ready, empty = self._refusals()
+
+        self.assertIn("no fine-tuned model yet", no_registry.diagnostic)
+        self.assertIn("v9", dangling.diagnostic)
+        self.assertIn("training", not_ready.diagnostic)
+        self.assertIn("no model version", empty.diagnostic)
+        # None of which reached the body.
+        for refusal in (no_registry, dangling, not_ready, empty):
+            self.assertNotIn("v9", refusal.detail)
+            self.assertNotIn("training", refusal.detail)
+
+    def test_the_reason_is_logged_with_the_course(self) -> None:
+        with self.registry(_registry(current="v9")):
+            with self.assertLogs("app.course_model_resolution", level="WARNING") as logs:
+                with self.assertRaises(NoReadyCourseModel):
+                    resolve_current_course_model(COURSE)
+
+        record = "\n".join(logs.output)
+        self.assertIn(COURSE, record)
+        self.assertIn("v9", record)
 
 
 if __name__ == "__main__":

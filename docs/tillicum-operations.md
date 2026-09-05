@@ -100,7 +100,9 @@ cd ~/css360-syllabus-bot
 
 `--from-backend` looks the compute node up from the session Tillicum recorded,
 instead of the operator reading a hostname off one machine and typing it into
-another.
+another. It reads `TRAINING_API_BASE_URL` and `TRAINING_WORKER_TOKEN` from
+`backend/.env` — the file the backend service already loads — so no `source` or
+export is needed; a variable already in the environment takes precedence.
 
 **Session length is bounded by the QOS, not by preference.** `serve.slurm` runs
 under `debug`, which caps a job at one hour, and that is the default. Asking for
