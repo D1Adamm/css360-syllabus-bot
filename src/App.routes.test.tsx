@@ -271,7 +271,7 @@ describe('route guards', () => {
   });
 
   it('sends an anonymous visitor in the admin area to sign in', async () => {
-    const view = renderAt('/admin/models', 'anonymous');
+    const view = renderAt('/admin/people', 'anonymous');
     await expectLocation(view, '/login');
   });
 
@@ -317,11 +317,11 @@ describe('role navigation', () => {
     expect(within(nav).queryByRole('link', { name: 'Contribute' })).toBeNull();
   });
 
-  it('uses the admin sidebar and exposes the technical sections there', async () => {
+  it('uses the admin sidebar and exposes the technical and people sections there', async () => {
     const view = renderAt('/admin', 'admin');
 
     const nav = await view.findByRole('navigation', { name: 'Admin navigation' });
-    for (const label of ['Overview', 'Courses', 'Training', 'Models', 'System']) {
+    for (const label of ['Overview', 'Courses', 'People', 'Training', 'Models', 'Audit', 'System']) {
       expect(within(nav).getByRole('link', { name: label })).toBeInTheDocument();
     }
   });

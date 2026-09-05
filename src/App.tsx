@@ -41,11 +41,13 @@ import { ProfessorResultsPage } from './pages/professor/ProfessorResultsPage';
 import { ProfessorSyllabusPage } from './pages/professor/ProfessorSyllabusPage';
 import { ReviewExamplesPage } from './pages/professor/ReviewExamplesPage';
 
+import { AdminAuditPage } from './pages/admin/AdminAuditPage';
 import { AdminCourseDetailPage } from './pages/admin/AdminCourseDetailPage';
 import { AdminCoursesPage } from './pages/admin/AdminCoursesPage';
 import { AdminExamplesPage } from './pages/admin/AdminExamplesPage';
 import { AdminModelsPage } from './pages/admin/AdminModelsPage';
 import { AdminOverviewPage } from './pages/admin/AdminOverviewPage';
+import { AdminPeoplePage } from './pages/admin/AdminPeoplePage';
 import { AdminSystemPage } from './pages/admin/AdminSystemPage';
 import { AdminTrainingPage } from './pages/admin/AdminTrainingPage';
 
@@ -160,6 +162,14 @@ export function AppRoutes() {
           }
         />
         <Route
+          path="/admin/people"
+          element={
+            <RequireAdmin>
+              <AdminPeoplePage />
+            </RequireAdmin>
+          }
+        />
+        <Route
           path="/admin/training"
           element={
             <RequireAdmin>
@@ -172,6 +182,14 @@ export function AppRoutes() {
           element={
             <RequireAdmin>
               <AdminModelsPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/admin/audit"
+          element={
+            <RequireAdmin>
+              <AdminAuditPage />
             </RequireAdmin>
           }
         />

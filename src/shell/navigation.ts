@@ -57,8 +57,10 @@ export function primaryNavItems(role: Role, courseId: string | null): NavItem[] 
   return [
     { to: '/admin', label: 'Overview', icon: 'status', end: true },
     { to: '/admin/courses', label: 'Courses', icon: 'course' },
+    { to: '/admin/people', label: 'People', icon: 'students' },
     { to: '/admin/training', label: 'Training', icon: 'upload' },
     { to: '/admin/models', label: 'Models', icon: 'model' },
+    { to: '/admin/audit', label: 'Audit', icon: 'review' },
     { to: '/admin/system', label: 'System', icon: 'admin' },
   ];
 }
