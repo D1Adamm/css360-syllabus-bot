@@ -1,4 +1,4 @@
-import { ApiError, getApiBaseUrl } from './api';
+import { getApiBaseUrl, requestJson } from './httpClient';
 
 /**
  * Request paths are RELATIVE to `VITE_API_BASE_URL`, which carries the `/api`
@@ -17,7 +17,7 @@ import { ApiError, getApiBaseUrl } from './api';
  */
 
 
-export { ApiError } from './api';
+export { ApiError } from './httpClient';
 
 /**
  * Admin-only API clients.
@@ -63,26 +63,11 @@ export interface StarterGenerationStatus {
   startedAt?: string | null;
 }
 
-async function getJson<T>(path: string): Promise<T> {
-  const baseUrl = getApiBaseUrl();
-
-  if (!baseUrl) {
-    throw new ApiError('The service is not configured.');
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(`${baseUrl}${path}`, { method: 'GET' });
-  } catch {
-    throw new ApiError('The service could not be reached.');
-  }
-
-  if (!response.ok) {
-    throw new ApiError(`Request failed with status ${response.status}.`, response.status);
-  }
-
-  return (await response.json()) as T;
+function getJson<T>(path: string): Promise<T> {
+  return requestJson<T>(path, {
+    method: 'GET',
+    fallbackErrorMessage: 'The request failed.',
+  });
 }
 
 export function fetchBackendHealth(): Promise<BackendHealth> {
@@ -111,39 +96,12 @@ export function getConfiguredApiBaseUrl(): string | null {
  * a professor should never see.
  * ------------------------------------------------------------------------- */
 
-async function postJsonAdmin<T>(path: string, body: unknown): Promise<T> {
-  const baseUrl = getApiBaseUrl();
-
-  if (!baseUrl) {
-    throw new ApiError('The service is not configured.');
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(`${baseUrl}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    throw new ApiError('The service could not be reached.');
-  }
-
-  if (!response.ok) {
-    let detail = `Request failed with status ${response.status}.`;
-    try {
-      const errorBody = (await response.json()) as { detail?: string };
-      if (typeof errorBody.detail === 'string' && errorBody.detail.trim() !== '') {
-        detail = errorBody.detail;
-      }
-    } catch {
-      // Keep the status-based message when the body is not JSON.
-    }
-    throw new ApiError(detail, response.status);
-  }
-
-  return (await response.json()) as T;
+function postJsonAdmin<T>(path: string, body: unknown): Promise<T> {
+  return requestJson<T>(path, {
+    method: 'POST',
+    json: body,
+    fallbackErrorMessage: 'The request failed.',
+  });
 }
 
 export interface CourseChunk {
