@@ -71,9 +71,80 @@ vi.mock('./hooks/useEvaluations', () => ({
   }),
 }));
 
+vi.mock('./hooks/useCourseActivity', () => ({
+  useCourseActivity: () => ({
+    status: 'ready',
+    activity: { courseId: 'css360-default', contributedQuestions: 0, evaluations: 0 },
+  }),
+}));
+
+vi.mock('./lib/authApi', async () => {
+  const actual = await vi.importActual<typeof import('./lib/authApi')>('./lib/authApi');
+  return {
+    ...actual,
+    fetchSession: vi.fn().mockResolvedValue({ user: null, participant: null }),
+    logout: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
+vi.mock('./lib/inviteApi', async () => {
+  const actual = await vi.importActual<typeof import('./lib/inviteApi')>('./lib/inviteApi');
+  return {
+    ...actual,
+    listStudentInvites: vi.fn().mockResolvedValue({ courseId: 'x', count: 0, invites: [] }),
+  };
+});
+
+vi.mock('./lib/adminPeopleApi', async () => {
+  const actual = await vi.importActual<typeof import('./lib/adminPeopleApi')>(
+    './lib/adminPeopleApi',
+  );
+  return {
+    ...actual,
+    listUsers: vi.fn().mockResolvedValue({ count: 0, users: [] }),
+    listInvitations: vi.fn().mockResolvedValue({ count: 0, invitations: [] }),
+    listAudit: vi.fn().mockResolvedValue({ count: 0, actions: [] }),
+  };
+});
+
 import { AppRoutes } from './App';
 import { ComparisonRunProvider } from './context/ComparisonRunContext';
-import { RoleProvider, type Role } from './context/RoleContext';
+import { SessionProvider, type Session } from './context/SessionContext';
+
+const COURSE = 'css360-default';
+const OTHER = 'other-course';
+
+/**
+ * The sessions the backend could report. `student` is an anonymous
+ * participant of the default course; `professor` holds a membership in it;
+ * `admin` holds none and needs none.
+ */
+const SESSIONS: Record<'anonymous' | 'student' | 'professor' | 'admin', Session> = {
+  anonymous: { user: null, participant: null },
+  student: { user: null, participant: { courseId: COURSE } },
+  professor: {
+    user: {
+      userId: 'u-prof',
+      email: 'prof@uw.edu',
+      displayName: 'Prof Example',
+      role: 'professor',
+      courseIds: [COURSE],
+    },
+    participant: null,
+  },
+  admin: {
+    user: {
+      userId: 'u-admin',
+      email: 'admin@uw.edu',
+      displayName: 'Admin Example',
+      role: 'admin',
+      courseIds: [],
+    },
+    participant: null,
+  },
+};
+
+type Who = keyof typeof SESSIONS;
 
 function LocationProbe() {
   const location = useLocation();
@@ -82,15 +153,15 @@ function LocationProbe() {
   );
 }
 
-function renderAt(path: string, role: Role = 'student') {
+function renderAt(path: string, who: Who = 'student') {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <RoleProvider initialRole={role}>
+      <SessionProvider initialSession={SESSIONS[who]}>
         <ComparisonRunProvider>
           <LocationProbe />
           <AppRoutes />
         </ComparisonRunProvider>
-      </RoleProvider>
+      </SessionProvider>
     </MemoryRouter>,
   );
 }
@@ -126,32 +197,93 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('role landing', () => {
-  it('sends each role to its own home from the root route', async () => {
+async function expectLocation(view: ReturnType<typeof render>, expected: string) {
+  await waitFor(() => {
+    expect(view.getByTestId('location')).toHaveTextContent(expected);
+  });
+}
+
+describe('landing', () => {
+  it('sends each session to its own home from the root route', async () => {
     const student = renderAt('/', 'student');
-    await waitFor(() => {
-      expect(student.getByTestId('location')).toHaveTextContent('/student');
-    });
+    await expectLocation(student, '/student');
     cleanup();
 
     const professor = renderAt('/', 'professor');
-    await waitFor(() => {
-      expect(professor.getByTestId('location')).toHaveTextContent(
-        '/professor/courses',
-      );
-    });
+    await expectLocation(professor, '/professor/courses');
     cleanup();
 
     const admin = renderAt('/', 'admin');
-    await waitFor(() => {
-      expect(admin.getByTestId('location')).toHaveTextContent('/admin');
-    });
+    await expectLocation(admin, '/admin');
+  });
+
+  it('sends nobody-in-particular to sign in, which points students at the join page', async () => {
+    const view = renderAt('/', 'anonymous');
+    await expectLocation(view, '/login');
+    expect(await view.findByRole('link', { name: /Enter a class code/ })).toHaveAttribute(
+      'href',
+      '/join',
+    );
+  });
+});
+
+describe('route guards', () => {
+  it('sends an anonymous visitor on a student course page to the join page', async () => {
+    const view = renderAt(`/student/course/${COURSE}/compare`, 'anonymous');
+    await expectLocation(view, '/join');
+  });
+
+  it('lets a participant into the course they joined and not another', async () => {
+    const own = renderAt(`/student/course/${COURSE}`, 'student');
+    await expectLocation(own, `/student/course/${COURSE}`);
+    expect(await own.findByRole('heading', { name: /CSS 360/ })).toBeInTheDocument();
+    cleanup();
+
+    const other = renderAt(`/student/course/${OTHER}`, 'student');
+    await expectLocation(other, '/forbidden');
+  });
+
+  it('sends a participant deep-linking into the professor area to sign in', async () => {
+    const view = renderAt('/professor/courses', 'student');
+    await expectLocation(view, '/login');
+  });
+
+  it('lets a professor into an assigned course and refuses an unassigned one', async () => {
+    const assigned = renderAt(`/professor/course/${COURSE}`, 'professor');
+    await expectLocation(assigned, `/professor/course/${COURSE}`);
+    cleanup();
+
+    const unassigned = renderAt(`/professor/course/${OTHER}`, 'professor');
+    await expectLocation(unassigned, '/forbidden');
+  });
+
+  it('refuses a professor in the admin area and admits an administrator', async () => {
+    const professor = renderAt('/admin', 'professor');
+    await expectLocation(professor, '/forbidden');
+    cleanup();
+
+    const admin = renderAt('/admin', 'admin');
+    await expectLocation(admin, '/admin');
+    cleanup();
+
+    const anyCourse = renderAt(`/admin/courses/${OTHER}`, 'admin');
+    await expectLocation(anyCourse, `/admin/courses/${OTHER}`);
+  });
+
+  it('sends an anonymous visitor in the admin area to sign in', async () => {
+    const view = renderAt('/admin/models', 'anonymous');
+    await expectLocation(view, '/login');
+  });
+
+  it('lets a professor walk the student flow of their own course', async () => {
+    const view = renderAt(`/student/course/${COURSE}/compare`, 'professor');
+    await expectLocation(view, `/student/course/${COURSE}/compare`);
   });
 });
 
 describe('role navigation', () => {
   it('shows only the student sections in the student area', async () => {
-    const view = renderAt('/student/course/css360-default', 'student');
+    const view = renderAt(`/student/course/${COURSE}`, 'student');
 
     const nav = await view.findByRole('navigation', { name: 'Main navigation' });
     for (const label of ['Home', 'Contribute', 'Compare', 'Evaluate']) {
@@ -162,16 +294,16 @@ describe('role navigation', () => {
   });
 
   it('keeps course links scoped to the active course', async () => {
-    const view = renderAt('/student/course/other-course', 'student');
+    const view = renderAt(`/student/course/${COURSE}`, 'student');
 
     const nav = await view.findByRole('navigation', { name: 'Main navigation' });
     expect(within(nav).getByRole('link', { name: 'Compare' })).toHaveAttribute(
       'href',
-      '/student/course/other-course/compare',
+      `/student/course/${COURSE}/compare`,
     );
     expect(within(nav).getByRole('link', { name: 'Contribute' })).toHaveAttribute(
       'href',
-      '/student/course/other-course/contribute',
+      `/student/course/${COURSE}/contribute`,
     );
   });
 
@@ -180,8 +312,6 @@ describe('role navigation', () => {
 
     const nav = await view.findByRole('navigation', { name: 'Main navigation' });
     expect(within(nav).getByRole('link', { name: 'Courses' })).toBeInTheDocument();
-    // Everything a professor does is scoped to a course, so Courses is the only
-    // top-level destination; the old cross-course hubs are gone.
     expect(within(nav).queryByRole('link', { name: 'Reviews' })).toBeNull();
     expect(within(nav).queryByRole('link', { name: 'Models' })).toBeNull();
     expect(within(nav).queryByRole('link', { name: 'Contribute' })).toBeNull();
@@ -196,52 +326,55 @@ describe('role navigation', () => {
     }
   });
 
-  it('derives the shell from the URL, not the remembered development role', async () => {
-    // A professor deep link opened while the switcher says "student".
-    const view = renderAt('/professor/courses', 'student');
+  it('shows who is signed in and a way out, and no navigation to nobody', async () => {
+    const professor = renderAt('/professor/courses', 'professor');
+    expect(await professor.findByText('Prof Example')).toBeInTheDocument();
+    expect(professor.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    cleanup();
 
-    const nav = await view.findByRole('navigation', { name: 'Main navigation' });
-    expect(within(nav).getByRole('link', { name: 'Courses' })).toBeInTheDocument();
-    expect(within(nav).queryByRole('link', { name: 'Evaluate' })).toBeNull();
+    const nobody = renderAt('/login', 'anonymous');
+    expect(await nobody.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    expect(nobody.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
+  });
+
+  it('never renders a development role switcher', async () => {
+    const view = renderAt(`/student/course/${COURSE}`, 'student');
+    await view.findByRole('navigation', { name: 'Main navigation' });
+    expect(view.queryByLabelText(/Development role/)).toBeNull();
+    expect(view.queryByText('DEV')).toBeNull();
   });
 });
 
 describe('legacy URL redirects', () => {
-  const cases: { from: string; to: string; role?: Role }[] = [
-    { from: '/architecture', to: '/admin/system' },
-    { from: '/create-course', to: '/professor/courses/new' },
-    { from: '/course/css360-default/seeds', to: '/student/course/css360-default/contribute' },
-    { from: '/course/css360-default/compare', to: '/student/course/css360-default/compare' },
-    { from: '/course/css360-default/review', to: '/professor/course/css360-default/examples' },
-    { from: '/course/css360-default/results', to: '/professor/course/css360-default/results' },
-    { from: '/course/css360-default/dataset', to: '/admin/courses/css360-default/examples' },
-    { from: '/professor/reviews', to: '/professor/courses', role: 'professor' },
-    { from: '/professor/models', to: '/professor/courses', role: 'professor' },
-    { from: '/seed-builder', to: '/student/course/css360-default/contribute' },
-    { from: '/compare', to: '/student/course/css360-default/compare' },
-    { from: '/review', to: '/professor/course/css360-default/examples' },
-    { from: '/dataset', to: '/admin/courses/css360-default/examples' },
-    { from: '/home', to: '/student/course/css360-default', role: 'student' },
-    { from: '/home', to: '/professor/course/css360-default', role: 'professor' },
-    { from: '/course/css360-default', to: '/student/course/css360-default', role: 'student' },
+  const cases: { from: string; to: string; who?: Who }[] = [
+    { from: '/architecture', to: '/admin/system', who: 'admin' },
+    { from: '/create-course', to: '/professor/courses/new', who: 'professor' },
+    { from: `/course/${COURSE}/seeds`, to: `/student/course/${COURSE}/contribute` },
+    { from: `/course/${COURSE}/compare`, to: `/student/course/${COURSE}/compare` },
+    { from: `/course/${COURSE}/review`, to: `/professor/course/${COURSE}/examples`, who: 'professor' },
+    { from: `/course/${COURSE}/results`, to: `/professor/course/${COURSE}/results`, who: 'professor' },
+    { from: `/course/${COURSE}/dataset`, to: `/admin/courses/${COURSE}/examples`, who: 'admin' },
+    { from: '/professor/reviews', to: '/professor/courses', who: 'professor' },
+    { from: '/professor/models', to: '/professor/courses', who: 'professor' },
+    { from: '/seed-builder', to: `/student/course/${COURSE}/contribute` },
+    { from: '/compare', to: `/student/course/${COURSE}/compare` },
+    { from: '/review', to: `/professor/course/${COURSE}/examples`, who: 'professor' },
+    { from: '/dataset', to: `/admin/courses/${COURSE}/examples`, who: 'admin' },
+    { from: '/home', to: `/student/course/${COURSE}`, who: 'student' },
+    { from: '/home', to: `/professor/course/${COURSE}`, who: 'professor' },
+    { from: `/course/${COURSE}`, to: `/student/course/${COURSE}`, who: 'student' },
   ];
 
-  for (const { from, to, role } of cases) {
-    it(`redirects ${from} to ${to}${role ? ` as ${role}` : ''}`, async () => {
-      const view = renderAt(from, role ?? 'student');
-      await waitFor(() => {
-        expect(view.getByTestId('location')).toHaveTextContent(to);
-      });
+  for (const { from, to, who } of cases) {
+    it(`redirects ${from} to ${to}${who ? ` as ${who}` : ''}`, async () => {
+      const view = renderAt(from, who ?? 'student');
+      await expectLocation(view, to);
     });
   }
 
   it('preserves the query string when redirecting evaluate', async () => {
     const view = renderAt('/evaluate?comparison=comparison-2');
-    await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent(
-        '/student/course/css360-default/evaluate?comparison=comparison-2',
-      );
-    });
+    await expectLocation(view, `/student/course/${COURSE}/evaluate?comparison=comparison-2`);
   });
 });
 
@@ -255,9 +388,7 @@ describe('course id validation', () => {
 
   it('sends a legacy URL with an unsafe course id to the not-found page', async () => {
     const view = renderAt('/course/Bad_Id/compare');
-    await waitFor(() => {
-      expect(view.getByTestId('location')).toHaveTextContent('/not-found');
-    });
+    await expectLocation(view, '/not-found');
   });
 });
 
@@ -270,7 +401,7 @@ describe('technical surfaces', () => {
   });
 
   it('does not offer the architecture page in student navigation', async () => {
-    const view = renderAt('/student/course/css360-default', 'student');
+    const view = renderAt(`/student/course/${COURSE}`, 'student');
     const nav = await view.findByRole('navigation', { name: 'Main navigation' });
     expect(within(nav).queryByRole('link', { name: /architecture/i })).toBeNull();
   });

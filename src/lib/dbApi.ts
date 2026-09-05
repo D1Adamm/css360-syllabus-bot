@@ -1,4 +1,5 @@
 import type {
+  CourseActivity,
   CourseMetadata,
   CourseModelRegistry,
   CourseModelRequest,
@@ -154,6 +155,8 @@ export interface DbSeedListResponse {
   count: number;
   seeds: DbSeedRecord[];
   reviewStatusCounts: Record<string, number>;
+  /** Course-wide totals per origin, whatever subset of seeds the caller may see. */
+  originCounts?: Record<string, number>;
 }
 
 export interface DbSeedResponse {
@@ -257,6 +260,19 @@ export function deleteAllEvaluations(
     `${coursePath(courseId)}/evaluations`,
     undefined,
     'The backend could not clear evaluations for this course.',
+  );
+}
+
+/**
+ * Class-wide counts for the student home page.
+ *
+ * Counts only. A participant is never sent another student's rating, so the
+ * number of evaluations comes from here rather than from listing them.
+ */
+export function getCourseActivity(courseId: string): Promise<CourseActivity> {
+  return get<CourseActivity>(
+    `${coursePath(courseId)}/activity`,
+    'The backend could not load course activity.',
   );
 }
 

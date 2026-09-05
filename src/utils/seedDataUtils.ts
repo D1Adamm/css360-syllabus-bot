@@ -367,6 +367,10 @@ export function normalizeSeedExample(
     seed.wasEdited = true;
   }
 
+  if (record.mine === true) {
+    seed.mine = true;
+  }
+
   const questionType = readNonEmptyString(record.questionType);
   if (questionType) {
     seed.questionType = questionType;

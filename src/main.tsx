@@ -15,6 +15,7 @@ import './styles/patterns.css';
 import './styles/student.css';
 import './styles/professor.css';
 import './styles/admin.css';
+import './styles/auth.css';
 import './styles/utilities.css';
 
 import App from './App.tsx';

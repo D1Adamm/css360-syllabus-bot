@@ -4,14 +4,26 @@ import {
   LegacyFlatRedirect,
   RoleLanding,
 } from './app/LegacyRedirects';
+import {
+  RequireAdmin,
+  RequireAnyPrincipal,
+  RequireCourseParticipant,
+  RequireCourseStaff,
+  RequireStaff,
+} from './components/auth/RouteGuards';
 import { CourseRoute } from './components/CourseRoute';
 import { ScrollToTop } from './components/ScrollToTop';
 import { ComparisonRunProvider } from './context/ComparisonRunContext';
-import { RoleProvider } from './context/RoleContext';
+import { SessionProvider } from './context/SessionContext';
 import { AppShell } from './shell/AppShell';
 
+import { ForbiddenPage } from './pages/ForbiddenPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { StyleguidePage } from './pages/StyleguidePage';
+
+import { AcceptInvitePage } from './pages/auth/AcceptInvitePage';
+import { JoinPage } from './pages/auth/JoinPage';
+import { LoginPage } from './pages/auth/LoginPage';
 
 import { ComparePage } from './pages/student/ComparePage';
 import { ContributePage } from './pages/student/ContributePage';
@@ -37,6 +49,13 @@ import { AdminOverviewPage } from './pages/admin/AdminOverviewPage';
 import { AdminSystemPage } from './pages/admin/AdminSystemPage';
 import { AdminTrainingPage } from './pages/admin/AdminTrainingPage';
 
+/**
+ * The route tree.
+ *
+ * Guards wrap each role area. They are navigation, not security: a guard sends
+ * the browser to sign-in, the join page, or an explanation, and the backend
+ * refuses anything a page inside should not have been able to fetch.
+ */
 export function AppRoutes() {
   return (
     <Routes>
@@ -46,9 +65,30 @@ export function AppRoutes() {
       <Route element={<AppShell />}>
         <Route path="/" element={<RoleLanding />} />
 
+        {/* ------------------------------ Sessions ----------------------------- */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/join" element={<JoinPage />} />
+        <Route path="/join/:code" element={<JoinPage />} />
+        <Route path="/invite/:token" element={<AcceptInvitePage />} />
+        <Route path="/forbidden" element={<ForbiddenPage />} />
+
         {/* ------------------------------ Student ------------------------------ */}
-        <Route path="/student" element={<StudentCoursesPage />} />
-        <Route path="/student/course/:courseId" element={<CourseRoute />}>
+        <Route
+          path="/student"
+          element={
+            <RequireAnyPrincipal>
+              <StudentCoursesPage />
+            </RequireAnyPrincipal>
+          }
+        />
+        <Route
+          path="/student/course/:courseId"
+          element={
+            <RequireCourseParticipant>
+              <CourseRoute />
+            </RequireCourseParticipant>
+          }
+        >
           <Route index element={<StudentHomePage />} />
           <Route path="syllabus" element={<StudentSyllabusPage />} />
           <Route path="contribute" element={<ContributePage />} />
@@ -59,8 +99,22 @@ export function AppRoutes() {
 
         {/* ----------------------------- Professor ----------------------------- */}
         <Route path="/professor" element={<Navigate to="/professor/courses" replace />} />
-        <Route path="/professor/courses" element={<ProfessorCoursesPage />} />
-        <Route path="/professor/courses/new" element={<CreateCoursePage />} />
+        <Route
+          path="/professor/courses"
+          element={
+            <RequireStaff>
+              <ProfessorCoursesPage />
+            </RequireStaff>
+          }
+        />
+        <Route
+          path="/professor/courses/new"
+          element={
+            <RequireStaff>
+              <CreateCoursePage />
+            </RequireStaff>
+          }
+        />
         {/* The cross-course hubs are gone from navigation; their URLs still
             resolve so existing links do not break. */}
         <Route
@@ -71,7 +125,14 @@ export function AppRoutes() {
           path="/professor/models"
           element={<Navigate to="/professor/courses" replace />}
         />
-        <Route path="/professor/course/:courseId" element={<CourseRoute />}>
+        <Route
+          path="/professor/course/:courseId"
+          element={
+            <RequireCourseStaff>
+              <CourseRoute />
+            </RequireCourseStaff>
+          }
+        >
           <Route index element={<CourseOverviewPage />} />
           <Route path="syllabus" element={<ProfessorSyllabusPage />} />
           <Route path="examples" element={<ReviewExamplesPage />} />
@@ -82,12 +143,54 @@ export function AppRoutes() {
         </Route>
 
         {/* ------------------------------- Admin ------------------------------- */}
-        <Route path="/admin" element={<AdminOverviewPage />} />
-        <Route path="/admin/courses" element={<AdminCoursesPage />} />
-        <Route path="/admin/training" element={<AdminTrainingPage />} />
-        <Route path="/admin/models" element={<AdminModelsPage />} />
-        <Route path="/admin/system" element={<AdminSystemPage />} />
-        <Route path="/admin/courses/:courseId" element={<CourseRoute />}>
+        <Route
+          path="/admin"
+          element={
+            <RequireAdmin>
+              <AdminOverviewPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/admin/courses"
+          element={
+            <RequireAdmin>
+              <AdminCoursesPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/admin/training"
+          element={
+            <RequireAdmin>
+              <AdminTrainingPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/admin/models"
+          element={
+            <RequireAdmin>
+              <AdminModelsPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/admin/system"
+          element={
+            <RequireAdmin>
+              <AdminSystemPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/admin/courses/:courseId"
+          element={
+            <RequireAdmin>
+              <CourseRoute />
+            </RequireAdmin>
+          }
+        >
           <Route index element={<AdminCourseDetailPage />} />
           <Route path="examples" element={<AdminExamplesPage />} />
           <Route path="*" element={<Navigate to="." replace />} />
@@ -178,12 +281,12 @@ export function AppRoutes() {
 function App() {
   return (
     <BrowserRouter>
-      <RoleProvider>
+      <SessionProvider>
         <ComparisonRunProvider>
           <ScrollToTop />
           <AppRoutes />
         </ComparisonRunProvider>
-      </RoleProvider>
+      </SessionProvider>
     </BrowserRouter>
   );
 }

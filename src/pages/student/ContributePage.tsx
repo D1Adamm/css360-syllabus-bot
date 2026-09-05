@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from 'react';
-import { useSessionContributions } from '../../hooks/useSessionContributions';
 import { ContributeForm } from '../../components/contribute/ContributeForm';
 import { Button } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
@@ -7,7 +6,6 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SectionHeader } from '../../components/ui/SectionHeader';
-import { useCourseId } from '../../context/CourseContext';
 import { useSeedExamples } from '../../hooks/useSeedExamples';
 import { toUserMessage } from '../../lib/errorMessages';
 import type { SeedExample } from '../../types';
@@ -31,9 +29,7 @@ export function ContributePage() {
     clearSaveError,
   } = useSeedExamples();
 
-  const { sessionIds, rememberSessionId, forgetSessionId } = useSessionContributions(
-    useCourseId(),
-  );
+  const [addedThisVisit, setAddedThisVisit] = useState<SeedExample[]>([]);
   const [justAdded, setJustAdded] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<SeedExample | null>(null);
 
@@ -45,20 +41,19 @@ export function ContributePage() {
   );
 
   /*
-   * What this student added in this session.
+   * What this student added.
    *
-   * The full class list used to be shown here, which let anyone browse every
-   * classmate's submitted answers — a privacy problem dressed up as a feature,
-   * and not something a student needs. With no accounts there is no way to ask
-   * "which of these are mine", and inventing a participant id to find out would
-   * be worse. So we remember the ids created in this tab and show only those.
-   * It is honest about its scope, it survives a reload, and it adds no identity
-   * anywhere near the stored record.
+   * The backend marks the examples this anonymous participant contributed as
+   * `mine` and sends no other student's unreviewed contribution at all, so the
+   * list is theirs across reloads and days — not a per-tab memory. Examples
+   * added on this visit are shown at once rather than after the next fetch.
    */
-  const mine = useMemo(
-    () => contributions.filter((seed) => sessionIds.includes(seed.id)),
-    [contributions, sessionIds],
-  );
+  const mine = useMemo(() => {
+    const listed = contributions.filter((seed) => seed.mine);
+    const listedIds = new Set(listed.map((seed) => seed.id));
+    const fresh = addedThisVisit.filter((seed) => !listedIds.has(seed.id));
+    return [...fresh, ...listed];
+  }, [contributions, addedThisVisit]);
 
   // Older records may be missing a section; skip those rather than offering
   // an empty suggestion.
@@ -77,10 +72,10 @@ export function ContributePage() {
     async (example: SeedExample) => {
       clearSaveError();
       await addSeed(example);
-      rememberSessionId(example.id);
+      setAddedThisVisit((current) => [{ ...example, mine: true }, ...current]);
       setJustAdded(true);
     },
-    [addSeed, clearSaveError, rememberSessionId],
+    [addSeed, clearSaveError],
   );
 
   const confirmDelete = useCallback(async () => {
@@ -89,9 +84,9 @@ export function ContributePage() {
     }
     clearSaveError();
     await deleteSeed(pendingDelete.id);
-    forgetSessionId(pendingDelete.id);
+    setAddedThisVisit((current) => current.filter((seed) => seed.id !== pendingDelete.id));
     setPendingDelete(null);
-  }, [clearSaveError, deleteSeed, forgetSessionId, pendingDelete]);
+  }, [clearSaveError, deleteSeed, pendingDelete]);
 
   return (
     <div className="ui-stack ui-stack--section">
@@ -134,8 +129,8 @@ export function ContributePage() {
 
       <section className="ui-stack">
         <SectionHeader
-          title="Added in this session"
-          description="Questions you added just now. Everyone's contributions go to your instructor for review."
+          title="Your questions"
+          description="What you have added in this course. Everyone's contributions go to your instructor for review."
           divider
         />
 

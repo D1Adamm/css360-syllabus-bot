@@ -1,0 +1,298 @@
+/* ==========================================================================
+   Sessions and access: sign-in, join, invitation acceptance, the classroom
+   access panel, and the People and Audit administration pages.
+
+   Everything is built from the tokens in tokens.css and the primitives in
+   ui.css; nothing here introduces a colour or a size of its own.
+   ========================================================================== */
+
+/* A control rendered outside a FormField (selects in a row of actions) gets
+   the same look as one inside it. */
+.ui-input {
+  width: 100%;
+  font-family: inherit;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-300);
+  border-radius: var(--radius-md);
+  background-color: var(--surface);
+  font-size: var(--text-sm);
+  color: var(--ink-900);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.ui-input:hover {
+  border-color: var(--ink-400);
+}
+
+.ui-input--sm {
+  width: auto;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+/* --------------------------- Sign-in and join --------------------------- */
+
+.auth-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: var(--content-narrow);
+}
+
+.auth-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (min-width: 48rem) {
+  .auth-columns {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: start;
+  }
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--line-200);
+  border-radius: var(--radius-lg);
+  background-color: var(--surface);
+  box-shadow: var(--elev-1);
+}
+
+.auth-card--aside {
+  background-color: var(--canvas-sunken);
+  box-shadow: none;
+}
+
+.auth-card__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+}
+
+.auth-card__actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Six characters, written big enough to read from the back of the room. */
+.join-code-input {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* --------------------------- Classroom access --------------------------- */
+
+.access__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border: 1px solid var(--line-200);
+  border-radius: var(--radius-lg);
+  background-color: var(--surface);
+}
+
+/* The two things that go on the board. */
+.access__board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (min-width: 40rem) {
+  .access__board {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.access__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background-color: var(--canvas-sunken);
+}
+
+.access__label {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--ink-500);
+}
+
+.access__page {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  word-break: break-all;
+}
+
+.access__code {
+  font-family: var(--font-mono);
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.18em;
+  color: var(--purple-800);
+}
+
+.access__link {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-700);
+  word-break: break-all;
+}
+
+.access__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.access__qr {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.access__qr img {
+  border: 1px solid var(--line-200);
+  border-radius: var(--radius-md);
+  background: white;
+}
+
+.access__meta {
+  margin: 0;
+}
+
+.access__history summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--ink-700);
+}
+
+.access__history-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.access__history-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* ------------------------------- People --------------------------------- */
+
+.people__invite {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--content-narrow);
+}
+
+.people__courses {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.people__pills {
+  margin: 0;
+}
+
+.people__memberships {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.people__assign {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.people__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.people__link {
+  display: block;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background-color: var(--canvas-sunken);
+  font-size: var(--text-xs);
+  word-break: break-all;
+}
+
+/* Course chips: assigned courses on an account, and the courses an
+   invitation will assign. */
+.chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line-200);
+  border-radius: var(--radius-pill);
+  background-color: var(--canvas-sunken);
+  font-size: var(--text-xs);
+}
+
+.chip--choice {
+  cursor: pointer;
+}
+
+.chip__remove {
+  border: 0;
+  background: none;
+  padding: 0 var(--space-1);
+  cursor: pointer;
+  color: var(--ink-500);
+  font-size: var(--text-sm);
+  line-height: 1;
+}
+
+.chip__remove:hover:not(:disabled) {
+  color: var(--danger-700);
+}
+
+/* -------------------------------- Audit --------------------------------- */
+
+.audit__detail {
+  margin: var(--space-2) 0 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

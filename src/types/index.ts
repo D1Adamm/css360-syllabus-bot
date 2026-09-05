@@ -57,6 +57,18 @@ export interface SeedExample {
   originalAnswer?: string | null;
   /** True when the seed was human-edited; survives later approval. */
   wasEdited?: boolean;
+  /**
+   * Set by the backend on a participant's view: true for the examples this
+   * anonymous participant contributed. Absent on staff views.
+   */
+  mine?: boolean;
+}
+
+/** Class-wide counts for the student home page. Counts only, never records. */
+export interface CourseActivity {
+  courseId: string;
+  contributedQuestions: number;
+  evaluations: number;
 }
 
 export interface ComparisonResponse {
@@ -108,6 +120,12 @@ export interface EvaluationRecord {
   /** The question as asked. Present for free-text questions. */
   questionText?: string;
   courseId?: string;
+  /**
+   * The pseudonymous participant who submitted it. Present on staff views of
+   * ratings recorded after participants existed; absent on older rows and on
+   * a participant's own view. Never a name.
+   */
+  participantId?: string;
 }
 
 /** Syllabus processing status for a course. */
