@@ -14,8 +14,10 @@ from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
 from app.course_model_resolution import resolve_current_course_model
 from app.course_rag import generate_course_rag_answer
+from app.admin_routes import router as admin_router
 from app.auth_routes import router as auth_router
 from app.db_routes import router as db_router
+from app.student_invite_routes import router as student_invite_router
 from app.training_queue_routes import router as training_queue_router
 from app.finetuned_client import (
     check_finetuned_service_health,
@@ -160,6 +162,12 @@ app.include_router(training_queue_router)
 # anonymous students, invitation acceptance. The only routes that create a
 # principal; every other router consumes one. See app/auth_routes.py.
 app.include_router(auth_router)
+
+# Administration (people, roles, memberships, privileged invitations, audit)
+# and per-course classroom codes. Admin-only and course-staff-only
+# respectively; see app/admin_routes.py and app/student_invite_routes.py.
+app.include_router(admin_router)
+app.include_router(student_invite_router)
 
 
 # Inference and health endpoints are served under BOTH their original paths
