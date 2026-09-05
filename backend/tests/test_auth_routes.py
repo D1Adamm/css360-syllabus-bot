@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import db_users
@@ -32,6 +33,8 @@ from app.auth_routes import (
 )
 from app.main import app
 from test_db_repositories import FakeConnection
+
+pytestmark = pytest.mark.auth
 
 COURSE = "css-360-winter-2026-a7rp"
 OTHER_COURSE = "css-350-spring-2026-n3h9"

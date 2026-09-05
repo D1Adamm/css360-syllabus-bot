@@ -7,9 +7,18 @@ from app.config import load_backend_env
 
 load_backend_env()
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth.dependencies import (
+    authorize_course_access,
+    current_principal,
+    require_admin,
+    require_course_access,
+    require_course_staff,
+)
+from app.auth.principal import Principal
+from app.config import app_env, is_test_mode
 from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
 from app.course_model_resolution import resolve_current_course_model
@@ -128,7 +137,18 @@ from app.training_launch import (
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Syllabus Model Lab Backend")
+# The interactive API documentation describes every route, guarded or not, so
+# it is served only where a developer is looking at it: under pytest, and when
+# APP_ENV names a development environment. On the VM (APP_ENV unset or
+# `production`) the three documentation paths do not exist.
+DOCS_ENABLED = is_test_mode() or app_env() in {"development", "dev", "local"}
+
+app = FastAPI(
+    title="Syllabus Model Lab Backend",
+    docs_url="/docs" if DOCS_ENABLED else None,
+    redoc_url="/redoc" if DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if DOCS_ENABLED else None,
+)
 
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
@@ -195,6 +215,7 @@ def health() -> dict[str, str]:
 @app.post("/base-model/generate", response_model=BaseModelGenerateResponse)
 async def generate_base_model(
     request: BaseModelGenerateRequest,
+    principal: Principal = Depends(current_principal),
 ) -> BaseModelGenerateResponse:
     question = request.question.strip()
     if not question:
@@ -204,6 +225,9 @@ async def generate_base_model(
         safe_course_id = assert_valid_course_id(request.course_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # The course comes from the body here, so the path guards cannot apply;
+    # the same rule is enforced explicitly before any model is asked anything.
+    authorize_course_access(principal, safe_course_id)
 
     # courseId is validated for route isolation but unused by the base model itself.
     result = await generate_base_model_response(question)
@@ -217,7 +241,7 @@ async def generate_base_model(
 
 @app.get("/api/fine-tuned/health", response_model=FineTunedHealthResponse)
 @app.get("/fine-tuned/health", response_model=FineTunedHealthResponse)
-async def fine_tuned_health() -> FineTunedHealthResponse:
+async def fine_tuned_health(principal: Principal = Depends(require_admin)) -> FineTunedHealthResponse:
     # The probe keeps the exact hostname, port and tunnel URL — this route does
     # not hand them to a browser. See `finetuned_client.public_service_health`.
     result = public_service_health(await check_finetuned_service_health())
@@ -234,6 +258,7 @@ async def fine_tuned_health() -> FineTunedHealthResponse:
 @app.post("/fine-tuned/generate", response_model=FineTunedGenerateResponse)
 async def generate_fine_tuned(
     request: FineTunedGenerateRequest,
+    principal: Principal = Depends(current_principal),
 ) -> FineTunedGenerateResponse:
     question = request.question.strip()
     if not question:
@@ -243,6 +268,7 @@ async def generate_fine_tuned(
         safe_course_id = assert_valid_course_id(request.course_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    authorize_course_access(principal, safe_course_id)
 
     # The course's own model, resolved from PostgreSQL before the cluster is
     # asked anything. This is what makes a fine-tuned answer attributable: the
@@ -267,13 +293,19 @@ async def generate_fine_tuned(
 
 @app.post("/api/rag/generate", response_model=RagGenerateResponse)
 @app.post("/rag/generate", response_model=RagGenerateResponse)
-async def generate_rag_response(request: RagGenerateRequest) -> RagGenerateResponse:
+async def generate_rag_response(request: RagGenerateRequest, principal: Principal = Depends(current_principal)) -> RagGenerateResponse:
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=422, detail="Question must not be empty.")
 
+    try:
+        safe_course_id = assert_valid_course_id(request.course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    authorize_course_access(principal, safe_course_id)
+
     result = await generate_course_rag_answer(
-        course_id=request.course_id,
+        course_id=safe_course_id,
         question=question,
         top_k=request.top_k,
     )
@@ -294,13 +326,20 @@ async def generate_rag_response(request: RagGenerateRequest) -> RagGenerateRespo
 @app.post("/fine-tuned-rag/generate", response_model=FineTunedRagGenerateResponse)
 async def generate_fine_tuned_rag(
     request: FineTunedRagGenerateRequest,
+    principal: Principal = Depends(current_principal),
 ) -> FineTunedRagGenerateResponse:
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=422, detail="Question must not be empty.")
 
+    try:
+        safe_course_id = assert_valid_course_id(request.course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    authorize_course_access(principal, safe_course_id)
+
     result = await generate_course_finetuned_rag_answer(
-        course_id=request.course_id,
+        course_id=safe_course_id,
         question=question,
         top_k=request.top_k,
     )
@@ -329,6 +368,7 @@ async def upload_course_syllabus(
     course_id: str,
     background_tasks: BackgroundTasks,
     syllabus_file: UploadFile = File(...),
+    principal: Principal = Depends(require_course_staff),
 ) -> SyllabusUploadResponse:
     storage = get_course_artifact_storage()
 
@@ -392,7 +432,7 @@ async def upload_course_syllabus(
     "/api/courses/{course_id}/syllabus/text",
     response_model=SyllabusTextResponse,
 )
-def get_course_syllabus_text(course_id: str) -> SyllabusTextResponse:
+def get_course_syllabus_text(course_id: str, principal: Principal = Depends(require_course_access)) -> SyllabusTextResponse:
     try:
         safe_course_id = assert_valid_course_id(course_id)
     except ValueError as exc:
@@ -417,7 +457,7 @@ def get_course_syllabus_text(course_id: str) -> SyllabusTextResponse:
     "/api/courses/{course_id}/chunks",
     response_model=CourseChunksResponse,
 )
-def get_course_chunks(course_id: str) -> CourseChunksResponse:
+def get_course_chunks(course_id: str, principal: Principal = Depends(require_admin)) -> CourseChunksResponse:
     try:
         safe_course_id = assert_valid_course_id(course_id)
     except ValueError as exc:
@@ -461,6 +501,7 @@ def get_course_chunks(course_id: str) -> CourseChunksResponse:
 async def generate_course_seeds(
     course_id: str,
     request: SeedGenerateRequest,
+    principal: Principal = Depends(require_admin),
 ) -> SeedGenerateResponse:
     """Temporary endpoint for testing AI seed generation from one chunk.
 
@@ -490,7 +531,7 @@ async def generate_course_seeds(
     "/api/starter-generation/status",
     response_model=StarterGenerationStatusResponse,
 )
-async def starter_generation_status() -> StarterGenerationStatusResponse:
+async def starter_generation_status(principal: Principal = Depends(require_admin)) -> StarterGenerationStatusResponse:
     """Read-only process-local status of the in-flight starter seed job."""
     status = get_starter_job_status()
     return StarterGenerationStatusResponse(
@@ -508,6 +549,7 @@ async def starter_generation_status() -> StarterGenerationStatusResponse:
 async def generate_course_starter_seeds(
     course_id: str,
     request: StarterSeedGenerateRequest,
+    principal: Principal = Depends(require_admin),
 ) -> StarterSeedGenerateResponse:
     """Temporary endpoint for course-level starter seed generation.
 
@@ -561,6 +603,7 @@ async def generate_course_starter_seeds(
 async def top_up_course_starter_seeds(
     course_id: str,
     request: StarterSeedTopUpRequest | None = None,
+    principal: Principal = Depends(require_admin),
 ) -> StarterSeedGenerateResponse:
     """Fill the gap to targetCount without regenerating the course's seeds.
 
@@ -614,6 +657,7 @@ async def top_up_course_starter_seeds(
 def enqueue_course_training_run(
     course_id: str,
     request: EnqueueTrainingRunRequest,
+    principal: Principal = Depends(require_admin),
 ) -> EnqueueTrainingRunResponse:
     """Queue one training run in PostgreSQL.
 
@@ -672,7 +716,7 @@ def enqueue_course_training_run(
     response_model=RetryTrainingRunResponse,
     status_code=201,
 )
-def retry_course_training_run(course_id: str) -> RetryTrainingRunResponse:
+def retry_course_training_run(course_id: str, principal: Principal = Depends(require_admin)) -> RetryTrainingRunResponse:
     """Retire this course's stale run and queue a replacement for the same data.
 
     The recovery path for a run the application still believes is active when
@@ -740,6 +784,7 @@ def retry_course_training_run(course_id: str) -> RetryTrainingRunResponse:
 async def get_course_fact_inventory(
     course_id: str,
     body: FactInventoryRequest | None = None,
+    principal: Principal = Depends(require_admin),
 ) -> FactInventoryResponse:
     """Build or reuse an inspectable global fact inventory for a course syllabus.
 
@@ -796,6 +841,7 @@ async def get_course_fact_inventory(
 async def get_course_fact_allocation(
     course_id: str,
     body: FactAllocationRequest | None = None,
+    principal: Principal = Depends(require_admin),
 ) -> FactAllocationResponse:
     """Build/reuse fact inventory and allocate question slots (inspection).
 
@@ -888,7 +934,7 @@ def _course_seed_records(course_id: str) -> list[dict]:
     "/api/courses/{course_id}/seeds",
     response_model=CourseSeedListResponse,
 )
-async def list_course_seeds(course_id: str) -> CourseSeedListResponse:
+async def list_course_seeds(course_id: str, principal: Principal = Depends(require_course_access)) -> CourseSeedListResponse:
     """List one course's stored seeds for review."""
     try:
         safe_course_id = assert_valid_course_id(course_id)
@@ -911,6 +957,7 @@ async def review_course_seed(
     course_id: str,
     seed_id: str,
     body: SeedReviewRequest,
+    principal: Principal = Depends(require_course_staff),
 ) -> SeedReviewResponse:
     """Approve, reject, or edit one seed. Edits preserve grounding provenance."""
     try:
@@ -964,6 +1011,7 @@ async def review_course_seed(
 async def quality_check_course_seeds(
     course_id: str,
     body: SeedQualityCheckRequest | None = None,
+    principal: Principal = Depends(require_admin),
 ) -> SeedQualityCheckResponse:
     """Inspect a course's stored seeds for coverage and quality flags."""
     try:
@@ -994,6 +1042,7 @@ async def quality_check_course_seeds(
 async def export_approved_course_seeds(
     course_id: str,
     body: SeedExportApprovedRequest | None = None,
+    principal: Principal = Depends(require_admin),
 ) -> SeedExportApprovedResponse:
     """Export approved-only JSONL + metadata under data/exports/{courseId}/."""
     del body  # reserved; approved-only is always enforced
@@ -1018,7 +1067,7 @@ async def export_approved_course_seeds(
     "/api/courses/{course_id}/seeds/approved-export-status",
     response_model=ApprovedExportStatusResponse,
 )
-async def get_approved_export_status(course_id: str) -> ApprovedExportStatusResponse:
+async def get_approved_export_status(course_id: str, principal: Principal = Depends(require_admin)) -> ApprovedExportStatusResponse:
     """Report whether approved-finetune.jsonl exists for this course."""
     try:
         safe_course_id = assert_valid_course_id(course_id)
@@ -1036,7 +1085,7 @@ async def get_approved_export_status(course_id: str) -> ApprovedExportStatusResp
 
 
 @app.get("/api/training/launch-capability", response_model=TrainingLaunchCapabilityResponse)
-def training_launch_capability() -> TrainingLaunchCapabilityResponse:
+def training_launch_capability(principal: Principal = Depends(require_admin)) -> TrainingLaunchCapabilityResponse:
     """Report whether this backend can submit a training job.
 
     Lets the admin UI show an honest disabled state instead of offering a
@@ -1055,6 +1104,7 @@ def training_launch_capability() -> TrainingLaunchCapabilityResponse:
 def launch_course_training(
     course_id: str,
     body: TrainingLaunchRequest | None = None,
+    principal: Principal = Depends(require_admin),
 ) -> TrainingLaunchResponse:
     """Sync one course's prepared dataset and submit its QLoRA job.
 
@@ -1096,6 +1146,7 @@ def launch_course_training(
 async def prepare_course_training_split(
     course_id: str,
     body: PrepareTrainingSplitRequest | None = None,
+    principal: Principal = Depends(require_admin),
 ) -> PrepareTrainingSplitResponse:
     """Create deterministic train/validation split from approved-finetune.jsonl."""
     try:

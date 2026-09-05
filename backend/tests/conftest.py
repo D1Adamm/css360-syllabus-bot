@@ -39,6 +39,14 @@ Three layers, deliberately
    the queue router refuses with 503 unless a test sets one. A test that means
    to exercise an authenticated queue call says so.
 
+A fourth layer is the opposite of a barrier. Every browser route now requires a
+principal, and the route tests written before authentication existed exercise
+handlers rather than guards. `default_admin_principal` signs the test client in
+as an administrator so those tests keep meaning what they meant. A test that
+exercises authentication itself — the guards, the auth routes, the
+authorization matrix — opts out with `@pytest.mark.auth` (or a module-level
+`pytestmark`) and drives the real dependency.
+
 Firebase used to need a layer of its own here. It no longer does: there is no
 Firebase code left in the runtime tree to configure, and no test mocks it. The
 one module that still parses a Firebase export — `app/firebase_snapshot.py` —
@@ -48,10 +56,12 @@ reads a JSON file and opens no connection at all.
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Iterator
 
 import httpx
 import pytest
+
+from app.auth.principal import Principal, StaffUser
 
 # Set before anything imports app.config, which decides at import time whether
 # it may read backend/.env. conftest is imported ahead of every test module, so
@@ -77,6 +87,18 @@ ALLOWED_HOSTS = frozenset(
 
 DATABASE_ENV_VARS = ("DATABASE_URL", "TEST_DATABASE_URL")
 TRAINING_WORKER_ENV_VARS = ("TRAINING_WORKER_TOKEN",)
+
+#: The identity ordinary route tests run as. An administrator, because the
+#: handlers those tests exercise were written when every caller was one.
+TEST_ADMIN_PRINCIPAL = Principal(
+    user=StaffUser(
+        user_id="00000000-0000-4000-8000-00000000adm1",
+        email="test-admin@example.invalid",
+        display_name="Test Admin",
+        role="admin",
+        session_id="test-admin-session",
+    )
+)
 
 
 class ExternalRequestBlocked(AssertionError):
@@ -145,3 +167,29 @@ def training_worker_unconfigured_by_default(monkeypatch: pytest.MonkeyPatch) -> 
     """
     for name in TRAINING_WORKER_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def default_admin_principal(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Run ordinary route tests as an administrator.
+
+    Installed through `app.dependency_overrides`, so no cookie, session row or
+    database is involved and CSRF is not enforced — exactly the pre-auth
+    conditions the older tests assume. Tests marked `auth` get the real
+    `current_principal` and prove the guards themselves.
+    """
+    if request.node.get_closest_marker("auth"):
+        yield
+        return
+    from app.auth.dependencies import current_principal
+    from app.main import app
+
+    previous = app.dependency_overrides.get(current_principal)
+    app.dependency_overrides[current_principal] = lambda: TEST_ADMIN_PRINCIPAL
+    try:
+        yield
+    finally:
+        if previous is None:
+            app.dependency_overrides.pop(current_principal, None)
+        else:
+            app.dependency_overrides[current_principal] = previous

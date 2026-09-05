@@ -16,6 +16,7 @@ from typing import Any, Iterator
 from unittest.mock import patch
 
 from fastapi import Depends, FastAPI
+import pytest
 from fastapi.testclient import TestClient
 
 from app.auth import dependencies as deps
@@ -26,6 +27,8 @@ from app.auth.settings import (
     STAFF_COOKIE_NAME,
 )
 from app.auth.tokens import generate_token, hash_token
+
+pytestmark = pytest.mark.auth
 
 COURSE_A = "css-360-winter-2026-a7rp"
 COURSE_B = "css-350-spring-2026-n3h9"

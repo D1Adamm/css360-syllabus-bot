@@ -9,17 +9,35 @@ would be a deployment change dressed up as a cleanup.
 Route bodies stay thin: validate, open one connection, call repositories, map
 "not found" to 404. Each request runs inside one transaction, so a route that
 touches two tables either lands both or neither.
+
+Every route names its guard in its signature (`app.auth.dependencies`). The
+course in the path is what the guard authorizes; nothing in a body can name
+a different one. Participants reach the read side of their own course and
+the writes the student flow needs; course staff reach the course they hold a
+membership in; the training queue, bulk deletion of research data and
+operator corrections are administrator-only.
 """
 
 from __future__ import annotations
 
 from typing import Any, Callable
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from app import db_courses, db_evaluations, db_model_requests, db_models
+from app import db_admin_actions, db_courses, db_evaluations, db_memberships
+from app import db_model_requests, db_models
 from app import db_seeds, db_serving_sessions, db_training_runs
 from app import provenance_privacy
+from app.auth.dependencies import (
+    JOIN_DETAIL,
+    current_principal,
+    require_admin,
+    require_course_access,
+    require_course_staff,
+    require_participant,
+    require_user,
+)
+from app.auth.principal import Principal
 from app.course_id import assert_valid_course_id
 from app.db import db_connection, translate_db_errors
 from app.db_schemas import (
@@ -89,8 +107,22 @@ def _run(action: str, work: Callable[[Any], Any]) -> Any:
 
 
 @router.get("/courses", response_model=CourseListResponse)
-def list_courses() -> CourseListResponse:
-    courses = _run("listing courses", db_courses.list_courses)
+def list_courses(principal: Principal = Depends(current_principal)) -> CourseListResponse:
+    """The courses this principal may open: all for an administrator, the
+    memberships for a professor, the one joined course for a participant."""
+    if principal.is_anonymous:
+        raise HTTPException(status_code=401, detail=JOIN_DETAIL)
+    scope = principal.staff_course_ids()
+    visible: set[str] | None
+    if scope is None:
+        visible = None
+    else:
+        visible = set(scope)
+        if principal.participant is not None:
+            visible.add(principal.participant.course_id)
+    courses = _run(
+        "listing courses", lambda connection: db_courses.list_courses(connection, visible)
+    )
     return CourseListResponse(
         count=len(courses),
         courses=[CourseRecord(**course) for course in courses],
@@ -98,7 +130,7 @@ def list_courses() -> CourseListResponse:
 
 
 @router.get("/courses/{course_id}", response_model=CourseRecord)
-def get_course(course_id: str) -> CourseRecord:
+def get_course(course_id: str, principal: Principal = Depends(require_course_access)) -> CourseRecord:
     safe_course_id = _safe_course_id(course_id)
     course = _run(
         "reading course metadata",
@@ -112,13 +144,36 @@ def get_course(course_id: str) -> CourseRecord:
 
 
 @router.post("/courses", response_model=CourseRecord, status_code=201)
-def create_course(request: CourseCreateRequest) -> CourseRecord:
+def create_course(request: CourseCreateRequest, principal: Principal = Depends(require_user)) -> CourseRecord:
     safe_course_id = _safe_course_id(request.course_id)
     metadata = request.model_dump(by_alias=True)
     metadata.pop("courseId", None)
+    creator = principal.user
+    assert creator is not None
 
     def work(connection: Any) -> dict[str, Any]:
-        return db_courses.create_course(connection, safe_course_id, metadata)
+        created = db_courses.create_course(
+            connection, safe_course_id, metadata, created_by=creator.user_id
+        )
+        # A professor who creates a course is its instructor from the first
+        # moment; administrators need no membership to reach it.
+        if not creator.is_admin:
+            db_memberships.add_membership(
+                connection,
+                course_id=safe_course_id,
+                user_id=creator.user_id,
+                granted_by=creator.user_id,
+            )
+        db_admin_actions.record_action(
+            connection,
+            actor_user_id=creator.user_id,
+            actor_role=creator.role,
+            action="course.create",
+            target_kind="course",
+            target_id=safe_course_id,
+            course_id=safe_course_id,
+        )
+        return created
 
     try:
         created = _run("creating a course", work)
@@ -128,7 +183,7 @@ def create_course(request: CourseCreateRequest) -> CourseRecord:
 
 
 @router.patch("/courses/{course_id}", response_model=CourseRecord)
-def update_course(course_id: str, request: CourseUpdateRequest) -> CourseRecord:
+def update_course(course_id: str, request: CourseUpdateRequest, principal: Principal = Depends(require_course_staff)) -> CourseRecord:
     safe_course_id = _safe_course_id(course_id)
     patch = _patch_fields(request)
 
@@ -147,7 +202,7 @@ def update_course(course_id: str, request: CourseUpdateRequest) -> CourseRecord:
     "/courses/{course_id}/starter-seed-generation",
     response_model=StarterSeedGenerationResponse,
 )
-def get_starter_seed_generation(course_id: str) -> StarterSeedGenerationResponse:
+def get_starter_seed_generation(course_id: str, principal: Principal = Depends(require_course_staff)) -> StarterSeedGenerationResponse:
     safe_course_id = _safe_course_id(course_id)
     record = _run(
         "reading starter seed generation state",
@@ -168,6 +223,7 @@ def get_starter_seed_generation(course_id: str) -> StarterSeedGenerationResponse
 def update_starter_seed_generation(
     course_id: str,
     request: StarterSeedGenerationUpdateRequest,
+    principal: Principal = Depends(require_admin),
 ) -> StarterSeedGenerationResponse:
     """Merge starter-generation state.
 
@@ -202,7 +258,7 @@ def update_starter_seed_generation(
 
 
 @router.get("/courses/{course_id}/seeds", response_model=SeedListResponse)
-def list_course_seeds(course_id: str) -> SeedListResponse:
+def list_course_seeds(course_id: str, principal: Principal = Depends(require_course_access)) -> SeedListResponse:
     safe_course_id = _safe_course_id(course_id)
 
     def work(connection: Any) -> tuple[list[dict[str, Any]], dict[str, int]]:
@@ -221,7 +277,7 @@ def list_course_seeds(course_id: str) -> SeedListResponse:
 
 
 @router.get("/courses/{course_id}/seeds/{seed_id}", response_model=SeedResponse)
-def get_course_seed(course_id: str, seed_id: str) -> SeedResponse:
+def get_course_seed(course_id: str, seed_id: str, principal: Principal = Depends(require_course_staff)) -> SeedResponse:
     safe_course_id = _safe_course_id(course_id)
     seed = _run(
         "reading a seed",
@@ -235,7 +291,7 @@ def get_course_seed(course_id: str, seed_id: str) -> SeedResponse:
 @router.post(
     "/courses/{course_id}/seeds", response_model=SeedResponse, status_code=201
 )
-def create_course_seed(course_id: str, request: SeedCreateRequest) -> SeedResponse:
+def create_course_seed(course_id: str, request: SeedCreateRequest, principal: Principal = Depends(require_course_access)) -> SeedResponse:
     safe_course_id = _safe_course_id(course_id)
     payload = _patch_fields(request)
 
@@ -260,6 +316,7 @@ def update_course_seed(
     course_id: str,
     seed_id: str,
     request: SeedUpdateRequest,
+    principal: Principal = Depends(require_course_staff),
 ) -> SeedResponse:
     safe_course_id = _safe_course_id(course_id)
     patch = _patch_fields(request)
@@ -282,6 +339,7 @@ def review_course_seed(
     course_id: str,
     seed_id: str,
     request: SeedReviewRequest,
+    principal: Principal = Depends(require_course_staff),
 ) -> SeedResponse:
     """Approve, reject, or edit one seed.
 
@@ -318,7 +376,7 @@ def review_course_seed(
 
 
 @router.delete("/courses/{course_id}/seeds/{seed_id}", response_model=DeleteResponse)
-def delete_course_seed(course_id: str, seed_id: str) -> DeleteResponse:
+def delete_course_seed(course_id: str, seed_id: str, principal: Principal = Depends(require_course_access)) -> DeleteResponse:
     safe_course_id = _safe_course_id(course_id)
     deleted = _run(
         "deleting a seed",
@@ -335,7 +393,7 @@ def delete_course_seed(course_id: str, seed_id: str) -> DeleteResponse:
 
 
 @router.get("/courses/{course_id}/evaluations", response_model=EvaluationListResponse)
-def list_course_evaluations(course_id: str) -> EvaluationListResponse:
+def list_course_evaluations(course_id: str, principal: Principal = Depends(require_course_access)) -> EvaluationListResponse:
     safe_course_id = _safe_course_id(course_id)
     evaluations = _run(
         "listing evaluations",
@@ -356,6 +414,7 @@ def list_course_evaluations(course_id: str) -> EvaluationListResponse:
 def create_course_evaluation(
     course_id: str,
     request: EvaluationCreateRequest,
+    principal: Principal = Depends(require_participant),
 ) -> EvaluationRecordModel:
     safe_course_id = _safe_course_id(course_id)
     payload = request.model_dump(by_alias=True, exclude_unset=True)
@@ -377,14 +436,26 @@ def create_course_evaluation(
 @router.delete(
     "/courses/{course_id}/evaluations/{evaluation_id}", response_model=DeleteResponse
 )
-def delete_course_evaluation(course_id: str, evaluation_id: str) -> DeleteResponse:
+def delete_course_evaluation(course_id: str, evaluation_id: str, principal: Principal = Depends(require_admin)) -> DeleteResponse:
     safe_course_id = _safe_course_id(course_id)
-    deleted = _run(
-        "deleting an evaluation",
-        lambda connection: db_evaluations.delete_evaluation(
-            connection, safe_course_id, evaluation_id
-        ),
-    )
+    actor = principal.user
+    assert actor is not None
+
+    def work(connection: Any) -> bool:
+        deleted = db_evaluations.delete_evaluation(connection, safe_course_id, evaluation_id)
+        if deleted:
+            db_admin_actions.record_action(
+                connection,
+                actor_user_id=actor.user_id,
+                actor_role=actor.role,
+                action="evaluation.delete",
+                target_kind="evaluation",
+                target_id=evaluation_id,
+                course_id=safe_course_id,
+            )
+        return deleted
+
+    deleted = _run("deleting an evaluation", work)
     if not deleted:
         raise HTTPException(
             status_code=404, detail=f'Evaluation "{evaluation_id}" was not found.'
@@ -393,15 +464,28 @@ def delete_course_evaluation(course_id: str, evaluation_id: str) -> DeleteRespon
 
 
 @router.delete("/courses/{course_id}/evaluations", response_model=DeleteResponse)
-def delete_all_course_evaluations(course_id: str) -> DeleteResponse:
-    """Clear one course's evaluations, matching the existing bulk-clear UI."""
+def delete_all_course_evaluations(course_id: str, principal: Principal = Depends(require_admin)) -> DeleteResponse:
+    """Clear one course's evaluations. Administrator-only, and audited: this is
+    research data."""
     safe_course_id = _safe_course_id(course_id)
-    deleted = _run(
-        "clearing evaluations",
-        lambda connection: db_evaluations.delete_all_evaluations(
-            connection, safe_course_id
-        ),
-    )
+    actor = principal.user
+    assert actor is not None
+
+    def work(connection: Any) -> int:
+        deleted = db_evaluations.delete_all_evaluations(connection, safe_course_id)
+        db_admin_actions.record_action(
+            connection,
+            actor_user_id=actor.user_id,
+            actor_role=actor.role,
+            action="evaluations.clear",
+            target_kind="course",
+            target_id=safe_course_id,
+            course_id=safe_course_id,
+            detail={"deleted": deleted},
+        )
+        return deleted
+
+    deleted = _run("clearing evaluations", work)
     return DeleteResponse(courseId=safe_course_id, deleted=deleted)
 
 
@@ -411,7 +495,7 @@ def delete_all_course_evaluations(course_id: str) -> DeleteResponse:
 
 
 @router.get("/courses/{course_id}/model", response_model=ModelRegistryResponse)
-def get_course_model(course_id: str) -> ModelRegistryResponse:
+def get_course_model(course_id: str, principal: Principal = Depends(require_course_staff)) -> ModelRegistryResponse:
     safe_course_id = _safe_course_id(course_id)
     registry = _run(
         "reading the model registry",
@@ -433,7 +517,7 @@ def get_course_model(course_id: str) -> ModelRegistryResponse:
 
 
 @router.get("/courses/{course_id}/model-request", response_model=ModelRequestRecord)
-def get_course_model_request(course_id: str) -> ModelRequestRecord:
+def get_course_model_request(course_id: str, principal: Principal = Depends(require_course_staff)) -> ModelRequestRecord:
     safe_course_id = _safe_course_id(course_id)
     request_record = _run(
         "reading the model request",
@@ -459,6 +543,7 @@ def get_course_model_request(course_id: str) -> ModelRequestRecord:
 def create_course_model_request(
     course_id: str,
     request: ModelRequestCreateRequest,
+    principal: Principal = Depends(require_course_staff),
 ) -> ModelRequestRecord:
     safe_course_id = _safe_course_id(course_id)
 
@@ -482,6 +567,7 @@ def create_course_model_request(
 def update_course_model_request(
     course_id: str,
     request: ModelRequestUpdateRequest,
+    principal: Principal = Depends(require_admin),
 ) -> ModelRequestRecord:
     safe_course_id = _safe_course_id(course_id)
     patch = _patch_fields(request)
@@ -508,7 +594,7 @@ def update_course_model_request(
 @router.get(
     "/courses/{course_id}/training-runs", response_model=TrainingRunListResponse
 )
-def list_course_training_runs(course_id: str) -> TrainingRunListResponse:
+def list_course_training_runs(course_id: str, principal: Principal = Depends(require_admin)) -> TrainingRunListResponse:
     safe_course_id = _safe_course_id(course_id)
     runs = _run(
         "listing training runs",
@@ -526,7 +612,7 @@ def list_course_training_runs(course_id: str) -> TrainingRunListResponse:
 @router.get(
     "/courses/{course_id}/training-runs/{run_id}", response_model=TrainingRunRecord
 )
-def get_course_training_run(course_id: str, run_id: str) -> TrainingRunRecord:
+def get_course_training_run(course_id: str, run_id: str, principal: Principal = Depends(require_admin)) -> TrainingRunRecord:
     safe_course_id = _safe_course_id(course_id)
     run = _run(
         "reading a training run",
@@ -549,6 +635,7 @@ def get_course_training_run(course_id: str, run_id: str) -> TrainingRunRecord:
 def enqueue_course_training_run(
     course_id: str,
     request: TrainingRunCreateRequest,
+    principal: Principal = Depends(require_admin),
 ) -> TrainingRunRecord:
     """Queue one run, refusing while this course already has an active one."""
     safe_course_id = _safe_course_id(course_id)
@@ -584,6 +671,7 @@ def update_course_training_run(
     course_id: str,
     run_id: str,
     request: TrainingRunUpdateRequest,
+    principal: Principal = Depends(require_admin),
 ) -> TrainingRunRecord:
     safe_course_id = _safe_course_id(course_id)
     patch = _patch_fields(request)
@@ -608,7 +696,7 @@ def update_course_training_run(
 
 
 @router.get("/serving-session")
-def get_current_serving_session() -> dict[str, Any]:
+def get_current_serving_session(principal: Principal = Depends(require_admin)) -> dict[str, Any]:
     """Whether a fine-tuned serving job is up, and until when.
 
     The browser-facing half of the serving session. `node` and `port` are not
