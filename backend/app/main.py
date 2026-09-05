@@ -14,6 +14,7 @@ from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
 from app.course_model_resolution import resolve_current_course_model
 from app.course_rag import generate_course_rag_answer
+from app.auth_routes import router as auth_router
 from app.db_routes import router as db_router
 from app.training_queue_routes import router as training_queue_router
 from app.finetuned_client import (
@@ -154,6 +155,11 @@ app.include_router(db_router)
 # has a different caller and a different credential: a shared worker token
 # rather than the browser's ordinary access. See training_queue_routes.
 app.include_router(training_queue_router)
+
+# Sessions: sign-in for professors and administrators, classroom-code join for
+# anonymous students, invitation acceptance. The only routes that create a
+# principal; every other router consumes one. See app/auth_routes.py.
+app.include_router(auth_router)
 
 
 # Inference and health endpoints are served under BOTH their original paths
