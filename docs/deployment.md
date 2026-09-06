@@ -161,13 +161,34 @@ and every step before the bootstrap link is safe to do ahead of time.
 
 ### Nginx notes for sessions
 
+The Nginx configuration is not in this repository; these are the properties it
+must have, checked with `sudo nginx -T`.
+
 - `try_files $uri /index.html` (or equivalent) must already be in place for
   the SPA; `/join`, `/join/<code>`, `/invite/<token>` and `/login` are
   frontend routes served by `index.html`.
-- Forward the client address so join-code guessing is throttled per client
-  rather than per site: `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`
-  inside `location /api/`. Without it the throttle still works, but every
-  browser shares one budget.
+- **Forward the client address, or the whole class shares one throttle.**
+  Join-code and login failures are limited per client. Uvicorn (0.49, its
+  defaults `--proxy-headers` on and `--forwarded-allow-ips 127.0.0.1`) trusts
+  `X-Forwarded-For` only from the loopback peer, i.e. from this Nginx, and takes
+  the entry Nginx appended — a value a browser adds itself is ignored. Nginx
+  does not send the header unless told to. The `location /api/` block needs:
+
+  ```nginx
+  location /api/ {
+      proxy_pass http://127.0.0.1:8001;
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+  }
+  ```
+
+  Without the `X-Forwarded-For` line every browser reaches the backend as
+  `127.0.0.1`, and ten mistyped codes anywhere in the room lock the join page
+  for everyone for ten minutes. If a load balancer ever sits in front of the
+  VM, add `set_real_ip_from <its address>; real_ip_header X-Forwarded-For;` so
+  `$remote_addr` is the student's address rather than the balancer's.
 - Nothing rewrites cookies. The backend sets `Secure; HttpOnly; SameSite=Lax;
   Path=/api` itself, from configuration rather than from proxy headers.
 

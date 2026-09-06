@@ -190,7 +190,11 @@ class EvaluationAttributionTests(AttributionRouteTestCase):
         response = self.client.get(f"/api/db/courses/{COURSE}/evaluations")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.list_evaluations.call_args.kwargs["participant_id"], ME)
-        self.assertNotIn("participantId", response.json()["evaluations"][0])
+        body = response.json()
+        self.assertNotIn("participantId", body["evaluations"][0])
+        # The only free text a participant ever receives is their own.
+        self.assertEqual(body["evaluations"][0]["comment"], "a private remark")
+        self.assertNotIn("participantId", str(body))
 
     def test_staff_list_the_whole_course_with_attribution(self) -> None:
         self.act_as(professor())
@@ -229,6 +233,9 @@ class SeedVisibilityTests(AttributionRouteTestCase):
                 for record in body["seeds"]:
                     for field in ("reviewNotes", "validation", "evidenceQuote", "factId"):
                         self.assertIsNone(record.get(field), field)
+                    # Never another participant's id, and not even the student's own.
+                    self.assertIsNone(record.get("participantId"))
+                    self.assertNotIn(THEM, str(record))
                 by_id = {record["id"]: record for record in body["seeds"]}
                 self.assertTrue(by_id["mine"]["mine"])
                 self.assertFalse(by_id["approved-ai"]["mine"])

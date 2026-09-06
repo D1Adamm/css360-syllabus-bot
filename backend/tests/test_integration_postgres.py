@@ -16,9 +16,10 @@ file is where the properties only a database can prove are proven:
 Every test runs inside a transaction that is rolled back, so the database is
 as empty afterwards as before, and tests can run in any order.
 
-Run it with the container the runbook describes:
+Run it against any throwaway PostgreSQL that has `db/schema.sql` applied and
+holds nothing you care about (the tests commit in one place):
 
-    TEST_DATABASE_URL=postgresql://tester:tester@127.0.0.1:55432/syllabus_bot_test \\
+    TEST_DATABASE_URL=postgresql://user:password@localhost:5432/syllabus_bot_test \\
         .venv/bin/python -m pytest tests/test_integration_postgres.py -q
 """
 
@@ -283,6 +284,28 @@ class PostgresIntegrationTests(unittest.TestCase):
         assert revoked is not None
         self.assertEqual(revoked["status"], "revoked")
         self.assertIsNone(db_invitations.consume(self.conn, code["invitationId"], now=self.now))
+
+    def test_a_participant_never_receives_another_students_comment_or_id(self) -> None:
+        """The privacy property, on real rows: the participant filter is SQL."""
+        mine = db_participants.create_participant(
+            self.conn, course_id=COURSE_A, invitation_id=None, now=self.now
+        )["participantId"]
+        theirs = db_participants.create_participant(
+            self.conn, course_id=COURSE_A, invitation_id=None, now=self.now
+        )["participantId"]
+        for pid, comment in ((mine, "my remark"), (theirs, "their private remark")):
+            db_evaluations.create_evaluation(
+                self.conn, COURSE_A,
+                {"comparisonId": "c", "mostAccurate": "rag", "preferredModel": "rag", "comment": comment},
+                participant_id=pid,
+            )
+        own = db_evaluations.list_evaluations(self.conn, COURSE_A, participant_id=mine)
+        self.assertEqual([row["comment"] for row in own], ["my remark"])
+        self.assertEqual({row["participantId"] for row in own}, {mine})
+        self.assertNotIn(theirs, str(own))
+        everything = db_evaluations.list_evaluations(self.conn, COURSE_A)
+        self.assertEqual(len(everything), 2)
+        self.assertEqual(db_evaluations.count_evaluations(self.conn, COURSE_A), 2)
 
     def test_a_participants_view_and_a_professors_view_of_the_same_course(self) -> None:
         prof = self._user()
