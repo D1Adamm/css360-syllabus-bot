@@ -1,4 +1,5 @@
 import type {
+  CourseActivity,
   CourseMetadata,
   CourseModelRegistry,
   CourseModelRequest,
@@ -7,15 +8,15 @@ import type {
   StoredStarterSeedGeneration,
   TrainingRun,
 } from '../types';
-import { ApiError, getApiBaseUrl } from './api';
+import { requestJson } from './httpClient';
 
 /**
  * Typed client for the PostgreSQL-backed `/api/db` backend routes.
  *
- * One place, not a fetch per component. It reuses `getApiBaseUrl` and the
- * `ApiError` shape from `api.ts` so failures surface exactly as they already do
- * everywhere else — the existing error banners keep working without knowing the
- * store changed underneath them.
+ * One place, not a fetch per component. Every request goes through
+ * `httpClient.ts`, so failures surface exactly as they do everywhere else —
+ * the existing error banners keep working without knowing the store changed
+ * underneath them.
  *
  * Kept separate from `api.ts` on purpose. That module is the operational
  * surface: generation, RAG, inference, export, training. This one is
@@ -27,51 +28,8 @@ import { ApiError, getApiBaseUrl } from './api';
  * hyphen and can contain characters that must not be read as path syntax.
  */
 
-const UNREACHABLE = 'The service could not be reached.';
-
-async function request<T>(
-  path: string,
-  init: RequestInit,
-  fallbackErrorMessage: string,
-): Promise<T> {
-  const baseUrl = getApiBaseUrl();
-
-  if (!baseUrl) {
-    throw new ApiError('The service is not configured.');
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(`${baseUrl}${path}`, init);
-  } catch {
-    throw new ApiError(UNREACHABLE);
-  }
-
-  if (!response.ok) {
-    let detail = fallbackErrorMessage;
-
-    try {
-      const errorBody = (await response.json()) as { detail?: string };
-      if (typeof errorBody.detail === 'string' && errorBody.detail.trim() !== '') {
-        detail = errorBody.detail;
-      }
-    } catch {
-      // Keep the default message when the error body is not JSON.
-    }
-
-    throw new ApiError(detail, response.status);
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return (await response.json()) as T;
-}
-
 function get<T>(path: string, fallbackErrorMessage: string): Promise<T> {
-  return request<T>(path, { method: 'GET' }, fallbackErrorMessage);
+  return requestJson<T>(path, { method: 'GET', fallbackErrorMessage });
 }
 
 function send<T>(
@@ -80,19 +38,11 @@ function send<T>(
   body: unknown,
   fallbackErrorMessage: string,
 ): Promise<T> {
-  return request<T>(
-    path,
-    {
-      method,
-      ...(body === undefined
-        ? {}
-        : {
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          }),
-    },
+  return requestJson<T>(path, {
+    method,
+    ...(body === undefined ? {} : { json: body }),
     fallbackErrorMessage,
-  );
+  });
 }
 
 /**
@@ -205,6 +155,8 @@ export interface DbSeedListResponse {
   count: number;
   seeds: DbSeedRecord[];
   reviewStatusCounts: Record<string, number>;
+  /** Course-wide totals per origin, whatever subset of seeds the caller may see. */
+  originCounts?: Record<string, number>;
 }
 
 export interface DbSeedResponse {
@@ -308,6 +260,19 @@ export function deleteAllEvaluations(
     `${coursePath(courseId)}/evaluations`,
     undefined,
     'The backend could not clear evaluations for this course.',
+  );
+}
+
+/**
+ * Class-wide counts for the student home page.
+ *
+ * Counts only. A participant is never sent another student's rating, so the
+ * number of evaluations comes from here rather than from listing them.
+ */
+export function getCourseActivity(courseId: string): Promise<CourseActivity> {
+  return get<CourseActivity>(
+    `${coursePath(courseId)}/activity`,
+    'The backend could not load course activity.',
   );
 }
 

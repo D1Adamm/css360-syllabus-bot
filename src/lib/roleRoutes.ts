@@ -34,6 +34,21 @@ function withSearch(path: string, search: string): string {
   return `${path}${search.startsWith('?') ? search : `?${search}`}`;
 }
 
+/** Sign-in for professors and administrators. */
+export function loginPath(): string {
+  return '/login';
+}
+
+/** The student join page, optionally with the class code filled in. */
+export function joinPath(code?: string): string {
+  return code ? `/join/${encodeURIComponent(code)}` : '/join';
+}
+
+/** Accepting a professor, administrator or reset invitation. */
+export function invitePath(token: string): string {
+  return `/invite/${encodeURIComponent(token)}`;
+}
+
 /** Where each role lands when it has no more specific destination. */
 export function roleHomePath(role: Role): string {
   switch (role) {

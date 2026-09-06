@@ -50,7 +50,6 @@ function fillAndSubmit(question = QUESTION, answer = ANSWER) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  window.sessionStorage.clear();
   seeds = [];
   addSeedMock.mockResolvedValue(undefined);
 });
@@ -135,6 +134,8 @@ describe('ContributePage', () => {
   });
 
   it('does not list other students\u2019 contributions', () => {
+    // A classmate's approved question can reach the page (it is course
+    // content); it is never listed as this student's.
     seeds = [
       {
         id: 'someone-else',
@@ -145,6 +146,7 @@ describe('ContributePage', () => {
         difficulty: 'Medium',
         directlyAnswered: true,
         origin: 'user',
+        reviewStatus: 'approved',
       },
     ];
 
@@ -156,7 +158,9 @@ describe('ContributePage', () => {
     expect(screen.getByText('Nothing added yet')).toBeInTheDocument();
   });
 
-  it('lists what this session added and confirms before removing one', async () => {
+  it('lists what this student added and confirms before removing one', async () => {
+    // Ownership is the backend's `mine` flag on the participant's own view,
+    // not anything remembered in this tab.
     seeds = [
       {
         id: 'seed-1',
@@ -167,12 +171,9 @@ describe('ContributePage', () => {
         difficulty: 'Medium',
         directlyAnswered: true,
         origin: 'user',
+        mine: true,
       },
     ];
-    window.sessionStorage.setItem(
-      'sml.contributions.css-360-winter-2026-a7rp',
-      JSON.stringify(['seed-1']),
-    );
 
     render(<ContributePage />);
 
@@ -191,10 +192,6 @@ describe('ContributePage', () => {
   });
 
   it('handles an older record that has no section recorded', () => {
-    window.sessionStorage.setItem(
-      'sml.contributions.css-360-winter-2026-a7rp',
-      JSON.stringify(['seed-legacy']),
-    );
     seeds = [
       {
         id: 'seed-legacy',
@@ -205,6 +202,7 @@ describe('ContributePage', () => {
         difficulty: 'Medium',
         directlyAnswered: true,
         origin: 'user',
+        mine: true,
       },
     ];
 

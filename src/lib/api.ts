@@ -64,98 +64,15 @@ export interface RagGenerateResponse {
   responseType: 'rag';
 }
 
-export class ApiError extends Error {
-  status?: number;
+export {
+  ApiError,
+  getApiBaseUrl,
+  onUnauthorized,
+  CSRF_HEADER_NAME,
+  CSRF_HEADER_VALUE,
+} from './httpClient';
 
-  constructor(message: string, status?: number) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-  }
-}
-
-export function getApiBaseUrl(): string | null {
-  const value = import.meta.env.VITE_API_BASE_URL;
-
-  if (typeof value !== 'string' || value.trim() === '') {
-    return null;
-  }
-
-  return value.trim().replace(/\/$/, '');
-}
-
-async function requestJson<T>(
-  path: string,
-  init: RequestInit,
-  fallbackErrorMessage: string,
-  unreachableMessage: string,
-): Promise<T> {
-  const baseUrl = getApiBaseUrl();
-
-  if (!baseUrl) {
-    throw new ApiError(
-      'The service is not configured.',
-    );
-  }
-
-  let response: Response;
-
-  try {
-    response = await fetch(`${baseUrl}${path}`, init);
-  } catch {
-    throw new ApiError(unreachableMessage);
-  }
-
-  if (!response.ok) {
-    let detail = fallbackErrorMessage;
-
-    try {
-      const errorBody = (await response.json()) as { detail?: string };
-      if (typeof errorBody.detail === 'string' && errorBody.detail.trim() !== '') {
-        detail = errorBody.detail;
-      }
-    } catch {
-      // Keep the default message when the error body is not JSON.
-    }
-
-    throw new ApiError(detail, response.status);
-  }
-
-  return (await response.json()) as T;
-}
-
-async function postJson<T>(
-  path: string,
-  body: unknown,
-  fallbackErrorMessage: string,
-  unreachableMessage: string,
-): Promise<T> {
-  return requestJson<T>(
-    path,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    },
-    fallbackErrorMessage,
-    unreachableMessage,
-  );
-}
-
-async function getJson<T>(
-  path: string,
-  fallbackErrorMessage: string,
-  unreachableMessage: string,
-): Promise<T> {
-  return requestJson<T>(
-    path,
-    { method: 'GET' },
-    fallbackErrorMessage,
-    unreachableMessage,
-  );
-}
+import { getJson, postJson, requestJson } from './httpClient';
 
 export async function generateBaseModel(
   courseId: string,
@@ -237,46 +154,17 @@ export async function uploadCourseSyllabus(
   courseId: string,
   file: File,
 ): Promise<SyllabusUploadResponse> {
-  const baseUrl = getApiBaseUrl();
-
-  if (!baseUrl) {
-    throw new ApiError(
-      'The service is not configured.',
-    );
-  }
-
   const formData = new FormData();
   formData.append('syllabus_file', file, file.name);
 
-  let response: Response;
-
-  try {
-    response = await fetch(`${baseUrl}/courses/${courseId}/syllabus`, {
-      method: 'POST',
-      body: formData,
-    });
-  } catch {
-    throw new ApiError(
-      'The service could not be reached.',
-    );
-  }
-
-  if (!response.ok) {
-    let detail = 'The backend could not upload the syllabus file.';
-
-    try {
-      const errorBody = (await response.json()) as { detail?: string };
-      if (typeof errorBody.detail === 'string' && errorBody.detail.trim() !== '') {
-        detail = errorBody.detail;
-      }
-    } catch {
-      // Keep the default message when the error body is not JSON.
-    }
-
-    throw new ApiError(detail, response.status);
-  }
-
-  return (await response.json()) as SyllabusUploadResponse;
+  // Multipart: the browser sets the content type and boundary itself, so the
+  // form goes through as `body` rather than `json`.
+  return requestJson<SyllabusUploadResponse>(`/courses/${courseId}/syllabus`, {
+    method: 'POST',
+    body: formData,
+    fallbackErrorMessage: 'The backend could not upload the syllabus file.',
+    unreachableMessage: 'The service could not be reached.',
+  });
 }
 
 export type SeedReviewStatus = 'generated' | 'approved' | 'rejected' | 'edited';

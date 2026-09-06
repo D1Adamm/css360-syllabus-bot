@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
@@ -23,6 +23,13 @@ import {
   type SeedQualityCheckResponse,
 } from '../../lib/adminApi';
 import { adminCourseExamplesPath } from '../../lib/roleRoutes';
+import { StudentAccessPanel } from '../../components/invite/StudentAccessPanel';
+import {
+  addMembership,
+  listUsers,
+  removeMembership,
+  type AdminUser,
+} from '../../lib/adminPeopleApi';
 
 type Probe<T> =
   | { status: 'idle' }
@@ -32,6 +39,138 @@ type Probe<T> =
 
 function errorText(error: unknown): string {
   return error instanceof ApiError ? error.message : String(error);
+}
+
+type PeopleState =
+  | { status: 'loading' }
+  | { status: 'ready'; users: AdminUser[] }
+  | { status: 'failed'; message: string };
+
+/**
+ * Who teaches this course, and who could.
+ *
+ * Memberships are the course-scoped half of authorization: a professor sees
+ * and manages exactly the courses listed here against their name. Adding and
+ * removing goes through the administrator-only routes and is audited.
+ */
+function InstructorsSection({ courseId }: { courseId: string }) {
+  const [people, setPeople] = useState<PeopleState>({ status: 'loading' });
+  const [choice, setChoice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setPeople({ status: 'ready', users: (await listUsers()).users });
+    } catch (caught) {
+      setPeople({ status: 'failed', message: errorText(caught) });
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      setChoice('');
+      await load();
+    } catch (caught) {
+      setError(errorText(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const users = people.status === 'ready' ? people.users : [];
+  const instructors = users.filter(
+    (user) => user.role === 'professor' && user.courseIds.includes(courseId),
+  );
+  const candidates = users.filter(
+    (user) => user.role === 'professor' && !user.disabled && !user.courseIds.includes(courseId),
+  );
+
+  return (
+    <section className="ui-stack ui-stack--snug">
+      <SectionHeader
+        title="Instructors"
+        description="Professors assigned to this course. Administrators reach every course without being listed."
+        divider
+      />
+      {people.status === 'loading' && (
+        <p className="ui-text-muted" role="status" aria-live="polite">
+          Loading instructors…
+        </p>
+      )}
+      {people.status === 'failed' && (
+        <Callout tone="danger" title="Could not load instructors">
+          {people.message}
+        </Callout>
+      )}
+      {error && (
+        <Callout tone="danger" title="That did not work">
+          {error}
+        </Callout>
+      )}
+      {people.status === 'ready' && (
+        <ul className="admin-rows" aria-label="Instructors">
+          {instructors.length === 0 && (
+            <li className="admin-row">
+              <span className="admin-row__value ui-text-muted">
+                No instructor is assigned yet.
+              </span>
+            </li>
+          )}
+          {instructors.map((user) => (
+            <li key={user.userId} className="admin-row">
+              <span className="admin-row__label">{user.displayName}</span>
+              <span className="admin-row__value">{user.email}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void run(() => removeMembership(user.userId, courseId))}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+          {candidates.length > 0 && (
+            <li className="admin-row">
+              <label className="ui-visually-hidden" htmlFor="assign-instructor">
+                Assign an instructor
+              </label>
+              <select
+                id="assign-instructor"
+                className="ui-input ui-input--sm"
+                value={choice}
+                disabled={busy}
+                onChange={(event) => setChoice(event.target.value)}
+              >
+                <option value="">Assign an instructor…</option>
+                {candidates.map((user) => (
+                  <option key={user.userId} value={user.userId}>
+                    {user.displayName} · {user.email}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy || !choice}
+                onClick={() => void run(() => addMembership(choice, courseId))}
+              >
+                Add
+              </Button>
+            </li>
+          )}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 /**
@@ -293,6 +432,10 @@ export function AdminCourseDetailPage() {
           </li>
         </ul>
       </section>
+
+      <InstructorsSection courseId={courseId} />
+
+      <StudentAccessPanel courseId={courseId} courseName={metadata?.name} />
 
       <Callout tone="info" title="Seed generation is not exposed here">
         The generation endpoints exist but are long-running and CPU-bound, and

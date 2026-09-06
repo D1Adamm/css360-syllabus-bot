@@ -1,11 +1,13 @@
 import { Navigate, useLocation, useParams } from 'react-router-dom';
-import { useRole } from '../context/RoleContext';
+import { useSession } from '../context/SessionContext';
+import { roleForSession } from '../context/session';
 import { DEFAULT_COURSE_ID, isValidCourseId } from '../lib/courseId';
 import {
   adminCourseExamplesPath,
   adminCoursePath,
   professorCourseHomePath,
   professorCoursePath,
+  loginPath,
   roleHomePath,
   studentCourseHomePath,
   studentCoursePath,
@@ -21,10 +23,25 @@ import {
  * resolves in a single hop rather than bouncing through an intermediate URL.
  */
 
-/** `/` — send each role to its own landing page. */
+/**
+ * `/` — send whoever is signed in to their landing page.
+ *
+ * Nobody signed in goes to sign-in, which also points students at the join
+ * page. A participant goes to the course list, which opens their one course.
+ */
 export function RoleLanding() {
-  const { role } = useRole();
-  return <Navigate to={roleHomePath(role)} replace />;
+  const { state, session } = useSession();
+  if (state.status === 'loading') {
+    return (
+      <p className="ui-text-muted" role="status" aria-live="polite">
+        Checking your session…
+      </p>
+    );
+  }
+  if (!session.user && !session.participant) {
+    return <Navigate to={loginPath()} replace />;
+  }
+  return <Navigate to={roleHomePath(roleForSession(session))} replace />;
 }
 
 interface CourseRedirectProps {
@@ -38,9 +55,9 @@ interface CourseRedirectProps {
  * Redirect a `/course/:courseId/...` URL into the right role tree.
  *
  * Some old segments map to exactly one role — `compare` was only ever a student
- * page, `review` only a professor one — and those go there regardless of the
- * remembered development role. `home` and `syllabus` existed for everyone, so
- * they follow the current role.
+ * page, `review` only a professor one — and those go there regardless of who
+ * is signed in. `home` and `syllabus` existed for everyone, so they follow the
+ * session's role.
  */
 export function LegacyCourseRedirect({
   student,
@@ -49,7 +66,8 @@ export function LegacyCourseRedirect({
 }: CourseRedirectProps) {
   const { courseId } = useParams<{ courseId: string }>();
   const { search } = useLocation();
-  const { role } = useRole();
+  const { session } = useSession();
+  const role = roleForSession(session);
 
   // Preserve the original validation behaviour: an unusable id is not a
   // redirect target, it is an invalid course.
@@ -88,7 +106,8 @@ export function LegacyCourseRedirect({
  */
 export function LegacyFlatRedirect(props: CourseRedirectProps) {
   const { search } = useLocation();
-  const { role } = useRole();
+  const { session } = useSession();
+  const role = roleForSession(session);
 
   const targets: Record<string, string | null> = {
     student: props.student

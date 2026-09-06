@@ -14,7 +14,7 @@ these against a recording fake instead of a server.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from app.course_id import assert_valid_course_id
 from app.db_mapping import (
@@ -127,17 +127,34 @@ def _metadata_with_starter(
     return metadata
 
 
-def list_courses(conn: Any) -> list[dict[str, Any]]:
-    """Every course as {courseId, metadata}, newest first.
+def list_courses(
+    conn: Any, course_ids: Iterable[str] | None = None
+) -> list[dict[str, Any]]:
+    """Courses as {courseId, metadata}, newest first.
+
+    `course_ids` scopes the list to what the caller may see: None means every
+    course (an administrator), a set means exactly those (a professor's
+    memberships, a participant's one course). An empty set is an empty list
+    without a query.
 
     Ordering matches `sortCoursesNewestFirst`: createdAt descending, course id
     ascending as the tie-break, so the picker does not reshuffle between a
     server-ordered list and a client-sorted one.
     """
     with conn.cursor() as cursor:
-        cursor.execute(
-            f"SELECT {COURSE_COLUMNS} FROM courses ORDER BY created_at DESC, course_id ASC"
-        )
+        if course_ids is None:
+            cursor.execute(
+                f"SELECT {COURSE_COLUMNS} FROM courses ORDER BY created_at DESC, course_id ASC"
+            )
+        else:
+            scoped = sorted({assert_valid_course_id(course_id) for course_id in course_ids})
+            if not scoped:
+                return []
+            cursor.execute(
+                f"SELECT {COURSE_COLUMNS} FROM courses WHERE course_id = ANY(%s) "
+                "ORDER BY created_at DESC, course_id ASC",
+                (scoped,),
+            )
         rows = cursor.fetchall()
 
     return [
@@ -176,8 +193,13 @@ def create_course(
     conn: Any,
     course_id: str,
     metadata: Mapping[str, Any],
+    *,
+    created_by: str | None = None,
 ) -> dict[str, Any]:
     """Insert one course. Raises CourseAlreadyExistsError on a repeat id.
+
+    `created_by` is the account that created it, for provenance; NULL for the
+    courses that existed before accounts did.
 
     `ON CONFLICT DO NOTHING` plus a rowcount check rather than a prior SELECT:
     the uniqueness decision belongs to the database, and a check-then-insert
@@ -199,6 +221,7 @@ def create_course(
         "syllabus_file_name": optional_string(metadata.get("syllabusFileName")),
         "syllabus_type": optional_string(metadata.get("syllabusType")),
         "chunk_count": as_int(metadata.get("chunkCount")),
+        "created_by": created_by,
     }
 
     with conn.cursor() as cursor:
@@ -206,11 +229,12 @@ def create_course(
             """
             INSERT INTO courses (
                 course_id, name, title, term, instructor_name, created_at,
-                syllabus_status, syllabus_file_name, syllabus_type, chunk_count
+                syllabus_status, syllabus_file_name, syllabus_type, chunk_count,
+                created_by
             ) VALUES (
                 %(course_id)s, %(name)s, %(title)s, %(term)s, %(instructor_name)s,
                 %(created_at)s, %(syllabus_status)s, %(syllabus_file_name)s,
-                %(syllabus_type)s, %(chunk_count)s
+                %(syllabus_type)s, %(chunk_count)s, %(created_by)s
             )
             ON CONFLICT (course_id) DO NOTHING
             """,

@@ -8,34 +8,33 @@ Ordered by what blocks real classroom use.
 
 ---
 
-## 1. Authentication and access control
+## 1. Identity: what is still open
 
-**The largest gap, and the one everything else waits on.**
+Authentication, authorization, class codes and the audit trail are implemented
+and covered (see [architecture.md](architecture.md#identity-and-access)). What
+remains is the set of things deliberately left for after the Fall study:
 
-There is no sign-in. The role switcher in the header is a development control: it
-changes navigation and vocabulary, grants nothing, and every route is reachable
-by URL in any role. Anyone with a link can open any course as an admin.
+- **Self-service password reset.** There is no mail path, so a forgotten
+  password is an administrator-issued one-time link. A mail relay would allow
+  self-service reset and, if wanted, magic-link sign-in as a second credential.
+- **UW SSO** for staff is the natural long-term upgrade. The staff sign-in path
+  is one function behind `/api/auth/login`; SSO would establish the same
+  `auth_sessions` row without touching roles, memberships or guards.
+- **Participant continuity.** A student's identity is the participant cookie in
+  one browser; clearing it or changing devices starts a new participant. There
+  is nothing to recover with, by design, and nothing links the two.
+- **Throttling is per process.** Join-code and login failure limits live in
+  memory in the single uvicorn process. Fine for one VM; a second instance
+  would need shared state.
+- **Developer and Admin are one role.** The permission model has one privileged
+  role; splitting it means a new `users.role` value and a guard between
+  `require_admin` and a stricter one.
 
-What this blocks:
+## 2. Course deletion and participant erasure in the UI
 
-- A professor cannot be shown only their own courses.
-- Nothing can be attributed to a person, so contributions and evaluations are
-  anonymous whether or not that is wanted.
-- Admin surfaces expose cluster detail — artifact references, Slurm job ids,
-  compute hostnames — to anyone who visits `/admin`.
-
-The backend is ready for it in one respect: the training-queue router already
-authenticates its caller with a shared worker token, kept deliberately separate
-from any future browser session so that adding user auth does not disturb the
-cluster's credential.
-
-## 2. Enrolment, join codes, and rosters
-
-`/professor/course/:courseId/invite` renders an explanation and writes nothing.
-There is no roster table, no join-code issue or redemption, and no way to scope
-a student to a course.
-
-Depends on authentication.
+The schema cascades correctly (deleting a course removes its codes,
+participants, memberships and research rows; deleting a participant anonymises
+its rows), but neither is exposed in the interface.
 
 ## 3. Research provenance and evaluation reproducibility
 
@@ -63,9 +62,7 @@ Worth having before results are published:
   question or an evaluation comment, and it is stored verbatim.
 - **No structured application logging or alerting.** A failed starter-seed job or
   an expired serving session is discoverable by looking, not by being told.
-- **No course deletion path in the UI.** The schema cascades correctly from
-  `courses`, but nothing exposes it, and cascading does not touch the filesystem
-  artifacts or the cluster.
+- **Course deletion does not touch the filesystem artifacts or the cluster.**
 
 `training/cleanup_training_outputs.sh` covers cluster disk only, is dry-run by
 default, and never proposes a published adapter.
@@ -95,12 +92,8 @@ should be removed from it on the strength of an untested alternative.
 
 ## Known issues
 
-**`CourseOverviewPage` hardcodes "Course model — Not available yet".**
-`src/pages/professor/CourseOverviewPage.tsx` renders that string as a constant,
-while `ProfessorModelPage` reads the real registry and request state on the same
-course. A professor whose model is ready sees the correct state on one page and a
-stale one on the other. A display bug, not a data bug — nothing is written
-incorrectly.
+None recorded. (The professor overview's hardcoded model status, listed here
+earlier, was fixed: the page reads the registry and request records now.)
 
 ---
 

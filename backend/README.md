@@ -55,7 +55,9 @@ Loaded automatically on startup by `app/config.py`.
 | `SEED_GENERATION_MODEL`, `STARTER_*` | for starter seeds | The job that drafts examples from a syllabus |
 | `TRAINING_WORKER_TOKEN` | for training | Shared secret for `/api/training-queue`. **Unset ⇒ that router refuses every request with 503**, which is deliberate: an unconfigured deployment must not be an unauthenticated queue |
 | `FINETUNED_SERVICE_URL` | for fine-tuned paths | Set by the tunnel script to `http://127.0.0.1:9001`. Unset ⇒ those two approaches report unavailable; Base and RAG are unaffected |
-| `APP_ENV` | no | `production` on the VM. `test` disables env-file loading entirely |
+| `APP_ENV` | no | `production` on the VM. `test` disables env-file loading entirely; `development` also serves `/docs` |
+| `APP_PUBLIC_ORIGIN` | recommended | The site origin, for the bootstrap script's printed link and as a CSRF origin |
+| `AUTH_COOKIE_SECURE`, `AUTH_*` lifetimes | no | Session cookie and invitation settings; safe defaults, documented in `.env.example` |
 
 Never set `TEST_DATABASE_URL` on a deployed host. It is the only DSN a test
 process may connect to.
@@ -75,7 +77,7 @@ curl -s http://127.0.0.1:8001/api/health
 
 ## API groups
 
-58 routes. Every one is under `/api`, except six root-level aliases
+75 paths. Every one is under `/api`, except six root-level aliases
 (`/health`, `/base-model/generate`, `/rag/generate`, `/fine-tuned/generate`,
 `/fine-tuned/health`, `/fine-tuned-rag/generate`) kept because Nginx forwards
 only `location /api/` and those are useful directly on the VM.
@@ -87,12 +89,18 @@ only `location /api/` and those are useful directly on the VM.
 | Syllabus | `/api/courses/{courseId}/syllabus…`, `/chunks` | Upload, extract, chunk, embed; read extracted text and chunk metadata |
 | Seeds | `/api/courses/{courseId}/seeds…` | Generation, validation, review, quality checks, approved export, train/validation split |
 | Persistence | `/api/db/…` | `db_routes.py`. Courses, seeds, evaluations, model registry, model requests, training runs, serving session. What the browser reads and writes |
+| Sessions | `/api/auth/…` | `auth_routes.py`. Sign-in for professors and administrators, classroom-code join for anonymous students, invitation preview and acceptance, sign-out |
+| Administration | `/api/admin/…` | `admin_routes.py`. Accounts, roles, course memberships, professor and admin invitations, reset links, the audit trail. Administrators only |
+| Classroom codes | `/api/courses/{courseId}/student-invites…` | `student_invite_routes.py`. Create, replace, list and revoke a course's codes. Course staff only |
 | Training queue | `/api/training-queue/…` | `training_queue_routes.py`. **The cluster's API, not the browser's.** Claim a run, download its dataset, report submission/failure/completion, register a version, report a publication, record a serving session. Authenticated with `X-Training-Worker-Token` |
 
-The two authenticated surfaces are deliberately separate. The worker token
-reaches the queue endpoints and nothing else — it is not a database credential
-and cannot be used as one — so adding browser authentication later does not
-disturb the cluster's.
+Every browser route requires a session, and every route declares which one in
+its signature (`app/auth/dependencies.py`): a participant of the course in the
+path, its staff, an administrator, or any signed-in user. `tests/route_classification.py`
+lists every route with its class, and the suite fails if a route is mounted
+without one. The worker token is a separate credential that reaches the queue
+endpoints and nothing else — no cookie reaches the queue, and the token reaches
+no browser route.
 
 ---
 
@@ -131,6 +139,14 @@ if one tries to reach them:
   DSN, and nothing in a deployment sets it.
 - **`TRAINING_WORKER_TOKEN`** is removed, so the queue router refuses with 503
   unless a test configures one deliberately.
+- **The test client is an administrator** by default, through a dependency
+  override, so route tests written before authentication existed keep
+  exercising their handlers. Tests of authentication itself carry
+  `pytestmark = pytest.mark.auth` and drive the real session resolver.
+
+One file is opt-in: `tests/test_integration_postgres.py` runs the identity SQL
+against a real database when `TEST_DATABASE_URL` names a throwaway one with
+`db/schema.sql` applied, and is skipped otherwise.
 
 That barrier exists because it was once absent: `env -u DATABASE_URL pytest`
 reached the production database anyway, because `app.db` reloaded `backend/.env`
@@ -145,6 +161,7 @@ Run the backend suite separately from `training/` and `scripts/`, or first —
 
 | Script | Purpose |
 | --- | --- |
+| `scripts/bootstrap_admin_invite.py` | Mint the first administrator invitation (single-use, one hour). Refuses while an administrator exists |
 | `scripts/prepare_qlora_dataset.py` | Export approved seeds and prepare the train/validation split for one course |
 | `scripts/export_approved_seeds.py` | Approved-only JSONL export |
 | `scripts/reconcile_starter_generation.py` | Repair starter-seed job state after an interrupted run |

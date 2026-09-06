@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { LinkButton } from '../../components/ui/Button';
 import { Illustration } from '../../components/illustration/Illustration';
 import { formatCourseCode } from '../../lib/courseLabels';
@@ -6,33 +5,33 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { ProgressSteps } from '../../components/ui/ProgressSteps';
 import { useCourseId } from '../../context/CourseContext';
 import { useComparisonRunStore } from '../../context/ComparisonRunContext';
+import { useCourseActivity } from '../../hooks/useCourseActivity';
 import { useCourseMetadata } from '../../hooks/useCourseMetadata';
-import { useEvaluations } from '../../hooks/useEvaluations';
-import { useSeedExamples } from '../../hooks/useSeedExamples';
 import { studentCoursePath } from '../../lib/roleRoutes';
 
 /**
  * Student course home.
  *
- * The activity figures describe the course, not the reader — there is no
- * student identity in this system and inventing one to show a personal score
- * would be worse than useless. What is personalised is the next action, which
- * comes from this session: an unevaluated comparison is the one thing the
- * student is genuinely part-way through.
+ * The activity figures describe the course, not the reader — a student's
+ * identity here is an anonymous participant id that nobody, including the
+ * student, ever sees, and a personal score would be a step towards keeping
+ * one. The figures are counts from the backend; no rating or contribution of
+ * another student is downloaded to produce them. What is personalised is the
+ * next action, which comes from this session: an unevaluated comparison is
+ * the one thing the student is genuinely part-way through.
  */
 export function StudentHomePage() {
   const courseId = useCourseId();
   const { metadata } = useCourseMetadata(courseId);
-  const { seeds } = useSeedExamples();
-  const { evaluations } = useEvaluations();
+  const activity = useCourseActivity(courseId);
   const { getRun } = useComparisonRunStore();
 
   const pendingRun = getRun(courseId);
 
-  const contributed = useMemo(
-    () => seeds.filter((seed) => seed.origin === 'user').length,
-    [seeds],
-  );
+  const contributed =
+    activity.status === 'ready' ? String(activity.activity.contributedQuestions) : '—';
+  const evaluated =
+    activity.status === 'ready' ? String(activity.activity.evaluations) : '—';
 
   const nextAction = pendingRun
     ? {
@@ -105,7 +104,7 @@ export function StudentHomePage() {
           </div>
           <div className="home__stat">
             <dt>Evaluations submitted</dt>
-            <dd>{evaluations.length}</dd>
+            <dd>{evaluated}</dd>
           </div>
         </dl>
         <p className="ui-text-xs ui-text-muted">

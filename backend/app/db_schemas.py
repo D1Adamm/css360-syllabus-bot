@@ -159,6 +159,9 @@ class SeedListResponse(BaseModel):
     review_status_counts: dict[str, int] = Field(
         default_factory=dict, alias="reviewStatusCounts"
     )
+    #: Course-wide totals per origin. Present so a participant, who receives
+    #: only the seeds they may see, still learns how active the class is.
+    origin_counts: dict[str, int] = Field(default_factory=dict, alias="originCounts")
 
 
 class SeedCreateRequest(BaseModel):
@@ -227,6 +230,10 @@ class EvaluationRecordModel(DbRecord):
     comment: str | None = None
     run_id: str | None = Field(default=None, alias="runId")
     question_text: str | None = Field(default=None, alias="questionText")
+    # `participantId` — the pseudonymous participant — travels through
+    # `extra="allow"` rather than a declared field, so it is present on staff
+    # responses exactly when a row carries one and absent (not null) on a
+    # participant's own view and on rows recorded before participants existed.
 
 
 class EvaluationListResponse(BaseModel):
@@ -256,6 +263,16 @@ class EvaluationCreateRequest(BaseModel):
     created_at: str | None = Field(default=None, alias="createdAt")
     run_id: str | None = Field(default=None, alias="runId")
     question_text: str | None = Field(default=None, alias="questionText")
+
+
+class CourseActivityResponse(BaseModel):
+    """Class-wide counts for the student home page. No records, no comments."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    contributed_questions: int = Field(default=0, alias="contributedQuestions")
+    evaluations: int = 0
 
 
 class DeleteResponse(BaseModel):

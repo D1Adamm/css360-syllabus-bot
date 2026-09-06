@@ -18,6 +18,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app import db_courses, db_model_requests, db_training_runs
+from app.auth.dependencies import current_principal
+from app.auth.principal import Participant, Principal
 from app.provenance_privacy import PUBLIC_CLAIM_OWNER
 from app.main import app
 
@@ -110,6 +112,18 @@ class DbRouteTestCase(unittest.TestCase):
         self.addCleanup(patcher.stop)
         return mock
 
+    def as_participant(self, course_id: str = COURSE) -> None:
+        """Run the request as an anonymous student who joined `course_id`.
+
+        The default test principal is an administrator, which is right for
+        almost every route here; recording an evaluation is the one thing only
+        a participant may do.
+        """
+        app.dependency_overrides[current_principal] = lambda: Principal(
+            participant=Participant(participant_id="participant-test", course_id=course_id)
+        )
+        self.addCleanup(app.dependency_overrides.pop, current_principal, None)
+
 
 class CourseRouteTests(DbRouteTestCase):
     def test_list_courses_returns_courses_with_nested_metadata(self) -> None:
@@ -164,10 +178,13 @@ class CourseRouteTests(DbRouteTestCase):
         get_course.assert_not_called()
 
     def test_create_course_returns_201(self) -> None:
-        self.patch_repo(
+        create = self.patch_repo(
             "db_courses.create_course",
             return_value={"courseId": COURSE, "metadata": METADATA},
         )
+        # Creating a course is recorded in the audit trail, and the creator is
+        # stamped on the row. The test client is the default administrator.
+        audit = self.patch_repo("db_admin_actions.record_action")
         response = self.client.post(
             "/api/db/courses",
             json={
@@ -181,6 +198,8 @@ class CourseRouteTests(DbRouteTestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["courseId"], COURSE)
+        self.assertIsNotNone(create.call_args.kwargs["created_by"])
+        self.assertEqual(audit.call_args.kwargs["action"], "course.create")
 
     def test_duplicate_course_is_409(self) -> None:
         self.patch_repo(
@@ -277,6 +296,7 @@ class StarterGenerationRouteTests(DbRouteTestCase):
 class SeedRouteTests(DbRouteTestCase):
     def test_list_returns_seeds_and_review_counts(self) -> None:
         self.patch_repo("db_seeds.list_seeds", return_value=[SEED])
+        self.patch_repo("db_seeds.count_seeds_by_origin", return_value={"ai_generated": 1})
         self.patch_repo(
             "db_seeds.count_seeds_by_review_status",
             return_value={"generated": 41, "approved": 9},
@@ -291,6 +311,7 @@ class SeedRouteTests(DbRouteTestCase):
     def test_seed_response_carries_both_name_pairs(self) -> None:
         self.patch_repo("db_seeds.list_seeds", return_value=[SEED])
         self.patch_repo("db_seeds.count_seeds_by_review_status", return_value={})
+        self.patch_repo("db_seeds.count_seeds_by_origin", return_value={})
         seed = self.client.get(f"/api/db/courses/{COURSE}/seeds").json()["seeds"][0]
 
         self.assertEqual(seed["instruction"], seed["question"])
@@ -406,6 +427,7 @@ class EvaluationRouteTests(DbRouteTestCase):
         self.assertEqual(body["evaluations"][0]["hallucinationFlags"], ["base"])
 
     def test_create_returns_201(self) -> None:
+        self.as_participant()
         self.patch_repo("db_courses.course_exists", return_value=True)
         self.patch_repo(
             "db_evaluations.create_evaluation", return_value=EVALUATION
@@ -428,6 +450,7 @@ class EvaluationRouteTests(DbRouteTestCase):
 
     def test_create_requires_the_ratings_the_form_still_asks_for(self) -> None:
         """`mostAccurate` and `preferredModel` are not optional."""
+        self.as_participant()
         response = self.client.post(
             f"/api/db/courses/{COURSE}/evaluations",
             json={"comparisonId": "cmp-1", "mostAccurate": "rag"},
@@ -442,6 +465,7 @@ class EvaluationRouteTests(DbRouteTestCase):
 
     def test_create_accepts_a_body_without_the_retired_criteria(self) -> None:
         """The simplified student form sends four fields, not seven."""
+        self.as_participant()
         self.patch_repo("db_courses.course_exists", return_value=True)
         created = self.patch_repo(
             "db_evaluations.create_evaluation", return_value=EVALUATION
@@ -472,11 +496,16 @@ class EvaluationRouteTests(DbRouteTestCase):
         delete_all = self.patch_repo(
             "db_evaluations.delete_all_evaluations", return_value=7
         )
+        # Clearing research data is administrator-only and lands in the audit
+        # trail with the count.
+        audit = self.patch_repo("db_admin_actions.record_action")
         response = self.client.delete(f"/api/db/courses/{COURSE}/evaluations")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"courseId": COURSE, "deleted": 7})
         self.assertEqual(delete_all.call_args.args[1], COURSE)
+        self.assertEqual(audit.call_args.kwargs["action"], "evaluations.clear")
+        self.assertEqual(audit.call_args.kwargs["detail"], {"deleted": 7})
 
 
 class ModelRouteTests(DbRouteTestCase):
