@@ -364,6 +364,7 @@ Nothing is deleted automatically, and nothing in this pass deleted anything.
 | Secret | Where it lives | Notes |
 | --- | --- | --- |
 | `TRAINING_WORKER_TOKEN` | `backend/.env` on the VM, `.env.local` on Tillicum | Shared secret. Reaches the queue endpoints only; it is not a database credential and cannot be used as one. |
+| Browser session cookies | The browser, and `auth_sessions` (hashed) | Professor/admin and anonymous student sessions. They reach the browser routes only; no cookie reaches the queue, and the worker token reaches nothing but the queue. |
 | Hugging Face token | `/gpfs/projects/simswe/$USER/huggingface/token` | Never in the repository. |
 | UW password, Duo | Nowhere | Never stored, never automated. |
 | SSH keys | `~/.ssh`, untouched | No script in this repository reads or writes them. |

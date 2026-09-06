@@ -14,8 +14,10 @@ Browser (React 19 + TypeScript + Vite, built by Vite, served by Nginx)
   │  every request path is under /api
   ▼
 FastAPI (uvicorn, 127.0.0.1:8001)
+  │   every browser request carries session cookies; every route names its guard
   │
-  ├──► PostgreSQL              system of record for all application state
+  ├──► PostgreSQL              system of record for all application state,
+  │                            sessions and identity included
   │
   ├──► Ollama (localhost)      Base generation, RAG generation, embeddings
   │
@@ -63,6 +65,71 @@ Isolation is mostly *structural* rather than checked:
 - Fine-tuned requests carry the course, the adapter is resolved from it, and the
   response echoes which course answered. The backend discards a response naming a
   different course.
+
+---
+
+## Identity and access
+
+Three kinds of caller, two of them with sessions in the browser and one with a
+header token from the cluster:
+
+| Caller | Identity | Where it lives | Reaches |
+| --- | --- | --- | --- |
+| Student | An anonymous **participant**: a random UUID bound to one course, created when a classroom code is redeemed. No name, email or NetID exists to store | `sml_participant` cookie → `auth_sessions` → `participants` | The student pages and APIs of that one course |
+| Professor | A `users` row with global role `professor`, plus `course_memberships` for each course they instruct | `sml_staff` cookie → `auth_sessions` → `users` | Course-scoped staff routes for member courses only |
+| Administrator | A `users` row with global role `admin`. No memberships needed | same cookie | Every course, `/api/admin`, the training queue's browser side |
+| Tillicum runner | `TRAINING_WORKER_TOKEN` header | `backend/.env`, `.env.local` | `/api/training-queue` and nothing else |
+
+**Role and membership are separate.** `users.role` says what kind of staff
+someone is; `course_memberships` says which courses a professor may touch. A
+professor with no memberships sees no courses. A professor never gains a course
+by editing a URL, a body or an id: the guard compares the course in the *path*
+against the membership table on every request.
+
+**Two cookies, on purpose.** A professor can open their own course's class code
+in the same browser, walk the student flow as an anonymous participant, and
+return to the professor pages without signing out. Their test ratings land under
+a participant like any student's.
+
+**Sessions are rows.** The cookie holds a 256-bit random token; `auth_sessions`
+holds its SHA-256, the principal, an absolute deadline, and `last_seen_at` for
+the idle rule. Sign-out, disabling an account, and changing a password revoke
+rows, so they take effect on the next request. Cookies are `HttpOnly; Secure;
+SameSite=Lax; Path=/api`.
+
+**Invitations are rows too.** `invitations` holds four kinds: a reusable
+`student` classroom code (six characters from an unambiguous alphabet, stored as
+typed because it has to be shown again and grants only a seat in the class), and
+single-use `professor`, `admin` and `reset` links whose 256-bit tokens are stored
+only as hashes and shown exactly once. Redemption is one conditional `UPDATE …
+RETURNING`, so two people racing a single-use link cannot both win. Every
+create, revoke and staff acceptance writes `admin_actions`.
+
+**Guards are declared, and checked for.** Every route in `main.py`,
+`db_routes.py`, `admin_routes.py` and `student_invite_routes.py` takes its guard
+as a handler parameter (`require_admin`, `require_course_staff`,
+`require_course_access`, `require_participant`, …; `app/auth/dependencies.py`),
+so the on-VM root aliases inherit it. `tests/route_classification.py` names every
+route and its class; `test_route_auth_coverage.py` fails the suite for any route
+mounted without a class or without the guard its class requires, and
+`test_authorization_matrix.py` drives every route with six kinds of principal.
+The four generation routes take the course from the body and authorize it
+explicitly before any model is asked anything.
+
+**What a student never sees.** A participant lists only their own ratings, and of
+the examples only the instructor-approved ones plus their own contributions, with
+review notes, validation and evidence stripped. Their home page shows counts
+from a counts-only endpoint. Attribution comes from the session, never from a
+request body; the evaluation id is allocated server-side.
+
+**CSRF.** `SameSite=Lax` plus a required custom header on every
+cookie-authenticated mutation, plus an `Origin` check against the site's
+origins. Login, join and invitation acceptance require the header too.
+
+**The frontend guards are navigation.** `src/components/auth/RouteGuards.tsx`
+sends a browser to sign-in, the join page or an explanation based on the cached
+session; the backend makes the same decision again for every request the page
+issues, and the backend's answer is the one that counts.
 
 ---
 
@@ -173,6 +240,7 @@ Properties that matter:
 | State | Owner | Notes |
 | --- | --- | --- |
 | Courses, seeds, evaluations, model registry, training queue | PostgreSQL | Reached only through FastAPI |
+| Accounts, memberships, invitations, participants, sessions, audit | PostgreSQL | Tokens stored hashed; participants carry nothing identifying |
 | Uploaded syllabi and extracted text | VM local disk | `backend/course_data/{courseId}/` |
 | Embedding indexes | VM local disk | `backend/data/indexes/{courseId}.json` |
 | Prepared training datasets | VM local disk | `data/exports/{courseId}/`, fetched by the cluster |
@@ -196,8 +264,14 @@ with three role sections and a block of redirects from older URLs.
   `/api` prefix**; the clients write what comes after it.
 - `src/components/ui/` — design-system primitives over CSS custom properties in
   `src/styles/tokens.css`. Self-hosted Inter and Source Serif 4.
-- `src/context/` — course, role, and comparison-run providers.
-- Role selection is a development switcher, not authentication.
+- `src/context/` — course, session, and comparison-run providers.
+  `SessionContext` caches `/api/auth/session` and refreshes on any 401.
+- `src/components/auth/RouteGuards.tsx` — navigation guards per role area. The
+  chrome and the guards follow the session the backend reported; nothing is
+  stored locally that could grant anything.
+- `src/lib/authApi.ts`, `inviteApi.ts`, `adminPeopleApi.ts` — the session,
+  classroom-code and administration clients, on the same `httpClient.ts` as the
+  rest, which sends credentials and the CSRF header.
 
 Professor-facing surfaces never render infrastructure detail: no artifact
 references, no Slurm job ids, no service addresses. Admin surfaces do.

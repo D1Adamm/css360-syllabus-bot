@@ -76,7 +76,13 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/migrations/<migration>.sql
 
 Every migration is written to be idempotent (`ADD COLUMN IF NOT EXISTS`,
 `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`), so re-running one is
-a no-op rather than an error.
+a no-op rather than an error. `tests/test_schema_files.py` asserts both
+properties for every migration file.
+
+| Migration | Adds |
+| --- | --- |
+| `001_training_provenance_and_serving.sql` | Training provenance columns and `serving_sessions` |
+| `002_auth_identity.sql` | `users`, `course_memberships`, `invitations`, `invitation_course_grants`, `participants`, `auth_sessions`, `admin_actions`; nullable `participant_id` on `evaluations` and `seed_examples`; `created_by` on `courses`. No existing row changes value |
 
 ### Frontend
 
@@ -116,6 +122,54 @@ Expect `{"status":"ok","service":"syllabus-model-lab-backend"}`.
 
 A user unit, not a system one — so it is managed without root, and it needs
 lingering enabled for the account if it is to survive logout.
+
+### First deployment of authentication
+
+The first deployment that carries migration 002 turns on sign-in for every
+browser route. There is no bypass flag; the order below is the whole cutover,
+and every step before the bootstrap link is safe to do ahead of time.
+
+1. `git pull origin main`, then apply `backend/db/migrations/002_auth_identity.sql`
+   as above. The running backend ignores the new tables until it is restarted.
+2. Add `APP_PUBLIC_ORIGIN=https://aiswe.uwb.edu` to `backend/.env`. Nothing else
+   in the authentication block needs a value on the VM.
+3. Build and publish the frontend, restart `aiswe-backend`, check `/api/health`.
+   From this moment every route except health, sign-in and join answers 401 to
+   a browser without a session.
+4. Mint the first administrator invitation and open it within the hour:
+
+   ```bash
+   cd ~/css360-syllabus-bot/backend && .venv/bin/python scripts/bootstrap_admin_invite.py --origin https://aiswe.uwb.edu
+   ```
+
+   Choose an email address, a display name and a password on the page it prints.
+   The script refuses once an administrator exists; `--force` is for lockout
+   recovery only, and both are recorded in `admin_actions`.
+5. In **Admin → People**, create an instructor invitation per professor with
+   their courses ticked, and send each link yourself. Links are shown once.
+6. On each course's **Invite students** page, create the class code and put
+   the join page and the code on the board (or the direct link in Canvas).
+7. Verify from the VM:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8001/api/db/courses
+   ```
+
+   Expect `401`. The training worker is unaffected: its header token reaches
+   `/api/training-queue` exactly as before, and a dry run of the queue
+   (`./training/run_training_queue.sh --once --dry-run` on Tillicum) proves it.
+
+### Nginx notes for sessions
+
+- `try_files $uri /index.html` (or equivalent) must already be in place for
+  the SPA; `/join`, `/join/<code>`, `/invite/<token>` and `/login` are
+  frontend routes served by `index.html`.
+- Forward the client address so join-code guessing is throttled per client
+  rather than per site: `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`
+  inside `location /api/`. Without it the throttle still works, but every
+  browser shares one budget.
+- Nothing rewrites cookies. The backend sets `Secure; HttpOnly; SameSite=Lax;
+  Path=/api` itself, from configuration rather than from proxy headers.
 
 ### Tests on the VM
 
@@ -167,7 +221,10 @@ Neither `.env` file is in the repository. Copy the example and fill it in.
 | `DATABASE_URL` | yes | Everything |
 | `TRAINING_WORKER_TOKEN` | for training | The queue API. Unset ⇒ that router refuses every request with 503 |
 | `FINETUNED_SERVICE_URL` | for fine-tuned paths | Set by the tunnel script to `http://127.0.0.1:9001` |
-| `CORS_ALLOWED_ORIGINS` | yes | The site origin |
+| `CORS_ALLOWED_ORIGINS` | yes | The site origin. Also the CSRF origin allowlist |
+| `APP_PUBLIC_ORIGIN` | recommended | The site origin, for the bootstrap script's printed link |
+| `AUTH_COOKIE_SECURE` | no | Default true. Never set false on the VM |
+| `AUTH_*` lifetimes | no | Session and invitation lifetimes; defaults documented in `backend/.env.example` |
 | `OLLAMA_*` | yes | Base and RAG generation |
 
 **UWB VM** — `.env.local` for the frontend build: `VITE_API_BASE_URL` must be the
@@ -198,4 +255,6 @@ idempotent and moves the previously published version to `offline`:
 
 Migrations have no down scripts. Every one so far is additive — new nullable
 columns, new tables, new indexes — so rolling back application code does not
-require reversing them.
+require reversing them. Rolling back to a build before authentication leaves
+the identity tables in place and unused; the application before migration 002
+never reads them.

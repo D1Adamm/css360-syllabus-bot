@@ -30,6 +30,7 @@ One row per course. `course_id` is the partition key for the whole system.
 | `syllabus_file_name` | TEXT NULL | Original upload name; NULL until uploaded |
 | `syllabus_type` | TEXT NULL | `pdf` or `txt` |
 | `chunk_count` | INTEGER | Chunks in the retrieval index. `>= 0` enforced |
+| `created_by` | UUID NULL FK `users` | The account that created it. NULL for courses from before accounts existed |
 
 `syllabus_status` values (`SyllabusStatus` in `src/types/index.ts`):
 `none`, `not_uploaded`, `uploaded`, `extracted`, `indexed`, `upload_failed`,
@@ -125,6 +126,11 @@ the syllabus.
 **Deduplication** — `normalized_question_key` (TEXT NULL), indexed per course, so
 a near-duplicate question can be found before it is stored twice.
 
+**Attribution** — `participant_id` (UUID NULL, FK `participants`, `ON DELETE SET
+NULL`). Set on contributions made through a student session; NULL on
+AI-generated seeds and on contributions from before participants existed. Never
+read from a request body.
+
 ---
 
 ## `evaluations`
@@ -145,11 +151,14 @@ A student's rating of one comparison. Primary key `(course_id, evaluation_id)`.
 | `created_at` | TIMESTAMPTZ | |
 | `run_id` | TEXT NULL | The live comparison run, when there was one |
 | `question_text` | TEXT NULL | Denormalised so results survive without the run |
+| `participant_id` | UUID NULL FK `participants` | The pseudonymous participant who rated. `ON DELETE SET NULL`. NULL on every row recorded before participants existed; nothing backfills one |
 
 Approach keys are `base`, `rag`, `fineTuned`, `fineTunedRag` (`ModelKey`).
 
-No student identifier is recorded. There is no authentication, so nothing
-collects one.
+The only student identifier ever recorded is `participant_id`, a random UUID
+that maps to nothing outside `participants`. Staff views of a rating carry it as
+`participantId`; a participant's own view omits it; rows without one are
+reported without the field and aggregate exactly as they always did.
 
 ---
 
@@ -296,6 +305,105 @@ hostname.
 
 ---
 
+## Identity and sessions
+
+Added by `backend/db/migrations/002_auth_identity.sql`, which carries the
+rationale for every column. Nothing here is course-scoped by primary key; the
+course-scoped facts are `course_memberships`, `participants.course_id` and
+`invitations.course_id`.
+
+### `users`
+
+Professors and administrators. Students never appear here.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `user_id` | UUID PK | |
+| `email` | TEXT | Lowercased; unique on `lower(email)` |
+| `display_name` | TEXT | |
+| `role` | TEXT | `admin` or `professor`. Global role only |
+| `password_hash` | TEXT | `scrypt$<log2 N>$<r>$<p>$<salt>$<key>`; never leaves the login path |
+| `created_at` / `disabled_at` / `last_login_at` | TIMESTAMPTZ | |
+| `created_via_invitation_id` | UUID NULL | |
+
+### `course_memberships`
+
+Which professors may act on which courses. Primary key `(course_id, user_id)`,
+cascading from both. Administrators have no rows and need none.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `membership_role` | TEXT | `instructor` |
+| `granted_by` | UUID NULL FK `users` | |
+| `granted_at` | TIMESTAMPTZ | |
+
+### `invitations` and `invitation_course_grants`
+
+Every way in that is not a password.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `invitation_id` | UUID PK | |
+| `kind` | TEXT | `student`, `professor`, `admin`, `reset` |
+| `code` | TEXT NULL | Student invitations: the six-character classroom code, unique among all invitations, stored as typed |
+| `token_hash` | TEXT NULL | Privileged invitations: SHA-256 of the one-time token. The token is never stored |
+| `course_id` | TEXT NULL FK | Student invitations: the course the code admits to |
+| `target_user_id` | UUID NULL FK | Reset invitations: the account |
+| `label` | TEXT NULL | |
+| `created_by` | UUID NULL FK | NULL only for the bootstrap invitation |
+| `created_at` / `expires_at` | TIMESTAMPTZ | `expires_at` NULL means no expiry (student codes by default) |
+| `max_uses` / `use_count` | INTEGER | `max_uses` NULL means unlimited (student); 1 for the privileged kinds |
+| `revoked_at` / `revoked_by` | | |
+| `accepted_at` / `accepted_by_user_id` | | Privileged kinds only |
+
+A check constraint makes a student invitation carry a code and a course and no
+token, and every other kind a token and no code. `invitation_course_grants
+(invitation_id, course_id)` lists the courses a professor invitation assigns on
+acceptance.
+
+Status is derived, never stored: `revoked` if `revoked_at`, else `expired` if
+past `expires_at`, else `used` if `use_count >= max_uses`, else `active`.
+
+### `participants`
+
+The pseudonymous student identity.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `participant_id` | UUID PK | Random. The only student identifier in the system |
+| `course_id` | TEXT FK | Bound to one course; cascades with it |
+| `invitation_id` | UUID NULL FK | The code that admitted them. `SET NULL` on revoke or delete |
+| `created_at` / `last_seen_at` | TIMESTAMPTZ | |
+
+Nothing else, deliberately: no name, email, NetID, address or user agent.
+
+### `auth_sessions`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `session_id` | UUID PK | |
+| `token_hash` | TEXT | SHA-256 of the cookie value, unique |
+| `principal_kind` | TEXT | `user` or `participant`; a check constraint requires exactly the matching id |
+| `user_id` / `participant_id` | UUID NULL FK | Cascade with the principal |
+| `created_at` / `expires_at` / `last_seen_at` / `revoked_at` | TIMESTAMPTZ | Idle timeout is applied from `last_seen_at` in the application |
+
+### `admin_actions`
+
+Append-only audit trail of privileged actions.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `action_id` | BIGSERIAL PK | |
+| `actor_user_id` | UUID NULL FK | NULL for the bootstrap script; `SET NULL` so the row outlives the account |
+| `actor_role` | TEXT NULL | |
+| `action` | TEXT | e.g. `invitation.create`, `membership.add`, `user.disable`, `evaluations.clear` |
+| `target_kind` / `target_id` | TEXT NULL | |
+| `course_id` | TEXT NULL | Not a foreign key: the record must survive the course |
+| `detail` | JSONB NULL | Any key that looks like a credential is dropped before writing |
+| `created_at` | TIMESTAMPTZ | |
+
+---
+
 ## Filesystem artifacts
 
 Not in the database, and not reproducible from it.
@@ -328,6 +436,11 @@ instance, is not visible in the API, which returns
 Optional fields are **omitted** rather than sent as null, matching the parsers in
 `src/lib/`. A field that cannot be parsed causes the record to be dropped rather
 than half-read.
+
+Two fields exist only in one direction. `participantId` on an evaluation or a
+seed is present on staff views when the row carries one. `mine` on a seed is
+present only on a participant's own view of a course's examples, which is also
+where review-internal fields are absent (`app/student_visibility.py`).
 
 ---
 

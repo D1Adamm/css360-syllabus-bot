@@ -30,23 +30,30 @@ overlap with them. That ordering is load-bearing and covered by tests.
 
 ---
 
-## Roles
+## Roles and access
 
-Selected with a **development-only switcher** in the header. It is not
-authentication and grants nothing — every route is reachable by URL. It exists so
-the application can be walked through as each audience before sign-in is built.
+Every route is enforced by the backend; the frontend only decides where to send
+a browser that is not allowed somewhere.
 
-**Students** read the syllabus, contribute example questions, compare four
-answers, and rate them. They see no infrastructure: no service names, no storage
-paths, no dataset internals.
+**Students** never have accounts. An instructor puts the join page
+(`aiswe.uwb.edu/join`) and a six-character **class code** on the board; a
+student enters the code and this browser becomes an anonymous *participant* in
+that one course. No name, email or NetID is asked for or stored — research data
+references a random participant id and nothing else. Students read the
+syllabus, contribute example questions, compare four answers, and rate them.
+They see no infrastructure and no other student's ratings.
 
-**Professors** create courses, upload a syllabus, review and approve the example
-questions generated for their course, request a course model, and read aggregate
-results. Course management, not ML operations.
+**Professors** sign in with an email address and password. Accounts are created
+only through single-use invitation links from an administrator, which also
+assign courses. A professor sees and manages exactly the courses assigned to
+them (or created by them): syllabus, example review, model requests, results,
+and the class code. Course management, not ML operations.
 
-**Admins** get the technical surface: service health, per-course diagnostics, the
-full dataset with validation detail, dataset preparation, the training queue, and
-the model registry. Implementation detail appears here and nowhere else.
+**Admins** are created the same way, by invitation from an existing
+administrator; the very first one by a command-line bootstrap link. They reach
+every course and the technical surface — service health, diagnostics, the
+dataset, training, the model registry — plus People (accounts, roles, course
+assignments, invitations) and the audit trail.
 
 ---
 
@@ -105,6 +112,10 @@ connection.
 | `model_requests` | The professor-facing "I want a model" lifecycle |
 | `training_runs` | The queue the cluster claims work from, and what each run reported |
 | `serving_sessions` | Whether a GPU is serving fine-tuned inference, and until when |
+| `users` / `course_memberships` | Professor and admin accounts, and which courses a professor instructs |
+| `invitations` | Reusable class codes and single-use professor/admin/reset links (tokens stored hashed) |
+| `participants` / `auth_sessions` | Anonymous student identities, and the sessions behind both kinds of cookie |
+| `admin_actions` | Audit trail of privileged actions |
 
 Full field-level reference: **[docs/data-model.md](docs/data-model.md)**.
 
@@ -128,9 +139,13 @@ navigation and their URLs kept so existing links resolve. Old URLs
 query strings; see `src/app/LegacyRedirects.tsx`.
 
 ```
-/                                        role landing
+/                                        landing: whoever is signed in, or sign-in
+/login                                   professor/admin sign-in
+/join, /join/:code                       student join page (class code)
+/invite/:token                           accept a professor/admin/reset invitation
+/forbidden                               signed in, but not here
 
-/student                                 course list
+/student                                 course list (a participant's one course)
 /student/course/:courseId                home
 /student/course/:courseId/syllabus       read the syllabus
 /student/course/:courseId/contribute     add an example question
@@ -144,14 +159,16 @@ query strings; see `src/app/LegacyRedirects.tsx`.
 /professor/course/:courseId/examples     review queue
 /professor/course/:courseId/model        course model status, request a model
 /professor/course/:courseId/results      aggregate results
-/professor/course/:courseId/invite       invite students (not yet implemented)
+/professor/course/:courseId/invite       class code: create, copy, QR, revoke, replace
 
 /admin                                   service health
 /admin/courses                           technical course list
 /admin/courses/:courseId                 course diagnostics
 /admin/courses/:courseId/examples        full dataset + export
+/admin/people                            accounts, roles, course assignments, invitations
 /admin/training                          dataset prep, training queue, job status
 /admin/models                            model registry and published versions
+/admin/audit                             privileged-action audit trail
 /admin/system                            architecture reference
 
 /styleguide                              design-system reference (dev only)
@@ -263,8 +280,21 @@ npm run dev
 curl -s http://127.0.0.1:8001/api/health
 ```
 
-Expect `{"status":"ok","service":"syllabus-model-lab-backend"}`. Then open the
-Vite URL, create a course, and upload a syllabus.
+Expect `{"status":"ok","service":"syllabus-model-lab-backend"}`.
+
+### 9. Create the first administrator
+
+```bash
+backend/.venv/bin/python backend/scripts/bootstrap_admin_invite.py --origin http://localhost:5173
+```
+
+Open the link it prints (it works once, within an hour), choose an email
+address, a name and a password, and you are signed in as an administrator. Then
+create a course, upload a syllabus, and — on the course's Invite page — a class
+code to try the student flow with.
+
+Working over plain `http://localhost` in Safari? Set `AUTH_COOKIE_SECURE=false`
+in `backend/.env`; Chrome and Firefox accept Secure cookies on localhost as is.
 
 ---
 
@@ -302,6 +332,7 @@ closed if a test tries to reach any of them — see
 .
 ├── backend/
 │   ├── app/                  # FastAPI routes, repositories, RAG, seed generation
+│   │   └── auth/             # principals, sessions, tokens, passwords, guards
 │   ├── db/schema.sql         # Full current schema; migrations/ upgrades old ones
 │   ├── scripts/              # Operational and one-off maintenance scripts
 │   └── tests/
@@ -327,10 +358,12 @@ closed if a test tries to reach any of them — see
 
 ## Current limitations
 
-- **No authentication or access control.** Anyone with a link can open any
-  course, in any role.
-- **No enrolment**, join codes, or class rosters. The invite page is a
-  placeholder.
+- **A student's identity is this browser.** Clearing cookies or switching
+  devices starts a new anonymous participant; there is no recovery, by design,
+  because nothing identifying is stored to recover with.
+- **Password reset is administrator-issued.** There is no mail path, so a
+  forgotten professor password means asking an administrator for a one-time
+  reset link.
 - **Fine-tuned inference needs a GPU session started by hand**, because opening
   the tunnel authenticates to UW and two-factor is not automated.
 - **Syllabus artifacts and indexes are local disk only**, so the backend is not
@@ -346,10 +379,14 @@ What is genuinely unfinished, and what is deliberately out of scope:
 
 - Contributed questions and evaluations are stored in PostgreSQL, scoped by
   `courseId`.
-- **The application does not store student identity.** There is no
-  authentication, so it never collects a name, email, or account id to store.
-  This is a statement about the application database only — it is not a claim
-  about Nginx access logs, systemd journals, or anything else the host records.
+- **The application stores no student identity.** A student is a random
+  participant id bound to one course, created when a class code is entered; it
+  never collects a name, email, NetID or account, and a student in two courses
+  is two unrelated participants. This is a statement about the application
+  database only — it is not a claim about Nginx access logs, systemd journals,
+  or anything else the host records.
+- **Professors and administrators are stored normally** (email, display name,
+  a scrypt password hash) and their privileged actions are audited.
 - Avoid entering sensitive personal information into contributed questions or
   evaluation notes. Nothing redacts them.
 - Model outputs can be wrong. Use the syllabus and instructor judgment as the
