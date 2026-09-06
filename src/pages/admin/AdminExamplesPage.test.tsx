@@ -116,6 +116,24 @@ describe('AdminExamplesPage course separation', () => {
     expect(screen.queryByText(/When does CSS 350 meet\?/)).not.toBeInTheDocument();
   });
 
+  it('exposes the review workflow for this course without rebuilding it', async () => {
+    subscribeToSeedExamplesMock.mockImplementation(
+      (_courseId: string, onData: (seeds: SeedExample[]) => void) => {
+        onData([makeSeed('CSS 360', 'seed-1', { reviewStatus: 'generated' })]);
+        return () => undefined;
+      },
+    );
+
+    renderDataset('css-360-winter-2026-a7rp');
+
+    // The link is the whole of the review surface here: approve, reject and
+    // edit live in the professor review page, mounted under /admin for any
+    // course, so there is exactly one review implementation.
+    const link = await screen.findByRole('link', { name: 'Review examples' });
+    expect(link).toHaveAttribute('href', '/admin/courses/css-360-winter-2026-a7rp/review');
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
+  });
+
   it('shows an empty state when the course has no seed examples', async () => {
     subscribeToSeedExamplesMock.mockImplementation(
       (_courseId: string, onData: (seeds: SeedExample[]) => void) => {

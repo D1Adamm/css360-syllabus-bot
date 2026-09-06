@@ -242,7 +242,7 @@ Properties that matter:
 | Courses, seeds, evaluations, model registry, training queue | PostgreSQL | Reached only through FastAPI |
 | Accounts, memberships, invitations, participants, sessions, audit | PostgreSQL | Tokens stored hashed; participants carry nothing identifying |
 | Uploaded syllabi and extracted text | VM local disk | `backend/course_data/{courseId}/` |
-| Embedding indexes | VM local disk | `backend/data/indexes/{courseId}.json` |
+| Embedding indexes | VM local disk | `backend/data/indexes/{courseId}.json`. Retrieval reads the file; `courses.chunk_count` mirrors its size and is rewritten by `reindex_course.py` |
 | Prepared training datasets | VM local disk | `data/exports/{courseId}/`, fetched by the cluster |
 | Adapters and training runs | Tillicum GPFS | The registry records references, never absolute paths |
 | Published adapters | Tillicum GPFS | `serving/{courseId}/{version}/adapter` |

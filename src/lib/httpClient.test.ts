@@ -32,6 +32,64 @@ function headersOf(init: RequestInit): Record<string, string> {
   return (init.headers ?? {}) as Record<string, string>;
 }
 
+describe('httpClient timeouts', () => {
+  it('sends no abort signal unless a caller asks for a timeout', async () => {
+    const { getJson } = await import('./httpClient');
+    await getJson('/db/courses', 'failed');
+    expect(requestInit(0).signal).toBeUndefined();
+  });
+
+  it('turns a request that outlives its timeout into an ApiError naming the wait', async () => {
+    vi.useFakeTimers();
+    try {
+      const { ApiError, requestJson, timeoutMessage } = await import('./httpClient');
+      fetchMock.mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () =>
+              reject(new DOMException('The operation was aborted.', 'AbortError')),
+            );
+          }),
+      );
+
+      const pending = requestJson('/courses/c/facts/inventory', {
+        method: 'POST',
+        json: { wait: false },
+        fallbackErrorMessage: 'failed',
+        timeoutMs: 30_000,
+      });
+      const outcome = pending.then(
+        () => 'resolved',
+        (error: unknown) => error,
+      );
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      const error = await outcome;
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as Error).message).toBe(timeoutMessage(30_000));
+      expect((error as Error).message).toContain('30 seconds');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the timer when the response arrives in time', async () => {
+    vi.useFakeTimers();
+    try {
+      const { requestJson } = await import('./httpClient');
+      const result = await requestJson('/health', {
+        fallbackErrorMessage: 'failed',
+        timeoutMs: 1_000,
+      });
+      expect(result).toEqual({ ok: true });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('httpClient', () => {
   it('sends credentials on every request so the session cookies travel', async () => {
     const { getJson, postJson } = await import('./httpClient');

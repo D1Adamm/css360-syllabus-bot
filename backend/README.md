@@ -122,6 +122,38 @@ as more than one instance.
 `../docs/syllabus.txt` is a fixture for chunking unit tests only (`app/rag.py`
 reads it). No live route uses a fixed index.
 
+### Rebuilding a course index
+
+```bash
+.venv/bin/python -m app.reindex_course --course-id <courseId>
+```
+
+Rebuilds `data/indexes/{courseId}.json` from the extracted `syllabus.txt` with
+the current chunker, embeds every chunk through Ollama, invalidates the cached
+fact inventory, and writes the new chunk count to `courses.chunk_count` so the
+course record and the index file report the same number. `--all` does every
+local course; `--dry-run` shows the proposed sections without writing or
+calling Ollama.
+
+```bash
+.venv/bin/python -m app.reindex_course --course-id <courseId> --sync-record
+```
+
+Copies the chunk count of the index file that already exists into the course
+record, with no embedding and no cache invalidation. This is the repair for a
+course whose record still shows the count from its original upload after an
+earlier rebuild — the admin course page flags exactly that case.
+
+### The fact inventory
+
+`POST /api/courses/{courseId}/facts/inventory` builds or reuses the cached fact
+inventory. A rebuild runs every batch of the syllabus through the local model
+on the CPU and can take an hour for a long syllabus, so the request has two
+modes: the default waits, for scripts; `{"wait": false}` answers at once with
+the cached inventory, or `202 {"status": "building"}` after starting the build
+in the background, or `503` once if the build failed. The admin page uses the
+second mode and polls. Concurrent callers share one build per course.
+
 ---
 
 ## Tests

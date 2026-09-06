@@ -58,9 +58,20 @@ vi.mock('../../hooks/useCourseModelRequest', () => ({
 
 vi.mock('../../lib/adminApi', () => ({
   ApiError: class ApiError extends Error {},
+  DIAGNOSTIC_TIMEOUT_MS: 30_000,
   fetchCourseChunks: vi.fn(),
-  fetchFactInventory: vi.fn(),
+  requestFactInventory: vi.fn(),
   runSeedQualityCheck: vi.fn(),
+}));
+
+vi.mock('../../lib/adminPeopleApi', () => ({
+  listUsers: vi.fn().mockResolvedValue({ count: 0, users: [] }),
+  addMembership: vi.fn(),
+  removeMembership: vi.fn(),
+}));
+
+vi.mock('../../components/invite/StudentAccessPanel', () => ({
+  StudentAccessPanel: () => null,
 }));
 
 import type { CourseModelState } from '../../hooks/useCourseModel';

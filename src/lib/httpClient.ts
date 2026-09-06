@@ -91,6 +91,20 @@ export interface RequestOptions {
   fallbackErrorMessage: string;
   /** Shown when no response arrives at all. */
   unreachableMessage?: string;
+  /**
+   * Give up after this long and throw an `ApiError` saying so.
+   *
+   * Off by default: the comparison page legitimately waits on a CPU-bound
+   * model for longer than any fixed limit would allow. A caller that has
+   * arranged for the backend to answer quickly — the admin diagnostics, which
+   * ask for status rather than waiting on work — sets this so a proxy that
+   * holds the socket open cannot leave a control spinning forever.
+   */
+  timeoutMs?: number;
+}
+
+export function timeoutMessage(timeoutMs: number): string {
+  return `No response after ${Math.round(timeoutMs / 1000)} seconds. The request was stopped.`;
 }
 
 async function readDetail(response: Response, fallback: string): Promise<string> {
@@ -135,11 +149,18 @@ export async function requestJson<T>(path: string, options: RequestOptions): Pro
     body = JSON.stringify(options.json);
   }
 
+  const controller = options.timeoutMs ? new AbortController() : null;
+  const timer =
+    controller && options.timeoutMs
+      ? setTimeout(() => controller.abort(), options.timeoutMs)
+      : null;
+
   const init: RequestInit = {
     method,
     credentials: 'include',
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
     ...(body === undefined ? {} : { body }),
+    ...(controller ? { signal: controller.signal } : {}),
   };
 
   let response: Response;
@@ -147,7 +168,14 @@ export async function requestJson<T>(path: string, options: RequestOptions): Pro
   try {
     response = await fetch(`${baseUrl}${path}`, init);
   } catch {
+    if (controller?.signal.aborted && options.timeoutMs) {
+      throw new ApiError(timeoutMessage(options.timeoutMs));
+    }
     throw new ApiError(options.unreachableMessage ?? UNREACHABLE_MESSAGE);
+  } finally {
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
   }
 
   if (!response.ok) {

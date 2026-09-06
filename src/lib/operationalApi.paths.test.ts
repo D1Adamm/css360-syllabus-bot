@@ -146,8 +146,8 @@ const OPERATIONAL_CASES: Array<{
     backendRoute: `/api/courses/${COURSE}/chunks`,
   },
   {
-    name: 'fetchFactInventory',
-    call: async () => (await import('./adminApi')).fetchFactInventory(COURSE),
+    name: 'requestFactInventory',
+    call: async () => (await import('./adminApi')).requestFactInventory(COURSE),
     backendRoute: `/api/courses/${COURSE}/facts/inventory`,
   },
   {

@@ -415,7 +415,7 @@ def review_course_seed(
         )
 
     def work(connection: Any) -> dict[str, Any] | None:
-        return db_seeds.review_seed(
+        stored = db_seeds.review_seed(
             connection,
             safe_course_id,
             seed_id,
@@ -424,6 +424,21 @@ def review_course_seed(
             answer=request.answer,
             review_notes=request.review_notes,
         )
+        # Same rule as the operational review route: an administrator acting
+        # for a course's instructors is audited, a professor on their own
+        # course is not.
+        if stored is not None and principal.is_admin and principal.user is not None:
+            db_admin_actions.record_seed_review(
+                connection,
+                actor_user_id=principal.user.user_id,
+                actor_role=principal.user.role,
+                course_id=safe_course_id,
+                seed_id=seed_id,
+                review_status=status,
+                text_edited=request.question is not None or request.answer is not None,
+                notes_changed=request.review_notes is not None,
+            )
+        return stored
 
     try:
         updated = _run("reviewing a seed", work)

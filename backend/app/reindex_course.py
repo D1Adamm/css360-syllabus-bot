@@ -4,6 +4,18 @@ Usage:
   python -m app.reindex_course --course-id css-360-winter-2026-a7rp
   python -m app.reindex_course --all
   python -m app.reindex_course --course-id css-360-winter-2026-a7rp --dry-run
+  python -m app.reindex_course --course-id css-360-winter-2026-a7rp --sync-record
+
+The course record and the index file
+------------------------------------
+`courses.chunk_count` in PostgreSQL is written when a syllabus is uploaded, from
+the chunk count the upload produced. A rebuild here replaces the index file on
+disk with a different chunking, so it must also rewrite that column — an index
+rebuilt to 163 chunks under a record that still says 92 is how the admin course
+page came to show two different numbers for one course. Every successful
+rebuild now updates the record, and `--sync-record` updates it from the index
+that already exists without re-embedding anything (no Ollama call, and the
+fact-inventory cache is left alone).
 """
 
 from __future__ import annotations
@@ -16,6 +28,8 @@ from typing import Any
 
 from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
+from app.db import db_connection, translate_db_errors
+from app.db_courses import update_course
 from app.rag import OLLAMA_EMBEDDING_MODEL
 from app.storage import CourseArtifactStorage, LocalCourseArtifactStorage, get_course_artifact_storage
 from app.syllabus_chunking import (
@@ -67,6 +81,61 @@ def _print_dry_run(course_id: str, syllabus_text: str) -> dict[str, Any]:
     return {"courseId": course_id, "dryRun": True, **summary, "warnings": warnings}
 
 
+def sync_course_record(course_id: str, chunk_count: int) -> dict[str, Any]:
+    """Write the index's chunk count to `courses.chunk_count`.
+
+    Returns what happened rather than raising: a rebuild that has already
+    landed on disk is not undone by a database that is unreachable, but the
+    operator has to be told the record was not updated so they can run
+    `--sync-record` once it is.
+    """
+    safe_id = assert_valid_course_id(course_id)
+    try:
+        with translate_db_errors("updating the course record"):
+            with db_connection() as connection:
+                updated = update_course(
+                    connection,
+                    safe_id,
+                    {"chunkCount": int(chunk_count), "syllabusStatus": "indexed"},
+                )
+    except Exception as exc:  # noqa: BLE001 - reported, never fatal to the rebuild
+        detail = getattr(exc, "detail", None) or str(exc)
+        return {"synced": False, "reason": str(detail)}
+    if updated is None:
+        return {
+            "synced": False,
+            "reason": f'No course record exists for "{safe_id}"; nothing to update.',
+        }
+    return {"synced": True, "chunkCount": int(chunk_count)}
+
+
+def _print_record_sync(outcome: dict[str, Any]) -> None:
+    if outcome.get("synced"):
+        print(f"  courseRecord.chunkCount={outcome['chunkCount']} (PostgreSQL updated)")
+    else:
+        print(f"  courseRecord: NOT updated — {outcome.get('reason')}")
+
+
+def _sync_record_only(*, course_id: str, storage: CourseArtifactStorage) -> dict[str, Any]:
+    """Update the course record from the index already on disk. No Ollama."""
+    safe_id = assert_valid_course_id(course_id)
+    index_data = storage.load_index(safe_id)
+    if index_data is None:
+        raise FileNotFoundError(
+            f"No index found for courseId={safe_id}; rebuild it before syncing the record."
+        )
+    chunks = index_data.get("chunks")
+    chunk_count = len(chunks) if isinstance(chunks, list) else int(index_data.get("chunkCount") or 0)
+    outcome = sync_course_record(safe_id, chunk_count)
+    print(f"[sync-record] courseId={safe_id}")
+    print(f"  indexVersion={index_data.get('indexVersion')}")
+    print(f"  indexChunkCount={chunk_count}")
+    _print_record_sync(outcome)
+    if not outcome.get("synced"):
+        raise RuntimeError(str(outcome.get("reason")))
+    return {"courseId": safe_id, "chunkCount": chunk_count, **outcome}
+
+
 async def _reindex_one(
     *,
     course_id: str,
@@ -113,6 +182,9 @@ async def _reindex_one(
     print(f"  wrote={summary['indexPath']}")
     print(f"  preservedSyllabus={summary['sourcePath']}")
     print("  fact inventory cache invalidated via atomic index write")
+    # The index on disk changed; the record that reports its size must follow.
+    summary["courseRecord"] = sync_course_record(safe_id, int(summary["chunkCount"]))
+    _print_record_sync(summary["courseRecord"])
     if summary["warnings"]:
         print("  validationWarnings:")
         for warning in summary["warnings"]:
@@ -137,6 +209,9 @@ async def _async_main(args: argparse.Namespace) -> int:
     failures = 0
     for course_id in course_ids:
         try:
+            if args.sync_record:
+                _sync_record_only(course_id=course_id, storage=storage)
+                continue
             await _reindex_one(
                 course_id=course_id,
                 storage=storage,
@@ -177,12 +252,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail when chunking validation warnings are produced",
     )
+    parser.add_argument(
+        "--sync-record",
+        dest="sync_record",
+        action="store_true",
+        help=(
+            "Do not rebuild. Copy the chunk count of the existing index file "
+            "into the course record in PostgreSQL (no Ollama call; the "
+            "fact-inventory cache is kept)."
+        ),
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.sync_record and args.dry_run:
+        parser.error("--sync-record and --dry-run cannot be combined.")
     return asyncio.run(_async_main(args))
 
 

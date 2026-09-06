@@ -9,6 +9,7 @@ load_backend_env()
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.auth.dependencies import (
     authorize_course_access,
@@ -56,6 +57,7 @@ from app.schemas import (
     FactAllocationResponse,
     FactAllocationSkippedFact,
     FactAllocationSummary,
+    FactInventoryBuildingResponse,
     FactInventoryItem,
     FactInventoryRequest,
     FactInventoryResponse,
@@ -115,7 +117,14 @@ from app.seed_split import (
 from app.seed_review import REVIEW_STATUSES, resolve_review_status
 from app.seed_allocation import allocate_slots
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
-from app.fact_inventory_cache import load_or_build_fact_inventory
+from app import db_admin_actions
+from app.fact_inventory_cache import (
+    fact_inventory_build_status,
+    load_or_build_fact_inventory,
+    peek_fact_inventory,
+    start_fact_inventory_build,
+    take_fact_inventory_build_error,
+)
 from app.ollama_coordination import (
     get_starter_job_status,
     starter_job_slot,
@@ -778,9 +787,38 @@ def retry_course_training_run(course_id: str, principal: Principal = Depends(req
     )
 
 
+def _fact_inventory_response(
+    course_id: str, inventory: dict
+) -> FactInventoryResponse:
+    return FactInventoryResponse(
+        courseId=course_id,
+        model=inventory["model"],
+        factCount=inventory["factCount"],
+        droppedCount=inventory["droppedCount"],
+        duplicatesRemoved=inventory.get("duplicatesRemoved", 0),
+        fallbackUsed=inventory["fallbackUsed"],
+        cached=bool(inventory.get("cached")),
+        countsByScope=inventory["countsByScope"],
+        countsByKind=inventory["countsByKind"],
+        countsBySeries=inventory.get("countsBySeries", {}),
+        facts=[FactInventoryItem(**fact) for fact in inventory["facts"]],
+    )
+
+
+def _fact_inventory_building(course_id: str, started_at: str | None) -> JSONResponse:
+    body = FactInventoryBuildingResponse(courseId=course_id, startedAt=started_at)
+    return JSONResponse(status_code=202, content=body.model_dump(by_alias=True))
+
+
 @app.post(
     "/api/courses/{course_id}/facts/inventory",
     response_model=FactInventoryResponse,
+    responses={
+        202: {
+            "model": FactInventoryBuildingResponse,
+            "description": "wait=false and the inventory is still being built.",
+        }
+    },
 )
 async def get_course_fact_inventory(
     course_id: str,
@@ -791,6 +829,19 @@ async def get_course_fact_inventory(
 
     Extraction-only: this DOES NOT generate starter seeds. Shares the same
     per-course cache as starter generation. Pass forceRefresh to rebuild.
+
+    A rebuild is every batch of the syllabus through the local model on the
+    CPU: minutes for a short syllabus, hours for a long one, and nothing a
+    browser should hold a socket open for. So the request has two modes.
+
+    `wait: true` (the default, and what scripts have always had) blocks until
+    the inventory exists. `wait: false` never blocks: a valid cache answers
+    200 at once; otherwise the build is started — or joined, if one is already
+    running — and the answer is 202 with `status: "building"`. Polling the same
+    call (without `forceRefresh`, which would start over each time) returns 202
+    while it runs, 200 when it is done, and 503 once if it failed, after which
+    the next call starts a fresh build. Concurrent callers never start a
+    second build for the same course in either mode.
     """
     try:
         safe_course_id = assert_valid_course_id(course_id)
@@ -813,26 +864,38 @@ async def get_course_fact_inventory(
             detail=f'No syllabus chunks found for course "{safe_course_id}".',
         )
 
+    if not request.wait:
+        if not request.force_refresh:
+            cached = peek_fact_inventory(
+                course_id=safe_course_id, raw_chunks=raw_chunks, storage=storage
+            )
+            if cached is not None:
+                return _fact_inventory_response(safe_course_id, cached)
+
+        status = fact_inventory_build_status(safe_course_id)
+        if status["building"]:
+            return _fact_inventory_building(safe_course_id, status["startedAt"])
+
+        failure = take_fact_inventory_build_error(safe_course_id)
+        if failure is not None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"The fact inventory could not be built: {failure}",
+            )
+
+        start_fact_inventory_build(
+            course_id=safe_course_id, raw_chunks=raw_chunks, storage=storage
+        )
+        started = fact_inventory_build_status(safe_course_id)
+        return _fact_inventory_building(safe_course_id, started["startedAt"])
+
     inventory = await load_or_build_fact_inventory(
         course_id=safe_course_id,
         raw_chunks=raw_chunks,
         storage=storage,
         force_refresh=request.force_refresh,
     )
-
-    return FactInventoryResponse(
-        courseId=safe_course_id,
-        model=inventory["model"],
-        factCount=inventory["factCount"],
-        droppedCount=inventory["droppedCount"],
-        duplicatesRemoved=inventory.get("duplicatesRemoved", 0),
-        fallbackUsed=inventory["fallbackUsed"],
-        cached=bool(inventory.get("cached")),
-        countsByScope=inventory["countsByScope"],
-        countsByKind=inventory["countsByKind"],
-        countsBySeries=inventory.get("countsBySeries", {}),
-        facts=[FactInventoryItem(**fact) for fact in inventory["facts"]],
-    )
+    return _fact_inventory_response(safe_course_id, inventory)
 
 
 @app.post(
@@ -982,8 +1045,13 @@ async def review_course_seed(
     # route uses, so the two paths cannot drift apart on provenance: the first
     # edit snapshots originalQuestion/originalAnswer, `edited` survives a later
     # approval, and grounding fields are preserved either way.
+    #
+    # An administrator's decision is audited in the same transaction, because
+    # an administrator reviews any course without holding a membership in it.
+    # A professor's decision on their own course is ordinary course work and
+    # leaves no audit row.
     def work(connection):
-        return review_seed(
+        stored = review_seed(
             connection,
             safe_course_id,
             seed_id,
@@ -992,6 +1060,18 @@ async def review_course_seed(
             answer=body.answer,
             review_notes=body.review_notes,
         )
+        if stored is not None and principal.is_admin and principal.user is not None:
+            db_admin_actions.record_seed_review(
+                connection,
+                actor_user_id=principal.user.user_id,
+                actor_role=principal.user.role,
+                course_id=safe_course_id,
+                seed_id=seed_id,
+                review_status=status,
+                text_edited=body.question is not None or body.answer is not None,
+                notes_changed=body.review_notes is not None,
+            )
+        return stored
 
     try:
         with translate_db_errors("reviewing a seed"):

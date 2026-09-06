@@ -107,6 +107,46 @@ def record_action(
         )
 
 
+SEED_REVIEW_ACTION = "seed.review"
+
+
+def record_seed_review(
+    conn: Any,
+    *,
+    actor_user_id: str | None,
+    actor_role: str | None,
+    course_id: str,
+    seed_id: str,
+    review_status: str,
+    text_edited: bool,
+    notes_changed: bool = False,
+) -> None:
+    """One administrator's review decision on one example.
+
+    Professors reviewing their own courses are doing the job the course
+    membership exists for, and are not audited. An administrator reviewing is
+    acting for a course's instructors from outside the membership table, which
+    is exactly the kind of privileged, cross-course action this trail is for.
+    The decision and whether the text changed are recorded; the question and
+    answer themselves stay in `seed_examples`, where the edit history already
+    keeps the original wording.
+    """
+    record_action(
+        conn,
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+        action=SEED_REVIEW_ACTION,
+        target_kind="seed",
+        target_id=seed_id,
+        course_id=course_id,
+        detail={
+            "reviewStatus": review_status,
+            "textEdited": bool(text_edited),
+            "notesChanged": bool(notes_changed),
+        },
+    )
+
+
 def list_actions(
     conn: Any, *, limit: int = 100, before_id: int | None = None
 ) -> list[dict[str, Any]]:

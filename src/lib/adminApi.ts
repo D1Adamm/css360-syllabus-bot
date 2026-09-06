@@ -96,11 +96,23 @@ export function getConfiguredApiBaseUrl(): string | null {
  * a professor should never see.
  * ------------------------------------------------------------------------- */
 
-function postJsonAdmin<T>(path: string, body: unknown): Promise<T> {
+/**
+ * How long a diagnostic may take before the page gives up on it.
+ *
+ * Every probe on the admin course page either reads a file, computes over
+ * stored rows, or asks the backend for the *status* of a long build rather
+ * than waiting on the build itself. None of them should take a minute; a
+ * request that does is a stuck proxy or a stuck backend, and the control must
+ * come back with a message rather than spin until someone reloads.
+ */
+export const DIAGNOSTIC_TIMEOUT_MS = 30_000;
+
+function postJsonAdmin<T>(path: string, body: unknown, timeoutMs?: number): Promise<T> {
   return requestJson<T>(path, {
     method: 'POST',
     json: body,
     fallbackErrorMessage: 'The request failed.',
+    ...(timeoutMs ? { timeoutMs } : {}),
   });
 }
 
@@ -120,7 +132,11 @@ export interface CourseChunksResponse {
 }
 
 export function fetchCourseChunks(courseId: string): Promise<CourseChunksResponse> {
-  return getJson<CourseChunksResponse>(`/courses/${courseId}/chunks`);
+  return requestJson<CourseChunksResponse>(`/courses/${courseId}/chunks`, {
+    method: 'GET',
+    fallbackErrorMessage: 'The request failed.',
+    timeoutMs: DIAGNOSTIC_TIMEOUT_MS,
+  });
 }
 
 export interface FactInventoryResponse {
@@ -135,15 +151,48 @@ export interface FactInventoryResponse {
   countsByKind?: Record<string, number>;
 }
 
+/** The backend's 202 body while an inventory is being extracted. */
+export interface FactInventoryBuildingResponse {
+  courseId: string;
+  status: 'building';
+  startedAt?: string | null;
+}
+
+export type FactInventoryProbeResult =
+  | { status: 'ready'; inventory: FactInventoryResponse }
+  | { status: 'building'; startedAt: string | null };
+
+function isBuilding(
+  body: FactInventoryResponse | FactInventoryBuildingResponse,
+): body is FactInventoryBuildingResponse {
+  return (body as FactInventoryBuildingResponse).status === 'building';
+}
+
 /**
  * Extraction-only. The backend docstring is explicit that this does NOT
  * generate seeds; it builds or reuses the inspectable fact inventory.
+ *
+ * Asked with `wait: false`, so the backend answers at once: the cached
+ * inventory when it has one, otherwise `building` after starting (or joining)
+ * the extraction in the background. A rebuild is every batch of the syllabus
+ * through the local model on the CPU, and the page used to hold the request
+ * open for the whole of it — which is how "Building…" came to mean "until
+ * somebody reloads". Call again to collect the result; a failed build comes
+ * back as an `ApiError` on the poll after it fails, and the next call starts
+ * a fresh one.
  */
-export function fetchFactInventory(courseId: string): Promise<FactInventoryResponse> {
-  return postJsonAdmin<FactInventoryResponse>(
+export async function requestFactInventory(
+  courseId: string,
+): Promise<FactInventoryProbeResult> {
+  const body = await postJsonAdmin<FactInventoryResponse | FactInventoryBuildingResponse>(
     `/courses/${courseId}/facts/inventory`,
-    {},
+    { wait: false },
+    DIAGNOSTIC_TIMEOUT_MS,
   );
+  if (isBuilding(body)) {
+    return { status: 'building', startedAt: body.startedAt ?? null };
+  }
+  return { status: 'ready', inventory: body };
 }
 
 export interface SeedQualityCheckResponse {
@@ -157,6 +206,7 @@ export function runSeedQualityCheck(
   return postJsonAdmin<SeedQualityCheckResponse>(
     `/courses/${courseId}/seeds/quality-check`,
     {},
+    DIAGNOSTIC_TIMEOUT_MS,
   );
 }
 

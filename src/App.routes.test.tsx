@@ -275,6 +275,22 @@ describe('route guards', () => {
     await expectLocation(view, '/login');
   });
 
+  it('mounts the professor review workflow for an administrator on any course', async () => {
+    const view = renderAt(`/admin/courses/${OTHER}/review`, 'admin');
+    await expectLocation(view, `/admin/courses/${OTHER}/review`);
+    expect(
+      await view.findByRole('heading', { name: 'Review Examples' }),
+    ).toBeInTheDocument();
+    // The page knows it is being used by an administrator and says so.
+    expect(view.getByText(/on behalf of its instructors/)).toBeInTheDocument();
+    expect(view.getByText(/recorded in the audit trail/)).toBeInTheDocument();
+    cleanup();
+
+    // A professor has the professor route for their own course and nothing else.
+    const professor = renderAt(`/admin/courses/${COURSE}/review`, 'professor');
+    await expectLocation(professor, '/forbidden');
+  });
+
   it('lets a professor walk the student flow of their own course', async () => {
     const view = renderAt(`/student/course/${COURSE}/compare`, 'professor');
     await expectLocation(view, `/student/course/${COURSE}/compare`);

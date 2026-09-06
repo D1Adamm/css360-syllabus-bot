@@ -84,8 +84,19 @@ function matchesSearch(example: CourseSeedReviewRecord, needle: string): boolean
  * List view is the default for that reason. Card view is one click away and
  * unchanged.
  */
-export function ReviewExamplesPage() {
+export interface ReviewExamplesPageProps {
+  /**
+   * Who is reviewing. The same page serves professors on their own courses
+   * and administrators on any course (`/admin/courses/:courseId/review`); the
+   * route says which. An administrator is told their decisions are audited,
+   * because they are. Nothing else differs — one review workflow, not two.
+   */
+  audience?: 'professor' | 'admin';
+}
+
+export function ReviewExamplesPage({ audience = 'professor' }: ReviewExamplesPageProps = {}) {
   const courseId = useCourseId();
+  const asAdmin = audience === 'admin';
   const {
     examples,
     counts,
@@ -433,7 +444,12 @@ export function ReviewExamplesPage() {
     <div className="ui-stack ui-stack--loose">
       <PageHeader
         title="Review Examples"
-        description="Approve, edit, or reject the example questions collected for this course. Nothing is approved automatically."
+        eyebrow={asAdmin ? 'Admin' : undefined}
+        description={
+          asAdmin
+            ? "Approve, edit, or reject this course's example questions on behalf of its instructors. Nothing is approved automatically, and every decision you make here is recorded in the audit trail."
+            : 'Approve, edit, or reject the example questions collected for this course. Nothing is approved automatically.'
+        }
         actions={
           <Button
             variant="tertiary"

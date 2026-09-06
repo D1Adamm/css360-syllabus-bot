@@ -16,13 +16,12 @@ import { summariseCourseModel } from '../../lib/modelStatus';
 import {
   ApiError,
   fetchCourseChunks,
-  fetchFactInventory,
   runSeedQualityCheck,
   type CourseChunksResponse,
-  type FactInventoryResponse,
   type SeedQualityCheckResponse,
 } from '../../lib/adminApi';
-import { adminCourseExamplesPath } from '../../lib/roleRoutes';
+import { useFactInventoryProbe } from '../../hooks/useFactInventoryProbe';
+import { adminCourseExamplesPath, adminCourseReviewPath } from '../../lib/roleRoutes';
 import { StudentAccessPanel } from '../../components/invite/StudentAccessPanel';
 import {
   addMembership,
@@ -40,6 +39,21 @@ type Probe<T> =
 function errorText(error: unknown): string {
   return error instanceof ApiError ? error.message : String(error);
 }
+
+/** "10:42" for a build that started at an ISO timestamp; nothing if unparseable. */
+function clockTime(iso: string | null): string | null {
+  if (!iso) {
+    return null;
+  }
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** The first N chunks are enough to see what the index looks like. */
+const CHUNK_PREVIEW_COUNT = 12;
 
 type PeopleState =
   | { status: 'loading' }
@@ -189,7 +203,16 @@ export function AdminCourseDetailPage() {
   const { state: requestState } = useCourseModelRequest(courseId);
 
   const [chunks, setChunks] = useState<Probe<CourseChunksResponse>>({ status: 'idle' });
-  const [facts, setFacts] = useState<Probe<FactInventoryResponse>>({ status: 'idle' });
+  /*
+   * The fact inventory is the one diagnostic that can take longer than a page
+   * should wait. Building it is every batch of the syllabus through the local
+   * model on the CPU, and this control used to hold one request open for all
+   * of it — "Building…" until somebody reloaded. The hook asks the backend for
+   * status instead, polls for a bounded time, and always ends somewhere a
+   * reader can act on: a result, an error with Retry, or "still running,
+   * check again".
+   */
+  const { state: facts, inspect: inspectFacts } = useFactInventoryProbe(courseId);
   const [quality, setQuality] = useState<Probe<SeedQualityCheckResponse>>({
     status: 'idle',
   });
@@ -203,14 +226,36 @@ export function AdminCourseDetailPage() {
     }
   }, [courseId]);
 
-  const loadFacts = useCallback(async () => {
-    setFacts({ status: 'running' });
-    try {
-      setFacts({ status: 'ok', data: await fetchFactInventory(courseId) });
-    } catch (error) {
-      setFacts({ status: 'failed', message: errorText(error) });
+  // Inspect expands the listing in place; Collapse puts the row back the way
+  // it was. Re-inspecting reads the file again, which is cheap.
+  const toggleChunks = useCallback(() => {
+    if (chunks.status === 'ok') {
+      setChunks({ status: 'idle' });
+      return;
     }
-  }, [courseId]);
+    void loadChunks();
+  }, [chunks.status, loadChunks]);
+
+  /*
+   * Two sources report a chunk count, and they can disagree.
+   *
+   * The Record row is `courses.chunk_count` in PostgreSQL, written when the
+   * syllabus was uploaded. The inspector counts the chunks in the index file
+   * on disk, which is what retrieval actually reads. A rebuild with the
+   * reindex script rewrites the file; until it also updated the record, a
+   * course could show 92 in one place and 163 in the other. When they differ
+   * the page says so and names the fix rather than showing one number.
+   */
+  const recordChunkCount = metadata?.chunkCount ?? null;
+  const indexChunkCount = chunks.status === 'ok' ? chunks.data.chunkCount : null;
+  const chunkCountMismatch =
+    recordChunkCount !== null &&
+    indexChunkCount !== null &&
+    recordChunkCount !== indexChunkCount;
+  const factsStartedAt =
+    facts.status === 'building' || facts.status === 'pending'
+      ? clockTime(facts.startedAt)
+      : null;
 
   const loadQuality = useCallback(async () => {
     setQuality({ status: 'running' });
@@ -280,8 +325,14 @@ export function AdminCourseDetailPage() {
             </span>
           </li>
           <li className="admin-row">
-            <span className="admin-row__label">Index chunks</span>
-            <span className="admin-row__value">{metadata?.chunkCount ?? 0}</span>
+            <span className="admin-row__label">Index chunks (course record)</span>
+            <span className="admin-row__value">
+              {metadata?.chunkCount ?? 0}{' '}
+              <span className="ui-text-xs ui-text-muted">
+                as stored in PostgreSQL when the syllabus was indexed; the index file
+                itself is under Diagnostics
+              </span>
+            </span>
           </li>
           <li className="admin-row">
             <span className="admin-row__label">Examples</span>
@@ -294,6 +345,9 @@ export function AdminCourseDetailPage() {
             </span>
             <Link to={adminCourseExamplesPath(courseId)} className="admin-row__label--link">
               Open dataset
+            </Link>
+            <Link to={adminCourseReviewPath(courseId)} className="admin-row__label--link">
+              Review examples
             </Link>
           </li>
         </ul>
@@ -311,7 +365,7 @@ export function AdminCourseDetailPage() {
             <div className="admin-row__main">
               <p className="admin-row__label">Syllabus index</p>
               <p className="ui-text-xs ui-text-muted">
-                Chunks the retrieval index was built from.
+                The index file on disk that retrieval reads, and the chunks it was built from.
               </p>
               {chunks.status === 'failed' && (
                 <p className="admin-row__error" role="alert">
@@ -321,22 +375,41 @@ export function AdminCourseDetailPage() {
               {chunks.status === 'ok' && (
                 <div className="admin-probe">
                   <p className="admin-row__value">
-                    {chunks.data.chunkCount} chunks
+                    {chunks.data.chunkCount} chunks in the index file
                     {chunks.data.documentTitle ? ` · ${chunks.data.documentTitle}` : ''}
                     {chunks.data.indexVersion != null
                       ? ` · index v${chunks.data.indexVersion}`
                       : ''}
                   </p>
+                  {chunkCountMismatch && (
+                    <Callout
+                      tone="warning"
+                      title="The course record disagrees with the index file"
+                      live={false}
+                    >
+                      <p>
+                        The record in PostgreSQL says {recordChunkCount} chunks; the index
+                        file holds {indexChunkCount}. The record is written when a syllabus
+                        is uploaded, and a rebuild with the reindex script replaced the file
+                        without updating it. Retrieval uses the file, so {indexChunkCount} is
+                        the real count.
+                      </p>
+                      <p>To bring the record up to date without re-embedding, run on the VM:</p>
+                      <pre className="admin-json">
+                        {`python -m app.reindex_course --course-id ${courseId} --sync-record`}
+                      </pre>
+                    </Callout>
+                  )}
                   <ol className="admin-chunks">
-                    {chunks.data.chunks.slice(0, 12).map((chunk) => (
+                    {chunks.data.chunks.slice(0, CHUNK_PREVIEW_COUNT).map((chunk) => (
                       <li key={chunk.chunkId}>
                         <code>{chunk.chunkId}</code> {chunk.sectionTitle}
                       </li>
                     ))}
                   </ol>
-                  {chunks.data.chunks.length > 12 && (
+                  {chunks.data.chunks.length > CHUNK_PREVIEW_COUNT && (
                     <p className="ui-text-xs ui-text-muted">
-                      Showing the first 12 of {chunks.data.chunks.length}.
+                      Showing the first {CHUNK_PREVIEW_COUNT} of {chunks.data.chunks.length}.
                     </p>
                   )}
                 </div>
@@ -346,11 +419,16 @@ export function AdminCourseDetailPage() {
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => void loadChunks()}
+                onClick={toggleChunks}
                 loading={chunks.status === 'running'}
                 loadingLabel="Reading…"
+                aria-expanded={chunks.status === 'ok'}
               >
-                Inspect
+                {chunks.status === 'ok'
+                  ? 'Collapse'
+                  : chunks.status === 'failed'
+                    ? 'Retry'
+                    : 'Inspect'}
               </Button>
             </div>
           </li>
@@ -362,6 +440,20 @@ export function AdminCourseDetailPage() {
                 Extraction only — builds or reuses the cached inventory. Does not
                 generate seeds.
               </p>
+              {facts.status === 'building' && (
+                <p className="ui-text-xs ui-text-muted" role="status" aria-live="polite">
+                  Building on the server{factsStartedAt ? ` since ${factsStartedAt}` : ''}…
+                  Extraction runs every batch of the syllabus through the local model and
+                  can take several minutes. This page checks every few seconds.
+                </p>
+              )}
+              {facts.status === 'pending' && (
+                <p className="ui-text-xs ui-text-muted" role="status" aria-live="polite">
+                  Still building on the server{factsStartedAt ? ` since ${factsStartedAt}` : ''}.
+                  This page stopped checking after two minutes; the build carries on
+                  without it. Check again in a while.
+                </p>
+              )}
               {facts.status === 'failed' && (
                 <p className="admin-row__error" role="alert">
                   {facts.message}
@@ -389,11 +481,15 @@ export function AdminCourseDetailPage() {
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => void loadFacts()}
-                loading={facts.status === 'running'}
+                onClick={inspectFacts}
+                loading={facts.status === 'building'}
                 loadingLabel="Building…"
               >
-                Inspect
+                {facts.status === 'pending'
+                  ? 'Check again'
+                  : facts.status === 'failed'
+                    ? 'Retry'
+                    : 'Inspect'}
               </Button>
             </div>
           </li>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button } from '../../components/ui/Button';
+import { Button, LinkButton } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -7,6 +7,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useCourseId } from '../../context/CourseContext';
 import { useSeedExamples } from '../../hooks/useSeedExamples';
+import { adminCourseReviewPath } from '../../lib/roleRoutes';
 import {
   exportCompleteJsonl,
   exportFilteredJson,
@@ -83,6 +84,15 @@ export function AdminExamplesPage() {
         title="Examples"
         eyebrow="Admin"
         description={`Full dataset for ${courseId}, including validation detail and export.`}
+        actions={
+          /* Approve, reject and edit happen in the professor review workflow,
+             which an administrator may run for any course. This page stays the
+             inspection and export view rather than growing a second copy of
+             that workflow. */
+          <LinkButton to={adminCourseReviewPath(courseId)} variant="primary" iconLeft="review">
+            Review examples
+          </LinkButton>
+        }
       />
 
       {error && (

@@ -93,6 +93,11 @@ export function adminCourseExamplesPath(courseId: string): string {
   return `/admin/courses/${courseId}/examples`;
 }
 
+/** The professor review workflow, mounted in the admin tree for any course. */
+export function adminCourseReviewPath(courseId: string): string {
+  return `/admin/courses/${courseId}/review`;
+}
+
 /**
  * Which role area a pathname belongs to, or `null` for role-neutral routes.
  *

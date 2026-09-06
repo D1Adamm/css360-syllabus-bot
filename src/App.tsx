@@ -211,6 +211,10 @@ export function AppRoutes() {
         >
           <Route index element={<AdminCourseDetailPage />} />
           <Route path="examples" element={<AdminExamplesPage />} />
+          {/* The professor review workflow, unchanged, for any course. The
+              backend admits an administrator to every course's review route
+              without a membership, so the same page does the same job here. */}
+          <Route path="review" element={<ReviewExamplesPage audience="admin" />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
 

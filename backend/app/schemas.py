@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Any
+from typing import Any, Literal
 
 
 class BaseModelGenerateRequest(BaseModel):
@@ -717,6 +717,25 @@ class FactInventoryRequest(BaseModel):
         alias="forceRefresh",
         description="When true, rebuild the fact inventory instead of using cache.",
     )
+    wait: bool = Field(
+        default=True,
+        description=(
+            "When false, never block on extraction: answer from the cache, or "
+            "start the build in the background and answer 202 with "
+            "status=building. Poll again (without forceRefresh) to collect the "
+            "result. The default waits for the build, as scripts expect."
+        ),
+    )
+
+
+class FactInventoryBuildingResponse(BaseModel):
+    """The 202 body while an inventory is being built in the background."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    status: Literal["building"] = "building"
+    started_at: str | None = Field(alias="startedAt", default=None)
 
 
 class FactInventoryItem(BaseModel):

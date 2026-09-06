@@ -371,6 +371,9 @@ class SeedRouteTests(DbRouteTestCase):
             "db_seeds.review_seed",
             return_value={**SEED, "reviewStatus": "approved", "wasEdited": True},
         )
+        # The test client is the default administrator, whose decisions on a
+        # course are audited (see test_seed_review_audit.py for the rule).
+        audit = self.patch_repo("db_admin_actions.record_action")
         response = self.client.post(
             f"/api/db/courses/{COURSE}/seeds/-Oseed001/review",
             json={
@@ -385,14 +388,19 @@ class SeedRouteTests(DbRouteTestCase):
         self.assertEqual(review.call_args.kwargs["question"], "Edited?")
         self.assertEqual(review.call_args.kwargs["review_notes"], "Tightened.")
         self.assertTrue(response.json()["seed"]["wasEdited"])
+        self.assertEqual(audit.call_args.kwargs["action"], "seed.review")
+        self.assertEqual(audit.call_args.kwargs["target_id"], "-Oseed001")
 
     def test_review_of_a_missing_seed_is_404(self) -> None:
         self.patch_repo("db_seeds.review_seed", return_value=None)
+        audit = self.patch_repo("db_admin_actions.record_action")
         response = self.client.post(
             f"/api/db/courses/{COURSE}/seeds/nope/review",
             json={"reviewStatus": "approved"},
         )
         self.assertEqual(response.status_code, 404)
+        # Nothing was reviewed, so nothing is audited.
+        audit.assert_not_called()
 
     def test_delete_passes_both_keys_and_returns_a_count(self) -> None:
         delete = self.patch_repo("db_seeds.delete_seed", return_value=True)
