@@ -281,9 +281,10 @@ def consume(
             UPDATE invitations
             SET use_count = use_count + 1,
                 accepted_at = CASE
-                    WHEN %(accepted_by)s IS NULL THEN accepted_at ELSE %(now)s
+                    WHEN %(accepted_by)s::uuid IS NULL THEN accepted_at
+                    ELSE %(now)s::timestamptz
                 END,
-                accepted_by_user_id = COALESCE(%(accepted_by)s, accepted_by_user_id)
+                accepted_by_user_id = COALESCE(%(accepted_by)s::uuid, accepted_by_user_id)
             WHERE invitation_id = %(invitation_id)s
               AND revoked_at IS NULL
               AND (expires_at IS NULL OR expires_at > %(now)s)
