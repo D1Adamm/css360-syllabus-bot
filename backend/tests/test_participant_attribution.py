@@ -273,6 +273,34 @@ class SeedVisibilityTests(AttributionRouteTestCase):
         self.assertEqual(payload["reviewStatus"], "approved")
         self.assertIsNone(self.create_seed.call_args.kwargs["participant_id"])
 
+    def test_staff_who_joined_their_own_course_contribute_as_that_participant(self) -> None:
+        """An instructor trying the student flow gets exactly what a student gets."""
+        self.act_as(
+            Principal(
+                user=professor().user,
+                participant=Participant(participant_id=ME, course_id=COURSE, session_id="s"),
+            )
+        )
+        response = self.client.post(
+            f"/api/db/courses/{COURSE}/seeds",
+            json={"instruction": "Q?", "response": "A.", "origin": "ai_generated", "reviewStatus": "approved"},
+            headers=CSRF,
+        )
+        self.assertEqual(response.status_code, 201)
+        payload = self.create_seed.call_args.args[2]
+        self.assertEqual(payload["origin"], "user")
+        self.assertNotIn("reviewStatus", payload)
+        self.assertEqual(self.create_seed.call_args.kwargs["participant_id"], ME)
+        self.assertTrue(response.json()["seed"]["mine"])
+
+        # The staff view of the list is not projected, but their own rows are marked.
+        body = self.client.get(f"/api/db/courses/{COURSE}/seeds").json()
+        self.assertEqual(body["count"], 4)
+        by_id = {record["id"]: record for record in body["seeds"]}
+        self.assertTrue(by_id["mine"]["mine"])
+        self.assertNotIn("mine", by_id["theirs"])
+        self.assertIn("reviewNotes", by_id["draft-ai"])
+
     def test_a_participant_deletes_only_their_own_contribution(self) -> None:
         self.act_as(participant(ME))
         self.assertEqual(

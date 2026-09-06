@@ -116,6 +116,27 @@ def _student_view(principal: Principal, course_id: str) -> str | None:
     return participant.participant_id
 
 
+def _contributing_participant(principal: Principal, course_id: str) -> str | None:
+    """The participant a contribution is attributed to, staff or not.
+
+    Holding a participant session for a course means having walked in through
+    its classroom code, and a contribution made while holding one is a student
+    contribution — including an instructor's, when they try the flow their
+    students will use. Without one, staff write seeds as staff.
+    """
+    participant = principal.participant_for(course_id)
+    return participant.participant_id if participant is not None else None
+
+
+def _mark_mine(seeds: list[dict[str, Any]], participant_id: str) -> list[dict[str, Any]]:
+    """Flag the rows a staff member contributed as a participant, without
+    projecting anything away: they still get the full record."""
+    return [
+        {**seed, "mine": True} if seed.get("participantId") == participant_id else seed
+        for seed in seeds
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # Courses
 # --------------------------------------------------------------------------- #
@@ -288,6 +309,10 @@ def list_course_seeds(course_id: str, principal: Principal = Depends(require_cou
     seeds, counts, origins = _run("listing course seeds", work)
     if student is not None:
         seeds = seeds_for_participant(seeds, student)
+    else:
+        contributor = _contributing_participant(principal, safe_course_id)
+        if contributor is not None:
+            seeds = _mark_mine(seeds, contributor)
     return SeedListResponse(
         courseId=safe_course_id,
         count=len(seeds),
@@ -316,9 +341,11 @@ def create_course_seed(course_id: str, request: SeedCreateRequest, principal: Pr
     safe_course_id = _safe_course_id(course_id)
     payload = _patch_fields(request)
     student = _student_view(principal, safe_course_id)
-    if student is not None:
+    contributor = _contributing_participant(principal, safe_course_id)
+    if contributor is not None:
         # A contribution: the student chooses the question and answer, the
         # server decides everything about its provenance and review state.
+        # Staff who joined their own course contribute the same way.
         payload = contribution_payload(payload)
 
     def work(connection: Any) -> dict[str, Any]:
@@ -327,7 +354,7 @@ def create_course_seed(course_id: str, request: SeedCreateRequest, principal: Pr
                 status_code=404, detail=f'Course "{safe_course_id}" was not found.'
             )
         return db_seeds.create_seed(
-            connection, safe_course_id, payload, participant_id=student
+            connection, safe_course_id, payload, participant_id=contributor
         )
 
     try:
@@ -336,6 +363,8 @@ def create_course_seed(course_id: str, request: SeedCreateRequest, principal: Pr
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if student is not None:
         created = seeds_for_participant([created], student)[0]
+    elif contributor is not None:
+        created = _mark_mine([created], contributor)[0]
     return SeedResponse(
         courseId=safe_course_id, seedId=created["id"], seed=created
     )
