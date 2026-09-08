@@ -1,10 +1,16 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
+import { Icon } from '../components/ui/Icon';
 import { useSession } from '../context/SessionContext';
-import { isAnonymous, roleForSession } from '../context/session';
+import { isAdminPreview, isAnonymous, roleForSession } from '../context/session';
 import { useCourseMetadata } from '../hooks/useCourseMetadata';
 import { getCourseIdFromPathname } from '../lib/courseRoutes';
-import { getRoleAreaFromPathname, loginPath, roleHomePath } from '../lib/roleRoutes';
+import {
+  adminCoursePath,
+  getRoleAreaFromPathname,
+  loginPath,
+  roleHomePath,
+} from '../lib/roleRoutes';
 import { BrandMark } from './BrandMark';
 import { CourseContextBar } from './CourseContextBar';
 import { courseNavItems, primaryNavItems } from './navigation';
@@ -33,6 +39,13 @@ export function AppShell() {
   const navItems = anonymous ? [] : primaryNavItems(area, courseId);
   const subNavItems = courseId && !anonymous ? courseNavItems(area, courseId) : [];
   const isAdmin = area === 'admin';
+
+  // An administrator on a course's student pages is previewing them. The pages
+  // behave exactly as they do for a student, so this strip is what says that
+  // nothing submitted is saved; it stays on every student page of the course.
+  // See AdminPreviewContext.
+  const previewCourseId =
+    area === 'student' && courseId && isAdminPreview(session, courseId) ? courseId : null;
 
   async function handleSignOut() {
     await signOut();
@@ -72,6 +85,20 @@ export function AppShell() {
           </div>
         </div>
       </header>
+
+      {previewCourseId && (
+        <div className="shell-preview" role="status">
+          <div className="ui-container shell-preview__inner">
+            <Icon name="info" size={14} />
+            <span className="shell-preview__text">
+              Admin Preview — responses are not saved
+            </span>
+            <Link to={adminCoursePath(previewCourseId)} className="shell-preview__exit">
+              Exit preview
+            </Link>
+          </div>
+        </div>
+      )}
 
       {courseId && !isAdmin && !anonymous && (
         <CourseContextBar

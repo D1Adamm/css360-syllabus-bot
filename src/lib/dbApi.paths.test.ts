@@ -126,6 +126,18 @@ describe('every dbApi endpoint, composed against the deployed base', () => {
         `/api/db/courses/${COURSE}/evaluations`,
       ],
       [
+        'previewEvaluation',
+        (api) =>
+          api.previewEvaluation(COURSE, {
+            comparisonId: 'c',
+            mostAccurate: 'rag',
+            preferredModel: 'rag',
+            hallucinationFlags: [],
+            createdAt: '2026-01-01T00:00:00.000Z',
+          }),
+        `/api/db/courses/${COURSE}/evaluations/preview`,
+      ],
+      [
         'deleteEvaluation',
         (api) => api.deleteEvaluation(COURSE, 'eval-1'),
         `/api/db/courses/${COURSE}/evaluations/eval-1`,

@@ -50,6 +50,7 @@ from app.db_schemas import (
     DeleteResponse,
     EvaluationCreateRequest,
     EvaluationListResponse,
+    EvaluationPreviewResponse,
     EvaluationRecordModel,
     ModelRegistryResponse,
     ModelRequestCreateRequest,
@@ -541,6 +542,51 @@ def create_course_evaluation(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return EvaluationRecordModel(**_without_participant(created))
+
+
+@router.post(
+    "/courses/{course_id}/evaluations/preview",
+    response_model=EvaluationPreviewResponse,
+)
+def preview_course_evaluation(
+    course_id: str,
+    request: EvaluationCreateRequest,
+    principal: Principal = Depends(require_admin),
+) -> EvaluationPreviewResponse:
+    """An administrator's preview of the student flow, ending in no write.
+
+    An administrator opening a course's student pages holds no participant
+    session there — they never redeemed its classroom code — so the route above
+    refuses them, and rightly: a rating with nobody to attribute it to is not
+    research data. This route lets them finish the flow anyway. Same body,
+    same validation, same 404 for a course that does not exist; the rating
+    comes back the way it would have been stored, and nothing reaches the
+    evaluations table. No participant is created, no cookie is set, and the id
+    is marked `preview-` so it cannot be mistaken for a real one.
+
+    The course is the one in the path, as everywhere in this file; a
+    `courseId` in the body is ignored. Administrator-only, deliberately: a
+    professor previewing their own course already has a way — its classroom
+    code, and a real participant.
+    """
+    safe_course_id = _safe_course_id(course_id)
+    payload = request.model_dump(by_alias=True, exclude_unset=True)
+    payload.pop("id", None)
+
+    def work(connection: Any) -> dict[str, Any]:
+        if not db_courses.course_exists(connection, safe_course_id):
+            raise HTTPException(
+                status_code=404, detail=f'Course "{safe_course_id}" was not found.'
+            )
+        return db_evaluations.preview_evaluation(safe_course_id, payload)
+
+    try:
+        previewed = _run("previewing an evaluation", work)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return EvaluationPreviewResponse(
+        courseId=safe_course_id, evaluation=EvaluationRecordModel(**previewed)
+    )
 
 
 @router.get("/courses/{course_id}/activity", response_model=CourseActivityResponse)

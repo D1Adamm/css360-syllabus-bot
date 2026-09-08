@@ -13,7 +13,7 @@ permissive about the rest, because a patch body is a partial by definition.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -263,6 +263,21 @@ class EvaluationCreateRequest(BaseModel):
     created_at: str | None = Field(default=None, alias="createdAt")
     run_id: str | None = Field(default=None, alias="runId")
     question_text: str | None = Field(default=None, alias="questionText")
+
+
+class EvaluationPreviewResponse(BaseModel):
+    """An administrator's dry run of a rating.
+
+    `evaluation` is the record the real route would have returned; `saved` is
+    the backend's own statement that it did not store it, fixed at False so a
+    client cannot read a preview as a success.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    saved: Literal[False] = False
+    evaluation: EvaluationRecordModel
 
 
 class CourseActivityResponse(BaseModel):

@@ -83,11 +83,14 @@ export function AppRoutes() {
             </RequireAnyPrincipal>
           }
         />
+        {/* An administrator reaches these pages too — the guard admits course
+            staff — and, holding no participant session, is previewing them:
+            real answers, nothing saved. See AdminPreviewContext. */}
         <Route
           path="/student/course/:courseId"
           element={
             <RequireCourseParticipant>
-              <CourseRoute />
+              <CourseRoute adminPreview />
             </RequireCourseParticipant>
           }
         >

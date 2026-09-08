@@ -58,3 +58,18 @@ export function isParticipantOf(session: Session, courseId: string): boolean {
 export function canAccessCourse(session: Session, courseId: string): boolean {
   return canStaffCourse(session, courseId) || isParticipantOf(session, courseId);
 }
+
+/**
+ * An administrator previewing a course's student pages.
+ *
+ * Administrators never redeem a classroom code, so on a course's student pages
+ * there is no participant to attribute a rating to. The pages run for real
+ * against that course — the same four generation requests a student makes —
+ * and the last step changes: nothing submitted is saved, and the backend's
+ * preview route is what says so. An administrator who did join the course
+ * holds a participant there and is not previewing; neither is a professor,
+ * whose way of trying the flow is their own classroom code, unchanged.
+ */
+export function isAdminPreview(session: Session, courseId: string): boolean {
+  return isAdmin(session) && !isParticipantOf(session, courseId);
+}

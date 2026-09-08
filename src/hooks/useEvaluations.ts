@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useAdminPreview } from '../context/AdminPreviewContext';
 import { useCourseId } from '../context/CourseContext';
 import {
   createEvaluation,
   deleteAllEvaluations,
   deleteEvaluation,
+  previewEvaluation,
   subscribeToEvaluations,
 } from '../lib/evaluationsDb';
 import type { EvaluationRecord } from '../types';
@@ -23,6 +25,7 @@ interface UseEvaluationsResult {
 /** Course-scoped evaluations from the `evaluations` table. */
 export function useEvaluations(): UseEvaluationsResult {
   const courseId = useCourseId();
+  const preview = useAdminPreview();
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +59,10 @@ export function useEvaluations(): UseEvaluationsResult {
       setSaveError(null);
 
       try {
-        return await createEvaluation(courseId, evaluation);
+        // In an administrator's preview the rating goes to the route that
+        // validates it and stores nothing. See AdminPreviewContext.
+        const submit = preview ? previewEvaluation : createEvaluation;
+        return await submit(courseId, evaluation);
       } catch (caughtError) {
         const message =
           caughtError instanceof Error
@@ -68,7 +74,7 @@ export function useEvaluations(): UseEvaluationsResult {
         setSaving(false);
       }
     },
-    [courseId],
+    [courseId, preview],
   );
 
   const deleteEvaluationById = useCallback(

@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SectionHeader } from '../../components/ui/SectionHeader';
+import { useAdminPreview } from '../../context/AdminPreviewContext';
 import { useSeedExamples } from '../../hooks/useSeedExamples';
 import { toUserMessage } from '../../lib/errorMessages';
 import type { SeedExample } from '../../types';
@@ -28,6 +29,10 @@ export function ContributePage() {
     deleteSeed,
     clearSaveError,
   } = useSeedExamples();
+  // An administrator's preview: the form works as a student's does and the
+  // submission goes nowhere, so the shell's "nothing is saved" banner stays
+  // true on this page too. See AdminPreviewContext.
+  const preview = useAdminPreview();
 
   const [addedThisVisit, setAddedThisVisit] = useState<SeedExample[]>([]);
   const [justAdded, setJustAdded] = useState(false);
@@ -71,11 +76,15 @@ export function ContributePage() {
   const handleSubmit = useCallback(
     async (example: SeedExample) => {
       clearSaveError();
+      if (preview) {
+        setJustAdded(true);
+        return;
+      }
       await addSeed(example);
       setAddedThisVisit((current) => [{ ...example, mine: true }, ...current]);
       setJustAdded(true);
     },
-    [addSeed, clearSaveError],
+    [addSeed, clearSaveError, preview],
   );
 
   const confirmDelete = useCallback(async () => {
@@ -113,12 +122,19 @@ export function ContributePage() {
         </Callout>
       )}
 
-      {justAdded && !saveError && (
-        <Callout tone="success" title="Added — thanks">
-          Your question was added. Your instructor may review or edit it before
-          it is used. Your name is not attached to it.
-        </Callout>
-      )}
+      {justAdded &&
+        !saveError &&
+        (preview ? (
+          <Callout tone="warning" title="Preview mode — contributions are not saved">
+            A student&apos;s question would go to the instructor for review here.
+            Nothing was submitted.
+          </Callout>
+        ) : (
+          <Callout tone="success" title="Added — thanks">
+            Your question was added. Your instructor may review or edit it before
+            it is used. Your name is not attached to it.
+          </Callout>
+        ))}
 
       <ContributeForm
         existing={contributions}

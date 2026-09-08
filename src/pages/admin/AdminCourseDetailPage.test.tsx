@@ -233,3 +233,18 @@ describe('AdminCourseDetailPage model state', () => {
     expect(section).toHaveTextContent('current');
   });
 });
+
+describe('AdminCourseDetailPage student preview', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('offers a preview of this course\'s student experience, pointed at this course', () => {
+    courseId = 'css-490-spring-2026-cgvl';
+    renderPage();
+
+    expect(
+      screen.getByRole('link', { name: 'Preview Student Experience' }),
+    ).toHaveAttribute('href', `/student/course/${courseId}/compare`);
+  });
+});

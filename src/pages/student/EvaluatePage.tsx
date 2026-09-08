@@ -6,6 +6,7 @@ import { Button, LinkButton } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { useAdminPreview } from '../../context/AdminPreviewContext';
 import { useCourseId } from '../../context/CourseContext';
 import { useComparisonRunStore } from '../../context/ComparisonRunContext';
 import { useEvaluations } from '../../hooks/useEvaluations';
@@ -65,6 +66,10 @@ type FormErrors = Partial<Record<CriterionKey | 'comment', string>>;
  */
 export function EvaluatePage() {
   const courseId = useCourseId();
+  // An administrator's preview: the rating is submitted, validated, and not
+  // stored — `useEvaluations` sends it to the preview route. The copy here
+  // says so at the point of action; the shell's banner says so throughout.
+  const preview = useAdminPreview();
   const formId = useId();
   const { getRun, clearRun } = useComparisonRunStore();
   const { saving, saveError, addEvaluation, clearSaveError } = useEvaluations();
@@ -190,8 +195,16 @@ export function EvaluatePage() {
         <EmptyState
           size="full"
           illustration="model-ready"
-          title="Thanks — your ratings were recorded"
-          description="Your feedback helps show which approach answers course questions best."
+          title={
+            preview
+              ? 'Preview complete — nothing was saved'
+              : 'Thanks — your ratings were recorded'
+          }
+          description={
+            preview
+              ? "A student would see their thanks here. The backend checked this rating exactly as it would a student's, then discarded it."
+              : 'Your feedback helps show which approach answers course questions best.'
+          }
           action={
             <>
               <LinkButton
@@ -267,6 +280,17 @@ export function EvaluatePage() {
       <ResponseStrip run={run} />
 
       <form className="evaluate__form" onSubmit={handleSubmit} noValidate>
+        {preview && (
+          <Callout
+            tone="warning"
+            title="Preview mode — responses are not saved"
+            live={false}
+          >
+            Submitting sends this rating to the backend to be checked the way a
+            student&apos;s would be. Nothing is stored, and no participant exists.
+          </Callout>
+        )}
+
         {saveError && (
           <Callout tone="danger" title="Not saved">
             {

@@ -297,6 +297,51 @@ describe('route guards', () => {
   });
 });
 
+describe('administrator preview of the student pages', () => {
+  const BANNER = 'Admin Preview — responses are not saved';
+
+  it('starts from the admin course page and opens that course\'s Compare page', async () => {
+    const view = renderAt(`/admin/courses/${OTHER}`, 'admin');
+    expect(
+      await view.findByRole('link', { name: 'Preview Student Experience' }),
+    ).toHaveAttribute('href', `/student/course/${OTHER}/compare`);
+  });
+
+  it('shows an administrator the banner on any course, with a way back', async () => {
+    const view = renderAt(`/student/course/${OTHER}/compare`, 'admin');
+    await expectLocation(view, `/student/course/${OTHER}/compare`);
+    expect(await view.findByText(BANNER)).toBeInTheDocument();
+    expect(view.getByRole('link', { name: 'Exit preview' })).toHaveAttribute(
+      'href',
+      `/admin/courses/${OTHER}`,
+    );
+    // The page beneath is the student Compare page, not a copy of it.
+    expect(view.getByRole('heading', { name: 'Compare AI Responses' })).toBeInTheDocument();
+  });
+
+  it('shows no banner to a participant, nor to a professor, and none outside the student pages', async () => {
+    const student = renderAt(`/student/course/${COURSE}/compare`, 'student');
+    await expectLocation(student, `/student/course/${COURSE}/compare`);
+    expect(student.queryByText(BANNER)).toBeNull();
+    cleanup();
+
+    const professor = renderAt(`/student/course/${COURSE}/compare`, 'professor');
+    await expectLocation(professor, `/student/course/${COURSE}/compare`);
+    expect(professor.queryByText(BANNER)).toBeNull();
+    cleanup();
+
+    const adminElsewhere = renderAt(`/admin/courses/${COURSE}`, 'admin');
+    await expectLocation(adminElsewhere, `/admin/courses/${COURSE}`);
+    expect(adminElsewhere.queryByText(BANNER)).toBeNull();
+  });
+
+  it('still sends an anonymous visitor to the join page rather than into a preview', async () => {
+    const view = renderAt(`/student/course/${OTHER}/evaluate`, 'anonymous');
+    await expectLocation(view, '/join');
+    expect(view.queryByText(BANNER)).toBeNull();
+  });
+});
+
 describe('role navigation', () => {
   it('shows only the student sections in the student area', async () => {
     const view = renderAt(`/student/course/${COURSE}`, 'student');

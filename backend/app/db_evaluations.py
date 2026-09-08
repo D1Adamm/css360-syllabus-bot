@@ -49,6 +49,15 @@ def new_evaluation_id() -> str:
     return f"eval-{uuid.uuid4().hex}"
 
 
+#: The id prefix of a previewed rating. No stored row ever carries it, so a
+#: record an administrator's preview echoes back cannot be mistaken for one.
+PREVIEW_ID_PREFIX = "preview-"
+
+
+def new_preview_evaluation_id() -> str:
+    return f"{PREVIEW_ID_PREFIX}{uuid.uuid4().hex}"
+
+
 def map_evaluation(row: Mapping[str, Any]) -> dict[str, Any]:
     record: dict[str, Any] = {
         "id": row["evaluation_id"],
@@ -133,6 +142,67 @@ def get_evaluation(
     return map_evaluation(row) if row else None
 
 
+def evaluation_row(
+    course_id: str,
+    evaluation: Mapping[str, Any],
+    *,
+    evaluation_id: str,
+    participant_id: str | None,
+) -> dict[str, Any]:
+    """The columns one rating maps to, validated.
+
+    Shared by the insert and by the administrator's preview, so the two cannot
+    disagree about what a complete rating is: a body the preview accepts is a
+    body the real route would have stored, and one it refuses the real route
+    refuses too. `hallucination_flags` is a plain list here; the insert wraps
+    it for psycopg.
+    """
+    safe_course_id = assert_valid_course_id(course_id)
+
+    row: dict[str, Any] = {
+        "evaluation_id": evaluation_id,
+        "course_id": safe_course_id,
+        "participant_id": participant_id,
+        "created_at": optional_string(evaluation.get("createdAt"))
+        or datetime.now(timezone.utc).isoformat(),
+        "comment": optional_string(evaluation.get("comment")),
+        "run_id": optional_string(evaluation.get("runId")),
+        "question_text": optional_string(evaluation.get("questionText")),
+    }
+
+    for field, column in REQUIRED_FIELDS:
+        value = optional_string(evaluation.get(field))
+        if not value:
+            raise ValueError(f"Evaluation is missing required field '{field}'.")
+        row[column] = value
+
+    for field, column in RETIRED_FIELDS:
+        row[column] = optional_string(evaluation.get(field)) or ""
+
+    row["hallucination_flags"] = string_list(evaluation.get("hallucinationFlags"))
+    return row
+
+
+def preview_evaluation(course_id: str, evaluation: Mapping[str, Any]) -> dict[str, Any]:
+    """What `create_evaluation` would have stored, without storing it.
+
+    The administrator's preview of the student flow ends here rather than in
+    the table. The body goes through the same validation — a missing required
+    field raises the same ValueError — and comes back through the same mapping
+    a stored row is read with, so the preview shows exactly what a student's
+    submission would have produced. No connection is taken, no participant is
+    named, and the id carries a prefix no stored row ever has.
+    """
+    return map_evaluation(
+        evaluation_row(
+            course_id,
+            evaluation,
+            evaluation_id=new_preview_evaluation_id(),
+            participant_id=None,
+        )
+    )
+
+
 def create_evaluation(
     conn: Any,
     course_id: str,
@@ -148,31 +218,14 @@ def create_evaluation(
     """
     from psycopg.types.json import Json
 
-    safe_course_id = assert_valid_course_id(course_id)
-
-    parameters: dict[str, Any] = {
-        "evaluation_id": optional_string(evaluation.get("id")) or new_evaluation_id(),
-        "course_id": safe_course_id,
-        "participant_id": participant_id,
-        "created_at": optional_string(evaluation.get("createdAt"))
-        or datetime.now(timezone.utc).isoformat(),
-        "comment": optional_string(evaluation.get("comment")),
-        "run_id": optional_string(evaluation.get("runId")),
-        "question_text": optional_string(evaluation.get("questionText")),
-    }
-
-    for field, column in REQUIRED_FIELDS:
-        value = optional_string(evaluation.get(field))
-        if not value:
-            raise ValueError(f"Evaluation is missing required field '{field}'.")
-        parameters[column] = value
-
-    for field, column in RETIRED_FIELDS:
-        parameters[column] = optional_string(evaluation.get(field)) or ""
-
-    parameters["hallucination_flags"] = Json(
-        string_list(evaluation.get("hallucinationFlags"))
+    parameters = evaluation_row(
+        course_id,
+        evaluation,
+        evaluation_id=optional_string(evaluation.get("id")) or new_evaluation_id(),
+        participant_id=participant_id,
     )
+    safe_course_id = parameters["course_id"]
+    parameters["hallucination_flags"] = Json(parameters["hallucination_flags"])
 
     columns = list(parameters)
     placeholders = ", ".join(f"%({column})s" for column in columns)

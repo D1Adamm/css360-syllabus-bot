@@ -95,6 +95,18 @@ in the same browser, walk the student flow as an anonymous participant, and
 return to the professor pages without signing out. Their test ratings land under
 a participant like any student's.
 
+**Administrator preview.** An administrator never redeems a classroom code, so
+on a course's student pages they hold no participant identity and are in
+preview: the same pages, the same four generation routes for that course, and a
+banner on every page saying nothing submitted is saved. Evaluate submits to
+`POST /api/db/courses/{id}/evaluations/preview`, an administrator-only route
+that validates a rating exactly as the real route does and stores nothing;
+Contribute's form submits nowhere. No participant or session is created, the
+participant-only route is unchanged, and "Preview Student Experience" on the
+admin course page is only a link to that course's Compare page. A professor
+previews their own course the way the paragraph above describes, as a real
+participant.
+
 **Sessions are rows.** The cookie holds a 256-bit random token; `auth_sessions`
 holds its SHA-256, the principal, an absolute deadline, and `last_seen_at` for
 the idle rule. Sign-out, disabling an account, and changing a password revoke

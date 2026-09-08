@@ -240,6 +240,33 @@ export function createEvaluation(
   );
 }
 
+export interface DbEvaluationPreviewResponse {
+  courseId: string;
+  /** Fixed at false by the backend: nothing was stored. */
+  saved: false;
+  /** The record the real route would have returned. */
+  evaluation: EvaluationRecord;
+}
+
+/**
+ * An administrator's dry run of `createEvaluation`.
+ *
+ * Administrator-only on the backend, and it writes nothing: the rating is
+ * validated exactly as the real route validates it and echoed back. This is
+ * what the student Evaluate page submits to in an administrator's preview.
+ */
+export function previewEvaluation(
+  courseId: string,
+  evaluation: Omit<EvaluationRecord, 'id'> & { id?: string },
+): Promise<DbEvaluationPreviewResponse> {
+  return send<DbEvaluationPreviewResponse>(
+    'POST',
+    `${coursePath(courseId)}/evaluations/preview`,
+    evaluation,
+    'The backend could not preview the evaluation.',
+  );
+}
+
 export function deleteEvaluation(
   courseId: string,
   evaluationId: string,

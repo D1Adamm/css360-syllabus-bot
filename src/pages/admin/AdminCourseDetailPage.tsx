@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button } from '../../components/ui/Button';
+import { Button, LinkButton } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
 import { formatCourseCode } from '../../lib/courseLabels';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -21,7 +21,11 @@ import {
   type SeedQualityCheckResponse,
 } from '../../lib/adminApi';
 import { useFactInventoryProbe } from '../../hooks/useFactInventoryProbe';
-import { adminCourseExamplesPath, adminCourseReviewPath } from '../../lib/roleRoutes';
+import {
+  adminCourseExamplesPath,
+  adminCourseReviewPath,
+  studentCoursePath,
+} from '../../lib/roleRoutes';
 import { StudentAccessPanel } from '../../components/invite/StudentAccessPanel';
 import {
   addMembership,
@@ -296,6 +300,19 @@ export function AdminCourseDetailPage() {
         eyebrow="Admin"
         title={formatCourseCode(metadata?.name) || courseId}
         description={metadata?.title}
+        actions={
+          /* This course's student pages as an administrator sees them: real
+             answers from the same four routes, and nothing saved. The shell
+             shows a preview banner there; see AdminPreviewContext. */
+          <LinkButton
+            to={studentCoursePath(courseId, 'compare')}
+            variant="secondary"
+            iconRight="forward"
+            title="Open this course's Compare page the way a student sees it. Answers are real; nothing you submit is saved."
+          >
+            Preview Student Experience
+          </LinkButton>
+        }
       />
 
       <section className="ui-stack ui-stack--snug">

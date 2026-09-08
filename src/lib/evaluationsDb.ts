@@ -49,6 +49,24 @@ export async function createEvaluation(
   });
 }
 
+/**
+ * The preview counterpart of `createEvaluation`: the same request, sent to the
+ * administrator-only route that stores nothing. Returns the record the real
+ * route would have, so the page that called it renders the same way.
+ */
+export async function previewEvaluation(
+  courseId: string,
+  evaluation: EvaluationRecord,
+): Promise<EvaluationRecord> {
+  assertValidCourseId(courseId);
+
+  const response = await dbApi.previewEvaluation(courseId, {
+    ...evaluation,
+    createdAt: evaluation.createdAt ?? new Date().toISOString(),
+  });
+  return response.evaluation;
+}
+
 export async function deleteEvaluation(
   courseId: string,
   evaluationId: string,

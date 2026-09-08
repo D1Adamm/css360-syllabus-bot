@@ -415,3 +415,37 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* ====================== Administrator preview ====================== */
+
+/*
+ * Shown on every student page an administrator opens without having joined the
+ * course. Persistent and unmissable on purpose: the pages beneath behave
+ * exactly as they do for a student, so this strip is the one thing saying that
+ * nothing submitted is saved.
+ */
+.shell-preview {
+  background-color: var(--warning-100);
+  border-bottom: 1px solid var(--warning-500);
+  color: var(--warning-700);
+}
+
+.shell-preview__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding-block: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.shell-preview__text {
+  font-weight: 600;
+}
+
+.shell-preview__exit {
+  margin-inline-start: auto;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}

@@ -109,6 +109,7 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     ("GET", f"{_DB}/activity"): REQUIRE_COURSE_ACCESS,
     ("GET", f"{_DB}/evaluations"): REQUIRE_COURSE_ACCESS,
     ("POST", f"{_DB}/evaluations"): REQUIRE_PARTICIPANT,
+    ("POST", f"{_DB}/evaluations/preview"): REQUIRE_ADMIN,
     ("DELETE", f"{_DB}/evaluations"): REQUIRE_ADMIN,
     ("DELETE", f"{_DB}/evaluations/{{evaluation_id}}"): REQUIRE_ADMIN,
     ("GET", f"{_DB}/model"): REQUIRE_COURSE_STAFF,
