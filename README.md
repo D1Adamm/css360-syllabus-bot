@@ -19,8 +19,8 @@ Internally `base`, `rag`, `fineTuned`, and `fineTunedRag`. What everyone sees:
 | --- | --- | --- |
 | Base | A base model with no course context at all | Local Ollama |
 | RAG | Retrieval: syllabus passages are found and put in the prompt | Local Ollama |
-| Fine-Tuned | A LoRA adapter fine-tuned on this course's approved examples | Tillicum GPU |
-| Fine-Tuned + RAG | The fine-tuned adapter, prompted with retrieved passages | Tillicum GPU |
+| Fine-Tuned | A LoRA adapter fine-tuned on this course's approved examples | Local Ollama, as a per-course model (Tillicum GPU as fallback) |
+| Fine-Tuned + RAG | The fine-tuned adapter, prompted with retrieved passages | Local Ollama, the same per-course model (Tillicum GPU as fallback) |
 
 All four are real. Nothing is simulated.
 
@@ -74,23 +74,30 @@ FastAPI  ───────────────►  PostgreSQL          s
   │       backend/course_data/                 per-course embedding indexes
   │       backend/data/indexes/
   │
+  ├──►  Fine-tuned service (local)             Fine-Tuned + Fine-Tuned + RAG
+  │       127.0.0.1:9001 → Ollama              llama3.2:3b + the course's adapter,
+  │                                            one Ollama model per course
+  │
   └──►  Tillicum GPU cluster
-          ├─ fine-tuned inference    via an SSH tunnel opened by hand
-          └─ training queue          via authenticated outbound HTTPS
-                                     from the cluster back to FastAPI
+          ├─ training queue          via authenticated outbound HTTPS
+          │                          from the cluster back to FastAPI
+          └─ fine-tuned inference    fallback only, via an SSH tunnel opened by hand
 ```
 
-**On the UWB VM:** Nginx, the React build, FastAPI, PostgreSQL, Ollama, and the
-course artifacts on local disk.
+**On the UWB VM:** Nginx, the React build, FastAPI, PostgreSQL, Ollama, the
+course artifacts on local disk, and the fine-tuned inference service: each
+course's trained adapter runs on the VM's CPU as an Ollama model, so all four
+approaches answer without anything outside the VM.
 
-**On Tillicum:** QLoRA fine-tuning and fine-tuned inference. Both need a GPU that
-the VM does not have.
+**On Tillicum:** QLoRA fine-tuning, which needs a GPU the VM does not have, and
+the GPU inference service, kept as a fallback.
 
-**Why Tillicum needs a person.** Opening the tunnel from the VM to a Tillicum
-compute node authenticates to UW, and UW two-factor is deliberately not
-automated, stored, or worked around. So a fine-tuned session starts with someone
-running one command in a session they logged into normally. Everything after that
-authentication is automatic. Base and RAG do not depend on any of it.
+**Why Tillicum needs a person.** Reaching Tillicum from the VM authenticates to
+UW, and UW two-factor is deliberately not automated, stored, or worked around.
+So running the training queue, or opening the fallback inference tunnel, starts
+with someone running one command in a session they logged into normally.
+Everything after that authentication is automatic. Answering questions does not
+depend on any of it.
 
 Deeper detail: **[docs/architecture.md](docs/architecture.md)**.
 
@@ -341,15 +348,15 @@ closed if a test tries to reach any of them — see
 │   ├── lib/                  # Shared stdlib-only helpers for cluster scripts
 │   ├── register_course_model.py       # manual registration (recovery only)
 │   ├── report_model_published.py      # publication reporting
-│   └── *_finetuned_tunnel.sh          # UWB VM side of the inference tunnel
+│   └── *_finetuned_tunnel.sh          # UWB VM side of the Tillicum inference tunnel (fallback)
 ├── src/                      # React application
 │   ├── app/                  # Route tree and legacy redirects
 │   ├── components/ui/        # Design-system primitives
 │   ├── lib/                  # API clients, error mapping, route builders
 │   ├── pages/{student,professor,admin}/
 │   └── types/
-└── training/                 # Everything that runs on Tillicum
-    ├── inference_service/    # Per-course fine-tuned serving
+└── training/                 # Training on Tillicum, plus fine-tuned serving
+    ├── inference_service/    # ollama_service.py (VM, current); app.py (Tillicum GPU, fallback)
     ├── run_training_queue.sh # The one command an operator runs
     └── *.slurm               # Job scripts
 ```
@@ -364,8 +371,10 @@ closed if a test tries to reach any of them — see
 - **Password reset is administrator-issued.** There is no mail path, so a
   forgotten professor password means asking an administrator for a one-time
   reset link.
-- **Fine-tuned inference needs a GPU session started by hand**, because opening
-  the tunnel authenticates to UW and two-factor is not automated.
+- **A newly trained adapter reaches the VM by hand.** Fine-tuned answers on the
+  VM come from Ollama models built from GGUF-converted adapters; a new version
+  is not served until someone converts it, creates the Ollama model, and maps
+  it in `FINETUNED_OLLAMA_MODELS`.
 - **Syllabus artifacts and indexes are local disk only**, so the backend is not
   horizontally scalable as written.
 - The archived Firebase snapshot is retained deliberately; nothing deletes it.

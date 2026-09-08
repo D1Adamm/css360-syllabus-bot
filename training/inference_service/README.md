@@ -1,7 +1,189 @@
 # Per-course fine-tuned inference service
 
-Small FastAPI service that serves each course's trained QLoRA adapter on one
-Tillicum GPU.
+One HTTP contract — `GET /health`, `GET /courses`, `POST /generate` — with two
+implementations. The backend (`backend/app/finetuned_client.py`) talks to
+whichever one is listening at `FINETUNED_SERVICE_URL` and cannot tell them
+apart.
+
+| | `ollama_service.py` (UWB VM) | `app.py` (Tillicum) |
+| --- | --- | --- |
+| Runs on | the VM's CPU, through the VM's own Ollama | one Tillicum GPU, under Slurm |
+| Model | `llama3.2:3b` with the course's adapter, one Ollama model per course and version | `meta-llama/Llama-3.2-3B-Instruct` in 4-bit, one PEFT adapter per course |
+| Course → model | the `FINETUNED_OLLAMA_MODELS` mapping | `<SERVING_ROOT>/<courseId>/<version>/adapter` |
+| Needs a person | no | yes: SSH + Duo to open the tunnel |
+| Listens on | `127.0.0.1:9001`, nothing else | compute node `:8001`, tunnelled to `127.0.0.1:9001` |
+| Python deps | FastAPI, uvicorn, pydantic, httpx (all in `backend/.venv`) | plus torch, Transformers, PEFT, bitsandbytes |
+| Role | current path (CSS 360 v2) | fallback and reference implementation |
+
+Both refuse a course they have nothing for, and both echo the course and
+version they answered with; the backend discards a response naming a different
+course. **Never run both at once**: they claim the same `127.0.0.1:9001`.
+
+## Serving on the UWB VM through Ollama
+
+### 1) Once per adapter: build the Ollama model
+
+Training writes a PEFT adapter directory. Ollama loads a LoRA adapter from
+GGUF, so convert it once (llama.cpp's `convert_lora_to_gguf.py`, against the
+same base model) and build a model from it:
+
+```text
+# Modelfile
+FROM llama3.2:3b
+ADAPTER css360-v2-lora.gguf
+```
+
+```bash
+ollama create css360-ft-v2 -f Modelfile
+ollama list          # css360-ft-v2:latest
+```
+
+No `PARAMETER` lines are needed: the service sends the decoding settings with
+every request, and request options override the Modelfile.
+
+`css<number>-ft-v<N>` is a convention, not something the service enforces. One
+Ollama model per course *and* version, so a promotion is a new model rather
+than a silent overwrite of the one being served.
+
+### 2) Map courses to models
+
+`FINETUNED_OLLAMA_MODELS` holds one entry per course and version,
+`courseId@vN=ollamaModel`, comma separated. Course ids and versions are
+validated with the same rules the Tillicum service applies to a serving path.
+The version is the one registered in PostgreSQL for that course — the backend
+sends it with every request — and a version this host does not have is refused,
+never answered by a different one.
+
+```bash
+FINETUNED_OLLAMA_MODELS="css-360-winter-2026-a7rp@v2=css360-ft-v2:latest"
+
+# Later, CSS 350 is one more entry:
+FINETUNED_OLLAMA_MODELS="css-360-winter-2026-a7rp@v2=css360-ft-v2:latest,css-350-spring-2026-n3h9@v1=css350-ft-v1:latest"
+```
+
+Nothing is mapped by default. With an empty mapping `/health` reports no
+courses and every `/generate` is a 409. A malformed entry stops the service at
+startup rather than silently dropping a course.
+
+### 3) Run it
+
+From the repository root on the VM, with the backend's virtualenv. It already
+has everything this service imports; no torch, Transformers, PEFT or
+bitsandbytes is installed or needed.
+
+```bash
+cd training/inference_service
+FINETUNED_OLLAMA_MODELS="css-360-winter-2026-a7rp@v2=css360-ft-v2:latest" \
+  ../../backend/.venv/bin/python ollama_service.py
+```
+
+It binds `127.0.0.1:9001` and nothing else; there is no host override. For an
+always-on service, a user unit beside `aiswe-backend`:
+
+```ini
+# ~/.config/systemd/user/aiswe-finetuned.service
+[Unit]
+Description=Per-course fine-tuned inference (local Ollama)
+After=network.target
+
+[Service]
+WorkingDirectory=%h/css360-syllabus-bot/training/inference_service
+Environment=FINETUNED_OLLAMA_MODELS=css-360-winter-2026-a7rp@v2=css360-ft-v2:latest
+Environment=FINETUNED_KEEP_ALIVE=30m
+ExecStart=%h/css360-syllabus-bot/backend/.venv/bin/python ollama_service.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now aiswe-finetuned
+```
+
+Environment:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `FINETUNED_OLLAMA_MODELS` | empty | The course → model mapping above |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | The VM's Ollama |
+| `INFERENCE_PORT` | `9001` | Loopback port; must match the backend's `FINETUNED_SERVICE_URL` |
+| `FINETUNED_OLLAMA_TIMEOUT_SECONDS` | `120` | Per-generation Ollama timeout |
+| `FINETUNED_NUM_CTX` | `4096` | Context window. Ollama truncates a longer prompt from the front, which for Fine-Tuned + RAG would drop the grounding rules first |
+| `FINETUNED_KEEP_ALIVE` | Ollama's default (5 min) | How long a model stays resident after a request. Set e.g. `30m` before a class so the first question does not pay the model load |
+| `FINETUNED_BASE_MODEL` | `llama3.2:3b` | Reported as `model` on `/health` |
+
+### 4) Wire the backend
+
+`backend/.env` on the VM:
+
+```bash
+FINETUNED_SERVICE_URL=http://127.0.0.1:9001
+```
+
+That is the value the tunnel script used to write, so an existing `.env` may
+already say it — but the tunnel has to be closed first
+(`./scripts/stop_finetuned_tunnel.sh`), or this service cannot take the port.
+Restart `aiswe-backend` if the value changed.
+
+### 5) Check
+
+```bash
+curl -s http://127.0.0.1:9001/health
+curl -s -X POST http://127.0.0.1:9001/generate \
+  -H "Content-Type: application/json" \
+  -d '{"courseId":"css-360-winter-2026-a7rp","modelVersion":"v2","question":"When does the course meet?"}'
+curl -s http://127.0.0.1:8001/api/fine-tuned/health      # through the backend (admin)
+```
+
+`/health` answers 200 whether or not Ollama is up. `status` is `ok` or
+`unavailable`; `adapterLoaded` is true only when Ollama answered and at least
+one mapped model exists there; `courses` lists what can be answered right now;
+`models` lists every mapping entry with `available` saying whether Ollama has
+it. The readiness rule the operator scripts apply — `status == ok` and
+`adapterLoaded` — is unchanged.
+
+Responses have the GPU service's shape, with three differences:
+
+- `model` on `/generate` is the Ollama model that answered
+  (`css360-ft-v2:latest`), not the base model id.
+- `generationSeconds` is wall clock for the Ollama call. After an idle period
+  that includes loading the model.
+- `secondsRemaining` is always null: nothing expires.
+
+### What is kept the same as the GPU service
+
+The GPU service wraps the question as one user turn with the tokenizer's chat
+template and decodes greedily: 160 new tokens, repetition penalty 1.05 over the
+whole sequence, seed 360. This service sends the same single user turn to
+`/api/chat`, where the model's own Llama 3.2 template is applied, with
+`temperature 0`, `num_predict 160`, `repeat_penalty 1.05` over the whole
+context window, and `seed 360`. A Fine-Tuned + RAG prompt travels verbatim as
+that user turn, exactly as it did to Tillicum.
+
+Answers are comparable, not bit-identical: the two stacks quantise the base
+differently (4-bit NF4 there, the Q4 GGUF Ollama ships here), and the two chat
+templates differ in their fixed system header.
+
+### Tests
+
+```bash
+cd training/inference_service
+../../backend/.venv/bin/python -m unittest test_ollama_service.py -v
+
+# The seam with the backend client, from the backend suite:
+cd ../../backend && .venv/bin/python -m pytest -q tests/test_finetuned_local_service_contract.py
+```
+
+Neither needs Ollama.
+
+---
+
+## The Tillicum GPU service (`app.py`)
+
+Kept as the fallback and the reference implementation. Everything below is
+about it.
 
 - Base model: `meta-llama/Llama-3.2-3B-Instruct`, loaded once
 - Adapters: `<SERVING_ROOT>/<courseId>/<version>/adapter`, attached on top
@@ -35,7 +217,7 @@ Training writes `adapter_config.json` and `adapter_model.safetensors` through
 PEFT's `save_pretrained`. That is exactly what `PeftModel.load_adapter` reads.
 There is no conversion step and none is needed — no GGUF, no merged checkpoint.
 
-## Architecture (current)
+## Architecture (Tillicum fallback)
 
 ```text
 Browser  (asks as CSS 350)
@@ -50,6 +232,9 @@ Browser  (asks as CSS 350)
                     -> response says courseId=css-350-…, modelVersion=v1
      <- refused if the response names a different course
 ```
+
+On the current path the same `127.0.0.1:9001` is `ollama_service.py` on the VM
+itself, and the arrow into Tillicum does not exist.
 
 Fine-Tuned + RAG retrieves syllabus chunks on the UWB VM, then sends the grounded
 prompt to the same remote fine-tuned service as Fine-Tuned.

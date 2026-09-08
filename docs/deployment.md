@@ -241,7 +241,7 @@ Neither `.env` file is in the repository. Copy the example and fill it in.
 | --- | --- | --- |
 | `DATABASE_URL` | yes | Everything |
 | `TRAINING_WORKER_TOKEN` | for training | The queue API. Unset ⇒ that router refuses every request with 503 |
-| `FINETUNED_SERVICE_URL` | for fine-tuned paths | Set by the tunnel script to `http://127.0.0.1:9001` |
+| `FINETUNED_SERVICE_URL` | for fine-tuned paths | `http://127.0.0.1:9001`: the local Ollama-backed service (`training/inference_service/ollama_service.py`). The Tillicum tunnel script sets the same value when that fallback is used |
 | `CORS_ALLOWED_ORIGINS` | yes | The site origin. Also the CSRF origin allowlist |
 | `APP_PUBLIC_ORIGIN` | recommended | The site origin, for the bootstrap script's printed link |
 | `AUTH_COOKIE_SECURE` | no | Default true. Never set false on the VM |

@@ -24,9 +24,13 @@ FastAPI (uvicorn, 127.0.0.1:8001)
   ├──► local disk              uploaded syllabi, extracted text, embedding
   │                            indexes, prepared training datasets
   │
+  ├──► fine-tuned service     FastAPI → http://127.0.0.1:9001 (loopback)
+  │     (ollama_service.py)   → local Ollama → per-course model
+  │                             (llama3.2:3b + that course's adapter)
+  │
   └──► Tillicum
-        ├─ fine-tuned inference   FastAPI → http://127.0.0.1:9001 → SSH tunnel
-        │                         → compute node :8001 → base model + adapter
+        ├─ fine-tuned inference   fallback: the same :9001 as the local end of
+        │                         an SSH tunnel → compute node :8001 → GPU
         └─ training queue         cluster → outbound HTTPS → /api/training-queue
 ```
 
@@ -150,7 +154,7 @@ the ordering is covered by tests.
 Retrieval is course-local: the index is built from that course's uploaded
 syllabus at upload time and lives beside it on disk.
 
-### Fine-Tuned and Fine-Tuned + RAG (Tillicum)
+### Fine-Tuned and Fine-Tuned + RAG
 
 ```
 POST /api/fine-tuned/generate     { courseId, question }
@@ -158,18 +162,25 @@ POST /api/fine-tuned-rag/generate { courseId, question }  ← retrieves first, t
    │
    ├─ resolve which version answers for this course   (PostgreSQL)
    ├─ POST FINETUNED_SERVICE_URL/generate { courseId, modelVersion, question }
-   │     → SSH tunnel → compute node
-   │     → base model (loaded once) + that course's LoRA adapter
+   │     → local Ollama, the model mapped to that course and version
+   │       (llama3.2:3b with the course's adapter merged in)
    └─ verify the response names the course that was asked for
 ```
 
-`FINETUNED_SERVICE_URL` points at `http://127.0.0.1:9001` on the VM, which is the
-local end of an SSH tunnel to whichever compute node currently holds the GPU
-allocation. Compute hostnames change every job, so nothing hardcodes one — the
-cluster records the session and the tunnel script looks it up.
+`FINETUNED_SERVICE_URL` points at `http://127.0.0.1:9001` on the VM. That is
+`training/inference_service/ollama_service.py`, a loopback-only service that
+answers the same `/health` and `/generate` contract the Tillicum GPU service
+does, but by asking the VM's own Ollama for a per-course model. Which course
+maps to which Ollama model is configuration (`FINETUNED_OLLAMA_MODELS`); an
+unmapped course is refused, never answered by another course's model.
 
-The two fine-tuned paths use a separate service from Base and RAG, so they
-overlap with them rather than queueing behind them.
+The Tillicum GPU service (`training/inference_service/app.py`) is kept as the
+fallback and reference implementation. Its tunnel helper forwards the same
+`127.0.0.1:9001` to whichever compute node holds the allocation, so the backend
+cannot tell the two apart — and the two must not run at once.
+
+The fine-tuned paths share the VM's Ollama process with Base and RAG, so on a
+CPU host they queue behind one another rather than overlapping.
 
 ---
 

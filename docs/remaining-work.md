@@ -74,19 +74,23 @@ backend process owns them, so the backend cannot be run as more than one
 instance without moving that storage. Not a problem at classroom scale; it is the
 first thing to hit if this grows.
 
-## 6. Optional experiment: fine-tuned inference without Tillicum
+## 6. Fine-tuned inference without Tillicum
 
-Fine-tuned inference requires a GPU session opened by hand, because the tunnel
-authenticates to UW and two-factor is deliberately not automated. That makes the
-Fine-Tuned paths unavailable outside a scheduled session.
+Fine-tuned inference used to require a GPU session opened by hand, because the
+tunnel authenticates to UW and two-factor is deliberately not automated. That
+made the Fine-Tuned paths unavailable outside a scheduled session.
 
-An experiment worth running later: serve a merged or quantised adapter on the
-UWB VM's CPU and measure whether latency is tolerable for classroom use. If it
-is, the fine-tuned paths stop depending on a person being present.
+The CSS 360 v2 adapter now runs on the UWB VM's CPU through Ollama, and
+`training/inference_service/ollama_service.py` serves it behind the same
+`/health` and `/generate` contract the GPU service answers, on the same
+`127.0.0.1:9001`. The backend client is unchanged. Courses are mapped to Ollama
+models by configuration, so CSS 350 is one more entry once its adapter is
+converted.
 
-**Explicitly not started, and not a criticism of the current design.** Tillicum
-remains the known-good baseline for both training and inference, and nothing
-should be removed from it on the strength of an untested alternative.
+Still open: converting adapters to GGUF is a by-hand step; latency on the VM
+under classroom load has not been measured; and the Tillicum GPU service
+remains the known-good baseline and fallback, so nothing has been removed from
+it. See the "UWB VM" section of `training/inference_service/README.md`.
 
 ---
 
