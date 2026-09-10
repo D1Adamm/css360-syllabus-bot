@@ -3,11 +3,17 @@
 
 Designed for a single Tillicum GPU via Slurm. Supports a tiny --smoke-test mode
 that still measures step timing and estimates full-run duration / GPU hours.
+
+``--cpu`` runs the same recipe on a machine with no GPU (the UWB VM): the same
+JSONL, chat formatting, LoRA configuration and 4-bit NF4 quantization, with
+float32 compute, no fp16/bf16 autocast, batch size 1 and no CUDA requirement.
+The two device modes are explicit and never fall back to each other.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import math
 import os
@@ -35,6 +41,19 @@ LORA_TARGET_MODULES = (
     "up_proj",
     "down_proj",
 )
+DEVICE_MODES = ("cuda", "cpu")
+BNB_4BIT_QUANT_TYPE = "nf4"
+BNB_4BIT_USE_DOUBLE_QUANT = True
+LIBRARY_VERSION_NAMES = (
+    "torch",
+    "transformers",
+    "peft",
+    "bitsandbytes",
+    "trl",
+    "datasets",
+    "accelerate",
+)
+MIB = 1024 * 1024
 
 
 class TrainingDataError(ValueError):
@@ -66,6 +85,15 @@ class ResolvedRunConfig:
     lora_r: int
     lora_alpha: int
     lora_dropout: float
+    # Device facts. Defaults describe the original single-GPU recipe so older
+    # readers of resolved_config.json see the same shape they always did.
+    device: str = "cuda"
+    compute_dtype: str = "bfloat16"
+    cpu_threads: int | None = None
+    gradient_checkpointing: bool = True
+    bnb_4bit_quant_type: str = BNB_4BIT_QUANT_TYPE
+    bnb_4bit_use_double_quant: bool = BNB_4BIT_USE_DOUBLE_QUANT
+    lora_target_modules: tuple[str, ...] = LORA_TARGET_MODULES
 
 
 def load_instruction_response_jsonl(path: str | Path) -> list[dict[str, str]]:
@@ -341,10 +369,19 @@ def build_runtime_report(
     actual_gpu_hours: float | None,
     git_commit_sha: str | None,
     slurm_job_id: str | None,
+    device: str = "cuda",
+    compute_dtype: str | None = None,
+    cpu_threads: int | None = None,
+    peak_rss_bytes_value: int | None = None,
+    peak_rss_after_model_load_bytes: int | None = None,
+    library_versions: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     return {
         "mode": mode,
         "modelId": model_id,
+        "device": device,
+        "computeDtype": compute_dtype,
+        "cpuThreads": cpu_threads,
         "gpuCount": gpu_count,
         "trainExampleCount": train_example_count,
         "validationExampleCount": validation_example_count,
@@ -371,6 +408,12 @@ def build_runtime_report(
         "estimatedConservativeTotalSeconds": estimated_conservative_total_seconds,
         "estimatedGpuHours": estimated_gpu_hours,
         "actualGpuHours": actual_gpu_hours,
+        "peakRssBytes": peak_rss_bytes_value,
+        "peakRssMiB": (
+            peak_rss_bytes_value / MIB if peak_rss_bytes_value is not None else None
+        ),
+        "peakRssAfterModelLoadBytes": peak_rss_after_model_load_bytes,
+        "libraryVersions": library_versions,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "gitCommitSha": git_commit_sha,
         "slurmJobId": slurm_job_id,
@@ -394,6 +437,12 @@ def format_duration(seconds: float | None) -> str:
     return f"{hours:.2f}h ({seconds:.1f}s)"
 
 
+def print_peak_memory(report: dict[str, Any]) -> None:
+    peak = report.get("peakRssMiB")
+    if isinstance(peak, (int, float)):
+        print(f"  - Peak resident memory: {peak:.0f} MiB")
+
+
 def print_smoke_benchmark(report: dict[str, Any]) -> None:
     print("\nSmoke benchmark:")
     print(f"  - Completed steps: {report.get('completedSteps')}")
@@ -411,12 +460,18 @@ def print_smoke_benchmark(report: dict[str, Any]) -> None:
         "  - Conservative estimated total duration: "
         f"{format_duration(report.get('estimatedConservativeTotalSeconds'))}"
     )
-    print(f"  - Requested GPUs: {report.get('gpuCount')}")
-    gpu_hours = report.get("estimatedGpuHours")
-    if isinstance(gpu_hours, (int, float)):
-        print(f"  - Estimated GPU hours: {gpu_hours:.4f}")
+    if report.get("device") == "cpu":
+        print(
+            f"  - Device: cpu ({report.get('cpuThreads')} torch threads, float32 compute)"
+        )
     else:
-        print("  - Estimated GPU hours: n/a")
+        print(f"  - Requested GPUs: {report.get('gpuCount')}")
+        gpu_hours = report.get("estimatedGpuHours")
+        if isinstance(gpu_hours, (int, float)):
+            print(f"  - Estimated GPU hours: {gpu_hours:.4f}")
+        else:
+            print("  - Estimated GPU hours: n/a")
+    print_peak_memory(report)
     print(
         "  Note: estimates are approximate. One-time model download is excluded from "
         "steady-state training-only estimates; conservative totals add model load, "
@@ -441,6 +496,150 @@ def resolve_smoke_limits(
     train_subset = train_records[: min(smoke_train_limit, len(train_records))]
     val_subset = validation_records[: min(smoke_validation_limit, len(validation_records))]
     return train_subset, val_subset, smoke_max_steps
+
+
+# ---------------------------------------------------------------------------
+# Device mode (pure; no torch import)
+#
+# "cuda" is the original Tillicum recipe and is untouched. "cpu" is chosen only
+# by an explicit --cpu flag: nothing here inspects the machine to pick a mode,
+# and neither mode falls back to the other. A CUDA run without a GPU still
+# fails in require_cuda(); a CPU run never touches CUDA even if one exists.
+# ---------------------------------------------------------------------------
+
+
+def resolve_device(cpu: bool) -> str:
+    return "cpu" if cpu else "cuda"
+
+
+def validate_device_arguments(args: argparse.Namespace) -> None:
+    """Reject option mixes that would otherwise have to be guessed at."""
+    cpu = bool(getattr(args, "cpu", False))
+    cpu_threads = getattr(args, "cpu_threads", None)
+    if not cpu:
+        if cpu_threads is not None:
+            raise ValueError("--cpu-threads is only valid together with --cpu")
+        return
+    if getattr(args, "gpu_count", None) is not None:
+        raise ValueError(
+            "--cpu and --gpu-count are mutually exclusive: CPU mode uses no GPU"
+        )
+    if int(args.per_device_batch_size) != 1:
+        raise ValueError("CPU mode requires --per-device-batch-size 1")
+    if cpu_threads is not None and int(cpu_threads) < 1:
+        raise ValueError("--cpu-threads must be >= 1")
+
+
+def quantization_settings(compute_dtype: Any) -> dict[str, Any]:
+    """BitsAndBytesConfig kwargs. Identical in both modes except the compute dtype."""
+    return {
+        "load_in_4bit": True,
+        "bnb_4bit_quant_type": BNB_4BIT_QUANT_TYPE,
+        "bnb_4bit_use_double_quant": BNB_4BIT_USE_DOUBLE_QUANT,
+        "bnb_4bit_compute_dtype": compute_dtype,
+    }
+
+
+def model_load_settings(device: str, compute_dtype: Any) -> dict[str, Any]:
+    """from_pretrained placement kwargs.
+
+    CPU mode needs a *dict* device map whose every value is "cpu": that is the
+    exact shape the transformers 4-bit quantizer accepts when the bitsandbytes
+    multi-backend is present. "auto" would dispatch to whatever accelerate
+    finds, which is the silent fallback this trainer refuses to have.
+    """
+    if device == "cpu":
+        return {"device_map": {"": "cpu"}, "torch_dtype": compute_dtype}
+    if device == "cuda":
+        return {"device_map": "auto", "torch_dtype": compute_dtype}
+    raise ValueError(f"Unknown device mode: {device!r}")
+
+
+def precision_settings(device: str, use_bf16: bool) -> dict[str, Any]:
+    """Trainer precision flags. CPU: float32 throughout, no autocast, no pinning."""
+    if device == "cpu":
+        if use_bf16:
+            raise ValueError("bf16 autocast is not used in CPU mode")
+        return {
+            "bf16": False,
+            "fp16": False,
+            "use_cpu": True,
+            "dataloader_pin_memory": False,
+        }
+    if device == "cuda":
+        return {"bf16": use_bf16, "fp16": not use_bf16}
+    raise ValueError(f"Unknown device mode: {device!r}")
+
+
+def dtype_name(dtype: Any) -> str:
+    """``torch.float32`` -> ``"float32"`` for JSON metadata."""
+    text = str(dtype)
+    return text[len("torch."):] if text.startswith("torch.") else text
+
+
+def format_chat_example(tokenizer: Any, example: dict[str, str]) -> dict[str, str]:
+    """One instruction/response pair as the model's own chat format.
+
+    Shared by both device modes so the CPU path trains on byte-identical text.
+    """
+    messages = [
+        {"role": "user", "content": example["instruction"]},
+        {"role": "assistant", "content": example["response"]},
+    ]
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=False,
+    )
+    return {"text": text}
+
+
+def build_sft_config(sft_config_class: Any, kwargs: dict[str, Any]) -> Any:
+    """Construct SFTConfig across the TRL rename of ``max_seq_length``.
+
+    TRL 0.13 (the Tillicum pin) spells the cap ``max_seq_length``; TRL 0.20 and
+    later removed it in favour of ``max_length``. The CPU venv is not pinned to
+    the cluster's versions, so the retry keeps one trainer usable in both.
+    Only that exact rejection is retried; any other TypeError is real.
+    """
+    try:
+        return sft_config_class(**kwargs)
+    except TypeError as exc:
+        if "max_seq_length" not in kwargs or "max_seq_length" not in str(exc):
+            raise
+    renamed = dict(kwargs)
+    renamed["max_length"] = renamed.pop("max_seq_length")
+    return sft_config_class(**renamed)
+
+
+def peak_rss_bytes() -> int | None:
+    """Peak resident set size of this process, in bytes (None if unavailable)."""
+    try:
+        import resource
+    except ImportError:  # pragma: no cover - non-POSIX
+        return None
+    usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # Linux reports kilobytes; macOS reports bytes.
+    if sys.platform == "darwin":
+        return int(usage)
+    return int(usage) * 1024
+
+
+def collect_library_versions(
+    names: tuple[str, ...] = LIBRARY_VERSION_NAMES,
+) -> dict[str, str | None]:
+    """Versions of the ML stack a run actually used (the CPU venv is not pinned)."""
+    versions: dict[str, str | None] = {}
+    for name in names:
+        module = sys.modules.get(name)
+        if module is None:
+            try:
+                module = importlib.import_module(name)
+            except Exception:  # noqa: BLE001 - absent or broken package
+                module = None
+        version = getattr(module, "__version__", None) if module is not None else None
+        versions[name] = str(version) if version else None
+    return versions
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -485,6 +684,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--smoke-test",
         action="store_true",
         help="Tiny run: 4 train / 2 val examples, max_steps=3, still saves adapter",
+    )
+    parser.add_argument(
+        "--cpu",
+        action="store_true",
+        help=(
+            "Train on this machine's CPU: no CUDA, float32 compute, no fp16/bf16, "
+            "batch size 1. Explicit only; never chosen automatically."
+        ),
+    )
+    parser.add_argument(
+        "--cpu-threads",
+        type=int,
+        default=None,
+        help="torch intra-op threads in CPU mode (default: torch's own default)",
     )
     return parser.parse_args(argv)
 
@@ -545,7 +758,10 @@ def require_cuda() -> None:
 
 def run_training(args: argparse.Namespace) -> dict[str, Any]:
     process_start = time.perf_counter()
-    require_cuda()
+    device = resolve_device(bool(getattr(args, "cpu", False)))
+    validate_device_arguments(args)
+    if device == "cuda":
+        require_cuda()
 
     import torch
     from datasets import Dataset
@@ -559,7 +775,25 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
     )
     from trl import SFTConfig, SFTTrainer
 
-    gpu_count = resolve_gpu_count(args.gpu_count)
+    if device == "cuda":
+        gpu_count = resolve_gpu_count(args.gpu_count)
+        device_count = gpu_count
+        use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        compute_dtype = torch.bfloat16 if use_bf16 else torch.float16
+        cpu_threads = None
+    else:
+        # Explicit CPU mode: no CUDA, float32 compute, no autocast. A CUDA
+        # device that happens to exist is left alone rather than used.
+        if torch.cuda.is_available():
+            print("NOTE: --cpu given; the available CUDA device will not be used.")
+        gpu_count = 0
+        device_count = 1
+        use_bf16 = False
+        compute_dtype = torch.float32
+        if args.cpu_threads is not None:
+            torch.set_num_threads(int(args.cpu_threads))
+        cpu_threads = int(torch.get_num_threads())
+        print(f"CPU mode: {cpu_threads} torch threads, float32 compute")
     set_seed(args.seed)
 
     full_train = load_instruction_response_jsonl(args.train_file)
@@ -589,7 +823,7 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         epochs=args.epochs,
         per_device_batch_size=args.per_device_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        gpu_count=gpu_count,
+        gpu_count=device_count,
     )
 
     resolved = ResolvedRunConfig(
@@ -616,42 +850,40 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
+        device=device,
+        compute_dtype=dtype_name(compute_dtype),
+        cpu_threads=cpu_threads,
+        gradient_checkpointing=True,
+        bnb_4bit_quant_type=BNB_4BIT_QUANT_TYPE,
+        bnb_4bit_use_double_quant=BNB_4BIT_USE_DOUBLE_QUANT,
+        lora_target_modules=LORA_TARGET_MODULES,
     )
     write_json(output_dir / "resolved_config.json", asdict(resolved))
 
     effective_batch = effective_batch_size(
         per_device_batch_size=args.per_device_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        gpu_count=gpu_count,
+        gpu_count=device_count,
     )
     full_optimizer_steps = estimate_optimizer_steps(
         train_example_count=len(full_train),
         epochs=args.epochs,
         per_device_batch_size=args.per_device_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        gpu_count=gpu_count,
+        gpu_count=device_count,
     )
 
-    use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-    compute_dtype = torch.bfloat16 if use_bf16 else torch.float16
-
-    print(f"Loading tokenizer/model: {args.model_id}")
+    print(f"Loading tokenizer/model: {args.model_id} (device mode: {device})")
     model_load_start = time.perf_counter()
     tokenizer = AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_compute_dtype=compute_dtype,
-    )
+    bnb_config = BitsAndBytesConfig(**quantization_settings(compute_dtype))
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
         quantization_config=bnb_config,
-        device_map="auto",
-        torch_dtype=compute_dtype,
+        **model_load_settings(device, compute_dtype),
     )
     model = prepare_model_for_kbit_training(model)
     model.gradient_checkpointing_enable()
@@ -668,18 +900,12 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
     model = get_peft_model(model, lora_config)
     model_load_seconds = time.perf_counter() - model_load_start
     print(f"Model load time (excluding prior HF download waits if cached): {model_load_seconds:.2f}s")
+    peak_rss_after_model_load = peak_rss_bytes()
+    if peak_rss_after_model_load is not None:
+        print(f"Peak resident memory after model load: {peak_rss_after_model_load / MIB:.0f} MiB")
 
     def to_chat_text(example: dict[str, str]) -> dict[str, str]:
-        messages = [
-            {"role": "user", "content": example["instruction"]},
-            {"role": "assistant", "content": example["response"]},
-        ]
-        text = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=False,
-        )
-        return {"text": text}
+        return format_chat_example(tokenizer, example)
 
     train_dataset = Dataset.from_list(train_records).map(to_chat_text)
     eval_dataset = (
@@ -704,8 +930,7 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         "eval_strategy": "epoch" if eval_dataset is not None else "no",
         "save_strategy": "epoch",
         "save_total_limit": 2,
-        "bf16": use_bf16,
-        "fp16": not use_bf16,
+        **precision_settings(device, use_bf16),
         "gradient_checkpointing": True,
         "report_to": [],
         "seed": args.seed,
@@ -723,7 +948,7 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         sft_kwargs["save_strategy"] = "steps"
         sft_kwargs["save_steps"] = max(1, resolved_max_steps)
 
-    sft_config = SFTConfig(**sft_kwargs)
+    sft_config = build_sft_config(SFTConfig, sft_kwargs)
 
     trainer_kwargs: dict[str, Any] = {
         "model": model,
@@ -800,14 +1025,15 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
             epochs=args.epochs,
             average_seconds_per_step_value=conservative_avg,
         )
-        estimated_gpu = estimate_gpu_hours(
-            elapsed_seconds=estimated_conservative,
-            gpu_count=gpu_count,
-        )
+        if device == "cuda":
+            estimated_gpu = estimate_gpu_hours(
+                elapsed_seconds=estimated_conservative,
+                gpu_count=gpu_count,
+            )
 
     total_elapsed = time.perf_counter() - process_start
     actual_gpu_hours = None
-    if mode == "full":
+    if mode == "full" and device == "cuda":
         actual_gpu_hours = estimate_gpu_hours(
             elapsed_seconds=total_elapsed,
             gpu_count=gpu_count,
@@ -839,6 +1065,12 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         actual_gpu_hours=actual_gpu_hours,
         git_commit_sha=get_git_commit_sha(),
         slurm_job_id=get_slurm_job_id(),
+        device=device,
+        compute_dtype=dtype_name(compute_dtype),
+        cpu_threads=cpu_threads,
+        peak_rss_bytes_value=peak_rss_bytes(),
+        peak_rss_after_model_load_bytes=peak_rss_after_model_load,
+        library_versions=collect_library_versions(),
     )
     # Also record raw averages for transparency.
     report["averageSecondsPerStepAll"] = all_avg
@@ -854,10 +1086,13 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
             f"(requested epochs: {args.epochs})"
         )
         print(f"  - Total elapsed: {format_duration(total_elapsed)}")
-        if actual_gpu_hours is not None:
+        if device == "cpu":
+            print(f"  - Device: cpu ({cpu_threads} torch threads, float32 compute)")
+        elif actual_gpu_hours is not None:
             print(f"  - Actual GPU hours: {actual_gpu_hours:.4f}")
         else:
             print("  - Actual GPU hours: n/a")
+        print_peak_memory(report)
 
     print(f"\nWrote adapter to {adapter_dir}")
     print(f"Wrote runtime report to {output_dir / 'runtime-report.json'}")

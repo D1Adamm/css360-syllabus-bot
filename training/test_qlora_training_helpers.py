@@ -550,3 +550,143 @@ class RelativeOutputRefTests(unittest.TestCase):
             helpers.relative_training_output_ref("/somewhere/else/adapter"),
             "somewhere/else/adapter",
         )
+
+
+# --------------------------------------------------------------------------- #
+# CPU training on the machine itself (the UWB VM): no GPFS, no Slurm.
+# --------------------------------------------------------------------------- #
+
+
+class LocalTrainingOutputTests(unittest.TestCase):
+    def test_layout_matches_the_cluster_after_training_outputs(self) -> None:
+        local = helpers.local_training_output_dir(
+            root="/home/testuser",
+            course_id="css-360-winter-2026-a7rp",
+            run_id="20260908T120000Z",
+            mode="full",
+        )
+        self.assertEqual(
+            local,
+            "/home/testuser/training_outputs/qlora-runs/"
+            "css-360-winter-2026-a7rp/20260908T120000Z-full",
+        )
+        cluster = helpers.versioned_training_output_dir(
+            user="testuser",
+            course_id="css-360-winter-2026-a7rp",
+            run_id="20260908T120000Z",
+            mode="full",
+        )
+        # The stored reference — and therefore the registry's artifactRef — is
+        # the same string whichever machine trained the adapter.
+        self.assertEqual(
+            helpers.relative_training_output_ref(local),
+            helpers.relative_training_output_ref(cluster),
+        )
+        self.assertEqual(
+            helpers.relative_training_output_ref(local),
+            "qlora-runs/css-360-winter-2026-a7rp/20260908T120000Z-full",
+        )
+
+    def test_passes_the_output_dir_gate_and_never_the_live_tree(self) -> None:
+        local = helpers.local_training_output_dir(
+            root="/home/testuser/",
+            course_id="css-350-spring-2026-n3h9",
+            run_id="20260908T120000Z",
+            mode="smoke",
+        )
+        self.assertEqual(
+            helpers.require_training_output_dir(local, user="testuser"), local
+        )
+        self.assertFalse(helpers.is_live_adapter_tree(local))
+
+    def test_bad_inputs_never_become_a_path(self) -> None:
+        good = dict(root="/home/testuser", course_id="css-360-winter-2026-a7rp",
+                    run_id="20260908T120000Z", mode="full")
+        for field, value in (
+            ("root", "outputs"),
+            ("root", ""),
+            ("course_id", "Bad/Course"),
+            ("course_id", "../css-360"),
+            ("run_id", "../x"),
+            ("run_id", "20260908T120000Z/adapter"),
+            ("mode", "train"),
+        ):
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(ValueError):
+                    helpers.local_training_output_dir(**{**good, field: value})
+
+    def test_cli_subcommand_prints_the_path(self) -> None:
+        import subprocess
+        import sys
+
+        helper = (
+            Path(__file__).resolve().parent.parent
+            / "scripts"
+            / "lib"
+            / "qlora_training_helpers.py"
+        )
+        proc = subprocess.run(
+            [
+                sys.executable, str(helper), "local-versioned-outdir",
+                "--root", "/home/testuser",
+                "--course-id", "css-360-winter-2026-a7rp",
+                "--run-id", "20260908T120000Z",
+                "--mode", "smoke",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            proc.stdout.strip(),
+            "/home/testuser/training_outputs/qlora-runs/"
+            "css-360-winter-2026-a7rp/20260908T120000Z-smoke",
+        )
+
+
+class CpuLauncherScriptTests(unittest.TestCase):
+    """The CPU launcher is bash; pin the properties that matter by reading it."""
+
+    def setUp(self) -> None:
+        self.path = Path(__file__).resolve().parent / "start_cpu_qlora_training.sh"
+        self.text = self.path.read_text(encoding="utf-8")
+
+    def test_runs_the_trainer_in_explicit_cpu_mode_and_never_submits_to_slurm(self) -> None:
+        self.assertTrue(self.path.is_file())
+        self.assertIn("--cpu", self.text)
+        self.assertIn("--cpu-threads", self.text)
+        self.assertIn("train_qlora.py", self.text)
+        self.assertNotIn("sbatch", self.text)
+        self.assertNotIn("nvidia-smi", self.text)
+        self.assertIn("set -euo pipefail", self.text)
+
+    def test_uses_the_shared_validation_and_output_dir_gate(self) -> None:
+        self.assertIn("validate-course-id", self.text)
+        self.assertIn("validate-export-dir", self.text)
+        self.assertIn("local-versioned-outdir", self.text)
+        self.assertIn("require-training-output-dir", self.text)
+        self.assertIn("relative-output-ref", self.text)
+
+    def test_is_explicit_about_what_it_does_not_do(self) -> None:
+        # No queue callback and no automatic registration or publication.
+        self.assertNotIn("report_training_result.py", self.text)
+        self.assertNotIn("promote_qlora_adapter.sh", self.text)
+        self.assertIn("register_course_model.py", self.text)
+
+    def test_gpu_launcher_is_untouched_by_cpu_mode(self) -> None:
+        import re
+
+        # The flag itself, not `--cpus-per-task` (Slurm) or `--cpu-threads`.
+        cpu_flag = re.compile(r"(?<![\w-])--cpu(?![\w-])")
+        self.assertIsNotNone(cpu_flag.search(self.text))
+
+        gpu = (Path(__file__).resolve().parent / "start_qlora_training.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIsNone(cpu_flag.search(gpu))
+        self.assertIn("sbatch", gpu)
+        for slurm in ("train.slurm", "smoke.slurm"):
+            text = (Path(__file__).resolve().parent / slurm).read_text(encoding="utf-8")
+            self.assertIsNone(cpu_flag.search(text))
+            self.assertIn('--gpu-count "${TRAIN_GPU_COUNT}"', text)

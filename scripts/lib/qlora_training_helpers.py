@@ -163,6 +163,39 @@ def versioned_training_output_dir(
     return path
 
 
+def local_training_output_dir(
+    *,
+    root: str,
+    course_id: str,
+    run_id: str,
+    mode: str,
+) -> str:
+    """Versioned output directory for a CPU run on the machine itself.
+
+    ``<root>/training_outputs/qlora-runs/<courseId>/<runId>-<mode>``. There is
+    no GPFS and no per-user project directory on the UWB VM, so the root is
+    simply where the operator keeps outputs (their home directory by default).
+    Everything after ``training_outputs/`` is identical to the cluster layout,
+    so `relative_training_output_ref` and the registry's ``artifactRef``
+    convention apply unchanged, and the same live-adapter gate still refuses
+    the promoted tree.
+    """
+    safe_root = str(root).strip().rstrip("/")
+    if not safe_root.startswith("/"):
+        raise ValueError(f"Output root must be an absolute path: {root!r}")
+    safe_course = validate_course_id(course_id)
+    safe_run = run_id.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", safe_run):
+        raise ValueError(f"Invalid run id: {run_id!r}")
+    mode_norm = mode.strip().lower()
+    if mode_norm not in {"smoke", "full"}:
+        raise ValueError("mode must be 'smoke' or 'full'")
+    path = f"{safe_root}/training_outputs/qlora-runs/{safe_course}/{safe_run}-{mode_norm}"
+    if is_live_adapter_tree(path):
+        raise ValueError("Refusing to build a path inside the live adapter tree.")
+    return path
+
+
 # --------------------------------------------------------------------------- #
 # Slurm wall-time policy
 #
@@ -644,6 +677,18 @@ def _cli_versioned_outdir(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cli_local_versioned_outdir(args: argparse.Namespace) -> int:
+    print(
+        local_training_output_dir(
+            root=args.root,
+            course_id=args.course_id,
+            run_id=args.run_id,
+            mode=args.mode,
+        )
+    )
+    return 0
+
+
 def _cli_validate_adapter(args: argparse.Namespace) -> int:
     print(str(validate_adapter_source(Path(args.path))))
     return 0
@@ -778,6 +823,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run-id", required=True)
     p.add_argument("--mode", choices=("smoke", "full"), required=True)
     p.set_defaults(func=_cli_versioned_outdir)
+
+    p = sub.add_parser(
+        "local-versioned-outdir",
+        help="Versioned output directory for a CPU run on this machine (no GPFS)",
+    )
+    p.add_argument("--root", required=True, help="Absolute directory, e.g. $HOME")
+    p.add_argument("--course-id", required=True)
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--mode", choices=("smoke", "full"), required=True)
+    p.set_defaults(func=_cli_local_versioned_outdir)
 
     p = sub.add_parser("validate-adapter-source")
     p.add_argument("path")

@@ -87,10 +87,19 @@ The CSS 360 v2 adapter now runs on the UWB VM's CPU through Ollama, and
 models by configuration, so CSS 350 is one more entry once its adapter is
 converted.
 
+Training can now run on the VM as well: `train_qlora.py --cpu` and
+`training/start_cpu_qlora_training.sh` run the same recipe (same split, chat
+formatting, LoRA and NF4 configuration) with float32 compute on the VM's
+cores, writing the cluster's output layout, and neither device mode ever
+falls back to the other. See "CPU training on the UWB VM" in
+`training/README.md`.
+
 Still open: converting adapters to GGUF is a by-hand step; latency on the VM
-under classroom load has not been measured; and the Tillicum GPU service
-remains the known-good baseline and fallback, so nothing has been removed from
-it. See the "UWB VM" section of `training/inference_service/README.md`.
+under classroom load has not been measured; the training queue worker still
+submits to Tillicum, so a CPU run is launched and registered by hand; and the
+Tillicum GPU service remains the known-good baseline and fallback, so nothing
+has been removed from it. See the "UWB VM" section of
+`training/inference_service/README.md`.
 
 ---
 

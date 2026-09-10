@@ -250,6 +250,86 @@ Environment variables:
 
 ---
 
+## CPU training on the UWB VM (no Tillicum)
+
+The same recipe can run on the VM's own CPU. It is the same trainer, the same
+`train.jsonl` / `validation.jsonl` split, the same chat formatting, the same
+LoRA (`r=8`, `alpha=16`, `dropout=0.05`, the seven Llama attention/MLP
+targets) and the same 4-bit NF4 quantization with double quantization. What
+differs is only what a machine with no GPU forces: float32 compute
+(`bnb_4bit_compute_dtype=float32`), no fp16/bf16 autocast, batch size 1
+(gradient accumulation 8 is unchanged, so the effective batch is still 8),
+and no CUDA at all.
+
+CPU mode is selected only by an explicit flag. `train_qlora.py --cpu` never
+looks for a GPU and leaves one alone if it exists; without `--cpu` the trainer
+still requires CUDA exactly as before. Neither mode falls back to the other.
+
+Prerequisites on the VM:
+
+- a venv with the CPU stack at `~/cpu-training-venv` (override with
+  `CPU_TRAINING_VENV`): CPU PyTorch, transformers, datasets, accelerate, peft,
+  trl, bitsandbytes 0.50 or later (its CPU backend is what makes NF4 work);
+- access to the gated base model: `huggingface-cli login` inside that venv, or
+  a copy already in the Hugging Face cache;
+- the course's prepared split under `data/exports/<courseId>/`
+  (`backend/.venv/bin/python scripts/prepare_qlora_dataset.py <courseId>`, or
+  Admin → Training).
+
+```bash
+# on the VM, from the repository root
+./training/start_cpu_qlora_training.sh --course css-360-winter-2026-a7rp --smoke
+tail -f training/logs/cpu-smoke-<runId>.log      # ends with the full-run estimate
+
+# only after the smoke run looks right — an explicit second command:
+./training/start_cpu_qlora_training.sh --course css-360-winter-2026-a7rp --full
+```
+
+The launcher validates the course and export with the same helpers the
+cluster launcher uses, runs the trainer detached with `nohup` (a dropped SSH
+session does not kill it; `--foreground` runs it inline), and writes a
+versioned directory with the cluster's layout:
+
+```text
+$HOME/training_outputs/qlora-runs/<courseId>/<runId>-{smoke|full}/
+  adapter/  tokenizer/  checkpoints/  run-meta.env
+  resolved_config.json  runtime-report.json
+  training_metrics.json  evaluation_metrics.json
+```
+
+`resolved_config.json` records `device`, `compute_dtype`, `cpu_threads`, the
+quantization and the LoRA targets. `runtime-report.json` records model load,
+training, evaluation and total seconds, seconds per optimizer step, peak
+resident memory (`peakRssBytes`, also after model load), the torch thread
+count and the library versions the run used. `gpuCount` is 0 and GPU hours
+are null. The relative reference `qlora-runs/<courseId>/<runId>-full` is the
+same string a cluster run would have produced.
+
+`--threads N` (default: every core) caps torch's threads; the backend and
+Ollama share the VM's 8 cores with training, so leave some free during
+class. The measured cost is about 22 seconds per example pass at these
+sequence lengths, which is close to an hour of training for the 48-example
+CSS 360 split (144 example passes over 3 epochs) and roughly 10 minutes for a
+smoke run. The smoke run's own estimate is the authoritative number.
+
+Nothing is registered, promoted or served automatically. After a full run:
+
+```bash
+backend/.venv/bin/python scripts/register_course_model.py \
+  --course-id <courseId> --base-model meta-llama/Llama-3.2-3B-Instruct \
+  --training-examples <trainCount> \
+  --artifact-ref qlora-runs/<courseId>/<runId>-full/adapter \
+  --status ready --deployment offline
+```
+
+then convert `adapter/` to GGUF and `ollama create` a model from it as
+described in `training/inference_service/README.md`. The training queue
+worker still targets Tillicum; a CPU run is launched by hand.
+
+Tests for this path (no ML stack needed): `pytest training` runs
+`training/test_train_qlora_cpu_mode.py` and the launcher/helper tests in
+`training/test_qlora_training_helpers.py`.
+
 ## Default training settings (unchanged)
 
 - Model: `meta-llama/Llama-3.2-3B-Instruct` (4-bit NF4)
