@@ -54,7 +54,7 @@ Loaded automatically on startup by `app/config.py`.
 | `CORS_ALLOWED_ORIGINS` | yes | Origins the browser may call from |
 | `SEED_GENERATION_MODEL`, `STARTER_*` | for starter seeds | The job that drafts examples from a syllabus |
 | `TRAINING_WORKER_TOKEN` | for training | Shared secret for `/api/training-queue`. **Unset ⇒ that router refuses every request with 503**, which is deliberate: an unconfigured deployment must not be an unauthenticated queue |
-| `FINETUNED_SERVICE_URL` | for fine-tuned paths | Set by the tunnel script to `http://127.0.0.1:9001`. Unset ⇒ those two approaches report unavailable; Base and RAG are unaffected |
+| `FINETUNED_SERVICE_URL` | for fine-tuned paths | `http://127.0.0.1:9001`: the local Ollama-backed service (`training/inference_service/ollama_service.py`), or the Tillicum tunnel's local end when that fallback is in use. Unset ⇒ those two approaches report unavailable; Base and RAG are unaffected |
 | `APP_ENV` | no | `production` on the VM. `test` disables env-file loading entirely; `development` also serves `/docs` |
 | `APP_PUBLIC_ORIGIN` | recommended | The site origin, for the bootstrap script's printed link and as a CSRF origin |
 | `AUTH_COOKIE_SECURE`, `AUTH_*` lifetimes | no | Session cookie and invitation settings; safe defaults, documented in `.env.example` |
