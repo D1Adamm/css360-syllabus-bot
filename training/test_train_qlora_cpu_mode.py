@@ -17,6 +17,7 @@ anywhere. What they pin down:
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import io
 import json
 import sys
@@ -28,7 +29,8 @@ from pathlib import Path
 import train_qlora
 
 
-def _install_ml_stubs(captured: dict, *, cuda_available: bool, bf16_supported: bool) -> dict:
+def _install_ml_stubs(captured: dict, *, cuda_available: bool, bf16_supported: bool,
+                      sft_config_class=None) -> dict:
     saved = {
         name: sys.modules.get(name)
         for name in ("torch", "datasets", "peft", "transformers", "trl")
@@ -169,7 +171,7 @@ def _install_ml_stubs(captured: dict, *, cuda_available: bool, bf16_supported: b
         def save_state(self):
             return None
 
-    trl.SFTConfig = _sft_config
+    trl.SFTConfig = _sft_config if sft_config_class is None else sft_config_class
     trl.SFTTrainer = _SFTTrainer
     sys.modules["trl"] = trl
     return saved
@@ -201,6 +203,46 @@ def _write_split(tmp: Path, train_count: int = 48, validation_count: int = 6) ->
         encoding="utf-8",
     )
     return train_file, val_file
+
+
+_UNSET = object()
+
+#: Every argument run_training() sends to SFTConfig, minus the two that were
+#: renamed between the Tillicum pins and the VM's releases.
+_SFT_COMMON_FIELDS = (
+    "output_dir", "num_train_epochs", "per_device_train_batch_size",
+    "per_device_eval_batch_size", "gradient_accumulation_steps", "learning_rate",
+    "weight_decay", "logging_steps", "eval_strategy", "save_strategy",
+    "save_total_limit", "bf16", "fp16", "use_cpu", "dataloader_pin_memory",
+    "gradient_checkpointing", "report_to", "seed", "packing",
+    "dataset_text_field", "max_steps", "eval_steps", "save_steps",
+)
+#: transformers 4.47.1 / TRL 0.13 (the cluster).
+_SFT_OLD_FIELDS = _SFT_COMMON_FIELDS + ("max_seq_length", "warmup_ratio")
+#: transformers 5.16.1 / TRL 1.12.0 (the VM's cpu-training-venv).
+_SFT_CURRENT_FIELDS = _SFT_COMMON_FIELDS + ("max_length", "warmup_steps")
+
+
+def _strict_sft_config_class(captured: dict, field_names: tuple[str, ...]):
+    """A dataclass with exactly these init parameters, like the real SFTConfig.
+
+    Records the arguments it was constructed with (not its defaults) so a test
+    sees what reached the constructor. An unknown name is a TypeError, as for
+    any dataclass, and inspect.signature() lists exactly these names.
+    """
+
+    def __post_init__(self):
+        captured["sft"] = {
+            name: getattr(self, name)
+            for name in field_names
+            if getattr(self, name) is not _UNSET
+        }
+
+    return dataclasses.make_dataclass(
+        "SFTConfig",
+        [(name, object, dataclasses.field(default=_UNSET)) for name in field_names],
+        namespace={"__post_init__": __post_init__},
+    )
 
 
 class DeviceSelectionTests(unittest.TestCase):
@@ -326,30 +368,6 @@ class PureSettingsTests(unittest.TestCase):
         )
         self.assertEqual(kwargs, {"tokenize": False, "add_generation_prompt": False})
 
-    def test_sft_config_compat_retries_only_the_max_seq_length_rename(self) -> None:
-        class _OldTRL:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-
-        class _NewTRL:
-            # Like the real dataclass: an unknown field is a TypeError naming it.
-            def __init__(self, *, max_length=None, packing=False):
-                self.kwargs = {"max_length": max_length, "packing": packing}
-
-        class _Broken:
-            def __init__(self, **kwargs):
-                raise TypeError("unexpected keyword argument 'packing'")
-
-        old = train_qlora.build_sft_config(_OldTRL, {"max_seq_length": 512, "packing": False})
-        self.assertEqual(old.kwargs, {"max_seq_length": 512, "packing": False})
-
-        new = train_qlora.build_sft_config(_NewTRL, {"max_seq_length": 512, "packing": False})
-        self.assertEqual(new.kwargs, {"max_length": 512, "packing": False})
-        self.assertNotIn("max_seq_length", new.kwargs)
-
-        with self.assertRaises(TypeError):
-            train_qlora.build_sft_config(_Broken, {"max_seq_length": 512, "packing": False})
-
     def test_peak_rss_is_a_positive_byte_count(self) -> None:
         peak = train_qlora.peak_rss_bytes()
         self.assertIsInstance(peak, int)
@@ -364,14 +382,139 @@ class PureSettingsTests(unittest.TestCase):
         self.assertIsNone(versions["no_such_package_css360"])
 
 
+class SftConfigCompatibilityTests(unittest.TestCase):
+    """build_sft_config() across the cluster pins and the VM's newer releases.
+
+    The first real CPU smoke run failed with ``SFTConfig.__init__() got an
+    unexpected keyword argument 'warmup_ratio'`` on transformers 5.16.1 / TRL
+    1.12.0, after the earlier retry had only anticipated ``max_seq_length``.
+    """
+
+    def setUp(self) -> None:
+        self.captured: dict = {}
+        self.kwargs = {
+            "max_seq_length": 512,
+            "warmup_ratio": 0.1,
+            "packing": False,
+            "learning_rate": 2e-4,
+        }
+
+    def test_warmup_steps_from_ratio_is_the_old_scheduler_rounding(self) -> None:
+        cases = [
+            # (ratio, optimizer steps, expected): ceil(steps * ratio)
+            (0.1, 3, 1),     # smoke run
+            (0.1, 18, 2),    # CSS 360: 48 examples / batch 8 / 3 epochs
+            (0.1, 15, 2),    # CSS 350: 37 examples / batch 8 / 3 epochs
+            (0.1, 1, 1),
+            (0.0, 18, 0),
+            (1.0, 18, 18),
+        ]
+        for ratio, steps, expected in cases:
+            with self.subTest(ratio=ratio, steps=steps):
+                self.assertEqual(train_qlora.warmup_steps_from_ratio(ratio, steps), expected)
+        with self.assertRaises(ValueError):
+            train_qlora.warmup_steps_from_ratio(1.5, 18)
+        with self.assertRaises(ValueError):
+            train_qlora.warmup_steps_from_ratio(0.1, 0)
+
+    def test_the_cluster_signature_receives_the_pinned_names_unchanged(self) -> None:
+        old_trl = _strict_sft_config_class(
+            self.captured, ("max_seq_length", "warmup_ratio", "packing", "learning_rate")
+        )
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            config = train_qlora.build_sft_config(
+                old_trl, self.kwargs, total_optimizer_steps=18
+            )
+        self.assertEqual(self.captured["sft"], self.kwargs)
+        self.assertEqual(config.warmup_ratio, 0.1)
+        self.assertEqual(config.max_seq_length, 512)
+        self.assertNotIn("SFTConfig compatibility", stdout.getvalue())
+
+    def test_the_current_signature_gets_max_length_and_ceil_warmup_steps(self) -> None:
+        new_trl = _strict_sft_config_class(
+            self.captured, ("max_length", "warmup_steps", "packing", "learning_rate")
+        )
+        for steps, expected_warmup in ((3, 1), (18, 2), (15, 2)):
+            with self.subTest(steps=steps):
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    train_qlora.build_sft_config(
+                        new_trl, self.kwargs, total_optimizer_steps=steps
+                    )
+                self.assertEqual(
+                    self.captured["sft"],
+                    {
+                        "max_length": 512,
+                        "warmup_steps": expected_warmup,
+                        "packing": False,
+                        "learning_rate": 2e-4,
+                    },
+                )
+                self.assertIn("max_seq_length -> max_length=512", stdout.getvalue())
+                self.assertIn(
+                    f"warmup_ratio=0.1 -> warmup_steps={expected_warmup} of {steps}",
+                    stdout.getvalue(),
+                )
+        # The caller's dict is not mutated.
+        self.assertEqual(self.kwargs["max_seq_length"], 512)
+        self.assertEqual(self.kwargs["warmup_ratio"], 0.1)
+
+    def test_an_unsupported_argument_is_an_error_naming_it_not_a_silent_drop(self) -> None:
+        no_packing = _strict_sft_config_class(
+            self.captured, ("max_length", "warmup_steps", "learning_rate")
+        )
+        with self.assertRaises(ValueError) as ctx:
+            train_qlora.build_sft_config(no_packing, self.kwargs, total_optimizer_steps=18)
+        self.assertIn("packing", str(ctx.exception))
+        self.assertIn("does not accept", str(ctx.exception))
+        self.assertNotIn("sft", self.captured)
+
+    def test_a_release_with_neither_warmup_name_is_an_error(self) -> None:
+        no_warmup = _strict_sft_config_class(
+            self.captured, ("max_length", "packing", "learning_rate")
+        )
+        with self.assertRaises(ValueError) as ctx:
+            train_qlora.build_sft_config(no_warmup, self.kwargs, total_optimizer_steps=18)
+        self.assertIn("warmup_ratio", str(ctx.exception))
+        self.assertNotIn("sft", self.captured)
+
+    def test_a_release_with_neither_length_name_is_an_error(self) -> None:
+        no_length = _strict_sft_config_class(
+            self.captured, ("warmup_steps", "packing", "learning_rate")
+        )
+        with self.assertRaises(ValueError) as ctx:
+            train_qlora.build_sft_config(no_length, self.kwargs, total_optimizer_steps=18)
+        self.assertIn("max_seq_length", str(ctx.exception))
+
+    def test_a_var_keyword_stand_in_passes_everything_through(self) -> None:
+        seen = {}
+
+        def stand_in(**kwargs):
+            seen.update(kwargs)
+            return types.SimpleNamespace(**kwargs)
+
+        train_qlora.build_sft_config(stand_in, self.kwargs, total_optimizer_steps=18)
+        self.assertEqual(seen, self.kwargs)
+        self.assertIsNone(train_qlora.supported_config_parameters(stand_in))
+        self.assertEqual(
+            train_qlora.supported_config_parameters(
+                _strict_sft_config_class({}, ("max_length", "warmup_steps"))
+            ),
+            {"max_length", "warmup_steps"},
+        )
+
+
 class CpuRunTests(unittest.TestCase):
     def setUp(self) -> None:
         self.captured: dict = {}
 
     def _run(self, argv_extra: list[str], *, cuda_available: bool = False,
-             bf16_supported: bool = False, train_count: int = 48, smoke: bool = True):
+             bf16_supported: bool = False, train_count: int = 48, smoke: bool = True,
+             sft_config_class=None):
         saved = _install_ml_stubs(
-            self.captured, cuda_available=cuda_available, bf16_supported=bf16_supported
+            self.captured, cuda_available=cuda_available, bf16_supported=bf16_supported,
+            sft_config_class=sft_config_class,
         )
         self.addCleanup(_restore_ml_stubs, saved)
         tmp = Path(tempfile.mkdtemp())
@@ -611,6 +754,53 @@ class CpuRunTests(unittest.TestCase):
         self.assertTrue((out_dir / "tokenizer" / "tokenizer_config.json").is_file())
         self.assertTrue((out_dir / "training_metrics.json").is_file())
         self.assertTrue((out_dir / "evaluation_metrics.json").is_file())
+
+    def test_cpu_smoke_on_the_current_releases_gets_one_warmup_step(self) -> None:
+        current = _strict_sft_config_class(self.captured, _SFT_CURRENT_FIELDS)
+        report, _, stdout = self._run(["--cpu"], sft_config_class=current)
+        sft = self.captured["sft"]
+        self.assertEqual(sft["max_steps"], 3)
+        self.assertEqual(sft["warmup_steps"], 1)
+        self.assertEqual(sft["max_length"], 512)
+        self.assertNotIn("warmup_ratio", sft)
+        self.assertNotIn("max_seq_length", sft)
+        self.assertEqual(sft["learning_rate"], 2e-4)
+        self.assertTrue(sft["use_cpu"])
+        self.assertFalse(sft["bf16"])
+        self.assertFalse(sft["fp16"])
+        self.assertIn("warmup_ratio=0.1 -> warmup_steps=1 of 3 optimizer steps", stdout)
+        self.assertEqual(report["completedSteps"], 3)
+        self.assertEqual(report["device"], "cpu")
+
+    def test_cpu_full_css360_on_the_current_releases_gets_two_warmup_steps(self) -> None:
+        current = _strict_sft_config_class(self.captured, _SFT_CURRENT_FIELDS)
+        report, _, stdout = self._run(
+            ["--cpu"], smoke=False, train_count=48, sft_config_class=current
+        )
+        sft = self.captured["sft"]
+        self.assertEqual(sft["max_steps"], 18)
+        self.assertEqual(sft["warmup_steps"], 2)
+        self.assertEqual(sft["max_length"], 512)
+        self.assertNotIn("warmup_ratio", sft)
+        self.assertIn("warmup_ratio=0.1 -> warmup_steps=2 of 18 optimizer steps", stdout)
+        self.assertEqual(report["intendedOptimizerSteps"], 18)
+        self.assertTrue(report["trainingLengthSatisfied"])
+
+    def test_cuda_on_the_cluster_releases_still_sends_warmup_ratio_and_max_seq_length(self) -> None:
+        old = _strict_sft_config_class(self.captured, _SFT_OLD_FIELDS)
+        report, _, stdout = self._run(
+            [], cuda_available=True, bf16_supported=True, smoke=False, train_count=48,
+            sft_config_class=old,
+        )
+        sft = self.captured["sft"]
+        self.assertEqual(sft["warmup_ratio"], 0.1)
+        self.assertEqual(sft["max_seq_length"], 512)
+        self.assertNotIn("warmup_steps", sft)
+        self.assertNotIn("max_length", sft)
+        self.assertEqual(sft["max_steps"], 18)
+        self.assertTrue(sft["bf16"])
+        self.assertNotIn("SFTConfig compatibility", stdout)
+        self.assertEqual(report["device"], "cuda")
 
 
 if __name__ == "__main__":

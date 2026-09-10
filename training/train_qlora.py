@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import inspect
 import json
 import math
 import os
@@ -594,22 +595,89 @@ def format_chat_example(tokenizer: Any, example: dict[str, str]) -> dict[str, st
     return {"text": text}
 
 
-def build_sft_config(sft_config_class: Any, kwargs: dict[str, Any]) -> Any:
-    """Construct SFTConfig across the TRL rename of ``max_seq_length``.
+def supported_config_parameters(config_class: Any) -> set[str] | None:
+    """Names ``config_class(...)`` accepts, or None when it takes ``**kwargs``.
 
-    TRL 0.13 (the Tillicum pin) spells the cap ``max_seq_length``; TRL 0.20 and
-    later removed it in favour of ``max_length``. The CPU venv is not pinned to
-    the cluster's versions, so the retry keeps one trainer usable in both.
-    Only that exact rejection is retried; any other TypeError is real.
+    A dataclass such as SFTConfig lists every field, inherited ones included,
+    in its ``__init__`` signature, so for the real class this is exact. A
+    ``**kwargs`` signature only occurs on test stand-ins, which accept anything
+    by construction.
     """
-    try:
+    parameters = inspect.signature(config_class).parameters
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+        return None
+    return {name for name in parameters if name != "self"}
+
+
+def warmup_steps_from_ratio(warmup_ratio: float, total_optimizer_steps: int) -> int:
+    """``warmup_ratio`` as an exact step count, as transformers 4.x resolved it.
+
+    ``TrainingArguments.get_warmup_steps`` computed
+    ``ceil(num_training_steps * warmup_ratio)``; this is the same expression,
+    so a run on a release without ``warmup_ratio`` gets the schedule the
+    cluster used: 1 warmup step of 3 for a smoke run, 2 of 18 for the CSS 360
+    split.
+    """
+    if not 0.0 <= float(warmup_ratio) <= 1.0:
+        raise ValueError(f"warmup_ratio must be within [0, 1]: {warmup_ratio!r}")
+    if int(total_optimizer_steps) < 1:
+        raise ValueError("total_optimizer_steps must be >= 1")
+    return int(math.ceil(int(total_optimizer_steps) * float(warmup_ratio)))
+
+
+def build_sft_config(
+    sft_config_class: Any,
+    kwargs: dict[str, Any],
+    *,
+    total_optimizer_steps: int,
+) -> Any:
+    """Construct SFTConfig from the pinned-era argument names on any release.
+
+    The Tillicum pins (transformers 4.47.1, TRL 0.13) accept every name in
+    ``kwargs`` and receive them untouched. Newer releases renamed two: TRL
+    0.20 replaced ``max_seq_length`` with ``max_length``, and transformers 5
+    replaced ``warmup_ratio`` with ``warmup_steps``. Each is translated only
+    when the constructor's own signature lacks the old name and has the new
+    one, and the warmup ratio is converted to the step count the old
+    scheduler would have derived from it. Any other argument the signature
+    does not accept is an error that names it, never a silent drop: a
+    hyperparameter that vanished would be a different run.
+    """
+    supported = supported_config_parameters(sft_config_class)
+    if supported is None:
         return sft_config_class(**kwargs)
-    except TypeError as exc:
-        if "max_seq_length" not in kwargs or "max_seq_length" not in str(exc):
-            raise
-    renamed = dict(kwargs)
-    renamed["max_length"] = renamed.pop("max_seq_length")
-    return sft_config_class(**renamed)
+
+    adapted = dict(kwargs)
+    notes: list[str] = []
+    if (
+        "max_seq_length" in adapted
+        and "max_seq_length" not in supported
+        and "max_length" in supported
+    ):
+        adapted["max_length"] = adapted.pop("max_seq_length")
+        notes.append(f"max_seq_length -> max_length={adapted['max_length']}")
+    if (
+        "warmup_ratio" in adapted
+        and "warmup_ratio" not in supported
+        and "warmup_steps" in supported
+    ):
+        ratio = adapted.pop("warmup_ratio")
+        adapted["warmup_steps"] = warmup_steps_from_ratio(ratio, total_optimizer_steps)
+        notes.append(
+            f"warmup_ratio={ratio} -> warmup_steps={adapted['warmup_steps']} "
+            f"of {total_optimizer_steps} optimizer steps"
+        )
+
+    unsupported = sorted(name for name in adapted if name not in supported)
+    if unsupported:
+        raise ValueError(
+            f"{sft_config_class.__name__} from {sft_config_class.__module__} does not "
+            f"accept: {', '.join(unsupported)}. Extend build_sft_config() with the "
+            "equivalent for this release rather than dropping them."
+        )
+    if notes:
+        print("SFTConfig compatibility: " + "; ".join(notes))
+    return sft_config_class(**adapted)
 
 
 def peak_rss_bytes() -> int | None:
@@ -948,7 +1016,9 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         sft_kwargs["save_strategy"] = "steps"
         sft_kwargs["save_steps"] = max(1, resolved_max_steps)
 
-    sft_config = build_sft_config(SFTConfig, sft_kwargs)
+    sft_config = build_sft_config(
+        SFTConfig, sft_kwargs, total_optimizer_steps=resolved_max_steps
+    )
 
     trainer_kwargs: dict[str, Any] = {
         "model": model,
