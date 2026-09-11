@@ -168,6 +168,10 @@ BODIES: dict[str, dict[str, Any]] = {
     "/api/fine-tuned/generate": {"courseId": COURSE_A, "question": "When are office hours?"},
     "/fine-tuned-rag/generate": {"courseId": COURSE_A, "question": "When are office hours?"},
     "/api/fine-tuned-rag/generate": {"courseId": COURSE_A, "question": "When are office hours?"},
+    "/api/model-testing/generate": {
+        "courseId": COURSE_A, "mode": "fineTuned", "modelVersion": "v1",
+        "question": "When are office hours?",
+    },
     "/api/auth/login": {"email": "x@uw.edu", "password": "a password of some length"},
     "/api/auth/join": {"code": "7K4P9X"},
     "/api/auth/invitations/{token}/accept": {
@@ -213,6 +217,7 @@ class AuthorizationMatrixTests(unittest.TestCase):
                 side_effect=HTTPException(status_code=503, detail="stub")
             ),
             "app.main.resolve_current_course_model": MagicMock(return_value={"version": "v1"}),
+            "app.main.resolve_course_model_version": MagicMock(return_value={"version": "v1"}),
             "app.main.check_finetuned_service_health": AsyncMock(return_value={"status": "stub"}),
             "app.main.validate_syllabus_upload": AsyncMock(
                 side_effect=HTTPException(status_code=422, detail="stub")

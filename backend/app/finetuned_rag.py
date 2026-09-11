@@ -2,6 +2,12 @@
 
 Reuses course-specific retrieval from ``course_rag`` and the existing
 fine-tuned HTTP client. Does not change Base, RAG, or Fine-Tuned paths.
+
+The one optional input, ``model_version``, is the administrator's model-testing
+override: an explicitly named version checked against the registry instead of
+the version the registry chooses. Retrieval, the grounded prompt and the client
+call are the same either way, which is what makes a test answer representative
+of a classroom one. Without it the path is exactly as it was.
 """
 
 from __future__ import annotations
@@ -11,7 +17,10 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.course_id import assert_valid_course_id
-from app.course_model_resolution import resolve_current_course_model
+from app.course_model_resolution import (
+    resolve_course_model_version,
+    resolve_current_course_model,
+)
 from app.course_rag import retrieve_course_syllabus_chunks
 from app.finetuned_client import generate_finetuned_response
 from app.retrieval_diversity import DEFAULT_TOP_K
@@ -97,8 +106,15 @@ async def generate_course_finetuned_rag_answer(
     question: str,
     top_k: int = DEFAULT_TOP_K,
     storage: CourseArtifactStorage | None = None,
+    *,
+    model_version: str | None = None,
 ) -> dict[str, Any]:
-    """Retrieve course syllabus chunks, then generate with the fine-tuned service."""
+    """Retrieve course syllabus chunks, then generate with the fine-tuned service.
+
+    `model_version` names the version to answer from instead of resolving the
+    course's own. Only the administrator-only model-testing route passes it;
+    the classroom route never does, and with it absent nothing here differs.
+    """
     safe_course_id = _validate_course_id(course_id)
     trimmed = question.strip()
     if not trimmed:
@@ -124,8 +140,13 @@ async def generate_course_finetuned_rag_answer(
     # The same course resolution the plain fine-tuned path does. Retrieval is
     # already course-scoped; without this the grounded prompt would be answered
     # by whichever adapter the service happened to have, which is the one way
-    # this path could still cross courses.
-    resolved = resolve_current_course_model(safe_course_id)
+    # this path could still cross courses. An explicitly named version goes
+    # through the registry too — registered for this course, ready — rather
+    # than straight to the service.
+    if model_version is None:
+        resolved = resolve_current_course_model(safe_course_id)
+    else:
+        resolved = resolve_course_model_version(safe_course_id, model_version)
     generation = await generate_finetuned_response(
         prompt,
         course_id=safe_course_id,

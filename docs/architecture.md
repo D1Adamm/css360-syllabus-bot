@@ -179,6 +179,23 @@ POST /api/fine-tuned-rag/generate { courseId, question }  ← retrieves first, t
    └─ verify the response names the course that was asked for
 ```
 
+An administrator can also ask for a specific version, for comparing a newly
+trained one against the one students get:
+
+```
+POST /api/model-testing/generate { courseId, mode, modelVersion, question }
+```
+
+Administrator-only, and the only route that reads a version from a request.
+`mode` is `fineTuned`, `fineTunedRag` or `rag` (the control, which has no
+version). `modelVersion` must be registered for the course and `ready`; it need
+be neither current nor published, so a version under test can be answered from
+without changing anything a student's request reads. Retrieval, prompting and
+the client are the production functions, unmodified. The response names the
+version that answered, and a service that answered from any other version is
+refused rather than reported. Nothing is written: not `current_version`, not
+`deployment`, not an evaluation.
+
 `FINETUNED_SERVICE_URL` points at `http://127.0.0.1:9001` on the VM. That is
 `training/inference_service/ollama_service.py`, a loopback-only service that
 answers the same `/health` and `/generate` contract the Tillicum GPU service

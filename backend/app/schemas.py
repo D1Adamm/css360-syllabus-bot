@@ -202,6 +202,78 @@ class FineTunedRagGenerateResponse(BaseModel):
     generation_seconds: float | None = Field(default=None, alias="generationSeconds")
 
 
+#: The approaches the model-testing route can run. The names are the
+#: `responseType` values the classroom routes answer with, so a benchmark can
+#: label its rows the way the Compare page and the evaluations table already do.
+ModelTestingMode = Literal["fineTuned", "fineTunedRag", "rag"]
+
+
+class ModelTestingGenerateRequest(BaseModel):
+    """An administrator's explicit-version generation, for comparing versions.
+
+    The same course, question and retrieval setting the classroom routes take,
+    plus the two things they deliberately do not: which approach, and which
+    registered version. `modelVersion` is required for the fine-tuned modes and
+    must be omitted for `rag`, which answers from the base model and has no
+    version to select. Read by one administrator-only route; the classroom
+    routes' own request models are untouched.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(
+        ...,
+        alias="courseId",
+        min_length=1,
+        description="Course whose syllabus and models are under test",
+    )
+    mode: ModelTestingMode = Field(
+        ..., description="Which approach to run: fineTuned, fineTunedRag or rag"
+    )
+    model_version: str | None = Field(
+        default=None,
+        alias="modelVersion",
+        pattern=r"^v[0-9]+$",
+        description=(
+            "The registered version to answer from, e.g. v2. Required for the "
+            "fine-tuned modes; must be omitted for rag."
+        ),
+    )
+    question: str = Field(..., min_length=1, description="The question to answer")
+    top_k: int = Field(
+        default=4,
+        alias="topK",
+        ge=1,
+        le=20,
+        description="Number of syllabus chunks to retrieve, for the RAG modes",
+    )
+
+
+class ModelTestingGenerateResponse(BaseModel):
+    """One answer, labelled with the mode and the version that produced it.
+
+    `modelVersion` is the version that answered: the requested one, for the
+    fine-tuned modes, after the client has checked it against the version the
+    service reports. Null for `rag`. The retrieval fields are empty for
+    `fineTuned`, which retrieves nothing.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    mode: str
+    model_version: str | None = Field(default=None, alias="modelVersion")
+    answer: str
+    model: str
+    response_type: str = Field(alias="responseType")
+    adapter_loaded: bool | None = Field(default=None, alias="adapterLoaded")
+    generation_seconds: float | None = Field(default=None, alias="generationSeconds")
+    sources: list[RagGenerateSource] = Field(default_factory=list)
+    retrieved_chunks: list[RagRetrieveResult] = Field(
+        default_factory=list, alias="retrievedChunks"
+    )
+
+
 class SyllabusUploadResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

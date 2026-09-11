@@ -236,5 +236,101 @@ class LocalServiceContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(parsed.courses[0]["courseId"], COURSE)
 
 
+V3_MODEL = "css360-cpu-v3-test:latest"
+BOTH_MAPPED = f"{COURSE}@v2={MODEL},{COURSE}@v3={V3_MODEL}"
+
+
+class _FakeOllamaWithBoth(_FakeOllama):
+    """Ollama holding both course models, as the VM does while v3 is under test."""
+
+    async def get(self, url: str, **kwargs: Any) -> _Response:
+        return _Response(
+            200,
+            {"models": [{"name": MODEL}, {"name": V3_MODEL}, {"name": "llama3.2:3b"}]},
+        )
+
+
+class ExplicitVersionContractTests(unittest.IsolatedAsyncioTestCase):
+    """Two versions mapped for one course: the model-testing situation.
+
+    The wrapper's `/health` calls the highest servable version `currentVersion`
+    — its own notion, which the backend never reads to resolve anything. What
+    the backend sends is honoured exactly: an explicit v2 is answered by the
+    v2 model although v3 is higher, an explicit v3 by the v3 model, and a
+    version this host does not have is a refusal that names it, not an answer
+    from the nearest one. The version the wrapper echoes is the one the
+    backend checks.
+    """
+
+    def setUp(self) -> None:
+        self._env = mock.patch.dict(
+            os.environ,
+            {
+                service.MODEL_MAP_ENV: BOTH_MAPPED,
+                "INFERENCE_PORT": "",
+                "FINETUNED_SERVICE_URL": "http://127.0.0.1:9001",
+                "FINETUNED_SERVICE_TIMEOUT_SECONDS": "",
+            },
+        )
+        self._env.start()
+        self.addCleanup(self._env.stop)
+        self.wrapper = TestClient(service.app)
+        self._network = mock.patch.object(
+            service.httpx, "AsyncClient", _Network(self.wrapper, _FakeOllamaWithBoth())
+        )
+        self._network.start()
+        self.addCleanup(self._network.stop)
+
+    async def test_health_calls_the_highest_servable_version_current_and_the_backend_ignores_it(self) -> None:
+        probe = await check_finetuned_service_health()
+        self.assertEqual(
+            probe["courses"],
+            [{"courseId": COURSE, "versions": ["v2", "v3"], "currentVersion": "v3"}],
+        )
+
+    async def test_an_explicit_v2_is_answered_by_v2_although_v3_is_higher(self) -> None:
+        result = await generate_finetuned_response(
+            "What is the late policy?", course_id=COURSE, model_version="v2"
+        )
+        self.assertEqual(result["model_version"], "v2")
+        self.assertEqual(result["model"], MODEL)
+
+    async def test_an_explicit_v3_is_answered_by_v3(self) -> None:
+        result = await generate_finetuned_response(
+            "What is the late policy?", course_id=COURSE, model_version="v3"
+        )
+        self.assertEqual(result["model_version"], "v3")
+        self.assertEqual(result["model"], V3_MODEL)
+
+    async def test_a_version_this_host_does_not_have_is_refused_not_substituted(self) -> None:
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as ctx:
+            await generate_finetuned_response(
+                "What is the late policy?", course_id=COURSE, model_version="v4"
+            )
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn(COURSE, ctx.exception.detail)
+        self.assertIn('version "v4"', ctx.exception.detail)
+
+    def test_the_wrapper_echoes_the_version_it_served_and_the_backend_compares(self) -> None:
+        from fastapi import HTTPException
+
+        raw = self.wrapper.post(
+            "/generate",
+            json={"courseId": COURSE, "modelVersion": "v3", "question": "Late policy?"},
+        ).json()
+        self.assertEqual(raw["modelVersion"], "v3")
+        self.assertEqual(raw["model"], V3_MODEL)
+
+        accepted = _validate_generate_payload(
+            raw, expected_course_id=COURSE, expected_model_version="v3"
+        )
+        self.assertEqual(accepted["model_version"], "v3")
+        with self.assertRaises(HTTPException) as ctx:
+            _validate_generate_payload(raw, expected_course_id=COURSE, expected_model_version="v2")
+        self.assertEqual(ctx.exception.status_code, 502)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -73,6 +73,10 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     ("POST", "/api/fine-tuned-rag/generate"): COURSE_ACCESS_BODY,
     ("GET", "/fine-tuned/health"): REQUIRE_ADMIN,
     ("GET", "/api/fine-tuned/health"): REQUIRE_ADMIN,
+    # An administrator's explicit-version generation, for comparing versions.
+    # Not an alias of the classroom routes: a student's request carries no
+    # version, and this is the only route that reads one.
+    ("POST", "/api/model-testing/generate"): REQUIRE_ADMIN,
     # ---- syllabus, seeds, training (main.py) ----
     ("POST", f"{_C}/syllabus"): REQUIRE_COURSE_STAFF,
     ("GET", f"{_C}/syllabus/text"): REQUIRE_COURSE_ACCESS,

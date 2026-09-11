@@ -22,7 +22,10 @@ from app.auth.principal import Principal
 from app.config import app_env, is_test_mode
 from app.course_id import assert_valid_course_id
 from app.course_index import build_course_rag_index
-from app.course_model_resolution import resolve_current_course_model
+from app.course_model_resolution import (
+    resolve_course_model_version,
+    resolve_current_course_model,
+)
 from app.course_rag import generate_course_rag_answer
 from app.admin_routes import router as admin_router
 from app.auth_routes import router as auth_router
@@ -47,6 +50,8 @@ from app.schemas import (
     FineTunedHealthResponse,
     FineTunedRagGenerateRequest,
     FineTunedRagGenerateResponse,
+    ModelTestingGenerateRequest,
+    ModelTestingGenerateResponse,
     CourseChunkMetadata,
     CourseChunksResponse,
     CourseSeedListResponse,
@@ -366,6 +371,116 @@ async def generate_fine_tuned_rag(
         modelVersion=result.get("modelVersion"),
         adapterLoaded=result["adapterLoaded"],
         generationSeconds=result["generationSeconds"],
+    )
+
+
+@app.post("/api/model-testing/generate", response_model=ModelTestingGenerateResponse)
+async def generate_model_testing_answer(
+    request: ModelTestingGenerateRequest,
+    principal: Principal = Depends(require_admin),
+) -> ModelTestingGenerateResponse:
+    """An administrator's answer from an explicitly chosen model version.
+
+    The comparison the classroom routes cannot make. Those resolve the course's
+    version from the registry, deliberately, and nothing a caller sends can
+    move them off it — a `modelVersion` in their body is not read. Here the
+    version is the request's, checked against the same registry by
+    `resolve_course_model_version` (registered for this course, `ready`; being
+    current or published is not required, which is the point), and then sent
+    down the same client the classroom routes use, which refuses an answer from
+    any other version. Retrieval, prompting and generation are the production
+    functions unmodified, so an answer here is what a student would have
+    received had this version been the course's.
+
+    Nothing is written: not `current_version`, not `deployment`, not an
+    evaluation. Administrator-only, mounted under `/api` only, and not an
+    alias of the classroom routes.
+    """
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=422, detail="Question must not be empty.")
+
+    try:
+        safe_course_id = assert_valid_course_id(request.course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    mode = request.mode
+    if mode == "rag":
+        if request.model_version is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "RAG answers from the base model and has no model version "
+                    'to select; omit modelVersion for mode "rag".'
+                ),
+            )
+        result = await generate_course_rag_answer(
+            course_id=safe_course_id,
+            question=question,
+            top_k=request.top_k,
+        )
+        return ModelTestingGenerateResponse(
+            courseId=result["courseId"],
+            mode=mode,
+            modelVersion=None,
+            answer=result["answer"],
+            model=result["model"],
+            responseType=result["responseType"],
+            sources=[RagGenerateSource(**source) for source in result["sources"]],
+            retrievedChunks=[
+                RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
+            ],
+        )
+
+    if request.model_version is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f'modelVersion is required for mode "{mode}": name the '
+                "registered version to test, e.g. v2."
+            ),
+        )
+
+    if mode == "fineTunedRag":
+        result = await generate_course_finetuned_rag_answer(
+            course_id=safe_course_id,
+            question=question,
+            top_k=request.top_k,
+            model_version=request.model_version,
+        )
+        return ModelTestingGenerateResponse(
+            courseId=result["courseId"],
+            mode=mode,
+            modelVersion=result.get("modelVersion"),
+            answer=result["answer"],
+            model=result["model"],
+            responseType=result["responseType"],
+            adapterLoaded=result["adapterLoaded"],
+            generationSeconds=result["generationSeconds"],
+            sources=[RagGenerateSource(**source) for source in result["sources"]],
+            retrievedChunks=[
+                RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
+            ],
+        )
+
+    # Fine-Tuned: the same two steps the classroom route takes, with the
+    # requested version in place of the resolved one.
+    resolved = resolve_course_model_version(safe_course_id, request.model_version)
+    result = await generate_finetuned_response(
+        question,
+        course_id=safe_course_id,
+        model_version=resolved["version"],
+    )
+    return ModelTestingGenerateResponse(
+        courseId=safe_course_id,
+        mode=mode,
+        modelVersion=result.get("model_version") or resolved["version"],
+        answer=result["answer"],
+        model=result["model"],
+        responseType=result["response_type"],
+        adapterLoaded=result["adapter_loaded"],
+        generationSeconds=result["generation_seconds"],
     )
 
 

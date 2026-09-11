@@ -77,7 +77,7 @@ curl -s http://127.0.0.1:8001/api/health
 
 ## API groups
 
-75 paths. Every one is under `/api`, except six root-level aliases
+76 paths. Every one is under `/api`, except six root-level aliases
 (`/health`, `/base-model/generate`, `/rag/generate`, `/fine-tuned/generate`,
 `/fine-tuned/health`, `/fine-tuned-rag/generate`) kept because Nginx forwards
 only `location /api/` and those are useful directly on the VM.
@@ -86,6 +86,7 @@ only `location /api/` and those are useful directly on the VM.
 | --- | --- | --- |
 | Health | `/api/health` | Reports that the API is responding. Does not probe Ollama or the database |
 | Inference | `/api/base-model/…`, `/api/rag/…`, `/api/fine-tuned/…`, `/api/fine-tuned-rag/…` | The four comparison approaches. All require `courseId` |
+| Model testing | `/api/model-testing/generate` | An administrator's answer from an explicitly named model version — Fine-Tuned, Fine-Tuned + RAG, or RAG as the control — for comparing a registered version against the one a course serves. The same retrieval, prompting and client as the classroom routes; reads the registry and writes nothing. Administrators only |
 | Syllabus | `/api/courses/{courseId}/syllabus…`, `/chunks` | Upload, extract, chunk, embed; read extracted text and chunk metadata |
 | Seeds | `/api/courses/{courseId}/seeds…` | Generation, validation, review, quality checks, approved export, train/validation split |
 | Persistence | `/api/db/…` | `db_routes.py`. Courses, seeds, evaluations, model registry, model requests, training runs, serving session. What the browser reads and writes |

@@ -6,7 +6,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -468,6 +468,133 @@ class FineTunedRagEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn("unavailable", response.json()["detail"].lower())
+
+
+class ExplicitVersionFineTunedRagTests(unittest.IsolatedAsyncioTestCase):
+    """`model_version`: the administrator's model-testing override.
+
+    With it, the explicit resolver is consulted instead of the course's own
+    and the named version reaches the client. Without it, nothing differs from
+    before: the course's version is resolved as it always was. Either way the
+    retrieval and the grounded prompt are the same, which is what makes an
+    answer under test comparable to a classroom one.
+    """
+
+    COURSE = "css-360-winter-2026-a7rp"
+    CHUNK = {
+        "chunk_id": "css360-office-1",
+        "section": "Office Hours",
+        "text": "Office hours are Tuesdays at 2pm.",
+        "score": 0.9,
+    }
+
+    def setUp(self) -> None:
+        self._env_backup = os.environ.get("FINETUNED_SERVICE_URL")
+        os.environ["FINETUNED_SERVICE_URL"] = "http://example-node:8001"
+        self._patches = [
+            patch(
+                "app.finetuned_rag.retrieve_course_syllabus_chunks",
+                new=AsyncMock(return_value=("nomic-embed-text", [self.CHUNK])),
+            ),
+            patch(
+                "app.finetuned_rag.resolve_current_course_model",
+                new=MagicMock(return_value={"courseId": self.COURSE, "version": "v2"}),
+            ),
+            patch(
+                "app.finetuned_rag.resolve_course_model_version",
+                new=MagicMock(
+                    side_effect=lambda course_id, version: {"courseId": course_id, "version": version}
+                ),
+            ),
+        ]
+        self.retrieve, self.current, self.explicit = (p.start() for p in self._patches)
+
+    def tearDown(self) -> None:
+        for p in self._patches:
+            p.stop()
+        if self._env_backup is None:
+            os.environ.pop("FINETUNED_SERVICE_URL", None)
+        else:
+            os.environ["FINETUNED_SERVICE_URL"] = self._env_backup
+
+    def _client(self, model_version: str) -> AsyncMock:
+        return AsyncMock(
+            return_value={
+                "answer": f"From {model_version}.",
+                "model": f"css360-ft-{model_version}:latest",
+                "adapter_loaded": True,
+                "course_id": self.COURSE,
+                "model_version": model_version,
+                "generation_seconds": 0.5,
+                "response_type": "fineTuned",
+            }
+        )
+
+    async def test_an_explicit_version_replaces_resolution_and_reaches_the_client(self) -> None:
+        client = self._client("v3")
+        with patch("app.finetuned_rag.generate_finetuned_response", new=client):
+            result = await generate_course_finetuned_rag_answer(
+                course_id=self.COURSE, question="When are office hours?", model_version="v3"
+            )
+
+        self.explicit.assert_called_once_with(self.COURSE, "v3")
+        self.current.assert_not_called()
+        self.assertEqual(client.await_args.kwargs["model_version"], "v3")
+        self.assertEqual(client.await_args.kwargs["course_id"], self.COURSE)
+        self.assertEqual(result["modelVersion"], "v3")
+        self.assertEqual(result["responseType"], "fineTunedRag")
+        self.assertEqual(result["sources"][0]["chunkId"], "css360-office-1")
+
+    async def test_without_an_explicit_version_the_courses_own_is_resolved_as_before(self) -> None:
+        client = self._client("v2")
+        with patch("app.finetuned_rag.generate_finetuned_response", new=client):
+            result = await generate_course_finetuned_rag_answer(
+                course_id=self.COURSE, question="When are office hours?"
+            )
+
+        self.current.assert_called_once_with(self.COURSE)
+        self.explicit.assert_not_called()
+        self.assertEqual(client.await_args.kwargs["model_version"], "v2")
+        self.assertEqual(result["modelVersion"], "v2")
+
+    async def test_an_explicit_version_the_registry_refuses_never_reaches_the_service(self) -> None:
+        from app.course_model_resolution import UnservableCourseModelVersion
+
+        self.explicit.side_effect = UnservableCourseModelVersion(
+            self.COURSE, "v9", 'Course "css-360-winter-2026-a7rp" has no registered model version "v9".'
+        )
+        client = AsyncMock()
+        with patch("app.finetuned_rag.generate_finetuned_response", new=client):
+            with self.assertRaises(HTTPException) as ctx:
+                await generate_course_finetuned_rag_answer(
+                    course_id=self.COURSE, question="When are office hours?", model_version="v9"
+                )
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn('"v9"', ctx.exception.detail)
+        client.assert_not_awaited()
+        # Same order as the classroom path: retrieval first, resolution after.
+        self.retrieve.assert_awaited_once()
+
+    async def test_the_grounded_prompt_is_identical_either_way(self) -> None:
+        prompts: list[str] = []
+
+        async def capture(prompt: str, *, course_id: str, model_version: str | None = None):
+            prompts.append(prompt)
+            return self._client(model_version or "v2").return_value
+
+        with patch("app.finetuned_rag.generate_finetuned_response", new=AsyncMock(side_effect=capture)):
+            await generate_course_finetuned_rag_answer(
+                course_id=self.COURSE, question="When are office hours?"
+            )
+            await generate_course_finetuned_rag_answer(
+                course_id=self.COURSE, question="When are office hours?", model_version="v3"
+            )
+
+        self.assertEqual(len(prompts), 2)
+        self.assertEqual(prompts[0], prompts[1])
+        self.assertIn("Office hours are Tuesdays at 2pm.", prompts[1])
+        self.assertIn("Answer only from the supplied syllabus context", prompts[1])
 
 
 if __name__ == "__main__":

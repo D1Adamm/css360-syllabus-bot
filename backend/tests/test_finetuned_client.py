@@ -363,5 +363,109 @@ class FineTunedEndpointTests(unittest.TestCase):
         self.assertIn("FINETUNED_SERVICE_URL", response.json()["detail"])
 
 
+class ExplicitVersionClientTests(unittest.IsolatedAsyncioTestCase):
+    """The version half of the isolation check.
+
+    A request that names a version is answered from that version or refused;
+    the service says which version it used, and the client compares. This is
+    what makes "test v3" mean v3 rather than "whatever the service preferred":
+    the local Ollama service honours an explicit version or answers 409, and
+    if a service ever did substitute one, the substitution is caught here.
+    """
+
+    def setUp(self) -> None:
+        self._env_backup = os.environ.get("FINETUNED_SERVICE_URL")
+        os.environ["FINETUNED_SERVICE_URL"] = "http://example-node:8001"
+
+    def tearDown(self) -> None:
+        if self._env_backup is None:
+            os.environ.pop("FINETUNED_SERVICE_URL", None)
+        else:
+            os.environ["FINETUNED_SERVICE_URL"] = self._env_backup
+
+    async def _generate(self, response: MagicMock, *, model_version: str | None) -> tuple[dict, AsyncMock]:
+        mock_client = _mock_async_client(response=response)
+        with patch("app.finetuned_client.httpx.AsyncClient", return_value=mock_client):
+            result = await generate_finetuned_response(
+                "What is the late policy?", course_id=COURSE, model_version=model_version
+            )
+        return result, mock_client
+
+    async def test_the_requested_version_travels_with_the_request(self) -> None:
+        result, mock_client = await self._generate(
+            _ok_generate_response(model_version="v3"), model_version="v3"
+        )
+
+        self.assertEqual(
+            mock_client.post.call_args.kwargs["json"],
+            {"question": "What is the late policy?", "courseId": COURSE, "modelVersion": "v3"},
+        )
+        self.assertEqual(result["model_version"], "v3")
+
+    async def test_a_response_from_another_version_is_refused(self) -> None:
+        mock_client = _mock_async_client(response=_ok_generate_response(model_version="v2"))
+
+        with patch("app.finetuned_client.httpx.AsyncClient", return_value=mock_client):
+            with self.assertRaises(HTTPException) as ctx:
+                await generate_finetuned_response(
+                    "What is the late policy?", course_id=COURSE, model_version="v3"
+                )
+
+        self.assertEqual(ctx.exception.status_code, 502)
+        self.assertIn('"v2"', ctx.exception.detail)
+        self.assertIn('"v3"', ctx.exception.detail)
+        self.assertIn("discarded", ctx.exception.detail)
+
+    async def test_a_response_naming_no_version_is_still_accepted(self) -> None:
+        """An older single-adapter build reports no version; the course check
+        is the one that matters for isolation, and it still applies."""
+        result, _ = await self._generate(
+            _ok_generate_response(model_version=None), model_version="v3"
+        )
+        self.assertIsNone(result["model_version"])
+
+    async def test_without_a_requested_version_the_services_choice_is_reported(self) -> None:
+        result, mock_client = await self._generate(
+            _ok_generate_response(model_version="v2"), model_version=None
+        )
+        self.assertNotIn("modelVersion", mock_client.post.call_args.kwargs["json"])
+        self.assertEqual(result["model_version"], "v2")
+
+    async def test_a_409_names_the_requested_version(self) -> None:
+        mock_response = MagicMock()
+        mock_response.status_code = 409
+        mock_response.text = 'Course "..." has no mapped model for version v3.'
+        mock_client = _mock_async_client(response=mock_response)
+
+        with patch("app.finetuned_client.httpx.AsyncClient", return_value=mock_client):
+            with self.assertRaises(HTTPException) as ctx:
+                await generate_finetuned_response(
+                    "What is the late policy?", course_id=COURSE, model_version="v3"
+                )
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn(COURSE, ctx.exception.detail)
+        self.assertIn('version "v3"', ctx.exception.detail)
+
+    def test_the_validator_compares_versions_only_when_asked_to(self) -> None:
+        from app.finetuned_client import _validate_generate_payload
+
+        payload = _ok_generate_response(model_version="v2").json()
+        self.assertEqual(
+            _validate_generate_payload(payload, expected_course_id=COURSE)["model_version"], "v2"
+        )
+        self.assertEqual(
+            _validate_generate_payload(
+                payload, expected_course_id=COURSE, expected_model_version="v2"
+            )["model_version"],
+            "v2",
+        )
+        with self.assertRaises(HTTPException) as ctx:
+            _validate_generate_payload(
+                payload, expected_course_id=COURSE, expected_model_version="v3"
+            )
+        self.assertEqual(ctx.exception.status_code, 502)
+
+
 if __name__ == "__main__":
     unittest.main()

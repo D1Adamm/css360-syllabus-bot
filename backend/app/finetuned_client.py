@@ -14,6 +14,11 @@ a machine rather than by a reader.
 
 The service is the other half: it resolves the adapter from the course id on the
 request and has no course-agnostic default to fall back to.
+
+The version gets the same treatment. A request that names one is answered from
+that one or refused by the service; a response that names a different version
+is discarded here, because an answer from the wrong version of the right
+course looks exactly as plausible as an answer from the wrong course.
 """
 
 from __future__ import annotations
@@ -92,9 +97,20 @@ def require_finetuned_service_url() -> str:
 
 
 def _validate_generate_payload(
-    data: Any, *, expected_course_id: str | None = None
+    data: Any,
+    *,
+    expected_course_id: str | None = None,
+    expected_model_version: str | None = None,
 ) -> dict[str, Any]:
-    """Validate the remote /generate JSON body; raise 502 on malformed data."""
+    """Validate the remote /generate JSON body; raise 502 on malformed data.
+
+    `expected_model_version` is the version the request named. A response that
+    names a different one is refused like a response for a different course,
+    and for the same reason: the service would have answered from an adapter
+    that was not asked for, fluently, with nothing on the face of the answer to
+    show it. A response that names no version at all is an older single-adapter
+    build and is still accepted; only a *different* version is refused.
+    """
     if not isinstance(data, dict):
         raise HTTPException(
             status_code=502,
@@ -159,6 +175,24 @@ def _validate_generate_payload(
             )
 
     model_version = data.get("modelVersion")
+    returned_version = (
+        model_version.strip()
+        if isinstance(model_version, str) and model_version.strip()
+        else None
+    )
+    if (
+        expected_model_version is not None
+        and returned_version is not None
+        and returned_version != expected_model_version
+    ):
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Fine-tuned service answered from model version "
+                f'"{returned_version}" when asked for "{expected_model_version}". '
+                "The answer was discarded."
+            ),
+        )
 
     generation_seconds = data.get("generationSeconds")
     if generation_seconds is not None and not isinstance(generation_seconds, (int, float)):
@@ -179,11 +213,7 @@ def _validate_generate_payload(
             if isinstance(returned_course_id, str) and returned_course_id.strip()
             else None
         ),
-        "model_version": (
-            model_version.strip()
-            if isinstance(model_version, str) and model_version.strip()
-            else None
-        ),
+        "model_version": returned_version,
         "generation_seconds": (
             float(generation_seconds) if generation_seconds is not None else None
         ),
@@ -330,10 +360,10 @@ async def generate_finetuned_response(
     adapter, and a request that did not say which one would be asking the
     service to guess.
 
-    `model_version` is the version the backend resolved from its own registry.
-    Sending it makes the two sides checkable against each other — the response
-    reports the version actually used, and a mismatch is visible rather than
-    silent.
+    `model_version` is the version the backend resolved from its own registry,
+    or the one an administrator named for a model test. Sending it makes the
+    two sides checkable against each other — the response reports the version
+    actually used, and a mismatch is refused rather than silent.
 
     Never falls back to simulated text. Failures raise HTTPException.
     """
@@ -401,12 +431,16 @@ async def generate_finetuned_response(
             status_code=response.status_code,
             body=response.text,
         )
+        asked_for = (
+            f'course "{safe_course_id}" at version "{model_version}"'
+            if model_version
+            else f'course "{safe_course_id}"'
+        )
         raise HTTPException(
             status_code=409,
             detail=(
                 "No fine-tuned adapter is published on the inference service "
-                f'for course "{safe_course_id}". '
-                "Publish one for this course, then try again."
+                f"for {asked_for}. Publish one for this course, then try again."
             ),
         )
 
@@ -434,7 +468,11 @@ async def generate_finetuned_response(
             detail="Fine-tuned service returned invalid JSON.",
         ) from exc
 
-    validated = _validate_generate_payload(data, expected_course_id=safe_course_id)
+    validated = _validate_generate_payload(
+        data,
+        expected_course_id=safe_course_id,
+        expected_model_version=model_version or None,
+    )
     return {
         "answer": validated["answer"],
         "model": validated["model"],

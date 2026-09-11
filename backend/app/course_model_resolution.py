@@ -36,11 +36,22 @@ So resolution prefers the published version, and falls back to `current_version`
 only when this course has never had a publication reported. The fallback is what
 keeps a course that predates publication reporting working exactly as it did;
 once anything has been published for a course, the answer is exact.
+
+Testing a version that is not the course's
+------------------------------------------
+`resolve_course_model_version` is the one exception to "the registry decides".
+An administrator names a version, and it is checked rather than chosen:
+registered for this course, and `ready`. It exists so a newly trained version
+can be compared against the one the course serves without moving
+`current_version` or publishing anything, and its only caller is the
+administrator-only model-testing route. Nothing on the classroom path reads it,
+so nothing on the classroom path changes by its existing.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from fastapi import HTTPException
@@ -76,6 +87,38 @@ class NoReadyCourseModel(HTTPException):
         super().__init__(status_code=409, detail=PUBLIC_UNAVAILABLE_DETAIL)
         self.course_id = course_id
         self.diagnostic = diagnostic
+
+
+class UnservableCourseModelVersion(HTTPException):
+    """An explicitly named version that cannot answer for this course.
+
+    Raised only by `resolve_course_model_version`, whose one caller is the
+    administrator-only model-testing route, so unlike `NoReadyCourseModel` the
+    body says exactly what is wrong: the version asked for and what the
+    registry could have offered. The caller is an administrator who can act on
+    it. 409 for the same reason as the sibling: the course and the route are
+    right, and the registry's state is what refuses.
+    """
+
+    def __init__(self, course_id: str, version: str, diagnostic: str) -> None:
+        super().__init__(status_code=409, detail=diagnostic)
+        self.course_id = course_id
+        self.version = version
+
+
+#: What a version string looks like: `v1`, `v2`, … The inference service
+#: applies the same rule to a serving path (`helpers.validate_model_version`),
+#: restated here so a malformed request is refused before the registry is read.
+VERSION_PATTERN = re.compile(r"^v[0-9]+$")
+
+
+def assert_valid_model_version(version: object) -> str:
+    if not isinstance(version, str) or VERSION_PATTERN.fullmatch(version) is None:
+        raise ValueError(
+            f'Invalid model version "{version}": expected v1, v2, … as registered '
+            "for the course."
+        )
+    return version
 
 
 def _unavailable(course_id: str, diagnostic: str) -> NoReadyCourseModel:
@@ -131,6 +174,13 @@ def _version_sort_key(version: str) -> tuple[int, str]:
     return (10**9, text)
 
 
+def _load_registry(course_id: str) -> dict[str, Any] | None:
+    """One read of the course's registry, shared by both resolvers. Reads only."""
+    with translate_db_errors("reading the course model registry"):
+        with db_connection() as connection:
+            return db_models.get_model_registry(connection, course_id)
+
+
 def resolve_current_course_model(course_id: str) -> dict[str, Any]:
     """The version this course's fine-tuned answers must come from.
 
@@ -141,10 +191,7 @@ def resolve_current_course_model(course_id: str) -> dict[str, Any]:
     course's syllabus.
     """
     safe_course_id = assert_valid_course_id(course_id)
-
-    with translate_db_errors("reading the course model registry"):
-        with db_connection() as connection:
-            registry = db_models.get_model_registry(connection, safe_course_id)
+    registry = _load_registry(safe_course_id)
 
     if not registry:
         raise _unavailable(
@@ -189,3 +236,77 @@ def resolve_current_course_model(course_id: str) -> dict[str, Any]:
         "currentVersion": registry.get("currentVersion"),
         "resolvedFrom": source,
     }
+
+
+def resolve_course_model_version(course_id: str, version: str) -> dict[str, Any]:
+    """An explicitly named version, checked against the registry. Never a fallback.
+
+    The administrator's model-testing path. `resolve_current_course_model`
+    answers "which version is this course's model"; this answers "may this
+    version answer for this course", and the difference is the point: a
+    version under test is registered and `ready` but neither current nor
+    published, so the normal rule would never choose it, and choosing it must
+    not require changing anything the normal rule reads.
+
+    What is checked is exactly what the normal path checks of the version it
+    chose — registered for this course, status `ready` — and nothing else.
+    `current_version` and `deployment` are reported, not consulted, and
+    nothing is written. A version the registry cannot offer is refused with
+    `UnservableCourseModelVersion`, whose body names it and the versions that
+    are registered; nothing here ever answers with a different version than
+    the one asked for. A malformed version raises `ValueError` before the
+    database is read, as a malformed course id does.
+    """
+    safe_course_id = assert_valid_course_id(course_id)
+    safe_version = assert_valid_model_version(version)
+    registry = _load_registry(safe_course_id)
+
+    if not registry:
+        raise _unservable(
+            safe_course_id,
+            safe_version,
+            f'Course "{safe_course_id}" has no fine-tuned model registered, so '
+            f'version "{safe_version}" cannot be tested.',
+        )
+
+    versions = registry.get("versions") or {}
+    version_record = versions.get(safe_version)
+
+    if not isinstance(version_record, dict):
+        registered = ", ".join(sorted(versions, key=_version_sort_key)) or "none"
+        raise _unservable(
+            safe_course_id,
+            safe_version,
+            f'Course "{safe_course_id}" has no registered model version '
+            f'"{safe_version}". Registered versions: {registered}.',
+        )
+
+    if version_record.get("status") != "ready":
+        raise _unservable(
+            safe_course_id,
+            safe_version,
+            f'Model version "{safe_version}" of course "{safe_course_id}" is '
+            f'"{version_record.get("status")}", not "ready", and cannot answer.',
+        )
+
+    return {
+        "courseId": safe_course_id,
+        "version": safe_version,
+        "baseModel": version_record.get("baseModel"),
+        "artifactRef": version_record.get("artifactRef"),
+        "deployment": version_record.get("deployment"),
+        "currentVersion": registry.get("currentVersion"),
+        "resolvedFrom": "requested",
+    }
+
+
+def _unservable(
+    course_id: str, version: str, diagnostic: str
+) -> UnservableCourseModelVersion:
+    logger.warning(
+        "Model version %s of course %s cannot be tested: %s",
+        version,
+        course_id,
+        diagnostic,
+    )
+    return UnservableCourseModelVersion(course_id, version, diagnostic)

@@ -20,8 +20,12 @@ from unittest.mock import patch
 from app.course_model_resolution import (
     PUBLIC_UNAVAILABLE_DETAIL,
     NoReadyCourseModel,
+    UnservableCourseModelVersion,
+    assert_valid_model_version,
+    resolve_course_model_version,
     resolve_current_course_model,
 )
+from test_db_repositories import FakeConnection
 
 COURSE = "css-350-spring-2026-n3h9"
 OTHER_COURSE = "css-360-winter-2026-a7rp"
@@ -234,6 +238,161 @@ class StudentFacingRefusalTests(ResolutionTestCase):
         record = "\n".join(logs.output)
         self.assertIn(COURSE, record)
         self.assertIn("v9", record)
+
+
+class ExplicitVersionResolutionTests(ResolutionTestCase):
+    """`resolve_course_model_version`: the administrator's model-testing path.
+
+    CSS 360 as it stands while v3 is under test: v2 current and published, v3
+    registered and ready, neither current nor published. The normal rule must
+    keep answering v2 from this registry; the explicit rule must answer v3 when
+    asked for v3, v2 when asked for v2, and never anything other than what it
+    was asked for.
+    """
+
+    def _css360(self, *, v3_status: str = "ready") -> dict[str, Any]:
+        return _registry(
+            current="v2",
+            course_id=OTHER_COURSE,
+            versions={
+                "v2": {
+                    "version": "v2",
+                    "baseModel": "meta-llama/Llama-3.2-3B-Instruct",
+                    "status": "ready",
+                    "deployment": "online",
+                    "artifactRef": "css-360-qlora/v2/adapter",
+                    "trainingExampleCount": 48,
+                    "createdAt": "2026-08-27T07:00:00+00:00",
+                },
+                "v3": {
+                    "version": "v3",
+                    "baseModel": "meta-llama/Llama-3.2-3B-Instruct",
+                    "status": v3_status,
+                    "deployment": "offline",
+                    "artifactRef": "css-360-qlora/v3/adapter",
+                    "trainingExampleCount": 52,
+                    "createdAt": "2026-09-09T07:00:00+00:00",
+                },
+            },
+        )
+
+    def test_a_ready_version_that_is_neither_current_nor_published_resolves(self) -> None:
+        with self.registry(self._css360()):
+            resolved = resolve_course_model_version(OTHER_COURSE, "v3")
+
+        self.assertEqual(resolved["courseId"], OTHER_COURSE)
+        self.assertEqual(resolved["version"], "v3")
+        self.assertEqual(resolved["resolvedFrom"], "requested")
+        self.assertEqual(resolved["artifactRef"], "css-360-qlora/v3/adapter")
+        self.assertEqual(resolved["deployment"], "offline")
+        # Reported as it stands, and not moved.
+        self.assertEqual(resolved["currentVersion"], "v2")
+
+    def test_the_serving_version_is_selectable_too(self) -> None:
+        with self.registry(self._css360()):
+            resolved = resolve_course_model_version(OTHER_COURSE, "v2")
+
+        self.assertEqual(resolved["version"], "v2")
+        self.assertEqual(resolved["resolvedFrom"], "requested")
+
+    def test_the_normal_rule_is_unaffected_by_a_testable_version_existing(self) -> None:
+        """The whole point: the same registry answers v2 for the classroom."""
+        with self.registry(self._css360()):
+            classroom = resolve_current_course_model(OTHER_COURSE)
+            under_test = resolve_course_model_version(OTHER_COURSE, "v3")
+
+        self.assertEqual((classroom["version"], classroom["resolvedFrom"]), ("v2", "published"))
+        self.assertEqual((under_test["version"], under_test["resolvedFrom"]), ("v3", "requested"))
+
+    def test_a_version_the_registry_does_not_have_is_refused_by_name(self) -> None:
+        with self.registry(self._css360()):
+            with self.assertRaises(UnservableCourseModelVersion) as caught:
+                resolve_course_model_version(OTHER_COURSE, "v9")
+
+        refusal = caught.exception
+        self.assertEqual(refusal.status_code, 409)
+        self.assertEqual((refusal.course_id, refusal.version), (OTHER_COURSE, "v9"))
+        self.assertIn('"v9"', refusal.detail)
+        self.assertIn("Registered versions: v2, v3", refusal.detail)
+
+    def test_a_version_that_is_not_ready_is_refused(self) -> None:
+        for status in ("training", "failed", "queued"):
+            with self.subTest(status=status):
+                with self.registry(self._css360(v3_status=status)):
+                    with self.assertRaises(UnservableCourseModelVersion) as caught:
+                        resolve_course_model_version(OTHER_COURSE, "v3")
+                self.assertIn(f'"{status}", not "ready"', caught.exception.detail)
+
+    def test_a_course_with_no_registry_is_refused(self) -> None:
+        with self.registry(None):
+            with self.assertRaises(UnservableCourseModelVersion) as caught:
+                resolve_course_model_version(OTHER_COURSE, "v2")
+
+        self.assertIn("no fine-tuned model registered", caught.exception.detail)
+
+    def test_the_refusal_is_operator_facing_not_the_student_sentence(self) -> None:
+        """Only an administrator ever reads it, and they can act on it."""
+        with self.registry(self._css360()):
+            with self.assertRaises(UnservableCourseModelVersion) as caught:
+                resolve_course_model_version(OTHER_COURSE, "v9")
+
+        self.assertNotEqual(caught.exception.detail, PUBLIC_UNAVAILABLE_DETAIL)
+        self.assertIn(OTHER_COURSE, caught.exception.detail)
+
+    def test_a_malformed_version_never_reaches_the_database(self) -> None:
+        with patch("app.course_model_resolution.db_models.get_model_registry") as registry:
+            for bad in ("V2", "2", "v2.1", "latest", "", " v2", "v-2", None, 2):
+                with self.subTest(version=bad):
+                    with self.assertRaises(ValueError):
+                        resolve_course_model_version(OTHER_COURSE, bad)  # type: ignore[arg-type]
+        registry.assert_not_called()
+
+    def test_an_invalid_course_id_never_reaches_the_database(self) -> None:
+        with patch("app.course_model_resolution.db_models.get_model_registry") as registry:
+            with self.assertRaises(ValueError):
+                resolve_course_model_version("../etc", "v2")
+        registry.assert_not_called()
+
+    def test_version_strings_are_v_and_digits(self) -> None:
+        for good in ("v1", "v2", "v10", "v360"):
+            self.assertEqual(assert_valid_model_version(good), good)
+
+    def test_nothing_is_written(self) -> None:
+        """The registry is read through the repository and not touched: no
+        INSERT or UPDATE, in particular none of `current_version`."""
+        connection = FakeConnection(
+            [
+                [{"course_id": OTHER_COURSE, "current_version": "v2"}],
+                [
+                    {
+                        "version": version,
+                        "base_model": "meta-llama/Llama-3.2-3B-Instruct",
+                        "training_example_count": 48,
+                        "status": "ready",
+                        "deployment": deployment,
+                        "artifact_ref": f"css-360-qlora/{version}/adapter",
+                        "created_at": "2026-09-09T07:00:00+00:00",
+                        "updated_at": None,
+                        "notes": None,
+                        "run_id": None,
+                        "provenance": None,
+                    }
+                    for version, deployment in (("v3", "offline"), ("v2", "online"))
+                ],
+            ]
+        )
+
+        @contextmanager
+        def recording(**kwargs: Any) -> Iterator[FakeConnection]:
+            yield connection
+
+        with patch("app.course_model_resolution.db_connection", recording):
+            resolved = resolve_course_model_version(OTHER_COURSE, "v3")
+
+        self.assertEqual(resolved["version"], "v3")
+        self.assertEqual(resolved["currentVersion"], "v2")
+        self.assertTrue(connection.sql)
+        self.assertTrue(all(sql.startswith("SELECT") for sql in connection.sql), connection.sql)
 
 
 if __name__ == "__main__":
