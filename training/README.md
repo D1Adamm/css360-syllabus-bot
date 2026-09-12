@@ -330,15 +330,58 @@ Tests for this path (no ML stack needed): `pytest training` runs
 `training/test_train_qlora_cpu_mode.py` and the launcher/helper tests in
 `training/test_qlora_training_helpers.py`.
 
-## Default training settings (unchanged)
+## Default training settings
 
 - Model: `meta-llama/Llama-3.2-3B-Instruct` (4-bit NF4)
 - LoRA: `r=8`, `alpha=16`, `dropout=0.05`, `bias=none`, Llama attn/MLP targets
-- Max length 512, LR `2e-4`, 3 epochs, batch 1, grad accum 8 (effective batch 8)
+- Max length 2048, LR `2e-4`, 3 epochs, batch 1, grad accum 8 (effective batch 8)
 - Warmup ratio 0.1, weight decay 0.01, seed 360
 - Eval + save each epoch, bf16 when supported, gradient checkpointing on
+- Loss on the answer only: `SFTConfig.completion_only_loss` where the TRL
+  release has it (the VM's 1.12), `DataCollatorForCompletionOnlyLM` keyed on
+  the Llama 3 assistant header otherwise (the cluster's 0.13)
 
-Do not change these casually; automation intentionally leaves hyperparameters alone.
+The LoRA and optimizer settings are those every version so far was trained
+with. Two things changed for v4, both forced by the mixed dataset below: the
+window went from 512 to 2048 because a grounded example's user turn is the
+production grounded prompt (about 1,000–1,300 tokens), and the loss is masked
+to the answer because training on a thousand tokens of syllabus text would
+teach the model to reproduce syllabus text. Do not change the rest casually;
+automation intentionally leaves hyperparameters alone.
+
+## Dataset format (mixed, v4)
+
+`train.jsonl` and `validation.jsonl` hold one JSON object per line. Every
+record has `instruction` (the user turn) and `response` (the assistant turn);
+the trainer reads nothing else to build the text. Mixed-format exports also
+carry `format` (`bare` or `grounded`), `kind` (`answerable`, `abstain`,
+`false_premise`), `question`, and for grounded records `context` (the
+retrieved excerpts) and `supportChunkIds`.
+
+| Record | User turn | Teaches |
+| --- | --- | --- |
+| bare / answerable | the seed's question | standalone Fine-Tuned: answer a bare question |
+| grounded / answerable | the production grounded prompt over the retrieved excerpts | Fine-Tuned + RAG: answer from the excerpts |
+| grounded / abstain | the same prompt, for a question the excerpts do not answer | say the syllabus does not say |
+| grounded / false_premise | the same prompt, for a question that assumes something the excerpts contradict | correct the premise |
+
+The backend renders the grounded prompts at split time with the same
+`build_grounded_prompt` production uses, over whatever the production
+retriever returns for the seed's question. A grounded record is written only
+if every figure in its response (a number, date, time, percentage, range)
+appears in those excerpts and, for an answer or a correction, some excerpt
+shares enough of its wording to have been its source; this applies to
+abstentions and corrections as much as to answers, because a fact the prompt
+does not hold cannot be taught from that prompt. An abstention's first
+sentence (what the syllabus does not say) is exempt; any sentence after it
+(what the syllabus does say) is checked as a citation. `manifest.json` records the template's fingerprint, the
+composition per kind against the intended 40/35/15/10 mix, the seeds that
+were not rendered grounded with the figures they were missing, and the index
+the excerpts came from. Behaviour seeds are authored in
+`training/behaviour_seeds/<courseId>.jsonl` and imported with
+`backend/scripts/import_behaviour_seeds.py`; after preparing the split, read
+`groundedSkipped` in the manifest and rephrase any behaviour seed listed
+there so it cites only what retrieval surfaces for its question.
 
 ---
 

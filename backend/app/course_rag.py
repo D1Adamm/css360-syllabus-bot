@@ -7,10 +7,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.course_id import assert_valid_course_id
-from app.ollama import generate_ollama_completion
 from app.rag import (
     OLLAMA_EMBEDDING_MODEL,
-    build_rag_prompt,
     compute_cosine_similarity,
     get_embedding,
 )
@@ -192,41 +190,14 @@ async def generate_course_rag_answer(
     top_k: int = DEFAULT_TOP_K,
     storage: CourseArtifactStorage | None = None,
 ) -> dict[str, Any]:
-    safe_course_id = _validate_course_id(course_id)
-    facets = extract_question_facets(question)
-    _, retrieved_chunks = await retrieve_course_syllabus_chunks(
-        course_id=safe_course_id,
-        question=question,
-        top_k=top_k,
-        storage=storage,
+    """RAG: the shared grounded path answered by the base model.
+
+    Everything here, retrieval, prompt, decoding, is `grounded_rag`; the one
+    thing this function says is which weights answer. Imported inside the
+    function because `grounded_rag` imports this module's retrieval.
+    """
+    from app.grounded_rag import BASE_TARGET, generate_grounded_answer
+
+    return await generate_grounded_answer(
+        course_id, question, top_k=top_k, storage=storage, target=BASE_TARGET
     )
-
-    prompt = build_rag_prompt(question, retrieved_chunks, facets=facets)
-    generation = await generate_ollama_completion(prompt)
-
-    sources = [
-        {
-            "chunkId": chunk["chunk_id"],
-            "sectionTitle": chunk["section"],
-            "text": chunk["text"],
-            "score": chunk["score"],
-        }
-        for chunk in retrieved_chunks
-    ]
-
-    return {
-        "courseId": safe_course_id,
-        "answer": generation["answer"],
-        "model": generation["model"],
-        "sources": sources,
-        "retrievedChunks": [
-            {
-                "chunkId": chunk["chunk_id"],
-                "section": chunk["section"],
-                "text": chunk["text"],
-                "score": chunk["score"],
-            }
-            for chunk in retrieved_chunks
-        ],
-        "responseType": "rag",
-    }

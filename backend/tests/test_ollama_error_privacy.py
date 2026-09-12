@@ -213,7 +213,7 @@ class SuccessPathUnchangedTests(unittest.IsolatedAsyncioTestCase):
         response = MagicMock()
         response.status_code = 200
         response.json.return_value = {
-            "response": "  No extension is possible.  ",
+            "message": {"role": "assistant", "content": "  No extension is possible.  "},
             "model": "llama3.2:3b",
         }
 

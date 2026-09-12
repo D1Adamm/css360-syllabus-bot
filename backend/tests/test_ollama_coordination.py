@@ -366,7 +366,7 @@ class OllamaGenerationLockTests(CoordinationResetMixin, unittest.IsolatedAsyncio
 
     async def test_base_model_still_works_sequentially(self) -> None:
         with patch(
-            "app.ollama.generate_ollama_completion",
+            "app.ollama.generate_ollama_chat",
             new=AsyncMock(
                 return_value={
                     "answer": "No syllabus was provided.",

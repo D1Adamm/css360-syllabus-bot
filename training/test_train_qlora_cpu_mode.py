@@ -104,13 +104,25 @@ def _install_ml_stubs(captured: dict, *, cuda_available: bool, bf16_supported: b
 
     class _Tokenizer:
         pad_token = None
-        eos_token = "</s>"
+        # Shaped like the Llama 3 template: the whole conversation is the
+        # generation-prompt rendering followed by the answer and the
+        # end-of-turn token, which is what completion-only training relies on.
+        eos_token = "</assistant>"
 
         def apply_chat_template(self, messages, **kwargs):
             captured.setdefault("chat_template_calls", []).append(
                 {"messages": messages, "kwargs": kwargs}
             )
-            return "<chat>" + json.dumps(messages) + "</chat>"
+            text = "<chat>" + "".join(
+                f"<{m['role']}>{m['content']}</{m['role']}>" for m in messages
+            )
+            if kwargs.get("add_generation_prompt"):
+                text += "<assistant>"
+            return text
+
+        def encode(self, text, add_special_tokens=True):
+            captured["encoded_response_template"] = text
+            return [7, 8, 9]
 
         def save_pretrained(self, path):
             Path(path).mkdir(parents=True, exist_ok=True)
@@ -144,6 +156,11 @@ def _install_ml_stubs(captured: dict, *, cuda_available: bool, bf16_supported: b
         captured["sft"] = dict(kwargs)
         return types.SimpleNamespace(**kwargs)
 
+    def _row_text(row):
+        # Whole text under the collator strategy; prompt + completion under
+        # the SFTConfig strategy. Byte-identical for the same record.
+        return row["text"] if "text" in row else row["prompt"] + row["completion"]
+
     class _SFTTrainer:
         def __init__(self, model=None, args=None, train_dataset=None,
                      eval_dataset=None, callbacks=None, **kwargs):
@@ -151,10 +168,12 @@ def _install_ml_stubs(captured: dict, *, cuda_available: bool, bf16_supported: b
             self.args = args
             self.callbacks = list(callbacks or [])
             self.state = types.SimpleNamespace(global_step=0)
-            captured["train_texts"] = [row["text"] for row in train_dataset.rows]
+            captured["train_rows"] = list(train_dataset.rows)
+            captured["train_texts"] = [_row_text(row) for row in train_dataset.rows]
             captured["eval_texts"] = (
-                [row["text"] for row in eval_dataset.rows] if eval_dataset else []
+                [_row_text(row) for row in eval_dataset.rows] if eval_dataset else []
             )
+            captured["data_collator"] = kwargs.get("data_collator")
 
         def train(self):
             steps = int(self.args.max_steps)
@@ -171,8 +190,14 @@ def _install_ml_stubs(captured: dict, *, cuda_available: bool, bf16_supported: b
         def save_state(self):
             return None
 
+    class _DataCollatorForCompletionOnlyLM:
+        def __init__(self, response_template=None, tokenizer=None, **kwargs):
+            self.response_template = response_template
+            captured["collator"] = {"response_template": response_template}
+
     trl.SFTConfig = _sft_config if sft_config_class is None else sft_config_class
     trl.SFTTrainer = _SFTTrainer
+    trl.DataCollatorForCompletionOnlyLM = _DataCollatorForCompletionOnlyLM
     sys.modules["trl"] = trl
     return saved
 
@@ -220,7 +245,9 @@ _SFT_COMMON_FIELDS = (
 #: transformers 4.47.1 / TRL 0.13 (the cluster).
 _SFT_OLD_FIELDS = _SFT_COMMON_FIELDS + ("max_seq_length", "warmup_ratio")
 #: transformers 5.16.1 / TRL 1.12.0 (the VM's cpu-training-venv).
-_SFT_CURRENT_FIELDS = _SFT_COMMON_FIELDS + ("max_length", "warmup_steps")
+_SFT_CURRENT_FIELDS = _SFT_COMMON_FIELDS + (
+    "max_length", "warmup_steps", "completion_only_loss",
+)
 
 
 def _strict_sft_config_class(captured: dict, field_names: tuple[str, ...]):
@@ -262,7 +289,7 @@ class DeviceSelectionTests(unittest.TestCase):
         self.assertEqual(args.lora_r, 8)
         self.assertEqual(args.lora_alpha, 16)
         self.assertEqual(args.lora_dropout, 0.05)
-        self.assertEqual(args.max_seq_length, 512)
+        self.assertEqual(args.max_seq_length, 2048)
         self.assertEqual(args.learning_rate, 2e-4)
         self.assertEqual(args.epochs, 3.0)
         self.assertEqual(args.per_device_batch_size, 1)
@@ -579,7 +606,7 @@ class CpuRunTests(unittest.TestCase):
         self.assertEqual(sft["warmup_ratio"], 0.1)
         self.assertEqual(sft["weight_decay"], 0.01)
         self.assertEqual(sft["seed"], 360)
-        self.assertEqual(sft["max_seq_length"], 512)
+        self.assertEqual(sft["max_seq_length"], 2048)
         self.assertFalse(sft["packing"])
         self.assertTrue(sft["gradient_checkpointing"])
         self.assertEqual(sft["max_steps"], 3)
@@ -643,7 +670,7 @@ class CpuRunTests(unittest.TestCase):
         self.assertFalse(sft["fp16"])
         self.assertNotIn("use_cpu", sft)
         self.assertNotIn("dataloader_pin_memory", sft)
-        self.assertEqual(sft["max_seq_length"], 512)
+        self.assertEqual(sft["max_seq_length"], 2048)
         self.assertTrue(sft["gradient_checkpointing"])
         self.assertNotIn("set_num_threads", self.captured)
 
@@ -686,15 +713,16 @@ class CpuRunTests(unittest.TestCase):
         self.assertEqual(self.captured["eval_texts"], cpu_eval)
         self.assertEqual(self.captured["chat_template_calls"], cpu_calls)
 
-        # Smoke subset of the same split: 4 train / 2 validation, user then assistant.
+        # Smoke subset of the same split: 4 train / 2 validation. Under the
+        # prompt/completion rendering the template is asked for the user turn
+        # with the generation header; the answer is appended with eos, and the
+        # whole is the user-then-assistant chat text.
         self.assertEqual(len(cpu_train), 4)
         self.assertEqual(len(cpu_eval), 2)
-        first = cpu_calls[0]
-        self.assertEqual([m["role"] for m in first["messages"]], ["user", "assistant"])
-        self.assertEqual(first["messages"][0]["content"], "Q0?")
-        self.assertEqual(first["messages"][1]["content"], "A0.")
-        self.assertEqual(first["kwargs"], {"tokenize": False, "add_generation_prompt": False})
-        self.assertIn(json.dumps(first["messages"]), cpu_train[0])
+        first = next(call for call in cpu_calls if call["messages"][0]["content"] == "Q0?")
+        self.assertEqual([m["role"] for m in first["messages"]], ["user"])
+        self.assertEqual(first["kwargs"], {"tokenize": False, "add_generation_prompt": True})
+        self.assertEqual(cpu_train[0], "<chat><user>Q0?</user><assistant>A0.</assistant>")
 
     def test_cpu_output_metadata_and_artifacts(self) -> None:
         report, out_dir, _ = self._run(["--cpu", "--cpu-threads", "4"])
@@ -707,7 +735,7 @@ class CpuRunTests(unittest.TestCase):
         self.assertEqual(resolved["gpu_count"], 0)
         self.assertEqual(resolved["per_device_train_batch_size"], 1)
         self.assertEqual(resolved["gradient_accumulation_steps"], 8)
-        self.assertEqual(resolved["max_seq_length"], 512)
+        self.assertEqual(resolved["max_seq_length"], 2048)
         self.assertEqual(resolved["lora_r"], 8)
         self.assertEqual(resolved["lora_alpha"], 16)
         self.assertEqual(resolved["lora_dropout"], 0.05)
@@ -761,7 +789,7 @@ class CpuRunTests(unittest.TestCase):
         sft = self.captured["sft"]
         self.assertEqual(sft["max_steps"], 3)
         self.assertEqual(sft["warmup_steps"], 1)
-        self.assertEqual(sft["max_length"], 512)
+        self.assertEqual(sft["max_length"], 2048)
         self.assertNotIn("warmup_ratio", sft)
         self.assertNotIn("max_seq_length", sft)
         self.assertEqual(sft["learning_rate"], 2e-4)
@@ -780,7 +808,7 @@ class CpuRunTests(unittest.TestCase):
         sft = self.captured["sft"]
         self.assertEqual(sft["max_steps"], 18)
         self.assertEqual(sft["warmup_steps"], 2)
-        self.assertEqual(sft["max_length"], 512)
+        self.assertEqual(sft["max_length"], 2048)
         self.assertNotIn("warmup_ratio", sft)
         self.assertIn("warmup_ratio=0.1 -> warmup_steps=2 of 18 optimizer steps", stdout)
         self.assertEqual(report["intendedOptimizerSteps"], 18)
@@ -794,13 +822,61 @@ class CpuRunTests(unittest.TestCase):
         )
         sft = self.captured["sft"]
         self.assertEqual(sft["warmup_ratio"], 0.1)
-        self.assertEqual(sft["max_seq_length"], 512)
+        self.assertEqual(sft["max_seq_length"], 2048)
         self.assertNotIn("warmup_steps", sft)
         self.assertNotIn("max_length", sft)
         self.assertEqual(sft["max_steps"], 18)
         self.assertTrue(sft["bf16"])
         self.assertNotIn("SFTConfig compatibility", stdout)
         self.assertEqual(report["device"], "cuda")
+
+
+class CompletionOnlyStrategyTests(unittest.TestCase):
+    """The loss is masked to the answer on both TRL generations."""
+
+    _run = CpuRunTests._run
+
+    def setUp(self) -> None:
+        self.captured: dict = {}
+
+    def test_the_current_release_gets_completion_only_loss_in_the_config(self) -> None:
+        current = _strict_sft_config_class(self.captured, _SFT_CURRENT_FIELDS)
+        report, _, stdout = self._run(["--cpu"], sft_config_class=current)
+        sft = self.captured["sft"]
+        self.assertIs(sft["completion_only_loss"], True)
+        self.assertNotIn("dataset_text_field", sft)
+        self.assertIsNone(self.captured["data_collator"])
+        rows = self.captured["train_rows"]
+        self.assertEqual(set(rows[0]) & {"prompt", "completion", "text"}, {"prompt", "completion"})
+        self.assertTrue(rows[0]["prompt"].endswith("<assistant>"))
+        self.assertTrue(rows[0]["completion"].endswith("</assistant>"))
+        self.assertIn("Completion-only loss: config", stdout)
+        self.assertEqual(report["completionOnlyLoss"], "config")
+        self.assertEqual(report["maxSeqLength"], 2048)
+        self.assertEqual(report["datasetComposition"]["train"], {"bare/answerable": 4})
+
+    def test_the_cluster_release_gets_the_completion_only_collator(self) -> None:
+        old_trl = _strict_sft_config_class(self.captured, _SFT_OLD_FIELDS)
+        report, _, stdout = self._run(["--cpu"], sft_config_class=old_trl)
+        sft = self.captured["sft"]
+        self.assertEqual(sft["dataset_text_field"], "text")
+        self.assertNotIn("completion_only_loss", sft)
+        self.assertIsNotNone(self.captured["data_collator"])
+        self.assertEqual(self.captured["collator"]["response_template"], [7, 8, 9])
+        self.assertEqual(self.captured["encoded_response_template"], train_qlora.LLAMA3_RESPONSE_TEMPLATE)
+        rows = self.captured["train_rows"]
+        self.assertIn("text", rows[0])
+        self.assertNotIn("prompt", rows[0])
+        self.assertIn("Completion-only loss: collator", stdout)
+        self.assertEqual(report["completionOnlyLoss"], "collator")
+
+    def test_both_strategies_train_on_byte_identical_text(self) -> None:
+        current = _strict_sft_config_class(self.captured, _SFT_CURRENT_FIELDS)
+        self._run(["--cpu"], sft_config_class=current)
+        config_texts = list(self.captured["train_texts"])
+        old_trl = _strict_sft_config_class(self.captured, _SFT_OLD_FIELDS)
+        self._run(["--cpu"], sft_config_class=old_trl)
+        self.assertEqual(self.captured["train_texts"], config_texts)
 
 
 if __name__ == "__main__":

@@ -77,6 +77,7 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     # Not an alias of the classroom routes: a student's request carries no
     # version, and this is the only route that reads one.
     ("POST", "/api/model-testing/generate"): REQUIRE_ADMIN,
+    ("POST", "/api/model-testing/pair"): REQUIRE_ADMIN,
     # ---- syllabus, seeds, training (main.py) ----
     ("POST", f"{_C}/syllabus"): REQUIRE_COURSE_STAFF,
     ("GET", f"{_C}/syllabus/text"): REQUIRE_COURSE_ACCESS,

@@ -52,7 +52,7 @@ async def _run(course_id: str) -> dict:
         )
 
     try:
-        split_summary = prepare_training_split(course_id=safe_course_id)
+        split_summary = await prepare_training_split(course_id=safe_course_id)
     except TrainingSplitError as exc:
         raise SystemExit(f"ERROR: training split failed: {exc}") from exc
     except FileNotFoundError as exc:

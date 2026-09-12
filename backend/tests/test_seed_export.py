@@ -73,8 +73,17 @@ class SeedExportTests(unittest.TestCase):
             ]
             self.assertEqual(len(lines), 1)
             row = json.loads(lines[0])
-            self.assertEqual(row, {"instruction": "Approved Q?", "response": "Approved A with detail."})
-            self.assertEqual(set(row.keys()), {"instruction", "response"})
+            # The user turn and the answer, plus what the split needs to know
+            # about the seed: where it came from and which chunks it cites.
+            self.assertEqual(
+                row,
+                {
+                    "instruction": "Approved Q?",
+                    "response": "Approved A with detail.",
+                    "sourceChunkIds": ["c1"],
+                    "seedId": "a",
+                },
+            )
 
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             self.assertEqual(len(metadata), 1)
@@ -194,6 +203,25 @@ class SeedExportTests(unittest.TestCase):
             self.assertNotIn("firebasePath", payload)
             self.assertEqual(payload["courseId"], "css-360-winter-2026-a7rp")
             self.assertEqual(payload["seedCount"], 1)
+
+
+class FinetuneRecordMetadataTests(unittest.TestCase):
+    def test_question_type_chunk_ids_and_seed_id_travel_when_present(self) -> None:
+        row = finetune_record(
+            {
+                "id": "-Oabc",
+                "instruction": "Q?",
+                "response": "A.",
+                "questionType": "Unanswerable",
+                "sourceChunkIds": ["chunk-001", " ", "chunk-002"],
+            }
+        )
+        self.assertEqual(row["questionType"], "unanswerable")
+        self.assertEqual(row["sourceChunkIds"], ["chunk-001", "chunk-002"])
+        self.assertEqual(row["seedId"], "-Oabc")
+
+    def test_a_seed_without_them_reads_exactly_as_before(self) -> None:
+        self.assertEqual(finetune_record({"instruction": "Q?", "response": "A."}), {"instruction": "Q?", "response": "A."})
 
 
 if __name__ == "__main__":

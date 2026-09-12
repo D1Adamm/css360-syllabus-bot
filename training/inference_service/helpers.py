@@ -35,7 +35,11 @@ from typing import Any, Dict, List, Optional
 
 
 DEFAULT_MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"
-DEFAULT_MAX_NEW_TOKENS = 160
+#: The shared grounded output cap (`backend/app/grounded_generation.py`,
+#: GROUNDED_NUM_PREDICT). 160 cut answers mid-sentence in the 2026-09-11
+#: benchmark. Both services use it, so a base-model answer and a fine-tuned
+#: answer to the same prompt are capped alike.
+DEFAULT_MAX_NEW_TOKENS = 256
 DEFAULT_REPETITION_PENALTY = 1.05
 DEFAULT_SEED = 360
 

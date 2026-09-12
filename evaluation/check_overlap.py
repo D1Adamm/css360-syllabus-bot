@@ -110,7 +110,9 @@ def read_jsonl_instructions(path: Path) -> list[str]:
         if not line:
             continue
         record = json.loads(line)
-        question = (record.get("instruction") or record.get("question") or "").strip()
+        # A grounded training record's `instruction` is a rendered prompt with
+        # the question inside it; `question` is the question itself.
+        question = (record.get("question") or record.get("instruction") or "").strip()
         if question:
             out.append(question)
     return out

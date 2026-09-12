@@ -155,10 +155,10 @@ Responses have the GPU service's shape, with three differences:
 ### What is kept the same as the GPU service
 
 The GPU service wraps the question as one user turn with the tokenizer's chat
-template and decodes greedily: 160 new tokens, repetition penalty 1.05 over the
+template and decodes greedily: 256 new tokens, repetition penalty 1.05 over the
 whole sequence, seed 360. This service sends the same single user turn to
 `/api/chat`, where the model's own Llama 3.2 template is applied, with
-`temperature 0`, `num_predict 160`, `repeat_penalty 1.05` over the whole
+`temperature 0`, `num_predict 256`, `repeat_penalty 1.05` over the whole
 context window, and `seed 360`. A Fine-Tuned + RAG prompt travels verbatim as
 that user turn, exactly as it did to Tillicum.
 

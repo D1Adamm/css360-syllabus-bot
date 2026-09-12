@@ -3,11 +3,14 @@ import logging
 import os
 import time
 
+from typing import Any, Mapping
+
 import httpx
 from fastapi import HTTPException
 
 from app.ollama_coordination import ollama_generation_slot
 from app.upstream_errors import log_upstream_failure
+from app.grounded_generation import GROUNDED_TIMEOUT_SECONDS, grounded_options
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
@@ -364,11 +367,115 @@ def build_base_model_prompt(question: str) -> str:
 
 
 async def generate_base_model_response(question: str) -> dict[str, str]:
-    result = await generate_ollama_completion(build_base_model_prompt(question))
+    """The ungrounded condition: its own instruction wrapper, no retrieval.
+
+    Decoded with the shared grounded options through the same `/api/chat`
+    call the grounded conditions use, so the secondary comparison, Base
+    against plain Fine-Tuned, differs in the prompt wrapper and the weights
+    and not in sampling. The prompt itself is unchanged.
+    """
+    result = await generate_ollama_chat(
+        build_base_model_prompt(question),
+        options=grounded_options(),
+        timeout=GROUNDED_TIMEOUT_SECONDS,
+        action="base model",
+    )
     return {
         **result,
         "response_type": "base",
     }
+
+
+async def generate_ollama_chat(
+    prompt: str,
+    *,
+    model: str | None = None,
+    options: Mapping[str, Any] | None = None,
+    timeout: float | None = None,
+    action: str = "grounded",
+) -> dict[str, str]:
+    """One user message through Ollama's `/api/chat`, with explicit options.
+
+    `action` names the operation in the log and in the 4xx detail ("base
+    model", "grounded"), so an operator reading a 502 knows which path failed.
+
+    This is the call shape the local fine-tuned service uses for the course
+    adapters, reproduced here for the base model so that a grounded answer
+    from either is produced the same way: one user turn rendered by Ollama's
+    own chat template, greedy decoding, a fixed context window and output cap
+    (`grounded_generation.grounded_options`). Nothing about the prompt text is
+    changed here; the caller built it.
+
+    Shares the generation slot with `generate_ollama_completion`: both talk to
+    the one CPU-bound Ollama.
+    """
+    selected_model = model or OLLAMA_MODEL
+    request_timeout = OLLAMA_TIMEOUT_SECONDS if timeout is None else float(timeout)
+    payload: dict[str, object] = {
+        "model": selected_model,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+    }
+    if options:
+        payload["options"] = dict(options)
+
+    async with ollama_generation_slot():
+        try:
+            async with httpx.AsyncClient(timeout=request_timeout) as client:
+                response = await client.post(
+                    f"{OLLAMA_BASE_URL}/api/chat",
+                    json=payload,
+                )
+        except httpx.TimeoutException as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Ollama request timed out. Ensure Ollama is running and responsive."
+                ),
+            ) from exc
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Ollama is unavailable. Start Ollama locally and try again.",
+            ) from exc
+
+        if response.status_code >= 500:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Ollama returned a server error. Ensure the model is available "
+                    "locally."
+                ),
+            )
+
+        if response.status_code >= 400:
+            log_upstream_failure(
+                logger,
+                f"{action} generation",
+                url=f"{OLLAMA_BASE_URL}/api/chat",
+                status_code=response.status_code,
+                body=response.text,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Ollama rejected the {action} request "
+                    f"(HTTP {response.status_code}). See the backend log for "
+                    "the service's own response."
+                ),
+            )
+
+        data = response.json()
+        message = data.get("message") if isinstance(data, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        answer = content.strip() if isinstance(content, str) else ""
+        if not answer:
+            raise HTTPException(
+                status_code=502,
+                detail="Ollama returned an empty response.",
+            )
+
+    return {"answer": answer, "model": selected_model}
 
 
 async def embed_ollama_texts(

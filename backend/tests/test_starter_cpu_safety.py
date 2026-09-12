@@ -271,12 +271,16 @@ class StarterNumPredictPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(sent["think"], False)
         self.assertEqual(sent["format"], "json")
 
-    async def test_base_model_payload_omits_options(self) -> None:
+    async def test_base_model_payload_uses_the_shared_grounded_options(self) -> None:
+        """Base is decoded like every other condition (greedy, fixed window and
+        cap) through `/api/chat`; the starter-only knobs never reach it."""
+        from app.grounded_generation import GROUNDED_OPTIONS
+
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "model": "llama3.2:3b",
-            "response": "No syllabus was provided.",
+            "message": {"role": "assistant", "content": "No syllabus was provided."},
             "done": True,
         }
         mock_client = AsyncMock()
@@ -285,11 +289,16 @@ class StarterNumPredictPayloadTests(unittest.IsolatedAsyncioTestCase):
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch("app.ollama.httpx.AsyncClient", return_value=mock_client):
-            await generate_base_model_response("When is the midterm?")
+            result = await generate_base_model_response("When is the midterm?")
 
+        url = mock_client.post.await_args.args[0]
         sent = mock_client.post.await_args.kwargs["json"]
-        self.assertNotIn("options", sent)
+        self.assertTrue(url.endswith("/api/chat"))
+        self.assertEqual(sent["options"], dict(GROUNDED_OPTIONS))
+        self.assertEqual([m["role"] for m in sent["messages"]], ["user"])
         self.assertNotIn("think", sent)
+        self.assertNotIn("format", sent)
+        self.assertEqual(result["answer"], "No syllabus was provided.")
 
     async def test_plain_generate_without_num_predict_omits_options(self) -> None:
         mock_response = MagicMock()

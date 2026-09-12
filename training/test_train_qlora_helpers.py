@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import train_qlora
 from train_qlora import (
     TrainingDataError,
     average_seconds_per_step,
@@ -403,6 +404,115 @@ class TrainQloraHelperTests(unittest.TestCase):
             self.assertEqual(loaded["estimatedOptimizerSteps"], 18)
             self.assertEqual(loaded["slurmJobId"], "999")
             self.assertIn("timestamp", loaded)
+
+
+class _LlamaLikeTokenizer:
+    """Renders the way the Llama 3 template does: the whole conversation is
+    the generation-prompt rendering followed by the answer and eos."""
+
+    eos_token = "<|eot_id|>"
+
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
+        text = "<|begin_of_text|>"
+        for message in messages:
+            text += f"<|start_header_id|>{message['role']}<|end_header_id|>\n\n{message['content']}<|eot_id|>"
+        if add_generation_prompt:
+            text += "<|start_header_id|>assistant<|end_header_id|>\n\n"
+        return text
+
+    def encode(self, text, add_special_tokens=True):
+        return [len(text)]
+
+
+class _StrictConfig:
+    """Stands in for SFTConfig with a fixed signature."""
+
+    def __init__(self, max_length=None, completion_only_loss=None, packing=None):
+        pass
+
+
+class _OldConfig:
+    def __init__(self, max_seq_length=None, dataset_text_field=None, packing=None):
+        pass
+
+
+class MixedFormatTrainingTests(unittest.TestCase):
+    def test_loader_keeps_format_and_kind_when_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "train.jsonl"
+            path.write_text(
+                json.dumps({"instruction": "Q?", "response": "A."}) + "\n"
+                + json.dumps({"instruction": "PROMPT", "response": "B.", "format": "grounded", "kind": "abstain", "question": "Q2?"}) + "\n",
+                encoding="utf-8",
+            )
+            rows = load_instruction_response_jsonl(path)
+        self.assertEqual(rows[0], {"instruction": "Q?", "response": "A."})
+        self.assertEqual(rows[1], {"instruction": "PROMPT", "response": "B.", "format": "grounded", "kind": "abstain"})
+        self.assertEqual(
+            train_qlora.dataset_composition(rows),
+            {"bare/answerable": 1, "grounded/abstain": 1},
+        )
+
+    def test_prompt_and_completion_concatenate_to_the_whole_chat_text(self) -> None:
+        tokenizer = _LlamaLikeTokenizer()
+        example = {"instruction": "When is it due?", "response": "Friday at 11:59 p.m."}
+        halves = train_qlora.format_prompt_completion(tokenizer, example)
+        whole = train_qlora.format_chat_example(tokenizer, example)["text"]
+        self.assertEqual(halves["prompt"] + halves["completion"], whole)
+        self.assertTrue(halves["prompt"].endswith("<|start_header_id|>assistant<|end_header_id|>\n\n"))
+        self.assertEqual(halves["completion"], "Friday at 11:59 p.m.<|eot_id|>")
+        train_qlora.assert_prompt_completion_matches(tokenizer)
+
+    def test_a_template_that_does_not_split_is_refused(self) -> None:
+        class Odd(_LlamaLikeTokenizer):
+            eos_token = "<|end|>"
+
+        with self.assertRaises(train_qlora.TrainingDataError):
+            train_qlora.assert_prompt_completion_matches(Odd())
+
+    def test_strategy_follows_what_the_release_accepts(self) -> None:
+        self.assertEqual(train_qlora.resolve_completion_only_strategy(_StrictConfig), "config")
+        self.assertEqual(train_qlora.resolve_completion_only_strategy(_OldConfig), "collator")
+
+        def var_keyword(**kwargs):
+            return kwargs
+
+        self.assertEqual(train_qlora.resolve_completion_only_strategy(var_keyword), "config")
+
+    def test_each_strategy_has_its_config_keys_and_row_shape(self) -> None:
+        tokenizer = _LlamaLikeTokenizer()
+        example = {"instruction": "Q?", "response": "A."}
+        self.assertEqual(train_qlora.completion_only_config("config"), {"completion_only_loss": True})
+        self.assertEqual(train_qlora.completion_only_config("collator"), {"dataset_text_field": "text"})
+        self.assertEqual(set(train_qlora.training_row(tokenizer, example, strategy="config")), {"prompt", "completion"})
+        self.assertEqual(set(train_qlora.training_row(tokenizer, example, strategy="collator")), {"text"})
+        with self.assertRaises(ValueError):
+            train_qlora.completion_only_config("neither")
+        with self.assertRaises(ValueError):
+            train_qlora.training_row(tokenizer, example, strategy="neither")
+
+    def test_the_smoke_subset_holds_both_formats(self) -> None:
+        bare = [{"instruction": f"Q{i}?", "response": "A.", "format": "bare", "kind": "answerable"} for i in range(6)]
+        grounded = [{"instruction": f"P{i}", "response": "A.", "format": "grounded", "kind": "abstain"} for i in range(3)]
+        records = bare + grounded  # the grounded records come after the first four
+        train, validation, steps = train_qlora.resolve_smoke_limits(
+            smoke_test=True, train_records=records, validation_records=list(reversed(records))
+        )
+        self.assertEqual(steps, 3)
+        self.assertEqual(len(train), 4)
+        self.assertEqual({r["format"] for r in train}, {"bare", "grounded"})
+        self.assertEqual([r["instruction"] for r in train], ["Q0?", "Q1?", "Q2?", "P0"])
+        self.assertEqual(len(validation), 2)
+        self.assertEqual({r["format"] for r in validation}, {"bare", "grounded"})
+        # An old bare-only export is subset exactly as before.
+        old = [{"instruction": f"Q{i}?", "response": "A."} for i in range(6)]
+        self.assertEqual(train_qlora.smoke_subset(old, 4), old[:4])
+        self.assertEqual(train_qlora.smoke_subset([], 4), [])
+
+    def test_the_default_window_holds_a_grounded_example(self) -> None:
+        self.assertEqual(train_qlora.parse_args([]).max_seq_length, 2048)
+        self.assertEqual(train_qlora.DEFAULT_MAX_SEQ_LENGTH, 2048)
+        self.assertEqual(train_qlora.LLAMA3_RESPONSE_TEMPLATE, "<|start_header_id|>assistant<|end_header_id|>\n\n")
 
 
 if __name__ == "__main__":

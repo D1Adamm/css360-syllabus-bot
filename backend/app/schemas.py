@@ -274,6 +274,53 @@ class ModelTestingGenerateResponse(BaseModel):
     )
 
 
+class ModelTestingPairRequest(BaseModel):
+    """One retrieval, two models: the RAG-versus-Fine-Tuned + RAG comparison.
+
+    The route retrieves once, builds the grounded prompt once, and answers it
+    with the base model and with the named version, so the two answers share
+    their chunks and their prompt text by construction rather than by the
+    determinism of two separate retrievals.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(..., alias="courseId", min_length=1)
+    model_version: str = Field(
+        ..., alias="modelVersion", pattern=r"^v[0-9]+$",
+        description="The registered version to compare against the base model",
+    )
+    question: str = Field(..., min_length=1)
+    top_k: int = Field(default=4, alias="topK", ge=1, le=20)
+
+
+class ModelTestingPairAnswer(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    answer: str
+    model: str
+    response_type: str = Field(alias="responseType")
+    model_version: str | None = Field(default=None, alias="modelVersion")
+    adapter_loaded: bool | None = Field(default=None, alias="adapterLoaded")
+    generation_seconds: float | None = Field(default=None, alias="generationSeconds")
+
+
+class ModelTestingPairResponse(BaseModel):
+    """Both answers to one prompt, with the prompt and the chunks that made it."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    course_id: str = Field(alias="courseId")
+    mode: str = "pair"
+    model_version: str = Field(alias="modelVersion")
+    question: str
+    prompt: str
+    sources: list[RagGenerateSource]
+    retrieved_chunks: list[RagRetrieveResult] = Field(alias="retrievedChunks")
+    rag: ModelTestingPairAnswer
+    fine_tuned_rag: ModelTestingPairAnswer = Field(alias="fineTunedRag")
+
+
 class SyllabusUploadResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

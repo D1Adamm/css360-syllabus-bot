@@ -38,6 +38,8 @@ def _chunk(
 
 
 class RagPromptQualityTests(unittest.TestCase):
+    """`build_rag_prompt` is the shared grounded prompt; these pin what it asks for."""
+
     def test_ordered_lists_must_remain_in_source_order(self) -> None:
         prompt = build_rag_prompt(
             "How should I contact the instructor?",
@@ -53,11 +55,9 @@ class RagPromptQualityTests(unittest.TestCase):
                 }
             ],
         )
-        self.assertIn(
-            "Preserve numbered and ordered lists in the exact order shown",
-            prompt,
-        )
-        self.assertIn("Do not reverse, reorder, or renumber", prompt)
+        self.assertIn("keep numbered or ordered lists in the order shown", prompt)
+        self.assertIn("Do not round, widen, narrow, renumber, or reorder them", prompt)
+        self.assertIn("1 public messages via Discord\n2 private messages via Discord", prompt)
 
     def test_exact_numeric_limits_and_exceptions_must_be_preserved(self) -> None:
         prompt = build_rag_prompt(
@@ -72,8 +72,8 @@ class RagPromptQualityTests(unittest.TestCase):
                 }
             ],
         )
-        self.assertIn("Preserve exact numbers", prompt)
-        self.assertIn("quantities, limits, durations", prompt)
+        self.assertIn("Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines", prompt)
+        self.assertIn("exactly as written", prompt)
         self.assertIn("no questions asked", prompt)
         self.assertIn("one 48-hour extension", prompt)
         self.assertIn("No extension is possible for the Demo assignment.", prompt)
@@ -84,10 +84,10 @@ class RagPromptQualityTests(unittest.TestCase):
             [{"section": "Late work", "text": "one 48-hour extension, no questions asked."}],
         )
         self.assertIn(
-            "Never add qualifications, eligibility requirements, reasons, exceptions",
+            "Do not add policies, dates, numbers, names, reasons, conditions, or procedures",
             prompt,
         )
-        self.assertIn("claim-by-claim check against the excerpts", prompt)
+        self.assertIn("Do not guess", prompt)
 
     def test_policy_scope_must_not_be_generalized(self) -> None:
         prompt = build_rag_prompt(
@@ -100,10 +100,20 @@ class RagPromptQualityTests(unittest.TestCase):
             ],
         )
         self.assertIn(
-            "Never broaden a policy about one assignment, activity, session, or situation",
+            "Keep each rule attached to the assignment, session, or situation it is stated for",
             prompt,
         )
-        self.assertIn("all assignments, exams, attendance, missed work", prompt)
+        self.assertIn("keep separate conditions separate", prompt)
+        self.assertIn("Do not extend a rule to other situations or merge consequences", prompt)
+
+    def test_absent_information_and_false_premises_have_their_own_rules(self) -> None:
+        prompt = build_rag_prompt(
+            "How many midterms are there?",
+            [{"section": "Assignments", "text": "There will be no exams."}],
+        )
+        self.assertIn("say that the syllabus does not say", prompt)
+        self.assertIn("If the question assumes something the excerpts contradict", prompt)
+        self.assertIn("give what the syllabus actually says instead", prompt)
 
     def test_multi_facet_prompt_lists_facets_and_requires_each_part(self) -> None:
         facets = [
@@ -119,13 +129,11 @@ class RagPromptQualityTests(unittest.TestCase):
             ],
             facets=facets,
         )
-        self.assertIn("Requested parts of the question", prompt)
+        self.assertIn("Requested parts (address each exactly once)", prompt)
         for facet in facets:
-            self.assertIn(facet, prompt)
-        self.assertIn("Address every requested part exactly once", prompt)
-        self.assertIn("retrieved excerpts do not specify", prompt)
-        self.assertIn("one concise subsection or labeled paragraph per requested part", prompt)
-        self.assertIn("Omit unrelated details", prompt)
+            self.assertIn(f"- {facet}", prompt)
+        self.assertIn("Answer every part of a multi-part question exactly once", prompt)
+        self.assertIn("For a part the excerpts do not cover, say so", prompt)
 
     def test_single_topic_prompt_omits_facet_block(self) -> None:
         prompt = build_rag_prompt(
@@ -133,9 +141,9 @@ class RagPromptQualityTests(unittest.TestCase):
             [{"section": "Late work", "text": "Late work loses 10% per day."}],
             facets=[],
         )
-        self.assertNotIn("Requested parts of the question", prompt)
-        self.assertNotIn("subsection or labeled paragraph per requested part", prompt)
+        self.assertNotIn("Requested parts", prompt)
         self.assertIn("Student question:\nWhat is the late policy?", prompt)
+        self.assertTrue(prompt.endswith("Answer:"))
 
     def test_prompt_is_course_generic(self) -> None:
         prompt = build_rag_prompt(
@@ -144,7 +152,9 @@ class RagPromptQualityTests(unittest.TestCase):
         )
         self.assertNotIn("CSS360", prompt)
         self.assertNotIn("CSS 360", prompt)
-        self.assertIn("course syllabus", prompt)
+        self.assertNotIn("first two class sessions", prompt)
+        self.assertNotIn("Bot Project", prompt)
+        self.assertIn("syllabus excerpts", prompt)
 
 
 class RelevanceFloorTests(unittest.TestCase):

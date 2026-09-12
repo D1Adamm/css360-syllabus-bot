@@ -246,7 +246,7 @@ class DecodingSettingsTests(unittest.TestCase):
         with _env(DEFAULT_MAP):
             options = ollama_service.build_generation_options()
         self.assertEqual(options["num_predict"], ollama_service.DEFAULT_MAX_NEW_TOKENS)
-        self.assertEqual(options["num_predict"], 160)
+        self.assertEqual(options["num_predict"], 256)
         self.assertEqual(options["temperature"], 0)  # do_sample=False
         self.assertEqual(options["repeat_penalty"], 1.05)
         # Whole context, as Transformers does. Spelled as the context size:
@@ -424,7 +424,7 @@ class GenerateEndpointTests(unittest.TestCase):
         self.assertEqual(sent["json"]["messages"], [{"role": "user", "content": QUESTION}])
         self.assertIs(sent["json"]["stream"], False)
         self.assertEqual(sent["json"]["options"]["temperature"], 0)
-        self.assertEqual(sent["json"]["options"]["num_predict"], 160)
+        self.assertEqual(sent["json"]["options"]["num_predict"], 256)
         self.assertEqual(sent["json"]["options"]["repeat_penalty"], 1.05)
 
     def test_the_answer_is_stripped_like_the_gpu_service_decoded_it(self) -> None:

@@ -1,4 +1,8 @@
-"""Tests for Fine-Tuned + RAG (retrieval + remote LoRA generation)."""
+"""Tests for Fine-Tuned + RAG: the shared grounded path answered by the course adapter.
+
+Retrieval, prompt and generation live in `app.grounded_rag`, so that is where
+the seams are patched.
+"""
 
 from __future__ import annotations
 
@@ -57,13 +61,13 @@ class BuildFinetunedRagPromptTests(unittest.TestCase):
                 }
             ],
         )
-        self.assertIn("Answer only from the supplied syllabus context", prompt)
-        self.assertIn("Do not invent policies, dates, percentages, locations, or requirements", prompt)
+        self.assertIn("Answer using only the syllabus excerpts below", prompt)
+        self.assertIn("Do not add policies, dates, numbers, names, reasons, conditions, or procedures", prompt)
         self.assertIn(
-            "the syllabus context provided does not contain enough information",
+            "say that the syllabus does not say",
             prompt,
         )
-        self.assertIn("factual source of truth", prompt)
+        self.assertIn("Syllabus excerpts:", prompt)
         self.assertIn("Late work loses 10% per day.", prompt)
         self.assertIn("What is the late policy?", prompt)
         self.assertIn("Late Policy", prompt)
@@ -80,7 +84,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
 
     def _resolved_model(self, course_id: str, version: str = "v1"):
         return patch(
-            "app.finetuned_rag.resolve_current_course_model",
+            "app.grounded_rag.resolve_current_course_model",
             return_value={"courseId": course_id, "version": version},
         )
 
@@ -141,7 +145,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
     async def test_successful_retrieval_and_generation(self) -> None:
         with (
             patch(
-                "app.finetuned_rag.retrieve_course_syllabus_chunks",
+                "app.grounded_rag.retrieve_course_syllabus_chunks",
                 new=AsyncMock(
                     return_value=(
                         "nomic-embed-text",
@@ -161,7 +165,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
             ),
             self._resolved_model(self.css430_id),
             patch(
-                "app.finetuned_rag.generate_finetuned_response",
+                "app.grounded_rag.generate_finetuned_response",
                 new=AsyncMock(
                     return_value={
                         "answer": "Half credit within 24 hours.",
@@ -190,7 +194,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
         sent_prompt = mock_ft.await_args.args[0]
         self.assertIn("CSS 430 late work may be submitted within 24 hours", sent_prompt)
         self.assertIn("What is the late policy?", sent_prompt)
-        self.assertIn("Answer only from the supplied syllabus context", sent_prompt)
+        self.assertIn("Answer using only the syllabus excerpts below", sent_prompt)
 
     async def test_course_id_isolation(self) -> None:
         captured_course_ids: list[str] = []
@@ -217,12 +221,12 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "app.finetuned_rag.retrieve_course_syllabus_chunks",
+                "app.grounded_rag.retrieve_course_syllabus_chunks",
                 new=AsyncMock(side_effect=fake_retrieve),
             ),
             self._resolved_model(self.css430_id),
             patch(
-                "app.finetuned_rag.generate_finetuned_response",
+                "app.grounded_rag.generate_finetuned_response",
                 new=AsyncMock(
                     return_value={
                         "answer": "ok",
@@ -261,7 +265,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
         mock_ft = AsyncMock()
         with (
             patch(
-                "app.finetuned_rag.retrieve_course_syllabus_chunks",
+                "app.grounded_rag.retrieve_course_syllabus_chunks",
                 new=AsyncMock(
                     return_value=(
                         "nomic-embed-text",
@@ -277,12 +281,12 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch(
-                "app.finetuned_rag.resolve_current_course_model",
+                "app.grounded_rag.resolve_current_course_model",
                 side_effect=NoReadyCourseModel(
                     self.css430_id, "no fine-tuned model yet"
                 ),
             ),
-            patch("app.finetuned_rag.generate_finetuned_response", new=mock_ft),
+            patch("app.grounded_rag.generate_finetuned_response", new=mock_ft),
             self.assertRaises(HTTPException) as ctx,
         ):
             await generate_course_finetuned_rag_answer(
@@ -297,10 +301,10 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
         mock_ft = AsyncMock()
         with (
             patch(
-                "app.finetuned_rag.retrieve_course_syllabus_chunks",
+                "app.grounded_rag.retrieve_course_syllabus_chunks",
                 new=AsyncMock(return_value=("nomic-embed-text", [])),
             ),
-            patch("app.finetuned_rag.generate_finetuned_response", new=mock_ft),
+            patch("app.grounded_rag.generate_finetuned_response", new=mock_ft),
             self.assertRaises(HTTPException) as ctx,
         ):
             await generate_course_finetuned_rag_answer(
@@ -315,7 +319,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
     async def test_fine_tuned_service_unavailable(self) -> None:
         with (
             patch(
-                "app.finetuned_rag.retrieve_course_syllabus_chunks",
+                "app.grounded_rag.retrieve_course_syllabus_chunks",
                 new=AsyncMock(
                     return_value=(
                         "nomic-embed-text",
@@ -332,7 +336,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
             ),
             self._resolved_model(self.css430_id),
             patch(
-                "app.finetuned_rag.generate_finetuned_response",
+                "app.grounded_rag.generate_finetuned_response",
                 new=AsyncMock(
                     side_effect=HTTPException(
                         status_code=503,
@@ -353,7 +357,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
     async def test_malformed_fine_tuned_response(self) -> None:
         with (
             patch(
-                "app.finetuned_rag.retrieve_course_syllabus_chunks",
+                "app.grounded_rag.retrieve_course_syllabus_chunks",
                 new=AsyncMock(
                     return_value=(
                         "nomic-embed-text",
@@ -370,7 +374,7 @@ class FineTunedRagGenerationTests(unittest.IsolatedAsyncioTestCase):
             ),
             self._resolved_model(self.css430_id),
             patch(
-                "app.finetuned_rag.generate_finetuned_response",
+                "app.grounded_rag.generate_finetuned_response",
                 new=AsyncMock(
                     side_effect=HTTPException(
                         status_code=502,
@@ -493,15 +497,15 @@ class ExplicitVersionFineTunedRagTests(unittest.IsolatedAsyncioTestCase):
         os.environ["FINETUNED_SERVICE_URL"] = "http://example-node:8001"
         self._patches = [
             patch(
-                "app.finetuned_rag.retrieve_course_syllabus_chunks",
+                "app.grounded_rag.retrieve_course_syllabus_chunks",
                 new=AsyncMock(return_value=("nomic-embed-text", [self.CHUNK])),
             ),
             patch(
-                "app.finetuned_rag.resolve_current_course_model",
+                "app.grounded_rag.resolve_current_course_model",
                 new=MagicMock(return_value={"courseId": self.COURSE, "version": "v2"}),
             ),
             patch(
-                "app.finetuned_rag.resolve_course_model_version",
+                "app.grounded_rag.resolve_course_model_version",
                 new=MagicMock(
                     side_effect=lambda course_id, version: {"courseId": course_id, "version": version}
                 ),
@@ -532,7 +536,7 @@ class ExplicitVersionFineTunedRagTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_an_explicit_version_replaces_resolution_and_reaches_the_client(self) -> None:
         client = self._client("v3")
-        with patch("app.finetuned_rag.generate_finetuned_response", new=client):
+        with patch("app.grounded_rag.generate_finetuned_response", new=client):
             result = await generate_course_finetuned_rag_answer(
                 course_id=self.COURSE, question="When are office hours?", model_version="v3"
             )
@@ -547,7 +551,7 @@ class ExplicitVersionFineTunedRagTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_without_an_explicit_version_the_courses_own_is_resolved_as_before(self) -> None:
         client = self._client("v2")
-        with patch("app.finetuned_rag.generate_finetuned_response", new=client):
+        with patch("app.grounded_rag.generate_finetuned_response", new=client):
             result = await generate_course_finetuned_rag_answer(
                 course_id=self.COURSE, question="When are office hours?"
             )
@@ -564,7 +568,7 @@ class ExplicitVersionFineTunedRagTests(unittest.IsolatedAsyncioTestCase):
             self.COURSE, "v9", 'Course "css-360-winter-2026-a7rp" has no registered model version "v9".'
         )
         client = AsyncMock()
-        with patch("app.finetuned_rag.generate_finetuned_response", new=client):
+        with patch("app.grounded_rag.generate_finetuned_response", new=client):
             with self.assertRaises(HTTPException) as ctx:
                 await generate_course_finetuned_rag_answer(
                     course_id=self.COURSE, question="When are office hours?", model_version="v9"
@@ -583,7 +587,7 @@ class ExplicitVersionFineTunedRagTests(unittest.IsolatedAsyncioTestCase):
             prompts.append(prompt)
             return self._client(model_version or "v2").return_value
 
-        with patch("app.finetuned_rag.generate_finetuned_response", new=AsyncMock(side_effect=capture)):
+        with patch("app.grounded_rag.generate_finetuned_response", new=AsyncMock(side_effect=capture)):
             await generate_course_finetuned_rag_answer(
                 course_id=self.COURSE, question="When are office hours?"
             )
@@ -594,7 +598,7 @@ class ExplicitVersionFineTunedRagTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(prompts), 2)
         self.assertEqual(prompts[0], prompts[1])
         self.assertIn("Office hours are Tuesdays at 2pm.", prompts[1])
-        self.assertIn("Answer only from the supplied syllabus context", prompts[1])
+        self.assertIn("Answer using only the syllabus excerpts below", prompts[1])
 
 
 if __name__ == "__main__":

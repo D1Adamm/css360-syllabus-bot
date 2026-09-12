@@ -59,7 +59,7 @@ class CourseSpecificRagTests(unittest.TestCase):
         )
         self._embed_patch.start()
         self._ollama_patch = patch(
-            "app.course_rag.generate_ollama_completion",
+            "app.grounded_rag.generate_ollama_chat",
             new=AsyncMock(
                 return_value={
                     "answer": "Course-scoped RAG answer",
@@ -585,7 +585,7 @@ class CourseSpecificRagTests(unittest.TestCase):
             "app.course_rag.get_embedding",
             new=AsyncMock(return_value=[1.0, 0.0, 0.0, 0.0]),
         ), patch(
-            "app.course_rag.generate_ollama_completion",
+            "app.grounded_rag.generate_ollama_chat",
             new=AsyncMock(side_effect=capture_prompt),
         ):
             response = self.client.post(

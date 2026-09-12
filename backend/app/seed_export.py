@@ -44,10 +44,32 @@ def course_export_dir(course_id: str, *, root: Path | None = None) -> Path:
     return base / "data" / "exports" / course_id
 
 
-def finetune_record(seed: dict[str, Any]) -> dict[str, str]:
+def finetune_record(seed: dict[str, Any]) -> dict[str, Any]:
+    """One approved seed as the split reads it.
+
+    `instruction` and `response` are what training has always consumed. The
+    review's `questionType` travels with them because the split needs it to
+    tell an answerable seed (bare question and grounded example) from an
+    authored abstention or false-premise example (grounded only), and
+    `sourceChunkIds` so a grounded example can say where its answer came
+    from. Both are omitted when the seed has none, so an older export reads
+    exactly as it did.
+    """
     instruction = str(seed.get("instruction") or seed.get("question") or "").strip()
     response = str(seed.get("response") or seed.get("answer") or "").strip()
-    return {"instruction": instruction, "response": response}
+    record: dict[str, Any] = {"instruction": instruction, "response": response}
+    question_type = str(seed.get("questionType") or "").strip().lower()
+    if question_type:
+        record["questionType"] = question_type
+    chunk_ids = [
+        str(item).strip() for item in (seed.get("sourceChunkIds") or []) if str(item).strip()
+    ]
+    if chunk_ids:
+        record["sourceChunkIds"] = chunk_ids
+    seed_id = str(seed.get("id") or "").strip()
+    if seed_id:
+        record["seedId"] = seed_id
+    return record
 
 
 def metadata_record(seed: dict[str, Any]) -> dict[str, Any]:

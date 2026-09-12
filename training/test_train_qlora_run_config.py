@@ -74,10 +74,18 @@ def _install_ml_stubs(captured: dict) -> dict:
 
     class _Tokenizer:
         pad_token = None
-        eos_token = "</s>"
+        # Shaped like the Llama 3 template, so the prompt/completion rendering
+        # the trainer checks against the whole-text rendering holds.
+        eos_token = "</assistant>"
 
         def apply_chat_template(self, messages, **kwargs):
-            return json.dumps(messages)
+            text = "".join(f"<{m['role']}>{m['content']}</{m['role']}>" for m in messages)
+            if kwargs.get("add_generation_prompt"):
+                text += "<assistant>"
+            return text
+
+        def encode(self, text, add_special_tokens=True):
+            return [1, 2, 3]
 
         def save_pretrained(self, path):
             Path(path).mkdir(parents=True, exist_ok=True)

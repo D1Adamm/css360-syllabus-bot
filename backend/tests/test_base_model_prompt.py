@@ -79,7 +79,7 @@ class BaseModelGenerationTests(unittest.IsolatedAsyncioTestCase):
         completion = AsyncMock(
             return_value={"answer": "No syllabus was provided.", "model": "llama3.2:3b"}
         )
-        with patch("app.ollama.generate_ollama_completion", new=completion):
+        with patch("app.ollama.generate_ollama_chat", new=completion):
             result = await generate_base_model_response(SYLLABUS_CLAIM_QUESTION)
 
         sent_prompt = completion.await_args.args[0]
@@ -91,7 +91,7 @@ class BaseModelGenerationTests(unittest.IsolatedAsyncioTestCase):
 class BaseModelEndpointTests(unittest.TestCase):
     def setUp(self) -> None:
         self._ollama_patch = patch(
-            "app.ollama.generate_ollama_completion",
+            "app.ollama.generate_ollama_chat",
             new=AsyncMock(
                 return_value={
                     "answer": "No syllabus was provided to me.",

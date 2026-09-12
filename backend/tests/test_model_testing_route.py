@@ -515,7 +515,7 @@ class ClassroomRoutesUnchangedTests(ModelTestingTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.explicit = self.patch("app.main.resolve_course_model_version")
-        self.explicit_in_rag = self.patch("app.finetuned_rag.resolve_course_model_version")
+        self.explicit_in_rag = self.patch("app.grounded_rag.resolve_course_model_version")
 
     def classroom_body(self, **extra: Any) -> dict[str, Any]:
         return {"courseId": COURSE, "question": QUESTION, **extra}
@@ -571,6 +571,101 @@ class ClassroomRoutesUnchangedTests(ModelTestingTestCase):
 
         self.explicit.assert_not_called()
         self.explicit_in_rag.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# 6. One retrieval, both models: the pair route
+# --------------------------------------------------------------------------- #
+
+PAIR_PATH = "/api/model-testing/pair"
+
+
+def prepared(question: str = QUESTION) -> dict[str, Any]:
+    return {
+        "courseId": COURSE,
+        "question": question,
+        "facets": [],
+        "chunks": [],
+        "prompt": f"PROMPT<{question}>",
+        "sources": [{"chunkId": "c1", "sectionTitle": "Office Hours", "text": "Tuesdays 2pm.", "score": 0.9}],
+        "retrievedChunks": [{"chunkId": "c1", "section": "Office Hours", "text": "Tuesdays 2pm.", "score": 0.9}],
+    }
+
+
+class PairRouteTests(ModelTestingTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.retrieve = self.patch("app.main.retrieve_and_prompt", new=AsyncMock(return_value=prepared()))
+
+        async def generate(prompt: str, *, course_id: str, target):
+            if target.kind == "base":
+                return {"answer": "Base.", "model": "llama3.2:3b", "modelVersion": None,
+                        "adapterLoaded": None, "generationSeconds": None, "responseType": "rag"}
+            return {"answer": f"Adapter {target.version}.", "model": f"css360-ft-{target.version}:latest",
+                    "modelVersion": target.version, "adapterLoaded": True, "generationSeconds": 0.7,
+                    "responseType": "fineTunedRag"}
+
+        self.generate = self.patch("app.main.generate_from_prompt", new=AsyncMock(side_effect=generate))
+
+    def pair(self, body: dict[str, Any]):
+        return self.client.post(PAIR_PATH, json=body, headers=CSRF)
+
+    def test_both_answers_come_from_one_retrieval_and_one_prompt(self) -> None:
+        self.act_as(admin())
+        response = self.pair({"courseId": COURSE, "modelVersion": "v3", "question": QUESTION, "topK": 5})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["mode"], "pair")
+        self.assertEqual(body["modelVersion"], "v3")
+        self.assertEqual(body["prompt"], f"PROMPT<{QUESTION}>")
+        self.assertEqual(body["rag"]["answer"], "Base.")
+        self.assertEqual(body["rag"]["responseType"], "rag")
+        self.assertEqual(body["fineTunedRag"]["answer"], "Adapter v3.")
+        self.assertEqual(body["fineTunedRag"]["modelVersion"], "v3")
+        self.assertEqual(body["retrievedChunks"][0]["chunkId"], "c1")
+        self.retrieve.assert_awaited_once_with(COURSE, QUESTION, top_k=5)
+        prompts = [call.args[0] for call in self.generate.await_args_list]
+        targets = [call.kwargs["target"] for call in self.generate.await_args_list]
+        self.assertEqual(prompts, [f"PROMPT<{QUESTION}>"] * 2)
+        self.assertEqual([t.kind for t in targets], ["base", "fineTuned"])
+        self.assertEqual(targets[1].version, "v3")
+        self.assertEqual(self.writes(), [])
+
+    def test_the_version_is_required_and_validated(self) -> None:
+        self.act_as(admin())
+        for body in (
+            {"courseId": COURSE, "question": QUESTION},
+            {"courseId": COURSE, "question": QUESTION, "modelVersion": "latest"},
+        ):
+            with self.subTest(body=body):
+                self.assertEqual(self.pair(body).status_code, 422)
+        self.retrieve.assert_not_awaited()
+
+    def test_a_refused_version_reaches_the_caller_after_the_base_answer_was_made(self) -> None:
+        """The registry refusal happens inside the fine-tuned target; the
+        route does not swallow it."""
+        self.act_as(admin())
+        self.generate.side_effect = [
+            {"answer": "Base.", "model": "llama3.2:3b", "modelVersion": None, "adapterLoaded": None,
+             "generationSeconds": None, "responseType": "rag"},
+            UnservableCourseModelVersion(COURSE, "v9", 'no registered model version "v9"'),
+        ]
+        response = self.pair({"courseId": COURSE, "modelVersion": "v9", "question": QUESTION})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("v9", response.json()["detail"])
+
+    def test_nobody_but_an_administrator(self) -> None:
+        body = {"courseId": COURSE, "modelVersion": "v2", "question": QUESTION}
+        self.act_as(None)
+        self.assertEqual(self.pair(body).status_code, 401)
+        self.act_as(participant(COURSE))
+        self.assertEqual(self.pair(body).status_code, 401)
+        self.act_as(professor(COURSE))
+        self.assertEqual(self.pair(body).status_code, 403)
+        self.retrieve.assert_not_awaited()
+        self.assertEqual(CLASSIFICATION[("POST", PAIR_PATH)], REQUIRE_ADMIN)
+        self.assertNotIn("/model-testing/pair", {getattr(route, "path", None) for route in app.routes})
 
 
 if __name__ == "__main__":

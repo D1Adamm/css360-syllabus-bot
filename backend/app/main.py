@@ -38,6 +38,12 @@ from app.finetuned_client import (
     generate_finetuned_response,
 )
 from app.finetuned_rag import generate_course_finetuned_rag_answer
+from app.grounded_rag import (
+    BASE_TARGET,
+    fine_tuned_target,
+    generate_from_prompt,
+    retrieve_and_prompt,
+)
 from app.ollama import generate_base_model_response
 from app.schemas import (
     BaseModelGenerateRequest,
@@ -52,6 +58,9 @@ from app.schemas import (
     FineTunedRagGenerateResponse,
     ModelTestingGenerateRequest,
     ModelTestingGenerateResponse,
+    ModelTestingPairAnswer,
+    ModelTestingPairRequest,
+    ModelTestingPairResponse,
     CourseChunkMetadata,
     CourseChunksResponse,
     CourseSeedListResponse,
@@ -481,6 +490,50 @@ async def generate_model_testing_answer(
         responseType=result["response_type"],
         adapterLoaded=result["adapter_loaded"],
         generationSeconds=result["generation_seconds"],
+    )
+
+
+@app.post("/api/model-testing/pair", response_model=ModelTestingPairResponse)
+async def generate_model_testing_pair(
+    request: ModelTestingPairRequest,
+    principal: Principal = Depends(require_admin),
+) -> ModelTestingPairResponse:
+    """RAG and Fine-Tuned + RAG from one retrieval and one prompt.
+
+    The clean form of the main comparison. `retrieve_and_prompt` runs once;
+    `generate_from_prompt` answers the resulting text with the base model and
+    then with the named version. The two answers therefore share the chunks,
+    the prompt, the call shape and the decoding options, and differ in the
+    weights alone. The prompt is returned so a benchmark can record exactly
+    what both models saw. Administrator-only; nothing is written.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(request.course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    prepared = await retrieve_and_prompt(
+        safe_course_id, request.question, top_k=request.top_k
+    )
+    base_answer = await generate_from_prompt(
+        prepared["prompt"], course_id=safe_course_id, target=BASE_TARGET
+    )
+    fine_tuned_answer = await generate_from_prompt(
+        prepared["prompt"],
+        course_id=safe_course_id,
+        target=fine_tuned_target(request.model_version),
+    )
+    return ModelTestingPairResponse(
+        courseId=safe_course_id,
+        modelVersion=request.model_version,
+        question=prepared["question"],
+        prompt=prepared["prompt"],
+        sources=[RagGenerateSource(**source) for source in prepared["sources"]],
+        retrievedChunks=[
+            RagRetrieveResult(**chunk) for chunk in prepared["retrievedChunks"]
+        ],
+        rag=ModelTestingPairAnswer(**base_answer),
+        fineTunedRag=ModelTestingPairAnswer(**fine_tuned_answer),
     )
 
 
@@ -1360,7 +1413,7 @@ async def prepare_course_training_split(
         split_seed = int(body.split_seed)
 
     try:
-        summary = prepare_training_split(
+        summary = await prepare_training_split(
             safe_course_id,
             split_seed=split_seed,
         )

@@ -196,6 +196,18 @@ version that answered, and a service that answered from any other version is
 refused rather than reported. Nothing is written: not `current_version`, not
 `deployment`, not an evaluation.
 
+RAG and Fine-Tuned + RAG are one path (`backend/app/grounded_rag.py`) with one
+argument saying which weights answer. Both retrieve through the same function,
+render the same grounded prompt (`backend/app/grounded_generation.py`), and
+generate through the same `/api/chat` call shape with the same greedy options,
+context window (4096) and output cap (256); the base model is asked by the
+backend, the course adapter by the fine-tuned service, and a test pins the two
+option sets equal. The comparison between them is therefore a comparison of
+weights. Base keeps its own ungrounded instruction prompt and plain Fine-Tuned
+the bare question, as the secondary no-retrieval pair, decoded with the same
+options. `POST /api/model-testing/pair` (administrators) answers one retrieval
+and one prompt with both models and returns the prompt and the chunks.
+
 `FINETUNED_SERVICE_URL` points at `http://127.0.0.1:9001` on the VM. That is
 `training/inference_service/ollama_service.py`, a loopback-only service that
 answers the same `/health` and `/generate` contract the Tillicum GPU service

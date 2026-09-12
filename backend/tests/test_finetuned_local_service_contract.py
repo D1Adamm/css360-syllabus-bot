@@ -332,5 +332,70 @@ class ExplicitVersionContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status_code, 502)
 
 
+class SharedDecodingTests(unittest.TestCase):
+    def test_the_wrapper_decodes_with_the_backends_grounded_options(self) -> None:
+        """The base model (backend, `generate_ollama_chat`) and the course
+        adapter (this wrapper) must be decoded identically for the grounded
+        comparison to be about weights. The wrapper builds its options from
+        its own constants; this pins them to the backend's."""
+        from app.grounded_generation import GROUNDED_OPTIONS
+
+        with mock.patch.dict(os.environ, {"FINETUNED_NUM_CTX": ""}):
+            self.assertEqual(service.build_generation_options(), dict(GROUNDED_OPTIONS))
+
+
+class _CapturingClient:
+    """`httpx.AsyncClient` that records the one payload the backend posts."""
+
+    def __init__(self, sink: dict) -> None:
+        self.sink = sink
+
+    def __call__(self, *args: Any, **kwargs: Any) -> "_CapturingClient":
+        return self
+
+    async def __aenter__(self) -> "_CapturingClient":
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        return None
+
+    async def post(self, url: str, *, json: Any = None, **kwargs: Any) -> _Response:
+        self.sink["url"] = url
+        self.sink["json"] = json
+        return _Response(200, {"model": json["model"], "message": {"role": "assistant", "content": "ok"}})
+
+
+class RequestsDifferOnlyInModelTests(unittest.IsolatedAsyncioTestCase):
+    """The base model and the course adapter are asked in the same words.
+
+    The backend posts the grounded prompt to its Ollama for the base target;
+    the wrapper posts the same prompt to the same Ollama for the adapter. The
+    two JSON bodies must be identical except for `model` (and the wrapper's
+    optional `keep_alive`, which affects residency, not output).
+    """
+
+    async def test_the_base_request_and_the_adapter_request_are_the_same_call(self) -> None:
+        from app import ollama as backend_ollama
+        from app.grounded_rag import BASE_TARGET, generate_from_prompt
+
+        prompt = "PROMPT TEXT"
+        captured: dict = {}
+        with mock.patch.object(backend_ollama.httpx, "AsyncClient", _CapturingClient(captured)):
+            await generate_from_prompt(prompt, course_id=COURSE, target=BASE_TARGET)
+        with mock.patch.dict(os.environ, {"FINETUNED_KEEP_ALIVE": "", "FINETUNED_NUM_CTX": ""}):
+            adapter_payload = service.build_chat_request(prompt, ollama_model=MODEL)
+
+        base_payload = captured["json"]
+        self.assertTrue(captured["url"].endswith("/api/chat"))
+        self.assertEqual(base_payload["model"], backend_ollama.OLLAMA_MODEL)
+        self.assertEqual(adapter_payload["model"], MODEL)
+        strip = lambda payload: {k: v for k, v in payload.items() if k not in ("model", "keep_alive")}
+        self.assertEqual(strip(base_payload), strip(adapter_payload))
+        self.assertEqual(base_payload["messages"], [{"role": "user", "content": prompt}])
+        self.assertEqual(base_payload["options"]["num_ctx"], 4096)
+        self.assertEqual(base_payload["options"]["num_predict"], 256)
+        self.assertEqual(base_payload["options"]["temperature"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

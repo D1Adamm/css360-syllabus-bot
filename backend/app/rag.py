@@ -10,6 +10,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.upstream_errors import log_upstream_failure
+from app.grounded_generation import build_grounded_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -855,111 +856,12 @@ def build_rag_prompt(
     retrieved_chunks: list[dict[str, Any]],
     facets: list[str] | None = None,
 ) -> str:
-    context_blocks: list[str] = []
-    source_sections: list[str] = []
+    """The grounded prompt. One template for RAG and Fine-Tuned + RAG.
 
-    for chunk in retrieved_chunks:
-        section = chunk["section"]
-        source_sections.append(section)
-        context_blocks.append(f"[Section: {section}]\n{chunk['text']}")
-
-    unique_sections = list(dict.fromkeys(source_sections))
-    section_list = "\n".join(f"- {section}" for section in unique_sections)
-
-    cleaned_facets = [
-        " ".join(str(facet).split())
-        for facet in (facets or [])
-        if str(facet).strip()
-    ]
-    multi_facet = len(cleaned_facets) >= 2
-
-    facet_block = ""
-    multi_facet_rules = ""
-    if multi_facet:
-        facet_lines = "\n".join(f"- {facet}" for facet in cleaned_facets)
-        facet_block = (
-            "Requested parts of the question (address each exactly once):\n"
-            f"{facet_lines}\n\n"
-        )
-        multi_facet_rules = (
-            "- This is a multi-part question. Structure the answer with one concise "
-            "subsection or labeled paragraph per requested part listed above.\n"
-            "- Derive short labels from the wording of each requested part (do not invent "
-            "section names that are not implied by the question).\n"
-            "- Address every requested part exactly once. If the retrieved excerpts do not "
-            "specify a part, say that the retrieved excerpts do not specify it.\n"
-            "- Omit unrelated details that appear in the retrieved context but do not answer "
-            "a requested part.\n"
-        )
-
-    return (
-        "You are answering a student question about a course syllabus using only the "
-        "excerpts below.\n\n"
-        "Rules:\n"
-        "- Answer only from the supplied syllabus context.\n"
-        "- Do not use general knowledge to invent course policies.\n"
-        "- Carefully extract all directly relevant rules, deadlines, exceptions, limits, "
-        "durations, quantities, and penalties from the context.\n"
-        "- Do not say information is absent when the supplied context contains a relevant policy.\n"
-        "- Include important qualifiers such as deadlines, penalties, exceptions, limits, "
-        "durations, and no-makeup rules when they appear in the excerpts.\n"
-        "- Preserve exact numbers, numeric ranges, task numbers, dates, times, percentages, "
-        "quantities, limits, durations, and deadlines exactly as written in the context. "
-        "Do not narrow, widen, renumber, or paraphrase them.\n"
-        "- Preserve explicit phrases that define the policy, including wording such as "
-        "\"no questions asked,\" when those phrases appear in the excerpts.\n"
-        "- If the context says a range such as tasks 1-6, keep that exact range in your answer.\n"
-        "- Preserve numbered and ordered lists in the exact order shown in the retrieved text. "
-        "Do not reverse, reorder, or renumber steps or preferences.\n"
-        "- Never add qualifications, eligibility requirements, reasons, exceptions, conditions, "
-        "or procedures that are not directly stated in the excerpts.\n"
-        "- Never broaden a policy about one assignment, activity, session, or situation into a "
-        "policy about all assignments, exams, attendance, missed work, or other activity types "
-        "unless the excerpts explicitly state that broader scope.\n"
-        "- Keep each fact tied to the section it comes from. Do not transfer scheduling, "
-        "duration, deadline, or policy details from one section or activity to another unless "
-        "the context clearly states that connection.\n"
-        "- Do not attribute class session rules to open lab, office hours, or other activities "
-        "unless the context explicitly applies those rules to that activity.\n"
-        "- Answer using only details that clearly apply to the student's question within the "
-        "scope of the supplied sections.\n"
-        "- Keep separate conditions separate. Do not merge consequences from different sentences "
-        "or sections into one combined rule.\n"
-        "- When the syllabus gives different rules for different situations, describe each rule "
-        "on its own. Do not invent connecting phrases such as 'beyond the first two' unless the "
-        "syllabus explicitly uses that wording.\n"
-        "- Preserve whether each rule applies to the first two class sessions, repeated absences, "
-        "one specific assignment, or all assignments.\n"
-        "- Do not combine a dropped-from-the-course consequence with an in-class-credit consequence "
-        "unless the syllabus explicitly links them.\n"
-        "- If you are unsure how two conditions relate, state them separately or omit a secondary "
-        "detail rather than merging them incorrectly.\n"
-        "- State each condition and its consequence exactly as scoped in the context. Do not "
-        "generalize a consequence beyond the condition stated in the syllabus.\n"
-        "- Answer every distinct part of a multi-part question. For any unanswered part, state "
-        "that the retrieved excerpts do not specify it.\n"
-        "- Omit unrelated details even when they appear in the retrieved context.\n"
-        "- Before returning the answer, perform a final claim-by-claim check against the excerpts "
-        "and remove any claim that is not directly supported.\n"
-        f"{multi_facet_rules}"
-        "- If the context does not contain the answer, clearly say that the syllabus does not "
-        "provide that information.\n"
-        "- Keep the answer concise and student-friendly, but do not omit important policy details.\n"
-        "- Do not tell the student to email the instructor unless the supplied syllabus context "
-        "specifically says to do so.\n"
-        "- Do not mention that the answer was generated by AI.\n"
-        "- Write the answer in natural student-facing prose. Do not mention internal context "
-        "labels or framing such as Section:, Excerpt, Retrieved context, Source block, or "
-        "similar prompt metadata.\n"
-        "- When multiple syllabus excerpts are provided, synthesize details from all of them "
-        "without combining unrelated conditions.\n\n"
-        f"Student question:\n{question}\n\n"
-        f"{facet_block}"
-        "Syllabus context:\n"
-        f"{chr(10).join(context_blocks)}\n\n"
-        "Source sections:\n"
-        f"{section_list}\n\n"
-        "Answer the student question now:"
-    )
+    Kept under its old name for the callers and tests that import it; the
+    text lives in `grounded_generation.build_grounded_prompt`, which is what
+    the fine-tuned path and the training-data export render with too.
+    """
+    return build_grounded_prompt(question, retrieved_chunks, facets)
 
 

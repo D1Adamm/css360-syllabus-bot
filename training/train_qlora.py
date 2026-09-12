@@ -33,6 +33,17 @@ from typing import Any
 REQUIRED_FIELDS = ("instruction", "response")
 DEFAULT_MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"
 DEFAULT_SEED = 360
+#: 512 was enough for a bare question and a short answer. A grounded example's
+#: user turn is the production grounded prompt, which the retrieval budget
+#: bounds at roughly 1,600 tokens; 2048 holds that and a 256-token answer.
+DEFAULT_MAX_SEQ_LENGTH = 2048
+#: Where the answer starts in the Llama 3 chat format. The completion-only
+#: collator on older TRL releases masks everything up to and including this.
+LLAMA3_RESPONSE_TEMPLATE = "<|start_header_id|>assistant<|end_header_id|>\n\n"
+#: Every record has a format and a kind; older bare exports carry neither and
+#: read as these.
+DEFAULT_RECORD_FORMAT = "bare"
+DEFAULT_RECORD_KIND = "answerable"
 LORA_TARGET_MODULES = (
     "q_proj",
     "k_proj",
@@ -130,13 +141,31 @@ def load_instruction_response_jsonl(path: str | Path) -> list[dict[str, str]]:
             raise TrainingDataError(
                 f"Blank response at line {line_number}"
             )
-        records.append(
-            {
-                "instruction": instruction,
-                "response": response,
-            }
-        )
+        record: dict[str, str] = {
+            "instruction": instruction,
+            "response": response,
+        }
+        # Mixed-format exports say what each record is; a bare export does not,
+        # and reads as bare/answerable. Both train the same way: `instruction`
+        # is the user turn, `response` the assistant turn.
+        for key in ("format", "kind"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                record[key] = value.strip()
+        records.append(record)
     return records
+
+
+def dataset_composition(records: list[dict[str, str]]) -> dict[str, int]:
+    """How many records of each `format/kind`, for the runtime report."""
+    counts: dict[str, int] = {}
+    for record in records:
+        key = (
+            f"{record.get('format') or DEFAULT_RECORD_FORMAT}/"
+            f"{record.get('kind') or DEFAULT_RECORD_KIND}"
+        )
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def effective_batch_size(
@@ -376,9 +405,18 @@ def build_runtime_report(
     peak_rss_bytes_value: int | None = None,
     peak_rss_after_model_load_bytes: int | None = None,
     library_versions: dict[str, str | None] | None = None,
+    dataset_composition_value: dict[str, Any] | None = None,
+    completion_only_strategy: str | None = None,
+    max_seq_length: int | None = None,
 ) -> dict[str, Any]:
     return {
         "mode": mode,
+        # What the adapter was trained on: how many records of each
+        # format/kind, whether the loss covered the answer only, and the
+        # sequence window the grounded prompts had to fit.
+        "datasetComposition": dataset_composition_value,
+        "completionOnlyLoss": completion_only_strategy,
+        "maxSeqLength": max_seq_length,
         "modelId": model_id,
         "device": device,
         "computeDtype": compute_dtype,
@@ -494,9 +532,37 @@ def resolve_smoke_limits(
         return train_records, validation_records, None
     if not train_records:
         raise TrainingDataError("Training dataset is empty")
-    train_subset = train_records[: min(smoke_train_limit, len(train_records))]
-    val_subset = validation_records[: min(smoke_validation_limit, len(validation_records))]
+    train_subset = smoke_subset(train_records, smoke_train_limit)
+    val_subset = smoke_subset(validation_records, smoke_validation_limit)
     return train_subset, val_subset, smoke_max_steps
+
+
+def smoke_subset(records: list[dict[str, str]], limit: int) -> list[dict[str, str]]:
+    """The first `limit` records, but with every format represented.
+
+    A smoke run exists to exercise the real training path before an hour is
+    spent on it. On a mixed dataset that means at least one grounded record
+    (the long prompt, the masked loss) and at least one bare record must be in
+    the subset, whatever the shuffle put first. The first record of each
+    format is taken, then the earliest remaining records fill the limit, in
+    their original order.
+    """
+    if limit <= 0 or not records:
+        return []
+    chosen: list[int] = []
+    seen_formats: set[str] = set()
+    for index, record in enumerate(records):
+        fmt = record.get("format") or DEFAULT_RECORD_FORMAT
+        if fmt not in seen_formats:
+            seen_formats.add(fmt)
+            chosen.append(index)
+    chosen = chosen[:limit]
+    for index in range(len(records)):
+        if len(chosen) >= limit:
+            break
+        if index not in chosen:
+            chosen.append(index)
+    return [records[index] for index in sorted(chosen)]
 
 
 # ---------------------------------------------------------------------------
@@ -593,6 +659,81 @@ def format_chat_example(tokenizer: Any, example: dict[str, str]) -> dict[str, st
         add_generation_prompt=False,
     )
     return {"text": text}
+
+
+def format_prompt_completion(tokenizer: Any, example: dict[str, str]) -> dict[str, str]:
+    """The same chat text as `format_chat_example`, split where the answer starts.
+
+    `prompt` is the user turn rendered by the chat template with the
+    generation header appended; `completion` is the answer closed with the
+    end-of-turn token. Concatenated they are byte-identical to the single
+    `text` the older format produced, which `assert_prompt_completion_matches`
+    checks against the real tokenizer before training. TRL trains on the
+    completion only when given the two halves.
+    """
+    prompt = tokenizer.apply_chat_template(
+        [{"role": "user", "content": example["instruction"]}],
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    end_of_turn = getattr(tokenizer, "eos_token", None) or ""
+    return {"prompt": prompt, "completion": example["response"] + end_of_turn}
+
+
+def assert_prompt_completion_matches(tokenizer: Any) -> None:
+    """Refuse to train if the two renderings disagree for this tokenizer."""
+    probe = {"instruction": "probe question?", "response": "probe answer."}
+    halves = format_prompt_completion(tokenizer, probe)
+    whole = format_chat_example(tokenizer, probe)["text"]
+    if halves["prompt"] + halves["completion"] != whole:
+        raise TrainingDataError(
+            "The chat template's assistant turn does not split into prompt and "
+            "completion as expected, so completion-only loss would train on a "
+            "different text than the whole-text format. Check the tokenizer's "
+            "chat template and eos_token."
+        )
+
+
+def resolve_completion_only_strategy(config_class: Any) -> str:
+    """How this TRL release masks the prompt out of the loss.
+
+    `config` when SFTConfig accepts `completion_only_loss` (TRL 0.19 and later,
+    the VM's 1.12): the dataset carries `prompt` and `completion` columns and
+    TRL masks the prompt itself. `collator` otherwise (TRL 0.13, the cluster
+    pins): the dataset carries the whole `text` and
+    `DataCollatorForCompletionOnlyLM` masks everything up to the answer's
+    header. Either way the loss covers the answer alone; a grounded prompt of
+    a thousand tokens of syllabus is never a training target.
+    """
+    supported = supported_config_parameters(config_class)
+    if supported is None or "completion_only_loss" in supported:
+        return "config"
+    return "collator"
+
+
+def completion_only_config(strategy: str) -> dict[str, Any]:
+    if strategy == "config":
+        return {"completion_only_loss": True}
+    if strategy == "collator":
+        return {"dataset_text_field": "text"}
+    raise ValueError(f"Unknown completion-only strategy: {strategy!r}")
+
+
+def training_row(tokenizer: Any, example: dict[str, str], *, strategy: str) -> dict[str, str]:
+    """One record as the dataset row the chosen strategy trains on."""
+    if strategy == "config":
+        return format_prompt_completion(tokenizer, example)
+    if strategy == "collator":
+        return format_chat_example(tokenizer, example)
+    raise ValueError(f"Unknown completion-only strategy: {strategy!r}")
+
+
+def build_completion_only_collator(tokenizer: Any) -> Any:
+    """The older TRL's prompt mask, keyed on the answer header's token ids."""
+    from trl import DataCollatorForCompletionOnlyLM
+
+    template_ids = tokenizer.encode(LLAMA3_RESPONSE_TEMPLATE, add_special_tokens=False)
+    return DataCollatorForCompletionOnlyLM(response_template=template_ids, tokenizer=tokenizer)
 
 
 def supported_config_parameters(config_class: Any) -> set[str] | None:
@@ -731,7 +872,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Directory for adapter, metrics, and runtime report",
     )
     parser.add_argument("--model-id", default=DEFAULT_MODEL_ID)
-    parser.add_argument("--max-seq-length", type=int, default=512)
+    parser.add_argument(
+        "--max-seq-length",
+        type=int,
+        default=DEFAULT_MAX_SEQ_LENGTH,
+        help=(
+            "Tokens per example, prompt and answer together. Grounded examples "
+            "render the production prompt (about 1,000-1,300 tokens) and were "
+            "unrepresentable at the old 512."
+        ),
+    )
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--epochs", type=float, default=3.0)
     parser.add_argument("--per-device-batch-size", type=int, default=1)
@@ -972,12 +1122,23 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
     if peak_rss_after_model_load is not None:
         print(f"Peak resident memory after model load: {peak_rss_after_model_load / MIB:.0f} MiB")
 
-    def to_chat_text(example: dict[str, str]) -> dict[str, str]:
-        return format_chat_example(tokenizer, example)
+    completion_strategy = resolve_completion_only_strategy(SFTConfig)
+    if completion_strategy == "config":
+        assert_prompt_completion_matches(tokenizer)
+    print(
+        f"Completion-only loss: {completion_strategy} "
+        f"({'SFTConfig.completion_only_loss' if completion_strategy == 'config' else 'DataCollatorForCompletionOnlyLM'})"
+    )
+    train_composition = dataset_composition(train_records)
+    validation_composition = dataset_composition(validation_records)
+    print(f"Dataset composition: train={train_composition} validation={validation_composition}")
 
-    train_dataset = Dataset.from_list(train_records).map(to_chat_text)
+    def to_training_row(example: dict[str, str]) -> dict[str, str]:
+        return training_row(tokenizer, example, strategy=completion_strategy)
+
+    train_dataset = Dataset.from_list(train_records).map(to_training_row)
     eval_dataset = (
-        Dataset.from_list(validation_records).map(to_chat_text)
+        Dataset.from_list(validation_records).map(to_training_row)
         if validation_records
         else None
     )
@@ -1004,7 +1165,7 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         "seed": args.seed,
         "max_seq_length": args.max_seq_length,
         "packing": False,
-        "dataset_text_field": "text",
+        **completion_only_config(completion_strategy),
     }
     # Both modes supply an explicit max_steps; only smoke runs switch to
     # step-based eval/save, so full-run eval/save stay per-epoch as before.
@@ -1027,6 +1188,8 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         "eval_dataset": eval_dataset,
         "callbacks": [timing_callback],
     }
+    if completion_strategy == "collator":
+        trainer_kwargs["data_collator"] = build_completion_only_collator(tokenizer)
     # TRL version compatibility: newer uses processing_class, older uses tokenizer.
     try:
         trainer = SFTTrainer(processing_class=tokenizer, **trainer_kwargs)
@@ -1110,6 +1273,12 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     report = build_runtime_report(
+        dataset_composition_value={
+            "train": train_composition,
+            "validation": validation_composition,
+        },
+        completion_only_strategy=completion_strategy,
+        max_seq_length=args.max_seq_length,
         mode=mode,
         model_id=args.model_id,
         gpu_count=gpu_count,
