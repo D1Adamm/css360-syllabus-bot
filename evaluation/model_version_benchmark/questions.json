@@ -1,0 +1,522 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Evaluation set for the CSS 360 v2-vs-v3 model comparison through POST /api/model-testing/generate. NOT training data. referenceAnswer and keyFacts are for the scorer only and are never sent to a model.",
+  "courseId": "css-360-winter-2026-a7rp",
+  "syllabusFile": "backend/course_data/css-360-winter-2026-a7rp/syllabus.txt",
+  "createdAt": "2026-09-10",
+  "trainingCoverageLegend": {
+    "none": "the fact does not appear in any local training or validation example",
+    "partial": "a neighbouring or related fact appears in training, but not the one asked",
+    "train": "the fact is stated in a local train.jsonl example (a fine-tuned model may have memorised it)",
+    "validation-only": "the fact appears only in validation.jsonl, which the adapter did not train on",
+    "caveat": "coverage is judged against the July 2026 local export (54 approved / 48 train / 6 validation); the deployed v2 and v3 datasets live on the VM and may differ"
+  },
+  "questions": [
+    {
+      "id": "q01",
+      "question": "Who is the instructor for this course, and what email address should I use if I absolutely have to email them?",
+      "category": "instructor_contact",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "Kaylea Champion (Doctor or Professor Champion). Email kaylea@uw.edu, but only if absolutely necessary: the preferred order is public Discord messages, then private Discord messages, then private Canvas messages (grade discussion must go through Canvas), and email last.",
+      "keyFacts": [
+        "instructor is Kaylea Champion",
+        "email is kaylea@uw.edu",
+        "email is the last resort; Discord is preferred"
+      ],
+      "sourceSection": "Instructor / Contact",
+      "source": "new",
+      "trainingCoverage": "train",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "Can I arrange a meeting with the instructor if their calendar shows no availability?",
+        "jaccard": 0.08,
+        "containment": 0.17,
+        "ratio": 0.44
+      }
+    },
+    {
+      "id": "q02",
+      "question": "Which days of the week does the class meet, what time does it start and end, and what room is it in?",
+      "category": "meeting_times_location",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "Tuesday and Thursday, 3:30 PM to 5:30 PM, in UW2 building room 131.",
+      "keyFacts": [
+        "Tuesday and Thursday",
+        "3:30 PM to 5:30 PM",
+        "UW2 room 131"
+      ],
+      "sourceSection": "Course Meetings",
+      "source": "new",
+      "trainingCoverage": "train",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "What should I do if I need to miss class?",
+        "jaccard": 0.11,
+        "containment": 0.5,
+        "ratio": 0.23
+      }
+    },
+    {
+      "id": "q03",
+      "question": "Are any class sessions being held over Zoom instead of in the classroom, and if so, on which dates?",
+      "category": "meeting_times_location",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "Yes. Three sessions are held via Zoom: November 4 (Tuesday), November 6 (Thursday), and November 13 (Thursday). Everything else meets at the normal time and place unless the instructor says otherwise.",
+      "keyFacts": [
+        "yes, some sessions are on Zoom",
+        "November 4",
+        "November 6",
+        "November 13"
+      ],
+      "sourceSection": "Schedule (Sprint 2)",
+      "source": "new",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "What should I do if I need to miss class?",
+        "jaccard": 0.1,
+        "containment": 0.5,
+        "ratio": 0.14
+      }
+    },
+    {
+      "id": "q04",
+      "question": "How much of my final grade comes from the third sprint?",
+      "category": "grading",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "Sprint 3 is 15% of the final grade. The full weighting is in-class activities including case discussion 50%, Sprint 1 10%, Sprint 2 15%, Sprint 3 15%, Presentation (pre-made demo and feedback) 5%, and Reflection 5%.",
+      "keyFacts": [
+        "Sprint 3 is 15%"
+      ],
+      "sourceSection": "Grading",
+      "source": "held_out_bank:css360-eval-001",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "How do I know if my demonstrator project meets the requirements?",
+        "jaccard": 0.0,
+        "containment": 0.0,
+        "ratio": 0.49
+      }
+    },
+    {
+      "id": "q05",
+      "question": "What overall percentage do I need to end up with a 4.0 in this course?",
+      "category": "grading",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "97.0%. The instructor maps an overall 97.0% to a 4.0 and 60.0% to a 0.7, with even spacing in between, so a 2.0 requires 74.6%.",
+      "keyFacts": [
+        "97.0% maps to a 4.0"
+      ],
+      "sourceSection": "Mapping Percentage to the 4.0 Scale",
+      "source": "held_out_bank:css360-eval-002",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "Is grammar checking allowed with AI in this course?",
+        "jaccard": 0.0,
+        "containment": 0.0,
+        "ratio": 0.51
+      }
+    },
+    {
+      "id": "q06",
+      "question": "Can I use my one 48-hour extension on the Bot Feedback assignment?",
+      "category": "late_work",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "No. The single no-questions-asked 48-hour extension applies only to one of Bot Project Tasks 1 through 7. No extension is possible for the Demo and Feedback assignments, because they involve coordinating the whole class on tight timing, nor for the Reflection, which sits at the end of the quarter.",
+      "keyFacts": [
+        "no",
+        "the extension is only for Bot Project Tasks 1-7",
+        "Demo and Feedback assignments get no extension"
+      ],
+      "sourceSection": "Late Policy",
+      "source": "held_out_bank:css360-eval-016",
+      "trainingCoverage": "train",
+      "localOverlapVerdict": "REVIEW (resolve by hand)",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "When is the Bot Feedback due?",
+        "jaccard": 0.22,
+        "containment": 0.67,
+        "ratio": 0.51
+      },
+      "overlapResolution": "REVIEW resolved by hand: the containment hit is the shared phrase 'Bot Feedback' with the trained question 'When is the Bot Feedback due?', which asks for a date. This item asks about extension eligibility. The fact itself is stated in the trained extension answer, hence trainingCoverage=train."
+    },
+    {
+      "id": "q07",
+      "question": "How many no-questions-asked extensions do I get this quarter, how long is each one, and how am I supposed to request it?",
+      "category": "late_work",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "One per quarter, lasting 48 hours, usable on one of Bot Project Tasks 1 through 7 (which are due Fridays at 11:59 p.m. Pacific). Request it through Canvas so the request is private and trackable. Not available for the Demo, Feedback or Reflection assignments.",
+      "keyFacts": [
+        "one extension per quarter",
+        "48 hours",
+        "request it through Canvas",
+        "only on Bot Project Tasks 1-7"
+      ],
+      "sourceSection": "Late Policy",
+      "source": "new",
+      "trainingCoverage": "train",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "How many extra questions do I need to answer if I serve as scrum master for a standup?",
+        "jaccard": 0.06,
+        "containment": 0.14,
+        "ratio": 0.39
+      }
+    },
+    {
+      "id": "q08",
+      "question": "Could I actually be dropped from CSS 360 for missing the first week?",
+      "category": "attendance",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "Yes, if the class is full. Many students request to join and there are not always enough seats, so the instructor may drop anyone who misses the first two class sessions and replace them with unenrolled students who do attend. This is consistent with college policy and the catalog description.",
+      "keyFacts": [
+        "yes, possible",
+        "missing the first two class sessions",
+        "only if seats are needed for unenrolled students"
+      ],
+      "sourceSection": "Your Presence in Class",
+      "source": "held_out_bank:css360-eval-012",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "REVIEW (resolve by hand)",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "When and where does CSS 360 meet?",
+        "jaccard": 0.22,
+        "containment": 0.67,
+        "ratio": 0.4
+      },
+      "overlapResolution": "REVIEW resolved by hand: the containment hit is the tokens 'CSS 360' shared with 'When and where does CSS 360 meet?'. Different section, different fact; the drop rule appears in no training example."
+    },
+    {
+      "id": "q09",
+      "question": "If I skip a session, is there any way to earn back the in-class participation points I lost?",
+      "category": "attendance",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "There is no direct way to make up missed in-class activities. File the course absence form (at least one hour before class) so it is not a no-call-no-show, which would hurt the in-class activities grade; advance notice avoids the penalty but is not a makeup. Expect to be cold-called more often in later classes to balance participation, and missing too many classes eventually makes full in-class credit impossible. You are responsible for obtaining notes and handouts.",
+      "keyFacts": [
+        "no direct makeup exists",
+        "file the absence form",
+        "you will be called on more often later to balance participation"
+      ],
+      "sourceSection": "Impact of Missing Class / Your Presence in Class",
+      "source": "new",
+      "trainingCoverage": "train",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "What should I do if I need to miss class?",
+        "jaccard": 0.1,
+        "containment": 0.5,
+        "ratio": 0.27
+      },
+      "note": "Reworded from 'I had to miss a class session. What does the syllabus say about making up the participation credit for that day?', which the containment measure rejected against the two-content-word trained question 'What should I do if I need to miss class?'. The facts asked for (no makeup; called on more often) are in training either way, which is why this item is tagged trainingCoverage=train."
+    },
+    {
+      "id": "q10",
+      "question": "How long is the Reflection essay supposed to be?",
+      "category": "assignments_projects",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "800 to 1200 words. Under 800 is unlikely to reach the depth sought and over 1200 is unfair to others. It must be a standard essay with an introduction, key points and a conclusion, in a consistent formatting standard such as APA, Chicago or ACM, written without AI tools.",
+      "keyFacts": [
+        "800 to 1200 words"
+      ],
+      "sourceSection": "Reflection on Software Engineering and the Bot Project",
+      "source": "held_out_bank:css360-eval-005",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "validation.jsonl",
+        "question": "When is the deadline for completing the class setup checklist?",
+        "jaccard": 0.0,
+        "containment": 0.0,
+        "ratio": 0.49
+      }
+    },
+    {
+      "id": "q11",
+      "question": "How long should our pre-made demo video be, and does the whole group share one recording?",
+      "category": "assignments_projects",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "2 to 5 minutes, and no: each group member records their own screen-capture video of the bot in action with a voiceover and uploads their own video to Canvas, one per student. Due Monday, November 24 at 11:59 p.m.",
+      "keyFacts": [
+        "2 to 5 minutes",
+        "one video per student, not one per group"
+      ],
+      "sourceSection": "Demonstration of Bot 2.0 - Pre-made Demos",
+      "source": "held_out_bank:css360-eval-006",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "validation.jsonl",
+        "question": "What should I do if I can't find where to ask my question in Discord?",
+        "jaccard": 0.0,
+        "containment": 0.0,
+        "ratio": 0.42
+      }
+    },
+    {
+      "id": "q12",
+      "question": "When our sprint is finished, should we open a pull request back to the class's original repository?",
+      "category": "assignments_projects",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "No. Your fork is a hard fork: the instructor does not expect, and does not want, a pull request merging your group's code into the class's default code. Pull requests are for merging into your own team's main branch, after which you tag a release and deploy.",
+      "keyFacts": [
+        "no",
+        "the fork is a hard fork",
+        "pull requests go to your own team's main branch"
+      ],
+      "sourceSection": "Bot Project Task #2 (Tips) / Task #3 steps",
+      "source": "held_out_bank:css360-eval-014",
+      "trainingCoverage": "partial",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "What should I do if I need to miss class?",
+        "jaccard": 0.09,
+        "containment": 0.5,
+        "ratio": 0.34
+      }
+    },
+    {
+      "id": "q13",
+      "question": "Is there a final exam in this course, and what happens during the scheduled final exam timeslot?",
+      "category": "exams",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "There is no final exam; the syllabus says there will be no exams at all. December 9 (Tuesday) is the designated final exam timeslot, but there is no class meeting then. The instructor strongly recommends co-working with your group during that time and will run an open lab during the period. Task 7 (version 2.1) is due December 11.",
+      "keyFacts": [
+        "no exams",
+        "December 9 is the designated timeslot but there is no class meeting",
+        "open lab / co-work with your group"
+      ],
+      "sourceSection": "Assignments / Schedule (December 9)",
+      "source": "new",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "Do I need to finish all readings and watch lectures before class?",
+        "jaccard": 0.0,
+        "containment": 0.0,
+        "ratio": 0.41
+      }
+    },
+    {
+      "id": "q14",
+      "question": "How many midterm exams are there, and what percentage of the grade do they count for?",
+      "category": "exams",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "None. The syllabus states there will be no exams; any quizzes are short and low-stakes. The grade is in-class activities 50%, Sprint 1 10%, Sprint 2 15%, Sprint 3 15%, Presentation 5% and Reflection 5%, with nothing allocated to exams.",
+      "keyFacts": [
+        "there are no exams / zero midterms",
+        "no grade weight for exams"
+      ],
+      "sourceSection": "Assignments / Grading",
+      "source": "new",
+      "trainingCoverage": "none",
+      "note": "False-presupposition probe: the correct answer contradicts the question.",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "How do I tag the code to indicate it's version 2.1?",
+        "jaccard": 0.0,
+        "containment": 0.0,
+        "ratio": 0.4
+      }
+    },
+    {
+      "id": "q15",
+      "question": "What happens the second time a student is caught plagiarizing in this course?",
+      "category": "course_policies",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "The second incident of plagiarism results in a zero in the class. The first incident results in a zero on the plagiarized assignment, and academic dishonesty is grounds for failure and further disciplinary action.",
+      "keyFacts": [
+        "second incident: zero in the class (course grade of zero)"
+      ],
+      "sourceSection": "Academic Dishonesty",
+      "source": "new",
+      "trainingCoverage": "partial",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "What happens if I commit plagiarism for the first time in this course?",
+        "jaccard": 0.22,
+        "containment": 0.4,
+        "ratio": 0.6
+      }
+    },
+    {
+      "id": "q16",
+      "question": "Can I paste my bot's Discord API token into ChatGPT to help me debug an auth error?",
+      "category": "course_policies",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "No. Be very careful with API tokens and secrets: do not exchange them via public channels, do not commit them into GitHub, and do not paste them into AI tools or search engines. AI tools are otherwise welcome as a tutor and debugging aid, but not with secrets in the prompt.",
+      "keyFacts": [
+        "no",
+        "never paste tokens or secrets into AI tools"
+      ],
+      "sourceSection": "Bot Project Task #2 (Tips)",
+      "source": "held_out_bank:css360-eval-013",
+      "trainingCoverage": "partial",
+      "note": "Probes over-generalisation of the trained 'AI tools are fine for debugging' answer.",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "Can I use AI tools to help debug my bot code?",
+        "jaccard": 0.19,
+        "containment": 0.43,
+        "ratio": 0.55
+      }
+    },
+    {
+      "id": "q17",
+      "question": "Is there a deadline for asking for a religious accommodation, and what form do I use?",
+      "category": "course_policies",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "Yes. Accommodations must be requested within the first two weeks of the course, using the Religious Accommodations Request form, under the UW Religious Accommodations Policy required by Washington state law.",
+      "keyFacts": [
+        "within the first two weeks of the course",
+        "Religious Accommodations Request form"
+      ],
+      "sourceSection": "Religious Accommodations",
+      "source": "new",
+      "trainingCoverage": "validation-only",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "validation.jsonl",
+        "question": "Do I need to request religious accommodations early in the course?",
+        "jaccard": 0.11,
+        "containment": 0.25,
+        "ratio": 0.54
+      }
+    },
+    {
+      "id": "q18",
+      "question": "Are office hours drop-in, or do I need to schedule a time first?",
+      "category": "office_hours",
+      "answerableFromSyllabus": true,
+      "referenceAnswer": "Office hours are by appointment: book through the instructor's calendar scheduling site at least 24 hours in advance, because a booking made with less notice may be missed (ping her on Discord to confirm). If the planned availability does not work, contact her on Discord or by email to arrange another time. Separately, optional open lab periods are drop-in and are announced by email and on Discord.",
+      "keyFacts": [
+        "by appointment, booked in advance",
+        "at least 24 hours ahead",
+        "open lab periods are the drop-in option"
+      ],
+      "sourceSection": "Office Hours / Class format and structure",
+      "source": "new",
+      "trainingCoverage": "train",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "What should I do if I need to miss class?",
+        "jaccard": 0.0,
+        "containment": 0.0,
+        "ratio": 0.51
+      }
+    },
+    {
+      "id": "q19",
+      "question": "How many points is each in-class quiz worth?",
+      "category": "unanswerable",
+      "answerableFromSyllabus": false,
+      "referenceAnswer": "The syllabus does not specify this. It says only that any quizzes will be short and low-stakes, that there will be no exams, and that in-class activities including case discussion count for 50% of the grade as one combined category. No per-quiz point value is given.",
+      "keyFacts": [
+        "says the syllabus does not give a point value",
+        "does not invent a number"
+      ],
+      "sourceSection": "Assignments / Grading (not specified)",
+      "source": "held_out_bank:css360-eval-018",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "What should I do if I need to miss class?",
+        "jaccard": 0.17,
+        "containment": 0.5,
+        "ratio": 0.31
+      }
+    },
+    {
+      "id": "q20",
+      "question": "What test coverage percentage does our bot code have to hit?",
+      "category": "unanswerable",
+      "answerableFromSyllabus": false,
+      "referenceAnswer": "The syllabus sets no test coverage requirement. It says to commit often and test often, and Task 5 asks for an analysis of bugs, gaps and technical debt including running automated tools, but no coverage threshold appears anywhere.",
+      "keyFacts": [
+        "says no coverage requirement is specified",
+        "does not invent a percentage"
+      ],
+      "sourceSection": "Bot Project Tasks (not specified)",
+      "source": "held_out_bank:css360-eval-019",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "What steps should I follow to implement a user story for Bot Project Task #3?",
+        "jaccard": 0.07,
+        "containment": 0.17,
+        "ratio": 0.45
+      }
+    },
+    {
+      "id": "q21",
+      "question": "One of my teammates stopped contributing. How much will my individual grade be adjusted to make up for it?",
+      "category": "unanswerable",
+      "answerableFromSyllabus": false,
+      "referenceAnswer": "The syllabus defines no grade adjustment for this. It says group process is key, that work is assessed from the behavioral traces left in the course tools, that the instructor collects confidential feedback on how groups are functioning, and that she reserves the right to rearrange group membership. No compensating formula is stated.",
+      "keyFacts": [
+        "says no adjustment formula is specified",
+        "does not invent a percentage or rule"
+      ],
+      "sourceSection": "Notes on Group Work (not specified)",
+      "source": "held_out_bank:css360-eval-020",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "Can I make up for missing in-class activities?",
+        "jaccard": 0.17,
+        "containment": 0.4,
+        "ratio": 0.25
+      }
+    },
+    {
+      "id": "q22",
+      "question": "What is the name of the TA for this course, and how do I contact them?",
+      "category": "unanswerable",
+      "answerableFromSyllabus": false,
+      "referenceAnswer": "The syllabus does not mention a teaching assistant at all. The only named staff member is the instructor, Kaylea Champion, reached preferably through Discord. The correct behaviour is to say no TA is listed rather than to invent a name or contact.",
+      "keyFacts": [
+        "says no TA is mentioned",
+        "does not invent a name or contact detail"
+      ],
+      "sourceSection": "Instructor / Contact (not specified)",
+      "source": "new",
+      "trainingCoverage": "none",
+      "localOverlapVerdict": "clearly held out",
+      "localOverlapNearest": {
+        "file": "train.jsonl",
+        "question": "What is the deadline for assignments in this course?",
+        "jaccard": 0.0,
+        "containment": 0.0,
+        "ratio": 0.51
+      }
+    }
+  ],
+  "overlapCheck": {
+    "checkedAgainst": "data/exports/css-360-winter-2026-a7rp (local July 2026 export: 54 approved / 48 train / 6 validation); the deployed v2 and v3 datasets on the VM are authoritative and may differ",
+    "method": "evaluation/check_overlap.py measures (jaccard / containment / difflib ratio) with the same REJECT and REVIEW thresholds",
+    "flagged": 2,
+    "resolvedByHand": [
+      "q06",
+      "q08"
+    ]
+  }
+}
