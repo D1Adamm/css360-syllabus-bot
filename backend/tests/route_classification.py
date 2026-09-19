@@ -24,6 +24,8 @@ require_course_staff administrators, or a professor holding a membership in the
 require_course_access course staff, or a participant who joined the course in the path
 require_participant  a participant who joined the course in the path
 worker               the Tillicum runner's shared header token, never a browser
+research_token       the CSS 360 benchmark's bearer token, never a browser session;
+                     404 for everyone while the feature is off
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ REQUIRE_COURSE_STAFF = "require_course_staff"
 REQUIRE_COURSE_ACCESS = "require_course_access"
 REQUIRE_PARTICIPANT = "require_participant"
 WORKER = "worker"
+RESEARCH_TOKEN = "research_token"
 
 #: Which dependency callable must appear in a route's dependency tree for each
 #: class. `None` means no guard is required (public); the route may still name
@@ -53,6 +56,7 @@ GUARD_FOR_CLASS: dict[str, str | None] = {
     REQUIRE_COURSE_ACCESS: "require_course_access",
     REQUIRE_PARTICIPANT: "require_participant",
     WORKER: "require_worker_token",
+    RESEARCH_TOKEN: "require_css360_benchmark_access",
 }
 
 _C = "/api/courses/{course_id}"
@@ -163,6 +167,9 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     ("PUT", f"{_Q}/serving-sessions/{{session_id}}"): WORKER,
     ("POST", f"{_Q}/serving-sessions/{{session_id}}/stopped"): WORKER,
     ("GET", f"{_Q}/serving-session"): WORKER,
+    # ---- the CSS 360 controlled benchmark (research_benchmark_routes.py) ----
+    ("POST", "/api/research/css360/benchmark/pair"): RESEARCH_TOKEN,
+    ("POST", "/api/research/css360/benchmark/standalone"): RESEARCH_TOKEN,
 }
 
 

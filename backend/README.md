@@ -55,6 +55,7 @@ Loaded automatically on startup by `app/config.py`.
 | `SEED_GENERATION_MODEL`, `STARTER_*` | for starter seeds | The job that drafts examples from a syllabus |
 | `TRAINING_WORKER_TOKEN` | for training | Shared secret for `/api/training-queue`. **Unset ⇒ that router refuses every request with 503**, which is deliberate: an unconfigured deployment must not be an unauthenticated queue |
 | `FINETUNED_SERVICE_URL` | for fine-tuned paths | `http://127.0.0.1:9001`: the local Ollama-backed service (`training/inference_service/ollama_service.py`), or the Tillicum tunnel's local end when that fallback is in use. Unset ⇒ those two approaches report unavailable; Base and RAG are unaffected |
+| `CSS360_BENCHMARK_ENABLED`, `CSS360_BENCHMARK_TOKEN`, `CSS360_BENCHMARK_SERVICE_URL` | for the research benchmark only | All three, or `/api/research/css360/benchmark/*` answers 404. The token (≥ 32 characters) is a credential of its own; the URL is the benchmark-only service on `127.0.0.1:9002`, never the production fine-tuned service. Set with `scripts/css360_benchmark_env.py --enable` / `--disable`, which writes each key once however often it runs. Limits: `CSS360_BENCHMARK_CONDITION_TIMEOUT_SECONDS`, `_MAX_CONCURRENT`, `_REQUESTS_PER_MINUTE` |
 | `APP_ENV` | no | `production` on the VM. `test` disables env-file loading entirely; `development` also serves `/docs` |
 | `APP_PUBLIC_ORIGIN` | recommended | The site origin, for the bootstrap script's printed link and as a CSRF origin |
 | `AUTH_COOKIE_SECURE`, `AUTH_*` lifetimes | no | Session cookie and invitation settings; safe defaults, documented in `.env.example` |
@@ -77,7 +78,7 @@ curl -s http://127.0.0.1:8001/api/health
 
 ## API groups
 
-77 paths. Every one is under `/api`, except six root-level aliases
+80 paths. Every one is under `/api`, except six root-level aliases
 (`/health`, `/base-model/generate`, `/rag/generate`, `/fine-tuned/generate`,
 `/fine-tuned/health`, `/fine-tuned-rag/generate`) kept because Nginx forwards
 only `location /api/` and those are useful directly on the VM.
@@ -87,6 +88,7 @@ only `location /api/` and those are useful directly on the VM.
 | Health | `/api/health` | Reports that the API is responding. Does not probe Ollama or the database |
 | Inference | `/api/base-model/…`, `/api/rag/…`, `/api/fine-tuned/…`, `/api/fine-tuned-rag/…` | The four comparison approaches. All require `courseId` |
 | Model testing | `/api/model-testing/generate`, `/api/model-testing/pair` | An administrator's answer from an explicitly named model version — Fine-Tuned, Fine-Tuned + RAG, or RAG as the control — for comparing a registered version against the one a course serves; `pair` answers one retrieval and one prompt with both the base model and a version. The same retrieval, prompting and client as the classroom routes; reads the registry and writes nothing. Administrators only |
+| Research benchmark | `/api/research/css360/benchmark/pair`, `/api/research/css360/benchmark/standalone` | `research_benchmark_routes.py`. The CSS 360 controlled benchmark: one question, one retrieval and one grounded prompt (or the bare question), answered by the base model and the fixed experiment adapters through the benchmark-only inference service, every answer labelled from `evaluation/model_lineage.json`. **404 unless enabled and configured**; a bearer token, not a session; no database. See `../docs/css360-benchmark-endpoint.md` |
 | Syllabus | `/api/courses/{courseId}/syllabus…`, `/chunks` | Upload, extract, chunk, embed; read extracted text and chunk metadata |
 | Seeds | `/api/courses/{courseId}/seeds…` | Generation, validation, review, quality checks, approved export, train/validation split |
 | Persistence | `/api/db/…` | `db_routes.py`. Courses, seeds, evaluations, model registry, model requests, training runs, serving session. What the browser reads and writes |
@@ -102,6 +104,9 @@ lists every route with its class, and the suite fails if a route is mounted
 without one. The worker token is a separate credential that reaches the queue
 endpoints and nothing else — no cookie reaches the queue, and the token reaches
 no browser route.
+The research benchmark's bearer token is a third credential with the same
+shape of rule: it reaches the two benchmark routes and nothing else, no cookie
+reaches them, and while the feature is off they do not exist.
 
 ---
 

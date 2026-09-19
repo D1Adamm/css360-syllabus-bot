@@ -208,6 +208,29 @@ the bare question, as the secondary no-retrieval pair, decoded with the same
 options. `POST /api/model-testing/pair` (administrators) answers one retrieval
 and one prompt with both models and returns the prompt and the chunks.
 
+### The CSS 360 controlled benchmark (research, off by default)
+
+```
+POST /api/research/css360/benchmark/pair        { question, conditions? }
+POST /api/research/css360/benchmark/standalone  { question, conditions? }
+   │  Authorization: Bearer <CSS360_BENCHMARK_TOKEN>; 404 unless enabled and configured
+   ├─ course fixed to CSS 360, topK fixed, one retrieval, one grounded prompt (pair)
+   ├─ POST CSS360_BENCHMARK_SERVICE_URL/generate { alias, prompt }   per condition
+   │     → training/inference_service/benchmark_service.py (127.0.0.1:9002)
+   │       alias → Ollama tag from CSS360_BENCHMARK_OLLAMA_MODELS; one decoding recipe
+   └─ every answer labelled from evaluation/model_lineage.json
+```
+
+A research route for the controlled comparison the evolution record calls
+for, separate from everything above: its own bearer token (no session), its
+own inference service and mapping (not `FINETUNED_SERVICE_URL`, not
+`FINETUNED_OLLAMA_MODELS`), fixed aliases `base`, `v2`, `v3`, `v4_vm`,
+`v4_tillicum` rather than registry versions, no database, and nothing
+registered or promoted. Each condition is timed and isolated; the response
+carries the prompt bytes, their SHA-256, the ordered chunks and their
+SHA-256, the decoding options, and the lineage projection of each artifact.
+See [css360-benchmark-endpoint.md](css360-benchmark-endpoint.md).
+
 `FINETUNED_SERVICE_URL` points at `http://127.0.0.1:9001` on the VM. That is
 `training/inference_service/ollama_service.py`, a loopback-only service that
 answers the same `/health` and `/generate` contract the Tillicum GPU service
