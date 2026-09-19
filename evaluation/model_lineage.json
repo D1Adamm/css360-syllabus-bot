@@ -1,0 +1,2345 @@
+{
+  "schemaVersion": 1,
+  "title": "CSS 360 model lineage",
+  "generatedAt": "2026-09-16T07:18:22+00:00",
+  "generatedFrom": "Read-only inventory of the UWB VM, the Tillicum checkout, the PostgreSQL registry, Slurm accounting, and this repository, carried out 2026-09-15 and 2026-09-16 PDT. The inventory changed nothing.",
+  "companionDocument": "docs/css360-model-evolution.md",
+  "courseId": "css-360-winter-2026-a7rp",
+  "productionRule": "CSS 360 v2 is course_models.current_version, ready, and online. This file records; it promotes nothing.",
+  "conventions": {
+    "timestamps": "ISO 8601 with an explicit offset: Z or +00:00 is UTC; -07:00 is Pacific Daylight Time. Runtime reports, manifests, and the database are UTC; Slurm accounting, file listings, Ollama, and service logs are PDT.",
+    "paths": {
+      "vm:": "the UWB VM aiswe, relative to the deploying account's home directory",
+      "tillicum:$PROJ": "the cluster project directory /gpfs/projects/simswe/<user>",
+      "db:": "PostgreSQL on the VM, table and column",
+      "sacct:": "Slurm accounting on Tillicum",
+      "ollama:": "the VM's Ollama 0.32.5",
+      "repo:": "this repository at the named commit",
+      "laptop:": "the developer checkout on the author's Mac"
+    },
+    "nullPolicy": "Every null is accounted for in one of two lists on its artifact. evidenceGaps: the fact is not established by a direct artifact; the entry names the field path(s), says why, and names any candidate. notApplicable: the quantity does not exist for that artifact, for example Slurm fields of a VM run or a registry status for an unregistered adapter. Derived agreements such as equal total_flos are recorded as observations, never as identity."
+  },
+  "baseModel": {
+    "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+    "ollamaTag": "llama3.2:3b",
+    "ollamaDigest": "a80c4f17acd5",
+    "ollamaSizeBytes": 2019393189,
+    "ollamaModifiedAt": "2026-07-31T14:48:28-07:00",
+    "quantization": "Q4_K_M",
+    "baseBlob": "sha256-dde5aa3fc5ffc17176b5e8bdc82f587b24b2678c6c66101bf7da77af9f7ccdff",
+    "baseBlobBytes": 2019377376,
+    "localCopy": "vm:~/model_artifacts/base/llama3.2-3b-q4_k_m.gguf (2026-09-08T23:12-07:00)",
+    "sharedByEveryFineTunedTag": true,
+    "sources": [
+      "ollama: /api/tags",
+      "ollama show llama3.2:3b --modelfile",
+      "find -printf over ~/model_artifacts"
+    ]
+  },
+  "commonRecipe": {
+    "lora": {
+      "r": 8,
+      "alpha": 16,
+      "dropout": 0.05,
+      "bias": "none",
+      "targetModules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj"
+      ],
+      "tensorCount": 392
+    },
+    "learningRate": 0.0002,
+    "epochs": 3.0,
+    "perDeviceBatchSize": 1,
+    "gradientAccumulationSteps": 8,
+    "effectiveBatchSize": 8,
+    "warmupRatio": 0.1,
+    "weightDecay": 0.01,
+    "seed": 360,
+    "quantization": {
+      "loadIn4bit": true,
+      "quantType": "nf4",
+      "doubleQuant": true
+    },
+    "sources": [
+      "resolved_config.json of every run",
+      "adapter_config.json of every adapter",
+      "GGUF headers of every adapter file"
+    ]
+  },
+  "artifacts": [
+    {
+      "lineageId": "css360-v1",
+      "version": "v1",
+      "label": "Legacy Tillicum run of 2026-07-21",
+      "role": "historical",
+      "includeInControlledClaims": false,
+      "trainingRun": {
+        "host": "tillicum",
+        "runDirectory": "tillicum:$PROJ/training_outputs/css-360-qlora/",
+        "launchedBy": "pre-queue scaffold, sbatch by hand",
+        "queueRunId": null,
+        "launcherRunId": null,
+        "slurmJobId": "182729",
+        "slurmJobName": "css360-qlora-train",
+        "node": "g007",
+        "gpu": "1x H200",
+        "submittedAt": "2026-07-21T13:07:58-07:00",
+        "startedAt": "2026-07-21T13:07:58-07:00",
+        "endedAt": "2026-07-21T13:08:52-07:00",
+        "reportTimestamp": "2026-07-21T20:08:51.394001+00:00",
+        "gitCommitSha": "27f3b1551d60f2c2cd2920f5b48e9bbd98dbe063",
+        "gitCommitSubject": "Fix Hugging Face token path for Slurm jobs",
+        "gitCommitDate": "2026-07-21T12:53:11-07:00",
+        "sameDayJobs": {
+          "failedSmokes": [
+            "182721",
+            "182723"
+          ],
+          "completedSmoke": "182727",
+          "comparison": "182771"
+        },
+        "sources": [
+          "sacct:182729",
+          "runtime-report.json",
+          "repo:git log 27f3b15"
+        ]
+      },
+      "data": {
+        "format": "bare instruction/response",
+        "datasetVersion": null,
+        "approvedExamples": null,
+        "trainExamples": 48,
+        "validationExamples": 6,
+        "splitSeed": null,
+        "trainSha256": null,
+        "validationSha256": null,
+        "manifestSha256": null,
+        "bytesRetained": false,
+        "candidate": {
+          "description": "Split on the author's laptop, prepared three hours before the job; counts match; no link to the job's bytes",
+          "location": "laptop:data/exports/css-360-winter-2026-a7rp/",
+          "datasetVersion": "css-360-winter-2026-a7rp-approved-split-seed360-n54",
+          "manifestCreatedAt": "2026-07-21T17:13:28.416554+00:00",
+          "sourceExportTimestamp": "2026-07-21T17:07:16.069789+00:00",
+          "splitSeed": 360,
+          "approvedExamples": 54,
+          "trainSha256": "f810377f5eb5445b52003e69a8a38af09cd63ae1fc2d34c3969e5cf449b5ff5b",
+          "validationSha256": "d69d1237d671f89bff7c1a61aebb209dbf1d06b63bddea4c508564f8c31062c6",
+          "approvedExportSha256": "ea11c09df00ec5e10b99d76452f4ec53a96426ca4cdcbb869f80e6d3258a8141",
+          "status": "candidate only, not proven"
+        },
+        "sources": [
+          "resolved_config.json train_example_count/validation_example_count",
+          "training/logs/train-182729.err Map 48/48 and 6/6",
+          "vm: find for train.jsonl/validation.jsonl, 2026-09-15",
+          "tillicum: export directory contents, 2026-09-16"
+        ]
+      },
+      "configuration": {
+        "maxSeqLength": 512,
+        "lossMasking": "full-sequence",
+        "lossMaskingImplementation": null,
+        "optimizer": {
+          "learningRate": 0.0002,
+          "epochs": 3.0,
+          "perDeviceBatchSize": 1,
+          "gradientAccumulationSteps": 8,
+          "effectiveBatchSize": 8,
+          "warmupRatio": 0.1,
+          "warmupSteps": 2,
+          "weightDecay": 0.01,
+          "seed": 360,
+          "intendedOptimizerSteps": 18,
+          "completedOptimizerSteps": 18
+        },
+        "maxStepsExplicit": false,
+        "lora": {
+          "r": 8,
+          "alpha": 16,
+          "dropout": 0.05,
+          "bias": "none",
+          "targetModules": [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj"
+          ],
+          "tensorCount": 392
+        },
+        "quantization": {
+          "loadIn4bit": true,
+          "quantType": "nf4",
+          "doubleQuant": true,
+          "fourBitBaseComputeDtype": "bfloat16",
+          "fourBitBaseComputeDtypeBasis": "trainer code at 27f3b15 lines 556 and 569 with H200 support; not recorded in resolved_config.json"
+        },
+        "gradientCheckpointing": true,
+        "gradientCheckpointingBasis": "trainer code at 27f3b15 line 578; not recorded in resolved_config.json",
+        "device": "cuda",
+        "autocast": "bf16 by trainer code; not recorded",
+        "chatFormatting": "tokenizer.apply_chat_template over instruction and response, packing off",
+        "sources": [
+          "resolved_config.json",
+          "trainer_state.json learning-rate schedule",
+          "repo:27f3b15 training/train_qlora.py"
+        ]
+      },
+      "softwareStack": {
+        "python": "3.9.25",
+        "torch": "2.5.1+cu124",
+        "transformers": "4.47.1",
+        "datasets": "3.2.0",
+        "peft": "0.14.0",
+        "bitsandbytes": "0.45.0",
+        "trl": "0.13.0",
+        "accelerate": "1.2.1",
+        "sources": [
+          "training/logs/train-182729.out"
+        ]
+      },
+      "adapter": {
+        "format": "PEFT save_pretrained",
+        "peftVersion": "0.14.0",
+        "safetensorsBytes": 48679352,
+        "safetensorsDtype": "F32",
+        "tensorCount": 392,
+        "sha256": "07164b4ac9a58a60551295f7ceee4ed8ce68cc1eff60ea3d76cf6cfdc55d42cc",
+        "adapterConfigSha256": "a49f4b7853585275343eb49ce3e40c5af75b724bd8ab65d422f7785bac4418ad",
+        "locations": [
+          "tillicum:$PROJ/training_outputs/css-360-qlora/adapter/",
+          "vm:~/model_artifacts/css360-v1/adapter/ (byte-identical, file times 2026-07-21T13:08:51-07:00)"
+        ],
+        "sources": [
+          "sha256sum on both hosts",
+          "safetensors header",
+          "adapter README.md framework versions"
+        ]
+      },
+      "gguf": {
+        "path": "vm:~/model_artifacts/css360-v1/css360-v1-lora.gguf",
+        "bytes": 24341024,
+        "tensorDtype": "F16",
+        "tensorCount": 392,
+        "rank": 8,
+        "alpha": 16.0,
+        "createdAt": "2026-08-11T10:47:34-07:00",
+        "lossyRelativeToAdapter": null,
+        "converter": null,
+        "sources": [
+          "gguf-py GGUFReader over the file",
+          "ls --time-style=full-iso"
+        ],
+        "conversionEffect": "F32-saved weights stored as F16; a narrowing whose numerical effect was not measured"
+      },
+      "ollama": {
+        "tag": "css360-ft-v1-test:latest",
+        "digest": "063ce8788f88",
+        "sizeBytes": 2043734287,
+        "modifiedAt": "2026-08-11T11:13:59-07:00",
+        "modelfile": "FROM llama3.2:3b; ADAPTER vm:~/model_artifacts/css360-v1/css360-v1-lora.gguf",
+        "baseBlob": "sha256-dde5aa3fc5ffc17176b5e8bdc82f587b24b2678c6c66101bf7da77af9f7ccdff",
+        "adapterBlob": "sha256-38e976ac31acbf61f97d6397340984d759f2ef4204fc3f40417ca1d74fb5f9af",
+        "baseQuantization": "Q4_K_M",
+        "mappedInFineTunedService": false,
+        "sources": [
+          "ollama: /api/tags",
+          "ollama show css360-ft-v1-test --modelfile"
+        ]
+      },
+      "registry": {
+        "registered": true,
+        "status": "ready",
+        "deployment": "offline",
+        "isCurrent": false,
+        "trainingExampleCount": 54,
+        "trainingExampleCountMeaning": "approved count; hand-registered rows carry it",
+        "artifactRef": "css-360-qlora/adapter",
+        "runId": null,
+        "provenanceStored": false,
+        "createdAt": "2026-08-10T23:22:50.979479-07:00",
+        "notesStartWith": "QLoRA adapter trained from 54 approved examples; promoted to the live adapter path",
+        "inServingTree": false,
+        "sources": [
+          "db:course_model_versions",
+          "tillicum:$PROJ/training_outputs/serving/ listing"
+        ]
+      },
+      "timings": {
+        "queueWaitSeconds": 0,
+        "slurmElapsedSeconds": 54,
+        "slurmTimeLimit": "08:00:00",
+        "slurmBatchMaxRssKiB": null,
+        "trainerTotalSeconds": 42.35937967803329,
+        "modelLoadSeconds": 7.009677338995971,
+        "trainingSeconds": 31.349823792930692,
+        "evaluationSeconds": 1.2275720840552822,
+        "averageSecondsPerStep": 1.5875307549981192,
+        "firstStepSeconds": 2.029579206951894,
+        "gpuHours": 0.011766494355009248,
+        "peakRssMiB": null,
+        "conversionSeconds": null,
+        "conversionAndImportTimeline": {
+          "ggufWritten": "2026-08-11T10:47:34-07:00",
+          "modelfileGguf": "2026-08-11T11:13:24-07:00",
+          "ollamaTag": "2026-08-11T11:13:59-07:00"
+        },
+        "sources": [
+          "sacct:182729",
+          "runtime-report.json",
+          "ls --time-style=full-iso"
+        ]
+      },
+      "losses": {
+        "definition": "full-sequence LM loss over the templated chat text",
+        "validationSet": "6 records of the unknown July split",
+        "trainLoss": 2.646809611055586,
+        "evalLossByEpoch": {
+          "1": 2.5847015380859375,
+          "2": 1.7805603742599487,
+          "3": 1.6536235809326172
+        },
+        "evalLoss": 1.6536235809326172,
+        "totalFlos": 189659265822720.0,
+        "comparableWith": [],
+        "sources": [
+          "training_metrics.json",
+          "evaluation_metrics.json",
+          "trainer_state.json"
+        ]
+      },
+      "evidenceGaps": [
+        {
+          "field": "data.trainSha256, data.validationSha256, data.manifestSha256",
+          "gap": "No hash was recorded for the July 2026 training files and no copy survives on either host; the laptop split is a candidate only.",
+          "candidate": "laptop split f810377f… / d69d1237…"
+        },
+        {
+          "field": "data.datasetVersion, data.approvedExamples, data.splitSeed",
+          "gap": "Not recorded by the pre-queue scaffold; the registry's count of 54 is the approved count entered by hand."
+        },
+        {
+          "field": "configuration.quantization.fourBitBaseComputeDtype, configuration.autocast (values present but code-inferred)",
+          "gap": "Inferred from the trainer source and H200 support; resolved_config.json at this commit carried no device or dtype fields."
+        },
+        {
+          "field": "optimizerUpdatePrecision",
+          "gap": "No optimizer state or checkpoint was examined; the F32 saved adapter does not establish the update precision."
+        },
+        {
+          "field": "timings.slurmBatchMaxRssKiB, timings.peakRssMiB",
+          "gap": "sacct MaxRSS was not queried for job 182729 and the report of that era did not record RSS."
+        },
+        {
+          "field": "gguf.converter",
+          "gap": "llama.cpp revision and --outtype for the 2026-08-11 conversion are not recorded; only the F16 result is known."
+        },
+        {
+          "field": "comparisonJobOutput",
+          "gap": "tillicum:$PROJ/training_outputs/css-360-comparison/ exists (job 182771) but its contents were not read."
+        },
+        {
+          "field": "timings.conversionSeconds",
+          "gap": "Conversion and import were never timed; only file timestamps exist (conversionAndImportTimeline)."
+        },
+        {
+          "field": "gguf.lossyRelativeToAdapter",
+          "gap": "The GGUF tensors were not compared numerically with the source adapter; the effect of the conversion is unmeasured."
+        }
+      ],
+      "notApplicable": [
+        {
+          "field": "trainingRun.queueRunId",
+          "reason": "predates the training queue"
+        },
+        {
+          "field": "trainingRun.launcherRunId",
+          "reason": "predates start_qlora_training.sh; the legacy directory has no run id"
+        },
+        {
+          "field": "configuration.lossMaskingImplementation",
+          "reason": "full-sequence loss has no masking implementation"
+        },
+        {
+          "field": "registry.runId",
+          "reason": "hand-registered row; no queue run"
+        }
+      ]
+    },
+    {
+      "lineageId": "css360-v2",
+      "version": "v2",
+      "label": "Production model, Tillicum through the training queue, 2026-09-04",
+      "role": "production",
+      "includeInControlledClaims": true,
+      "trainingRun": {
+        "host": "tillicum",
+        "runDirectory": "tillicum:$PROJ/training_outputs/qlora-runs/css-360-winter-2026-a7rp/20260905T040428Z-full/",
+        "launchedBy": "training queue worker (run_training_queue.sh) through start_qlora_training.sh",
+        "queueRunId": "run-20260905t040410z-c54c33",
+        "launcherRunId": "20260905T040428Z",
+        "slurmJobId": "277072",
+        "slurmJobName": "qlora-train-css-360-winter-2026-a7rp",
+        "node": "g004",
+        "gpu": "1x H200",
+        "enqueuedAt": "2026-09-05T04:04:10.246430+00:00",
+        "submittedAt": "2026-09-04T21:04:28-07:00",
+        "startedAt": "2026-09-04T21:04:28-07:00",
+        "jobClockAtStart": "2026-09-05T04:04:32Z",
+        "endedAt": "2026-09-04T21:05:21-07:00",
+        "reportTimestamp": "2026-09-05T04:05:21.208194+00:00",
+        "completionCallback": "delivered directly from the compute node ('Reported to the application.', train-277072.out line 106); training/state/pending/ empty",
+        "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f",
+        "gitCommitSubject": "Add final release regression coverage",
+        "gitCommitDate": "2026-09-04T00:01:48-07:00",
+        "sources": [
+          "db:training_runs",
+          "training/logs/qlora-job-277072.env",
+          "sacct:277072",
+          "runtime-report.json",
+          "training/logs/train-277072.out",
+          "training/state/runs/run-20260905t040410z-c54c33.json"
+        ]
+      },
+      "data": {
+        "format": "bare instruction/response",
+        "datasetVersion": "css-360-winter-2026-a7rp-approved-split-seed360-n54",
+        "approvedExamples": 54,
+        "trainExamples": 48,
+        "validationExamples": 6,
+        "splitSeed": 360,
+        "trainSha256": "1dfd8259f6827eec6546af2fd6deaa14ae686ee710ef135e41a51ff94264e110",
+        "validationSha256": "fc5453422f1615bffd298e8e5bea7b20e3f54afd06162fce99e479bff536f6a4",
+        "manifestSha256": null,
+        "bytesRetained": false,
+        "bytesRetainedNote": "The VM export was rewritten on 2026-09-12 and the Tillicum copy replaced by the v4 files; both now carry the v4 hashes. No file with these checksums exists on either host.",
+        "differsFromJulyLaptopSplit": "checksums differ; whether the text differs is unknown",
+        "sources": [
+          "db:training_runs.completion.datasetChecksums",
+          "db:course_model_versions.provenance.datasetChecksums",
+          "vm: find + sha256sum, 2026-09-15",
+          "tillicum: export directory sha256sum, 2026-09-16"
+        ]
+      },
+      "configuration": {
+        "maxSeqLength": 512,
+        "lossMasking": "full-sequence",
+        "lossMaskingImplementation": null,
+        "optimizer": {
+          "learningRate": 0.0002,
+          "epochs": 3.0,
+          "perDeviceBatchSize": 1,
+          "gradientAccumulationSteps": 8,
+          "effectiveBatchSize": 8,
+          "warmupRatio": 0.1,
+          "warmupSteps": 2,
+          "weightDecay": 0.01,
+          "seed": 360,
+          "intendedOptimizerSteps": 18,
+          "completedOptimizerSteps": 18
+        },
+        "maxStepsExplicit": true,
+        "lora": {
+          "r": 8,
+          "alpha": 16,
+          "dropout": 0.05,
+          "bias": "none",
+          "targetModules": [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj"
+          ],
+          "tensorCount": 392
+        },
+        "quantization": {
+          "loadIn4bit": true,
+          "quantType": "nf4",
+          "doubleQuant": true,
+          "fourBitBaseComputeDtype": "bfloat16",
+          "fourBitBaseComputeDtypeBasis": "trainer code at 732f0fe lines 635 and 648 with H200 support; not recorded in resolved_config.json"
+        },
+        "gradientCheckpointing": true,
+        "gradientCheckpointingBasis": "trainer code at 732f0fe line 657; not recorded in resolved_config.json",
+        "device": "cuda",
+        "autocast": "bf16 by trainer code; not recorded",
+        "chatFormatting": "tokenizer.apply_chat_template over instruction and response, packing off",
+        "sources": [
+          "resolved_config.json",
+          "trainer_state.json learning-rate schedule",
+          "repo:732f0fe training/train_qlora.py"
+        ]
+      },
+      "softwareStack": {
+        "python": "3.9.25",
+        "torch": "2.5.1+cu124",
+        "transformers": "4.47.1",
+        "datasets": "3.2.0",
+        "peft": "0.14.0",
+        "bitsandbytes": "0.45.0",
+        "trl": "0.13.0",
+        "accelerate": "1.2.1",
+        "venv": "tillicum:$PROJ/venvs/qlora",
+        "sources": [
+          "training/logs/train-277072.out"
+        ]
+      },
+      "adapter": {
+        "format": "PEFT save_pretrained",
+        "peftVersion": "0.14.0",
+        "safetensorsBytes": 48679352,
+        "safetensorsDtype": "F32",
+        "tensorCount": 392,
+        "sha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+        "adapterConfigSha256": "26c99c8224f999328e93d5572d2fe517d9fe6d307c6732a02d7853068a9065b5",
+        "locations": [
+          "tillicum:$PROJ/training_outputs/qlora-runs/css-360-winter-2026-a7rp/20260905T040428Z-full/adapter/",
+          "tillicum:$PROJ/training_outputs/serving/css-360-winter-2026-a7rp/v2/ (published copy, not hashed)",
+          "vm:~/model_artifacts/css360-v2/adapter/ (byte-identical, copied 2026-09-08T01:05:16-07:00)"
+        ],
+        "sources": [
+          "sha256sum on both hosts",
+          "safetensors header",
+          "adapter README.md"
+        ]
+      },
+      "gguf": {
+        "path": "vm:~/model_artifacts/css360-v2/css360-v2-lora.gguf",
+        "bytes": 48654880,
+        "tensorDtype": "F32",
+        "tensorCount": 392,
+        "rank": 8,
+        "alpha": 16.0,
+        "createdAt": "2026-09-08T01:06:00-07:00",
+        "lossyRelativeToAdapter": null,
+        "converter": null,
+        "sources": [
+          "gguf-py GGUFReader",
+          "ls --time-style=full-iso"
+        ],
+        "conversionEffect": "F32-saved weights stored as F32; tensors not compared with the adapter"
+      },
+      "ollama": {
+        "tag": "css360-ft-v2:latest",
+        "digest": "dea74c57f25a",
+        "sizeBytes": 2068048143,
+        "modifiedAt": "2026-09-08T01:07:27-07:00",
+        "modelfile": "FROM llama3.2:3b; ADAPTER vm:~/model_artifacts/css360-v2/css360-v2-lora.gguf",
+        "baseBlob": "sha256-dde5aa3fc5ffc17176b5e8bdc82f587b24b2678c6c66101bf7da77af9f7ccdff",
+        "adapterBlob": "sha256-af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+        "baseQuantization": "Q4_K_M",
+        "mappedInFineTunedService": true,
+        "serviceMapping": "css-360-winter-2026-a7rp v2 -> css360-ft-v2:latest",
+        "sources": [
+          "ollama: /api/tags",
+          "ollama show css360-ft-v2 --modelfile",
+          "aiswe-finetuned startup log 2026-09-12T00:14:30-07:00"
+        ]
+      },
+      "registry": {
+        "registered": true,
+        "status": "ready",
+        "deployment": "online",
+        "isCurrent": true,
+        "trainingExampleCount": 48,
+        "trainingExampleCountMeaning": "train split",
+        "artifactRef": "qlora-runs/css-360-winter-2026-a7rp/20260905T040428Z-full/adapter",
+        "runId": "run-20260905t040410z-c54c33",
+        "provenanceStored": true,
+        "createdAt": "2026-09-04T21:05:21.891903-07:00",
+        "updatedAt": "2026-09-04T21:06:43.651015-07:00",
+        "registrationMode": "automatic completion callback; moved current_version to v2",
+        "publishedAt": "2026-09-05T04:06:43.568653Z",
+        "inServingTree": true,
+        "servingCurrentJson": {
+          "version": "v2",
+          "sourceRef": "qlora-runs/css-360-winter-2026-a7rp/20260905T040428Z-full/adapter",
+          "runId": "run-20260905t040410z-c54c33"
+        },
+        "provenanceFields": [
+          "gitCommitSha",
+          "slurmJobId",
+          "datasetVersion",
+          "datasetChecksums",
+          "approvedExampleCount",
+          "trainExamples",
+          "validationExamples",
+          "intendedOptimizerSteps",
+          "completedSteps",
+          "epochs",
+          "trainLoss",
+          "evalLoss",
+          "actualGpuHours",
+          "gpuCount",
+          "elapsedSeconds",
+          "startedAt",
+          "completedAt",
+          "outputRef",
+          "resolvedConfig"
+        ],
+        "provenanceMissing": [
+          "runtimeReport",
+          "libraryVersions",
+          "computeDtype"
+        ],
+        "sources": [
+          "db:course_models",
+          "db:course_model_versions",
+          "tillicum:$PROJ/training_outputs/serving/css-360-winter-2026-a7rp/current.json"
+        ]
+      },
+      "timings": {
+        "queueWaitSeconds": 0,
+        "slurmElapsedSeconds": 53,
+        "slurmTimeLimit": "01:00:00",
+        "slurmBatchMaxRssKiB": 8021936,
+        "trainerTotalSeconds": 42.45745283202268,
+        "modelLoadSeconds": 7.809009711025283,
+        "trainingSeconds": 30.65270049497485,
+        "evaluationSeconds": 1.19135923194699,
+        "averageSecondsPerStep": 1.5496391841701955,
+        "firstStepSeconds": 1.9802672951482236,
+        "gpuHours": 0.011793736897784079,
+        "peakRssMiB": null,
+        "enqueueToRegisteredSeconds": 71,
+        "conversionSeconds": null,
+        "conversionAndImportTimeline": {
+          "adapterCopiedToVm": "2026-09-08T01:05:16-07:00",
+          "ggufWritten": "2026-09-08T01:06:00-07:00",
+          "ollamaTag": "2026-09-08T01:07:27-07:00"
+        },
+        "sources": [
+          "sacct:277072",
+          "runtime-report.json",
+          "db:training_runs",
+          "ls --time-style=full-iso"
+        ]
+      },
+      "losses": {
+        "definition": "full-sequence LM loss over the templated chat text",
+        "validationSet": "6 records of the n54 split",
+        "trainLoss": 2.611793988280826,
+        "evalLossByEpoch": {
+          "1": 2.86094069480896,
+          "2": 2.123832941055298,
+          "3": 2.005553960800171
+        },
+        "evalLoss": 2.005553960800171,
+        "totalFlos": 189149703045120.0,
+        "comparableWith": [],
+        "sources": [
+          "training_metrics.json",
+          "evaluation_metrics.json",
+          "trainer_state.json"
+        ]
+      },
+      "evidenceGaps": [
+        {
+          "field": "data.bytesRetained",
+          "gap": "Only the SHA-256 checksums survive; the files were overwritten on both hosts on 2026-09-12."
+        },
+        {
+          "field": "data.manifestSha256",
+          "gap": "The 2026-09-04 manifest was overwritten; its hash was not recorded."
+        },
+        {
+          "field": "configuration.quantization.fourBitBaseComputeDtype, configuration.autocast (values present but code-inferred)",
+          "gap": "Inferred from the trainer source and H200 support; not recorded in resolved_config.json at 732f0fe."
+        },
+        {
+          "field": "optimizerUpdatePrecision",
+          "gap": "No optimizer state or checkpoint was examined."
+        },
+        {
+          "field": "timings.peakRssMiB",
+          "gap": "The reporter at 732f0fe did not record RSS; sacct MaxRSS of the batch step is given instead."
+        },
+        {
+          "field": "gguf.converter",
+          "gap": "llama.cpp revision and --outtype not recorded."
+        },
+        {
+          "field": "adapter.locations[published copy]",
+          "gap": "The serving-tree copy was not hashed in this inventory."
+        },
+        {
+          "field": "timings.conversionSeconds",
+          "gap": "Conversion and import were never timed; only file timestamps exist (conversionAndImportTimeline)."
+        },
+        {
+          "field": "gguf.lossyRelativeToAdapter",
+          "gap": "The GGUF tensors were not compared numerically with the source adapter; the effect of the conversion is unmeasured."
+        }
+      ],
+      "notApplicable": [
+        {
+          "field": "configuration.lossMaskingImplementation",
+          "reason": "full-sequence loss has no masking implementation"
+        }
+      ]
+    },
+    {
+      "lineageId": "css360-v3",
+      "version": "v3",
+      "label": "Experimental CPU run on the UWB VM, 2026-09-10",
+      "role": "experimental",
+      "includeInControlledClaims": true,
+      "trainingRun": {
+        "host": "vm",
+        "runDirectory": "vm:~/training_outputs/qlora-runs/css-360-winter-2026-a7rp/20260910T230535Z-full/",
+        "launchedBy": "training/start_cpu_qlora_training.sh --full",
+        "queueRunId": null,
+        "launcherRunId": "20260910T230535Z",
+        "slurmJobId": null,
+        "device": "cpu",
+        "cpuThreads": 6,
+        "startedAt": "2026-09-10T23:05:37Z",
+        "reportTimestamp": "2026-09-11T00:01:23.790150+00:00",
+        "logFile": "vm:~/css360-syllabus-bot/training/logs/cpu-train-20260910T230535Z.log",
+        "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d",
+        "gitCommitSubject": "Fix TRL compatibility for CPU QLoRA",
+        "gitCommitDate": "2026-09-10T15:54:16-07:00",
+        "precedingSmokes": [
+          {
+            "runId": "20260910T215314Z",
+            "outcome": "failed: SFTConfig.__init__() got an unexpected keyword argument 'warmup_ratio' (transformers 5)",
+            "startedAt": "2026-09-10T21:53:24Z",
+            "modelLoadSeconds": 52.39
+          },
+          {
+            "runId": "20260910T225615Z",
+            "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d",
+            "startedAt": "2026-09-10T22:56:18Z",
+            "steps": 3,
+            "trainingSeconds": 231.68094850005582,
+            "totalSeconds": 281.8394183078781,
+            "evalLoss": 3.809126853942871,
+            "estimatedFullTrainingOnlySeconds": 1316.5324694523588,
+            "estimatedFullConservativeTotalSeconds": 2503.274835563265
+          }
+        ],
+        "sources": [
+          "run-meta.env",
+          "runtime-report.json",
+          "resolved_config.json",
+          "cpu-train-20260910T230535Z.log",
+          "repo:git log c5772f2"
+        ]
+      },
+      "data": {
+        "format": "bare instruction/response",
+        "datasetVersion": null,
+        "approvedExamples": null,
+        "trainExamples": 48,
+        "validationExamples": 6,
+        "splitSeed": null,
+        "trainSha256": null,
+        "validationSha256": null,
+        "manifestSha256": null,
+        "bytesRetained": false,
+        "readFrom": "vm:~/css360-syllabus-bot/data/exports/css-360-winter-2026-a7rp/train.jsonl and validation.jsonl as of 2026-09-10; overwritten 2026-09-12",
+        "identityWithV2": "unverified",
+        "identityWithV2Observations": [
+          "VM export history shows no export between 2026-09-04 (snapshot 20260904T071603Z) and 2026-09-12 (snapshot 20260912T071423Z)",
+          "total_flos equals v2's (189149703045120.0), which shows a compatible total token workload and is not a hash"
+        ],
+        "sources": [
+          "run-meta.env TRAIN_FILE/VAL_FILE",
+          "resolved_config.json train_path/validation_path",
+          "vm: generated-snapshot file names",
+          "training_metrics.json total_flos"
+        ]
+      },
+      "configuration": {
+        "maxSeqLength": 512,
+        "lossMasking": "full-sequence",
+        "lossMaskingImplementation": null,
+        "lossMaskingBasis": "no completion-only code exists at c5772f2 (first appears in 1104ad5); runtime-report.json has no completionOnlyLoss field",
+        "optimizer": {
+          "learningRate": 0.0002,
+          "epochs": 3.0,
+          "perDeviceBatchSize": 1,
+          "gradientAccumulationSteps": 8,
+          "effectiveBatchSize": 8,
+          "warmupRatio": 0.1,
+          "warmupSteps": 2,
+          "weightDecay": 0.01,
+          "seed": 360,
+          "intendedOptimizerSteps": 18,
+          "completedOptimizerSteps": 18
+        },
+        "maxStepsExplicit": true,
+        "lora": {
+          "r": 8,
+          "alpha": 16,
+          "dropout": 0.05,
+          "bias": "none",
+          "targetModules": [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj"
+          ],
+          "tensorCount": 392
+        },
+        "quantization": {
+          "loadIn4bit": true,
+          "quantType": "nf4",
+          "doubleQuant": true,
+          "fourBitBaseComputeDtype": "float32",
+          "fourBitBaseComputeDtypeBasis": "resolved_config.json"
+        },
+        "gradientCheckpointing": true,
+        "device": "cpu",
+        "autocast": "none (bf16=False, fp16=False, use_cpu=True)",
+        "compatibilityTranslations": "max_seq_length -> max_length=512; warmup_ratio=0.1 -> warmup_steps=2 of 18 optimizer steps",
+        "sources": [
+          "resolved_config.json",
+          "cpu-train-20260910T230535Z.log line 29"
+        ]
+      },
+      "softwareStack": {
+        "python": "3.12.13",
+        "torch": "2.14.0+cu130",
+        "transformers": "5.16.1",
+        "datasets": "5.0.1",
+        "peft": "0.20.0",
+        "bitsandbytes": "0.50.2",
+        "trl": "1.12.0",
+        "accelerate": "1.14.0",
+        "venv": "vm:~/cpu-training-venv",
+        "sources": [
+          "runtime-report.json libraryVersions",
+          "cpu-train-20260910T230535Z.log"
+        ]
+      },
+      "adapter": {
+        "format": "PEFT save_pretrained",
+        "peftVersion": "0.20.0",
+        "safetensorsBytes": 24365712,
+        "safetensorsDtype": "BF16",
+        "tensorCount": 392,
+        "sha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+        "adapterConfigSha256": null,
+        "locations": [
+          "vm:~/training_outputs/qlora-runs/css-360-winter-2026-a7rp/20260910T230535Z-full/adapter/"
+        ],
+        "dtypeNote": "trainer set float32 as the 4-bit base compute dtype; the BF16 save is a fact whose mechanism is not established",
+        "sources": [
+          "sha256sum",
+          "safetensors header",
+          "adapter_config.json peft_version"
+        ]
+      },
+      "gguf": {
+        "path": "vm:~/model_artifacts/css360-cpu-v3-lora.gguf",
+        "bytes": 48655072,
+        "tensorDtype": "F32",
+        "tensorCount": 392,
+        "rank": 8,
+        "alpha": 16.0,
+        "createdAt": "2026-09-10T17:17-07:00",
+        "lossyRelativeToAdapter": null,
+        "converter": null,
+        "sources": [
+          "gguf-py GGUFReader",
+          "find -printf timestamps"
+        ],
+        "conversionEffect": "BF16-saved weights stored as F32; a widening that is exact only if the converter performed a plain cast; tensors not compared"
+      },
+      "ollama": {
+        "tag": "css360-cpu-v3-test:latest",
+        "digest": "0d723f0db28f",
+        "sizeBytes": 2068048335,
+        "modifiedAt": "2026-09-10T17:18:19-07:00",
+        "modelfile": "FROM llama3.2:3b; ADAPTER vm:~/model_artifacts/css360-cpu-v3-lora.gguf",
+        "baseBlob": "sha256-dde5aa3fc5ffc17176b5e8bdc82f587b24b2678c6c66101bf7da77af9f7ccdff",
+        "adapterBlob": "sha256-63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+        "baseQuantization": "Q4_K_M",
+        "mappedInFineTunedService": true,
+        "serviceMapping": "css-360-winter-2026-a7rp v3 -> css360-cpu-v3-test:latest",
+        "sources": [
+          "ollama: /api/tags",
+          "ollama show css360-cpu-v3-test --modelfile",
+          "aiswe-finetuned startup log"
+        ]
+      },
+      "registry": {
+        "registered": true,
+        "status": "ready",
+        "deployment": "offline",
+        "isCurrent": false,
+        "trainingExampleCount": 48,
+        "trainingExampleCountMeaning": "train split",
+        "artifactRef": "qlora-runs/css-360-winter-2026-a7rp/20260910T230535Z-full/adapter",
+        "runId": null,
+        "provenanceStored": false,
+        "createdAt": "2026-09-10T22:22:19.230754-07:00",
+        "registrationMode": "worker registration route by hand; current_version stayed v2; model_requests.updated_at carries the same instant; no admin_actions row",
+        "inServingTree": false,
+        "sources": [
+          "db:course_model_versions",
+          "db:model_requests",
+          "db:admin_actions summary"
+        ]
+      },
+      "timings": {
+        "queueWaitSeconds": null,
+        "slurmElapsedSeconds": null,
+        "trainerTotalSeconds": 3329.879963394953,
+        "modelLoadSeconds": 22.644415789982304,
+        "trainingSeconds": 3252.6352418099996,
+        "evaluationSeconds": 163.25365130905993,
+        "averageSecondsPerStep": 174.36483966403037,
+        "firstStepSeconds": 173.3900243418757,
+        "gpuHours": null,
+        "peakRssMiB": 10456.02734375,
+        "conversionSeconds": null,
+        "conversionAndImportTimeline": {
+          "ggufWritten": "2026-09-10T17:17-07:00",
+          "modelfile": "2026-09-10T17:18-07:00",
+          "ollamaTag": "2026-09-10T17:18:19-07:00"
+        },
+        "sources": [
+          "runtime-report.json",
+          "cpu-train-20260910T230535Z.log",
+          "find -printf timestamps"
+        ]
+      },
+      "losses": {
+        "definition": "full-sequence LM loss over the templated chat text",
+        "validationSet": "6 records whose identity with v2's is unverified",
+        "trainLoss": 2.5928515593210855,
+        "evalLossByEpoch": {
+          "2": 2.049,
+          "3": 1.942161202430725
+        },
+        "evalLoss": 1.942161202430725,
+        "evalMeanTokenAccuracy": 0.6471133430798849,
+        "totalFlos": 189149703045120.0,
+        "comparableWith": [],
+        "sources": [
+          "training_metrics.json",
+          "evaluation_metrics.json",
+          "log eval lines"
+        ]
+      },
+      "evidenceGaps": [
+        {
+          "field": "data.trainSha256, data.validationSha256",
+          "gap": "No checksum of the 2026-09-10 file state was recorded; the files were overwritten on 2026-09-12."
+        },
+        {
+          "field": "data.identityWithV2",
+          "gap": "Unverified; the export history and equal total_flos are consistent with v2's files but neither is a hash."
+        },
+        {
+          "field": "adapter.dtypeNote",
+          "gap": "The mechanism that produced a BF16 save after float32 was set as the 4-bit base compute dtype is not established."
+        },
+        {
+          "field": "optimizerUpdatePrecision",
+          "gap": "No optimizer state or checkpoint was examined; the BF16 saved adapter does not establish the update precision."
+        },
+        {
+          "field": "registry.registrationMode",
+          "gap": "setCurrent=false is inferred from the unchanged current_version and the model_requests timestamp; no request log was read."
+        },
+        {
+          "field": "gguf.converter",
+          "gap": "llama.cpp revision and --outtype not recorded."
+        },
+        {
+          "field": "adapter.adapterConfigSha256",
+          "gap": "Not hashed in this inventory."
+        },
+        {
+          "field": "data.datasetVersion, data.approvedExamples, data.splitSeed, data.manifestSha256",
+          "gap": "The manifest that described the 2026-09-10 export was overwritten on 2026-09-12; none of its values were recorded elsewhere for this run."
+        },
+        {
+          "field": "timings.conversionSeconds",
+          "gap": "Conversion and import were never timed; only file timestamps exist (conversionAndImportTimeline)."
+        },
+        {
+          "field": "gguf.lossyRelativeToAdapter",
+          "gap": "The GGUF tensors were not compared numerically with the source adapter; the effect of the conversion is unmeasured."
+        }
+      ],
+      "notApplicable": [
+        {
+          "field": "trainingRun.queueRunId",
+          "reason": "launched by hand on the VM, outside the queue"
+        },
+        {
+          "field": "trainingRun.slurmJobId",
+          "reason": "VM run; no Slurm"
+        },
+        {
+          "field": "configuration.lossMaskingImplementation",
+          "reason": "full-sequence loss has no masking implementation"
+        },
+        {
+          "field": "registry.runId",
+          "reason": "hand-registered row; no queue run"
+        },
+        {
+          "field": "timings.queueWaitSeconds",
+          "reason": "VM run; no scheduler"
+        },
+        {
+          "field": "timings.slurmElapsedSeconds",
+          "reason": "VM run; no allocation"
+        },
+        {
+          "field": "timings.gpuHours",
+          "reason": "CPU run; the trainer reports GPU hours as null"
+        }
+      ]
+    },
+    {
+      "lineageId": "css360-v4-vm",
+      "version": null,
+      "versionNote": "unregistered; no version label exists in the registry",
+      "label": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+      "role": "experimental",
+      "includeInControlledClaims": true,
+      "trainingRun": {
+        "host": "vm",
+        "runDirectory": "vm:~/training_outputs/qlora-runs/css-360-winter-2026-a7rp/20260912T075201Z-full/",
+        "launchedBy": "training/start_cpu_qlora_training.sh --full",
+        "queueRunId": null,
+        "launcherRunId": "20260912T075201Z",
+        "slurmJobId": null,
+        "device": "cpu",
+        "cpuThreads": 6,
+        "startedAt": "2026-09-12T07:52:03Z",
+        "reportTimestamp": "2026-09-12T18:38:17.732520+00:00",
+        "logFile": "vm:~/css360-syllabus-bot/training/logs/cpu-train-20260912T075201Z.log",
+        "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288",
+        "gitCommitSubject": "Share grounded generation and add mixed v4 training format",
+        "gitCommitDate": "2026-09-12T00:13:29-07:00",
+        "deployedToVmServicesAt": "2026-09-12T00:14:30-07:00",
+        "precedingSmoke": {
+          "runId": "20260912T072428Z",
+          "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288",
+          "startedAt": "2026-09-12T07:24:30Z",
+          "foreground": true,
+          "exitStatus": 0,
+          "subset": {
+            "train": {
+              "bare/answerable": 2,
+              "grounded/abstain": 1,
+              "grounded/answerable": 1
+            },
+            "validation": {
+              "bare/answerable": 1,
+              "grounded/abstain": 1
+            }
+          },
+          "steps": 3,
+          "trainingSeconds": 1217.667479339987,
+          "totalSeconds": 1328.5069521819241,
+          "evalLoss": 1.9412163496017456,
+          "estimatedFullTrainingOnlySeconds": 18636.952103741467,
+          "estimatedFullConservativeTotalSeconds": 24690.525804135017
+        },
+        "sources": [
+          "run-meta.env",
+          "runtime-report.json",
+          "cpu-train-20260912T075201Z.log",
+          "systemctl --user status (service start time)",
+          "repo:git log 1104ad5"
+        ]
+      },
+      "data": {
+        "format": "mixed-v4",
+        "datasetVersion": "css-360-winter-2026-a7rp-mixed-split-seed360-n137",
+        "sourceExportTimestamp": "2026-09-12T07:21:45.657528+00:00",
+        "createdAt": "2026-09-12T07:22:23.916755+00:00",
+        "splitSeed": 360,
+        "sourceExamples": 88,
+        "totalExamples": 137,
+        "trainExamples": 122,
+        "validationExamples": 15,
+        "composition": {
+          "train": {
+            "bare/answerable": 48,
+            "grounded/answerable": 44,
+            "grounded/abstain": 18,
+            "grounded/false_premise": 12
+          },
+          "validation": {
+            "bare/answerable": 6,
+            "grounded/answerable": 5,
+            "grounded/abstain": 2,
+            "grounded/false_premise": 2
+          },
+          "total": {
+            "bare/answerable": 54,
+            "grounded/answerable": 49,
+            "grounded/abstain": 20,
+            "grounded/false_premise": 14
+          },
+          "percentages": {
+            "bare/answerable": 0.394,
+            "grounded/answerable": 0.358,
+            "grounded/abstain": 0.146,
+            "grounded/false_premise": 0.102
+          },
+          "targets": {
+            "bare/answerable": 0.4,
+            "grounded/answerable": 0.35,
+            "grounded/abstain": 0.15,
+            "grounded/false_premise": 0.1
+          }
+        },
+        "files": {
+          "approved-finetune.jsonl": {
+            "lines": 88,
+            "sha256": "a0dcdc240bb381c9004eea066dfff36572c931fc42f87cca4630269088bdf07f"
+          },
+          "train.jsonl": {
+            "lines": 122,
+            "sha256": "35818198431415964538b48c7d567a7e6449c792eb776b4d9cfce94d8ba0abd7"
+          },
+          "validation.jsonl": {
+            "lines": 15,
+            "sha256": "1d64373152060925b5e8af6b43221a3b6e98ccea4b9ee98035da6037f1c523c0"
+          },
+          "manifest.json": {
+            "sha256": "f96634423cb4084f0f50c64024050ee3472ecd5c3192a525e78e0107dfd431ae"
+          }
+        },
+        "fileTimes": "written 2026-09-12T07:21:45Z to 2026-09-12T07:22:24Z (00:21:45 to 00:22:24 PDT); unchanged since on both hosts",
+        "promptTemplate": {
+          "name": "grounded-v1",
+          "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93",
+          "matchesCommittedTemplateAt": "1104ad505b2e6d18a0e97b05297b6cd602b98288",
+          "verifiedOn": "2026-09-16"
+        },
+        "retrieval": {
+          "topK": 4,
+          "indexSha256": "115a0dfca9aaa81f0fe2a2b91858bcf7108ea2f18e39d00c9fdc3f34238991fa",
+          "indexChunkCount": 163,
+          "indexVersion": 2,
+          "indexCreatedAt": "2026-08-01T00:58:11.094604+00:00",
+          "isLiveProductionIndex": true
+        },
+        "sourceSeeds": {
+          "aiGeneratedApproved": {
+            "total": 54,
+            "direct": 41,
+            "clarification": 7,
+            "procedure": 6
+          },
+          "authoredApproved": {
+            "total": 34,
+            "unanswerable": 20,
+            "false_premise": 14
+          },
+          "authoredReviewedAt": "2026-09-12T07:20:05Z to 2026-09-12T07:20:54Z (00:20:05 to 00:20:54 PDT)",
+          "exportSummary": {
+            "inputCount": 115,
+            "approvedCount": 88,
+            "exportedCount": 88,
+            "validatedCount": 88,
+            "skippedCount": 27,
+            "reviewStatusCounts": {
+              "approved": 88,
+              "generated": 14,
+              "rejected": 13
+            }
+          }
+        },
+        "groundedSkipped": [
+          {
+            "kind": "answerable",
+            "question": "When and where does CSS 360 meet?",
+            "reason": "response states numbers the retrieved excerpts do not contain",
+            "missing": [
+              "3:30",
+              "5:30",
+              "2",
+              "131"
+            ]
+          },
+          {
+            "kind": "answerable",
+            "question": "Can I use Discord without downloading an app?",
+            "reason": "no retrieved excerpt supports the response",
+            "missing": null
+          },
+          {
+            "kind": "answerable",
+            "question": "If I know I’ll miss class, when should I notify the instructor?",
+            "reason": "no retrieved excerpt supports the response",
+            "missing": null
+          },
+          {
+            "kind": "answerable",
+            "question": "What steps should I follow to implement a user story for Bot Project Task #3?",
+            "reason": "response states numbers the retrieved excerpts do not contain",
+            "missing": [
+              "5"
+            ]
+          },
+          {
+            "kind": "answerable",
+            "question": "Why do we need two screenshots for the turn-in instead of just one?",
+            "reason": "response states numbers the retrieved excerpts do not contain",
+            "missing": [
+              "7"
+            ]
+          }
+        ],
+        "sources": [
+          "vm:~/css360-syllabus-bot/data/exports/css-360-winter-2026-a7rp/manifest.json",
+          "vm:~/css360-syllabus-bot/data/exports/css-360-winter-2026-a7rp/approved-export-summary.json",
+          "vm: sha256sum and wc -l of the export files, 2026-09-15",
+          "tillicum:$PROJ/css360-syllabus-bot/data/exports/css-360-winter-2026-a7rp/ sha256sum and wc -l, 2026-09-16",
+          "db:seed_examples counts by origin, status, review_status, question_type",
+          "db:admin_actions action seed.review, 34 rows",
+          "repo:1104ad5 backend/app/grounded_generation.py prompt_template_fingerprint()"
+        ],
+        "identityWithV4Tillicum": "byte-identical, proven by four matching SHA-256 values"
+      },
+      "configuration": {
+        "maxSeqLength": 2048,
+        "lossMasking": "completion-only",
+        "lossMaskingImplementation": "SFTConfig.completion_only_loss (runtime-report completionOnlyLoss = 'config')",
+        "optimizer": {
+          "learningRate": 0.0002,
+          "epochs": 3.0,
+          "perDeviceBatchSize": 1,
+          "gradientAccumulationSteps": 8,
+          "effectiveBatchSize": 8,
+          "warmupRatio": 0.1,
+          "warmupSteps": 5,
+          "weightDecay": 0.01,
+          "seed": 360,
+          "intendedOptimizerSteps": 48,
+          "completedOptimizerSteps": 48
+        },
+        "maxStepsExplicit": true,
+        "lora": {
+          "r": 8,
+          "alpha": 16,
+          "dropout": 0.05,
+          "bias": "none",
+          "targetModules": [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj"
+          ],
+          "tensorCount": 392
+        },
+        "quantization": {
+          "loadIn4bit": true,
+          "quantType": "nf4",
+          "doubleQuant": true,
+          "fourBitBaseComputeDtype": "float32",
+          "fourBitBaseComputeDtypeBasis": "resolved_config.json"
+        },
+        "gradientCheckpointing": true,
+        "device": "cpu",
+        "autocast": "none (bf16=False, fp16=False, use_cpu=True)",
+        "compatibilityTranslations": "max_seq_length -> max_length=2048; warmup_ratio=0.1 -> warmup_steps=5 of 48 optimizer steps",
+        "sources": [
+          "resolved_config.json",
+          "runtime-report.json",
+          "cpu-train-20260912T075201Z.log lines 27, 28, 31"
+        ]
+      },
+      "softwareStack": {
+        "python": "3.12.13",
+        "torch": "2.14.0+cu130",
+        "transformers": "5.16.1",
+        "datasets": "5.0.1",
+        "peft": "0.20.0",
+        "bitsandbytes": "0.50.2",
+        "trl": "1.12.0",
+        "accelerate": "1.14.0",
+        "venv": "vm:~/cpu-training-venv",
+        "sources": [
+          "runtime-report.json libraryVersions",
+          "cpu-train-20260912T075201Z.log"
+        ]
+      },
+      "adapter": {
+        "format": "PEFT save_pretrained",
+        "peftVersion": "0.20.0",
+        "safetensorsBytes": 24365712,
+        "safetensorsDtype": "BF16",
+        "tensorCount": 392,
+        "sha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+        "adapterConfigSha256": null,
+        "locations": [
+          "vm:~/training_outputs/qlora-runs/css-360-winter-2026-a7rp/20260912T075201Z-full/adapter/"
+        ],
+        "dtypeNote": "trainer set float32 as the 4-bit base compute dtype; the BF16 save is a fact whose mechanism is not established",
+        "sources": [
+          "sha256sum",
+          "safetensors header",
+          "adapter_config.json peft_version"
+        ]
+      },
+      "gguf": {
+        "path": "vm:~/model_artifacts/css360-v4/css360-v4-lora.gguf",
+        "bytes": 24341216,
+        "tensorDtype": "F16",
+        "tensorCount": 392,
+        "rank": 8,
+        "alpha": 16.0,
+        "createdAt": "2026-09-15T11:03:14-07:00",
+        "lossyRelativeToAdapter": null,
+        "converter": null,
+        "sources": [
+          "gguf-py GGUFReader",
+          "ls --time-style=full-iso"
+        ],
+        "conversionEffect": "BF16 adapter converted to an F16 GGUF; the numerical effect of conversion was not measured"
+      },
+      "ollama": {
+        "tag": "css360-v4-test:latest",
+        "digest": "b8763e820e93",
+        "sizeBytes": 2043734479,
+        "modifiedAt": "2026-09-15T11:03:34-07:00",
+        "modelfile": "FROM llama3.2:3b; ADAPTER vm:~/model_artifacts/css360-v4/css360-v4-lora.gguf",
+        "baseBlob": "sha256-dde5aa3fc5ffc17176b5e8bdc82f587b24b2678c6c66101bf7da77af9f7ccdff",
+        "adapterBlob": "sha256-3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+        "baseQuantization": "Q4_K_M",
+        "mappedInFineTunedService": false,
+        "sources": [
+          "ollama: /api/tags",
+          "ollama show css360-v4-test --modelfile",
+          "aiswe-finetuned startup log (mapping lists v2 and v3 only)"
+        ]
+      },
+      "registry": {
+        "registered": false,
+        "status": null,
+        "deployment": null,
+        "isCurrent": false,
+        "provenanceStored": false,
+        "inServingTree": false,
+        "sources": [
+          "db:course_model_versions (no row)",
+          "db:training_runs (no row)"
+        ]
+      },
+      "timings": {
+        "queueWaitSeconds": null,
+        "slurmElapsedSeconds": null,
+        "trainerTotalSeconds": 38754.598009116016,
+        "modelLoadSeconds": 30.114090187940747,
+        "trainingSeconds": 38297.424383234,
+        "evaluationSeconds": 1841.9810459937435,
+        "averageSecondsPerStep": 772.6953191035476,
+        "firstStepSeconds": 900.3107664459385,
+        "gpuHours": null,
+        "peakRssMiB": 10779.41015625,
+        "smokeEstimateVersusActual": {
+          "conservativeEstimateSeconds": 24690.525804135017,
+          "actualTotalSeconds": 38754.598009116016,
+          "note": "the four-example smoke subset is lighter than the full mix of long grounded prompts"
+        },
+        "conversionSeconds": null,
+        "conversionAndImportTimeline": {
+          "ggufWritten": "2026-09-15T11:03:14-07:00",
+          "modelfile": "2026-09-15T11:03:24-07:00",
+          "ollamaTag": "2026-09-15T11:03:34-07:00"
+        },
+        "sources": [
+          "runtime-report.json",
+          "cpu-train-20260912T075201Z.log",
+          "ls --time-style=full-iso"
+        ]
+      },
+      "losses": {
+        "definition": "response-only objective through SFTConfig.completion_only_loss; label-mask parity with the collator implementation used on Tillicum is unverified",
+        "validationSet": "15 mixed-v4 records (validation.jsonl 1d643731…)",
+        "trainLoss": 1.3616281151771545,
+        "evalLossByEpoch": {
+          "3": 1.4250649213790894
+        },
+        "evalLoss": 1.4250649213790894,
+        "evalMeanTokenAccuracy": 0.6408074418703715,
+        "evalNumTokens": 189813.0,
+        "totalFlos": 3224054650152960.0,
+        "comparableWith": [],
+        "sources": [
+          "training_metrics.json",
+          "evaluation_metrics.json"
+        ],
+        "qualifiedComparableWith": [
+          "css360-v4-tillicum"
+        ],
+        "comparabilityNote": "The two v4 eval losses share the same validation records and the same intended response-only objective, but SFTConfig.completion_only_loss (VM, TRL 1.12) and DataCollatorForCompletionOnlyLM (Tillicum, TRL 0.13) have not been shown to produce identical label masks; a direct numerical comparison is qualified until label-mask parity is verified."
+      },
+      "evidenceGaps": [
+        {
+          "field": "adapter.dtypeNote",
+          "gap": "The mechanism that produced a BF16 save after float32 was set as the 4-bit base compute dtype is not established."
+        },
+        {
+          "field": "optimizerUpdatePrecision",
+          "gap": "No optimizer state or checkpoint was examined; the BF16 saved adapter does not establish the update precision."
+        },
+        {
+          "field": "gguf.converter",
+          "gap": "llama.cpp revision and --outtype for the 2026-09-15 conversion are not recorded; only the F16 result is known."
+        },
+        {
+          "field": "adapter.adapterConfigSha256",
+          "gap": "Not hashed in this inventory."
+        },
+        {
+          "field": "checkpoints",
+          "gap": "The run's checkpoints directory was not examined."
+        },
+        {
+          "field": "timings.conversionSeconds",
+          "gap": "Conversion and import were never timed; only file timestamps exist (conversionAndImportTimeline)."
+        },
+        {
+          "field": "losses.comparableWith",
+          "gap": "Label-mask parity between SFTConfig.completion_only_loss and DataCollatorForCompletionOnlyLM is unverified; the eval loss is compared with css360-v4-tillicum only with qualification (see benchmarkPrerequisites)."
+        },
+        {
+          "field": "gguf.lossyRelativeToAdapter",
+          "gap": "The GGUF tensors were not compared numerically with the source adapter; the effect of the conversion is unmeasured."
+        }
+      ],
+      "notApplicable": [
+        {
+          "field": "version",
+          "reason": "unregistered; the registry assigns version labels"
+        },
+        {
+          "field": "trainingRun.queueRunId",
+          "reason": "launched by hand on the VM, outside the queue"
+        },
+        {
+          "field": "trainingRun.slurmJobId",
+          "reason": "VM run; no Slurm"
+        },
+        {
+          "field": "registry.status",
+          "reason": "unregistered"
+        },
+        {
+          "field": "registry.deployment",
+          "reason": "unregistered"
+        },
+        {
+          "field": "timings.queueWaitSeconds",
+          "reason": "VM run; no scheduler"
+        },
+        {
+          "field": "timings.slurmElapsedSeconds",
+          "reason": "VM run; no allocation"
+        },
+        {
+          "field": "timings.gpuHours",
+          "reason": "CPU run; the trainer reports GPU hours as null"
+        }
+      ]
+    },
+    {
+      "lineageId": "css360-v4-tillicum",
+      "version": null,
+      "versionNote": "unregistered; no version label exists in the registry",
+      "label": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+      "role": "experimental",
+      "includeInControlledClaims": true,
+      "trainingRun": {
+        "host": "tillicum",
+        "runDirectory": "tillicum:$PROJ/training_outputs/qlora-runs/css-360-winter-2026-a7rp/20260915T181814Z-full/",
+        "launchedBy": "training/start_qlora_training.sh --full by hand (QUEUE_RUN_ID empty)",
+        "queueRunId": null,
+        "launcherRunId": "20260915T181814Z",
+        "slurmJobId": "296331",
+        "slurmJobName": "qlora-train-css-360-winter-2026-a7rp",
+        "node": "g007",
+        "gpu": "1x H200",
+        "submittedAt": "2026-09-15T11:18:22-07:00",
+        "startedAt": "2026-09-15T11:18:26-07:00",
+        "jobClockAtStart": "2026-09-15T18:18:30Z",
+        "endedAt": "2026-09-15T11:20:10-07:00",
+        "reportTimestamp": "2026-09-15T18:20:09.566633+00:00",
+        "completionCallback": "none (empty queue run id); no db:training_runs row",
+        "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288",
+        "gitCommitSubject": "Share grounded generation and add mixed v4 training format",
+        "gitCommitDate": "2026-09-12T00:13:29-07:00",
+        "clusterCheckoutState": "1104ad5, clean, 2026-09-16",
+        "sources": [
+          "training/logs/qlora-job-296331.env",
+          "sacct:296331",
+          "runtime-report.json",
+          "training/logs/train-296331.out",
+          "tillicum: git status"
+        ]
+      },
+      "data": {
+        "format": "mixed-v4",
+        "datasetVersion": "css-360-winter-2026-a7rp-mixed-split-seed360-n137",
+        "sourceExportTimestamp": "2026-09-12T07:21:45.657528+00:00",
+        "createdAt": "2026-09-12T07:22:23.916755+00:00",
+        "splitSeed": 360,
+        "sourceExamples": 88,
+        "totalExamples": 137,
+        "trainExamples": 122,
+        "validationExamples": 15,
+        "composition": {
+          "train": {
+            "bare/answerable": 48,
+            "grounded/answerable": 44,
+            "grounded/abstain": 18,
+            "grounded/false_premise": 12
+          },
+          "validation": {
+            "bare/answerable": 6,
+            "grounded/answerable": 5,
+            "grounded/abstain": 2,
+            "grounded/false_premise": 2
+          },
+          "total": {
+            "bare/answerable": 54,
+            "grounded/answerable": 49,
+            "grounded/abstain": 20,
+            "grounded/false_premise": 14
+          },
+          "percentages": {
+            "bare/answerable": 0.394,
+            "grounded/answerable": 0.358,
+            "grounded/abstain": 0.146,
+            "grounded/false_premise": 0.102
+          },
+          "targets": {
+            "bare/answerable": 0.4,
+            "grounded/answerable": 0.35,
+            "grounded/abstain": 0.15,
+            "grounded/false_premise": 0.1
+          }
+        },
+        "files": {
+          "approved-finetune.jsonl": {
+            "lines": 88,
+            "sha256": "a0dcdc240bb381c9004eea066dfff36572c931fc42f87cca4630269088bdf07f"
+          },
+          "train.jsonl": {
+            "lines": 122,
+            "sha256": "35818198431415964538b48c7d567a7e6449c792eb776b4d9cfce94d8ba0abd7"
+          },
+          "validation.jsonl": {
+            "lines": 15,
+            "sha256": "1d64373152060925b5e8af6b43221a3b6e98ccea4b9ee98035da6037f1c523c0"
+          },
+          "manifest.json": {
+            "sha256": "f96634423cb4084f0f50c64024050ee3472ecd5c3192a525e78e0107dfd431ae"
+          }
+        },
+        "fileTimes": "written 2026-09-12T07:21:45Z to 2026-09-12T07:22:24Z (00:21:45 to 00:22:24 PDT); unchanged since on both hosts",
+        "promptTemplate": {
+          "name": "grounded-v1",
+          "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93",
+          "matchesCommittedTemplateAt": "1104ad505b2e6d18a0e97b05297b6cd602b98288",
+          "verifiedOn": "2026-09-16"
+        },
+        "retrieval": {
+          "topK": 4,
+          "indexSha256": "115a0dfca9aaa81f0fe2a2b91858bcf7108ea2f18e39d00c9fdc3f34238991fa",
+          "indexChunkCount": 163,
+          "indexVersion": 2,
+          "indexCreatedAt": "2026-08-01T00:58:11.094604+00:00",
+          "isLiveProductionIndex": true
+        },
+        "sourceSeeds": {
+          "aiGeneratedApproved": {
+            "total": 54,
+            "direct": 41,
+            "clarification": 7,
+            "procedure": 6
+          },
+          "authoredApproved": {
+            "total": 34,
+            "unanswerable": 20,
+            "false_premise": 14
+          },
+          "authoredReviewedAt": "2026-09-12T07:20:05Z to 2026-09-12T07:20:54Z (00:20:05 to 00:20:54 PDT)",
+          "exportSummary": {
+            "inputCount": 115,
+            "approvedCount": 88,
+            "exportedCount": 88,
+            "validatedCount": 88,
+            "skippedCount": 27,
+            "reviewStatusCounts": {
+              "approved": 88,
+              "generated": 14,
+              "rejected": 13
+            }
+          }
+        },
+        "groundedSkipped": [
+          {
+            "kind": "answerable",
+            "question": "When and where does CSS 360 meet?",
+            "reason": "response states numbers the retrieved excerpts do not contain",
+            "missing": [
+              "3:30",
+              "5:30",
+              "2",
+              "131"
+            ]
+          },
+          {
+            "kind": "answerable",
+            "question": "Can I use Discord without downloading an app?",
+            "reason": "no retrieved excerpt supports the response",
+            "missing": null
+          },
+          {
+            "kind": "answerable",
+            "question": "If I know I’ll miss class, when should I notify the instructor?",
+            "reason": "no retrieved excerpt supports the response",
+            "missing": null
+          },
+          {
+            "kind": "answerable",
+            "question": "What steps should I follow to implement a user story for Bot Project Task #3?",
+            "reason": "response states numbers the retrieved excerpts do not contain",
+            "missing": [
+              "5"
+            ]
+          },
+          {
+            "kind": "answerable",
+            "question": "Why do we need two screenshots for the turn-in instead of just one?",
+            "reason": "response states numbers the retrieved excerpts do not contain",
+            "missing": [
+              "7"
+            ]
+          }
+        ],
+        "sources": [
+          "vm:~/css360-syllabus-bot/data/exports/css-360-winter-2026-a7rp/manifest.json",
+          "vm:~/css360-syllabus-bot/data/exports/css-360-winter-2026-a7rp/approved-export-summary.json",
+          "vm: sha256sum and wc -l of the export files, 2026-09-15",
+          "tillicum:$PROJ/css360-syllabus-bot/data/exports/css-360-winter-2026-a7rp/ sha256sum and wc -l, 2026-09-16",
+          "db:seed_examples counts by origin, status, review_status, question_type",
+          "db:admin_actions action seed.review, 34 rows",
+          "repo:1104ad5 backend/app/grounded_generation.py prompt_template_fingerprint()"
+        ],
+        "location": "tillicum:$PROJ/css360-syllabus-bot/data/exports/css-360-winter-2026-a7rp/ with the VM's file times preserved",
+        "identityWithV4Vm": "byte-identical, proven by four matching SHA-256 values; equal total_flos is corroboration only"
+      },
+      "configuration": {
+        "maxSeqLength": 2048,
+        "lossMasking": "completion-only",
+        "lossMaskingImplementation": "DataCollatorForCompletionOnlyLM keyed on the Llama 3 assistant header (runtime-report completionOnlyLoss = 'collator')",
+        "optimizer": {
+          "learningRate": 0.0002,
+          "epochs": 3.0,
+          "perDeviceBatchSize": 1,
+          "gradientAccumulationSteps": 8,
+          "effectiveBatchSize": 8,
+          "warmupRatio": 0.1,
+          "warmupSteps": 5,
+          "weightDecay": 0.01,
+          "seed": 360,
+          "intendedOptimizerSteps": 48,
+          "completedOptimizerSteps": 48
+        },
+        "maxStepsExplicit": true,
+        "lora": {
+          "r": 8,
+          "alpha": 16,
+          "dropout": 0.05,
+          "bias": "none",
+          "targetModules": [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj"
+          ],
+          "tensorCount": 392
+        },
+        "quantization": {
+          "loadIn4bit": true,
+          "quantType": "nf4",
+          "doubleQuant": true,
+          "fourBitBaseComputeDtype": "bfloat16",
+          "fourBitBaseComputeDtypeBasis": "resolved_config.json"
+        },
+        "gradientCheckpointing": true,
+        "device": "cuda",
+        "autocast": "bf16 (precision_settings for cuda with bf16 support)",
+        "sources": [
+          "resolved_config.json",
+          "runtime-report.json",
+          "train-296331.out line 44",
+          "trainer_state.json learning-rate schedule"
+        ]
+      },
+      "softwareStack": {
+        "python": "3.9.25",
+        "torch": "2.5.1+cu124",
+        "transformers": "4.47.1",
+        "datasets": "3.2.0",
+        "peft": "0.14.0",
+        "bitsandbytes": "0.45.0",
+        "trl": "0.13.0",
+        "accelerate": "1.2.1",
+        "venv": "tillicum:$PROJ/venvs/qlora",
+        "sources": [
+          "runtime-report.json libraryVersions",
+          "training/logs/train-296331.out"
+        ]
+      },
+      "adapter": {
+        "format": "PEFT save_pretrained",
+        "peftVersion": "0.14.0",
+        "safetensorsBytes": 48679352,
+        "safetensorsDtype": "F32",
+        "tensorCount": 392,
+        "sha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+        "adapterConfigSha256": "d8e053ecf99049995c9eb98367440d16314669e2c70abd3df2f1234badfea9d7",
+        "locations": [
+          "tillicum:$PROJ/training_outputs/qlora-runs/css-360-winter-2026-a7rp/20260915T181814Z-full/adapter/",
+          "vm:~/model_artifacts/css360-v4-tillicum/adapter/ (byte-identical, copied 2026-09-15T22:34:32-07:00)"
+        ],
+        "sources": [
+          "sha256sum on both hosts",
+          "safetensors header",
+          "adapter README.md"
+        ]
+      },
+      "gguf": {
+        "path": "vm:~/model_artifacts/css360-v4-tillicum/css360-v4-tillicum-lora.gguf",
+        "bytes": 48654880,
+        "tensorDtype": "F32",
+        "tensorCount": 392,
+        "rank": 8,
+        "alpha": 16.0,
+        "createdAt": "2026-09-15T22:35:31-07:00",
+        "lossyRelativeToAdapter": null,
+        "converter": null,
+        "sources": [
+          "gguf-py GGUFReader",
+          "ls --time-style=full-iso"
+        ],
+        "conversionEffect": "F32-saved weights stored as F32; tensors not compared with the adapter"
+      },
+      "ollama": {
+        "tag": "css360-v4-tillicum-test:latest",
+        "digest": "d323b6f366b6",
+        "sizeBytes": 2068048143,
+        "modifiedAt": "2026-09-15T22:36:33-07:00",
+        "modelfile": "FROM llama3.2:3b; ADAPTER vm:~/model_artifacts/css360-v4-tillicum/css360-v4-tillicum-lora.gguf",
+        "baseBlob": "sha256-dde5aa3fc5ffc17176b5e8bdc82f587b24b2678c6c66101bf7da77af9f7ccdff",
+        "adapterBlob": "sha256-8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+        "baseQuantization": "Q4_K_M",
+        "mappedInFineTunedService": false,
+        "sources": [
+          "ollama: /api/tags",
+          "ollama show css360-v4-tillicum-test --modelfile",
+          "aiswe-finetuned startup log"
+        ]
+      },
+      "registry": {
+        "registered": false,
+        "status": null,
+        "deployment": null,
+        "isCurrent": false,
+        "provenanceStored": false,
+        "inServingTree": false,
+        "sources": [
+          "db:course_model_versions (no row)",
+          "db:training_runs (no row)",
+          "tillicum serving tree (v2 only)"
+        ]
+      },
+      "timings": {
+        "queueWaitSeconds": 4,
+        "slurmElapsedSeconds": 104,
+        "slurmTimeLimit": "01:00:00",
+        "slurmBatchMaxRssKiB": 8042476,
+        "trainerTotalSeconds": 90.65363410301507,
+        "modelLoadSeconds": 7.385887374985032,
+        "trainingSeconds": 78.50086769496556,
+        "evaluationSeconds": 4.045003123115748,
+        "averageSecondsPerStep": 1.5314629542675295,
+        "firstStepSeconds": 2.024646393954754,
+        "gpuHours": 0.025181565028615297,
+        "peakRssMiB": 5540.453125,
+        "conversionSeconds": null,
+        "conversionAndImportTimeline": {
+          "adapterCopiedToVm": "2026-09-15T22:34:32-07:00",
+          "ggufWritten": "2026-09-15T22:35:31-07:00",
+          "modelfile": "2026-09-15T22:36:21-07:00",
+          "ollamaTag": "2026-09-15T22:36:33-07:00"
+        },
+        "sources": [
+          "sacct:296331",
+          "runtime-report.json",
+          "ls --time-style=full-iso"
+        ]
+      },
+      "losses": {
+        "definition": "response-only objective through DataCollatorForCompletionOnlyLM keyed on the assistant header; label-mask parity with the SFTConfig implementation used on the VM is unverified",
+        "validationSet": "15 mixed-v4 records (validation.jsonl 1d643731…)",
+        "trainLoss": 1.381528550138076,
+        "evalLossByEpoch": {
+          "1": 1.6263431310653687,
+          "2": 1.4843162298202515,
+          "3": 1.4498531818389893
+        },
+        "evalLoss": 1.4498531818389893,
+        "totalFlos": 3224054650152960.0,
+        "comparableWith": [],
+        "sources": [
+          "training_metrics.json",
+          "evaluation_metrics.json",
+          "trainer_state.json"
+        ],
+        "qualifiedComparableWith": [
+          "css360-v4-vm"
+        ],
+        "comparabilityNote": "The two v4 eval losses share the same validation records and the same intended response-only objective, but SFTConfig.completion_only_loss (VM, TRL 1.12) and DataCollatorForCompletionOnlyLM (Tillicum, TRL 0.13) have not been shown to produce identical label masks; a direct numerical comparison is qualified until label-mask parity is verified."
+      },
+      "evidenceGaps": [
+        {
+          "field": "optimizerUpdatePrecision",
+          "gap": "No optimizer state or checkpoint was examined; the F32 saved adapter does not establish the update precision."
+        },
+        {
+          "field": "gguf.converter",
+          "gap": "llama.cpp revision and --outtype not recorded."
+        },
+        {
+          "field": "timings.conversionSeconds",
+          "gap": "Conversion and import were never timed; only file timestamps exist (conversionAndImportTimeline)."
+        },
+        {
+          "field": "losses.comparableWith",
+          "gap": "Label-mask parity between DataCollatorForCompletionOnlyLM and SFTConfig.completion_only_loss is unverified; the eval loss is compared with css360-v4-vm only with qualification (see benchmarkPrerequisites)."
+        },
+        {
+          "field": "gguf.lossyRelativeToAdapter",
+          "gap": "The GGUF tensors were not compared numerically with the source adapter; the effect of the conversion is unmeasured."
+        }
+      ],
+      "notApplicable": [
+        {
+          "field": "version",
+          "reason": "unregistered; the registry assigns version labels"
+        },
+        {
+          "field": "trainingRun.queueRunId",
+          "reason": "launched by hand through the launcher with an empty QUEUE_RUN_ID"
+        },
+        {
+          "field": "registry.status",
+          "reason": "unregistered"
+        },
+        {
+          "field": "registry.deployment",
+          "reason": "unregistered"
+        }
+      ]
+    }
+  ],
+  "excludedArtifacts": [
+    {
+      "ollamaTag": "cpu-qlora-test:latest",
+      "reason": "Feasibility test of CPU training, conversion, and loading; three synthetic chat samples, one epoch, accumulation 1, 128-token window; no CSS 360 data; belongs in no comparison.",
+      "script": "vm:~/css360-syllabus-bot/training/train_cpu_qlora_experiment.py (untracked, 144 lines, sha256 07ca3405644976256707edb21df6ea48e5163088c592e867797cd07ed4db48d7, mtime 2026-09-08T23:32:31-07:00)",
+      "trainer": "transformers Trainer with DataCollatorForLanguageModeling, not TRL",
+      "adapter": {
+        "path": "vm:~/model_artifacts/cpu-qlora-test/",
+        "safetensorsBytes": 48679352,
+        "safetensorsDtype": "F32",
+        "sha256": "f610787d9e08f36f32c5b49a56320c12370f4477d69dd0e164645f7ce71e2ba2",
+        "peftVersion": "0.20.0"
+      },
+      "gguf": {
+        "path": "vm:~/model_artifacts/cpu-qlora-test-lora.gguf",
+        "bytes": 48655040,
+        "tensorDtype": "F32"
+      },
+      "ollama": {
+        "digest": "f0d6fe0973b5",
+        "sizeBytes": 2068048303,
+        "modifiedAt": "2026-09-08T23:38:35-07:00",
+        "adapterBlob": "sha256-ca7696318804fd7dbabfd500abff4ac1e4977c0fe7e7a24df1f53b00acf7d0c2"
+      },
+      "relevance": "Shows that the plain Trainer on the same VM venv saved an F32 adapter, which ties the BF16 saves of v3 and v4-VM to the TRL path rather than to the CPU."
+    },
+    {
+      "ollamaTag": "css350-ft-v2:latest",
+      "reason": "Another course (css-350-spring-2026-n3h9)."
+    }
+  ],
+  "datasetIdentity": {
+    "flopCaveat": "total_flos is the trainer's estimate of floating-point operations. It depends on token counts, sequence handling, and the accounting implementation of the library version in use. Equal totals establish a compatible total computational and token workload; unequal totals can arise from accounting differences between package versions as well as from different text. Neither proves nor disproves identity of the training text.",
+    "pairs": [
+      {
+        "pair": [
+          "css360-v4-vm",
+          "css360-v4-tillicum"
+        ],
+        "verdict": "byte-identical",
+        "basis": "four SHA-256 values match on both hosts with matching line counts and preserved file times",
+        "proven": true
+      },
+      {
+        "pair": [
+          "css360-v2",
+          "css360-v3"
+        ],
+        "verdict": "unverified",
+        "basis": "no hash of the 2026-09-10 file state; export history shows no export between 2026-09-04 and 2026-09-12; equal total_flos (189149703045120.0)",
+        "proven": false
+      },
+      {
+        "pair": [
+          "css360-v1",
+          "laptop July split"
+        ],
+        "verdict": "candidate only",
+        "basis": "counts 48/6, same day, three hours apart; no hash on the job side",
+        "proven": false
+      },
+      {
+        "pair": [
+          "css360-v1",
+          "css360-v2"
+        ],
+        "verdict": "unknown",
+        "basis": "v1 bytes unknown; v2 checksums differ from the laptop split; total_flos differ by about 0.27 percent, which does not establish different data",
+        "proven": false
+      }
+    ]
+  },
+  "precisionLayers": {
+    "definitions": {
+      "fourBitBaseComputeDtype": "bnb_4bit_compute_dtype set by the trainer for the dequantised base-weight operations; it does not describe every training operation and says nothing about the LoRA optimizer or update precision",
+      "autocast": "Trainer bf16/fp16 flags",
+      "savedAdapterDtype": "dtype in the safetensors header of adapter_model.safetensors",
+      "ggufStorageDtype": "tensor dtype in the LoRA GGUF file",
+      "inferenceBaseQuantization": "quantization of the Ollama base blob the adapter is applied over",
+      "optimizerUpdatePrecision": "dtype of optimizer states and parameter updates during training; unverified for every run because no optimizer state was examined"
+    },
+    "rows": [
+      {
+        "lineageId": "css360-v1",
+        "fourBitBaseComputeDtype": "bfloat16 (code and hardware; not recorded)",
+        "autocast": "bf16 (code)",
+        "savedAdapterDtype": "F32",
+        "ggufStorageDtype": "F16",
+        "inferenceBaseQuantization": "Q4_K_M",
+        "optimizerUpdatePrecision": null
+      },
+      {
+        "lineageId": "css360-v2",
+        "fourBitBaseComputeDtype": "bfloat16 (code and hardware; not recorded)",
+        "autocast": "bf16 (code)",
+        "savedAdapterDtype": "F32",
+        "ggufStorageDtype": "F32",
+        "inferenceBaseQuantization": "Q4_K_M",
+        "optimizerUpdatePrecision": null
+      },
+      {
+        "lineageId": "css360-v3",
+        "fourBitBaseComputeDtype": "float32 (resolved_config.json)",
+        "autocast": "none",
+        "savedAdapterDtype": "BF16",
+        "ggufStorageDtype": "F32",
+        "inferenceBaseQuantization": "Q4_K_M",
+        "optimizerUpdatePrecision": null
+      },
+      {
+        "lineageId": "css360-v4-vm",
+        "fourBitBaseComputeDtype": "float32 (resolved_config.json)",
+        "autocast": "none",
+        "savedAdapterDtype": "BF16",
+        "ggufStorageDtype": "F16",
+        "inferenceBaseQuantization": "Q4_K_M",
+        "optimizerUpdatePrecision": null
+      },
+      {
+        "lineageId": "css360-v4-tillicum",
+        "fourBitBaseComputeDtype": "bfloat16 (resolved_config.json)",
+        "autocast": "bf16",
+        "savedAdapterDtype": "F32",
+        "ggufStorageDtype": "F32",
+        "inferenceBaseQuantization": "Q4_K_M",
+        "optimizerUpdatePrecision": null
+      }
+    ],
+    "notes": [
+      "A BF16 adapter on disk shows the LoRA parameters were BF16 when PEFT saved them; it does not show the dtype of optimizer states or updates during training.",
+      "The VM trainer set float32 as the 4-bit base compute dtype and disabled autocast; the cpu-qlora-test experiment on the same venv with the plain Trainer saved F32, so the BF16 saves belong to the TRL 1.12 / transformers 5.16 path.",
+      "No GGUF was compared numerically with its source adapter. v1's F32-saved weights are stored as F16 (a narrowing, effect unmeasured); v3's BF16-saved weights are stored as F32 (a widening, exact only if the converter performed a plain cast; tensors not compared); v4-VM's BF16 adapter was converted to an F16 GGUF and the numerical effect of that conversion was not measured; v2 and v4-Tillicum store F32-saved weights as F32 (tensors not compared)."
+    ]
+  },
+  "timingSemantics": {
+    "quantities": [
+      "queueWaitSeconds (Submit to Start, sacct)",
+      "slurmElapsedSeconds (allocation, sacct)",
+      "trainerTotalSeconds (runtime-report totalElapsedSeconds)",
+      "modelLoadSeconds",
+      "trainingSeconds",
+      "evaluationSeconds (includes per-epoch evaluations)",
+      "conversionSeconds (never recorded; file times only)",
+      "inferenceLatency (service generationSeconds; historical benchmark only)"
+    ],
+    "smokeRunClarification": {
+      "claim": "\"training took under ten seconds\"",
+      "finding": "No complete CSS 360 training phase took under ten seconds. The only such training phase is the 2026-07-21 smoke run, Slurm job 182727: 3.57 s of training over three optimizer steps on four examples, model load 74.58 s, total 81.86 s. A smoke run is not a model. Complete Tillicum training phases were 31.35 s (v1), 30.65 s (v2), and 78.50 s (v4-Tillicum) inside allocations of 54, 53, and 104 s.",
+      "smokeRun": {
+        "slurmJobId": "182727",
+        "runDirectory": "tillicum:$PROJ/training_outputs/css-360-qlora-smoke/",
+        "trainExampleCount": 4,
+        "validationExampleCount": 2,
+        "completedSteps": 3,
+        "modelLoadSeconds": 74.57880117301829,
+        "trainingSeconds": 3.5695083669852465,
+        "evaluationSeconds": 0.197832910111174,
+        "totalElapsedSeconds": 81.85520051606,
+        "estimatedFullTrainingOnlySeconds": 17.128910585772246,
+        "estimatedFullConservativeTotalSeconds": 106.57530264393426,
+        "gitCommitSha": "27f3b1551d60f2c2cd2920f5b48e9bbd98dbe063",
+        "slurmElapsed": "00:01:30"
+      },
+      "otherSubTenSecondValues": "model load 7.0 to 7.8 s on the GPU; evaluation 1.2 to 4.0 s"
+    },
+    "nineteenMinuteClarification": {
+      "claim": "\"a 19-minute run\"",
+      "finding": "No CSS 360 training job of that length exists. Three inference serving sessions (job name css360-ft-infer, cancelled by the operator) were of that length.",
+      "servingSessions": [
+        {
+          "slurmJobId": "216829",
+          "elapsed": "00:19:26",
+          "date": "2026-08-09",
+          "node": "g001"
+        },
+        {
+          "slurmJobId": "267226",
+          "elapsed": "00:18:30",
+          "date": "2026-08-29",
+          "node": "g017"
+        },
+        {
+          "slurmJobId": "183404",
+          "elapsed": "00:17:44",
+          "date": "2026-07-22",
+          "node": "g016"
+        }
+      ],
+      "css350TrainingJobsForContrast": [
+        {
+          "slurmJobId": "253552",
+          "elapsed": "00:00:42"
+        },
+        {
+          "slurmJobId": "262148",
+          "elapsed": "00:00:49"
+        },
+        {
+          "slurmJobId": "264787",
+          "elapsed": "00:00:48"
+        },
+        {
+          "slurmJobId": "265323",
+          "elapsed": "00:00:53"
+        }
+      ],
+      "sources": [
+        "sacct -u <user> --starttime=2026-07-15"
+      ]
+    },
+    "speedRatios": [
+      {
+        "comparison": "v4-VM trainer total against v4-Tillicum trainer total",
+        "numeratorSeconds": 38754.6,
+        "denominatorSeconds": 90.65,
+        "ratio": 427.5,
+        "label": "trainer total process time, both sides"
+      },
+      {
+        "comparison": "v4-VM training-only against v4-Tillicum training-only",
+        "numeratorSeconds": 38297.4,
+        "denominatorSeconds": 78.5,
+        "ratio": 487.9,
+        "label": "training phase only, both sides"
+      },
+      {
+        "comparison": "v4-VM trainer total against v4-Tillicum Slurm elapsed",
+        "numeratorSeconds": 38754.6,
+        "denominatorSeconds": 104,
+        "ratio": 372.6,
+        "label": "VM process time against cluster allocation including job-script overhead"
+      },
+      {
+        "comparison": "v3 trainer total against v2 trainer total",
+        "numeratorSeconds": 3329.9,
+        "denominatorSeconds": 42.46,
+        "ratio": 78.4,
+        "label": "trainer total process time, both sides"
+      },
+      {
+        "comparison": "v3 training-only against v2 training-only",
+        "numeratorSeconds": 3252.6,
+        "denominatorSeconds": 30.65,
+        "ratio": 106.1,
+        "label": "training phase only, both sides"
+      },
+      {
+        "comparison": "v3 trainer total against v2 Slurm elapsed",
+        "numeratorSeconds": 3329.9,
+        "denominatorSeconds": 53,
+        "ratio": 62.8,
+        "label": "VM process time against cluster allocation including job-script overhead"
+      }
+    ],
+    "speedRatioNote": "These are different ratios, not one wall-clock speedup.",
+    "inferenceLatencyHistorical": {
+      "source": "evaluation/model_version_benchmark/summary.md and results.json, 2026-09-11, deployed code of that night with a 160-token fine-tuned output cap",
+      "meanGenerationSeconds": {
+        "fineTunedV2": 7.6,
+        "fineTunedRagV2": 11.6,
+        "fineTunedV3": 7.1,
+        "fineTunedRagV3": 11.4
+      },
+      "ragMeanWallSecondsIncludingRetrieval": 17.3,
+      "note": "does not describe the current 256-token shared grounded path"
+    }
+  },
+  "v4Comparison": {
+    "identical": [
+      "training data bytes",
+      "commit 1104ad5",
+      "seed 360",
+      "every hyperparameter",
+      "LoRA shape",
+      "48 optimizer steps",
+      "5 warmup steps",
+      "dataset composition",
+      "inference base blob"
+    ],
+    "different": [
+      {
+        "aspect": "runtime stack",
+        "vm": "Python 3.12.13, torch 2.14.0+cu130, transformers 5.16.1, PEFT 0.20.0, TRL 1.12.0, bitsandbytes 0.50.2",
+        "tillicum": "Python 3.9.25, torch 2.5.1+cu124, transformers 4.47.1, PEFT 0.14.0, TRL 0.13.0, bitsandbytes 0.45.0"
+      },
+      {
+        "aspect": "compute path",
+        "vm": "CPU, float32 as the 4-bit base compute dtype, no autocast, 6 threads",
+        "tillicum": "CUDA H200, bfloat16 as the 4-bit base compute dtype, bf16 autocast"
+      },
+      {
+        "aspect": "completion-loss implementation",
+        "vm": "SFTConfig.completion_only_loss",
+        "tillicum": "DataCollatorForCompletionOnlyLM"
+      },
+      {
+        "aspect": "saved adapter dtype",
+        "vm": "BF16",
+        "tillicum": "F32"
+      },
+      {
+        "aspect": "GGUF storage dtype",
+        "vm": "F16",
+        "tillicum": "F32"
+      },
+      {
+        "aspect": "trainer total seconds",
+        "vm": 38754.598009116016,
+        "tillicum": 90.65363410301507
+      }
+    ],
+    "conclusion": "A behavioural difference between the two served models cannot be attributed to hardware alone; every listed difference is a candidate cause.",
+    "sharedValidationEvalLoss": {
+      "css360-v4-vm": 1.4250649213790894,
+      "css360-v4-tillicum": 1.4498531818389893,
+      "comparabilityNote": "The two v4 eval losses share the same validation records and the same intended response-only objective, but SFTConfig.completion_only_loss (VM, TRL 1.12) and DataCollatorForCompletionOnlyLM (Tillicum, TRL 0.13) have not been shown to produce identical label masks; a direct numerical comparison is qualified until label-mask parity is verified."
+    }
+  },
+  "evalLossComparability": "The two v4 eval losses share the same validation records and the same intended response-only objective, but SFTConfig.completion_only_loss (VM, TRL 1.12) and DataCollatorForCompletionOnlyLM (Tillicum, TRL 0.13) have not been shown to produce identical label masks; a direct numerical comparison is qualified until label-mask parity is verified. None of v1, v2, or v3 is comparable with v4, because v4 changed both the validation data and the loss definition. Comparisons among v1, v2, and v3 are limited by unverified dataset identity.",
+  "historicalBenchmark": {
+    "label": "confounded, non-controlled",
+    "ranAt": "2026-09-11T06:12Z to 2026-09-11T06:34Z (2026-09-10 23:12 to 23:34 PDT)",
+    "route": "POST /api/model-testing/generate",
+    "design": "22 questions by 5 configurations, 110 answers, no request failures, one judge, one greedy pass",
+    "results": [
+      {
+        "configuration": "RAG",
+        "overall": 3.81,
+        "hallucinations": "6/22"
+      },
+      {
+        "configuration": "Fine-Tuned v2",
+        "overall": 1.85,
+        "hallucinations": "19/22"
+      },
+      {
+        "configuration": "Fine-Tuned + RAG v2",
+        "overall": 3.84,
+        "hallucinations": "7/22"
+      },
+      {
+        "configuration": "Fine-Tuned v3",
+        "overall": 1.8,
+        "hallucinations": "18/22"
+      },
+      {
+        "configuration": "Fine-Tuned + RAG v3",
+        "overall": 4.06,
+        "hallucinations": "5/22"
+      }
+    ],
+    "limitations": [
+      "Deployed code that night carried the model-testing route (ce07ded, 2026-09-10T22:52:57-07:00) and predated the shared grounded path (1104ad5); RAG and Fine-Tuned + RAG used different prompt templates, Ollama endpoints, decoding, context windows, and output caps, so their difference measured two pipelines, not the adapter.",
+      "The route returned retrieved chunks but not the prompt, so prompt equality cannot be audited from the saved results.",
+      "The fine-tuned output cap was 160 tokens; the current path uses 256.",
+      "RAG timing is wall time including embedding and retrieval; fine-tuned timing is the service's generation time.",
+      "Training-coverage labels were judged against the July laptop export, whose checksums differ from the v2 dataset's.",
+      "One judge, one greedy pass, 22 questions; the v3 edge rests on 4 questions.",
+      "Neither v4 adapter existed.",
+      "The RAG path has since changed, so the RAG row is not a baseline for a new run.",
+      "The deployed commit is inferred from commit times, not from a deployment log."
+    ],
+    "sources": [
+      "evaluation/model_version_benchmark/summary.md",
+      "evaluation/model_version_benchmark/results.json",
+      "evaluation/model_version_benchmark/scores.json",
+      "evaluation/model_version_benchmark/run.log"
+    ]
+  },
+  "productionSnapshot": {
+    "capturedAt": "2026-09-15 PDT (VM) and 2026-09-16 PDT (Tillicum)",
+    "vmCheckout": {
+      "commit": "1104ad505b2e6d18a0e97b05297b6cd602b98288",
+      "branch": "main",
+      "untracked": [
+        "training/train_cpu_qlora_experiment.py"
+      ]
+    },
+    "services": {
+      "aiswe-backend": "active since 2026-09-12T00:14:30-07:00",
+      "aiswe-finetuned": "active since 2026-09-12T00:14:30-07:00"
+    },
+    "fineTunedServiceMapping": [
+      "css-350-spring-2026-n3h9 v2 -> css350-ft-v2:latest",
+      "css-360-winter-2026-a7rp v2 -> css360-ft-v2:latest",
+      "css-360-winter-2026-a7rp v3 -> css360-cpu-v3-test:latest"
+    ],
+    "registry": {
+      "currentVersion": "v2",
+      "versions": {
+        "v1": "ready/offline",
+        "v2": "ready/online",
+        "v3": "ready/offline"
+      },
+      "trainingRuns": [
+        "run-20260905t040410z-c54c33 succeeded"
+      ],
+      "modelRequestStatus": "ready"
+    },
+    "ollama": {
+      "version": "0.32.5",
+      "models": [
+        "llama3.2:3b",
+        "nomic-embed-text:latest",
+        "qwen3:4b",
+        "qwen3:8b",
+        "css360-ft-v1-test:latest",
+        "css360-ft-v2:latest",
+        "css350-ft-v2:latest",
+        "cpu-qlora-test:latest",
+        "css360-cpu-v3-test:latest",
+        "css360-v4-test:latest",
+        "css360-v4-tillicum-test:latest"
+      ]
+    },
+    "tillicum": {
+      "checkout": "1104ad5, clean",
+      "servingTree": "v2 only",
+      "pendingReports": 0,
+      "envLocalMode": "600",
+      "ggufOrModelfilesOnCluster": 0
+    },
+    "retrievalIndex": {
+      "chunks": 163,
+      "indexVersion": 2,
+      "sha256": "115a0dfca9aaa81f0fe2a2b91858bcf7108ea2f18e39d00c9fdc3f34238991fa",
+      "createdAt": "2026-08-01T00:58:11.094604+00:00",
+      "embeddingModel": "nomic-embed-text"
+    },
+    "syllabus": {
+      "syllabusTxtSha256": "a00613cfed6d041073ff36a76813798eaecd75126cb334d14288c153ccf9b9c8",
+      "originalTxtSha256": "f124976c33ad7d4d28e4ad60daae0d903d1df0a77b7458f19d2104f918b60884",
+      "identicalToRepositoryCopy": true
+    },
+    "nginx": {
+      "proxyReadTimeoutSeconds": 300,
+      "proxyLevelBodyOrRateLimits": false
+    },
+    "sources": [
+      "vm: git status/log",
+      "systemctl --user status",
+      "aiswe-finetuned startup log",
+      "db:course_models, course_model_versions, training_runs, model_requests",
+      "ollama list",
+      "tillicum: git status, ls, stat, find",
+      "sha256sum",
+      "sudo nginx -T"
+    ]
+  },
+  "openEvidenceGaps": [
+    "v1's training data bytes; the July laptop split is an unproven candidate.",
+    "v2's training file bytes are retained only as checksums; v3's identity with v2 is unverified.",
+    "The mechanism by which the VM's TRL 1.12 and transformers 5.16 path saved BF16 adapters after float32 was set as the 4-bit base compute dtype.",
+    "Optimizer and update precision for every run; no optimizer state was examined.",
+    "The llama.cpp revision and --outtype used for each of the five GGUF conversions.",
+    "Slurm MaxRSS for job 182729; the legacy comparison job's output; the VM runs' checkpoint directories.",
+    "Whether v3's registration passed setCurrent false, inferred from the unchanged current_version.",
+    "The deployed commit during the 2026-09-11 benchmark, inferred from commit times rather than a deployment log.",
+    "Edits to the 54 AI-generated seeds between the July export and the September exports were not traced.",
+    "Label-mask parity between the two completion-only implementations (SFTConfig.completion_only_loss on TRL 1.12; DataCollatorForCompletionOnlyLM on TRL 0.13) has not been verified; until it is, the two v4 eval losses are compared only with qualification.",
+    "No GGUF was compared numerically with its source adapter, so the effect of each conversion, including v4-VM's BF16 to F16, is unmeasured."
+  ],
+  "benchmarkPrerequisites": [
+    {
+      "id": "completion-mask-parity",
+      "requirement": "Tokenise the same validation records through SFTConfig.completion_only_loss on the VM stack and through DataCollatorForCompletionOnlyLM on the Tillicum stack and compare the label arrays.",
+      "why": "Identical masks make the two v4 eval losses directly comparable; different masks make them two different quantities.",
+      "scope": "Required before any statement about the two v4 adapters' training outcomes; the served-answer benchmark scores generated text and does not depend on it.",
+      "status": "not done"
+    }
+  ]
+}
