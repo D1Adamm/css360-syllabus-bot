@@ -38,8 +38,11 @@ Three layers, deliberately
 3. `training_worker_unconfigured_by_default` removes TRAINING_WORKER_TOKEN, so
    the queue router refuses with 503 unless a test sets one. A test that means
    to exercise an authenticated queue call says so.
+4. `research_benchmark_unconfigured_by_default` removes the CSS360_BENCHMARK_*
+   variables and resets the route's limiters, so the research benchmark route
+   answers 404 unless a test enables it deliberately.
 
-A fourth layer is the opposite of a barrier. Every browser route now requires a
+A fifth layer is the opposite of a barrier. Every browser route now requires a
 principal, and the route tests written before authentication existed exercise
 handlers rather than guards. `default_admin_principal` signs the test client in
 as an administrator so those tests keep meaning what they meant. A test that
@@ -87,6 +90,14 @@ ALLOWED_HOSTS = frozenset(
 
 DATABASE_ENV_VARS = ("DATABASE_URL", "TEST_DATABASE_URL")
 TRAINING_WORKER_ENV_VARS = ("TRAINING_WORKER_TOKEN",)
+RESEARCH_BENCHMARK_ENV_VARS = (
+    "CSS360_BENCHMARK_ENABLED",
+    "CSS360_BENCHMARK_TOKEN",
+    "CSS360_BENCHMARK_SERVICE_URL",
+    "CSS360_BENCHMARK_CONDITION_TIMEOUT_SECONDS",
+    "CSS360_BENCHMARK_MAX_CONCURRENT",
+    "CSS360_BENCHMARK_REQUESTS_PER_MINUTE",
+)
 
 #: The identity ordinary route tests run as. An administrator, because the
 #: handlers those tests exercise were written when every caller was one.
@@ -167,6 +178,26 @@ def training_worker_unconfigured_by_default(monkeypatch: pytest.MonkeyPatch) -> 
     """
     for name in TRAINING_WORKER_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def research_benchmark_unconfigured_by_default(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Run every test with the CSS 360 benchmark route off and its state fresh.
+
+    Off means 404, the deployed default. A test that exercises the route sets
+    the three enabling variables itself. The per-client limiters and the
+    concurrency slot are module state, so they are reset around each test
+    rather than leaking a tripped limiter into the next one.
+    """
+    from app.research_benchmark_routes import reset_research_benchmark_state_for_tests
+
+    for name in RESEARCH_BENCHMARK_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    reset_research_benchmark_state_for_tests()
+    try:
+        yield
+    finally:
+        reset_research_benchmark_state_for_tests()
 
 
 @pytest.fixture(autouse=True)

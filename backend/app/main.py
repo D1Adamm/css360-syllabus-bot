@@ -32,6 +32,10 @@ from app.auth_routes import router as auth_router
 from app.db_routes import router as db_router
 from app.student_invite_routes import router as student_invite_router
 from app.training_queue_routes import router as training_queue_router
+from app.research_benchmark_routes import (
+    ResearchBenchmarkBodyLimit,
+    router as research_benchmark_router,
+)
 from app.finetuned_client import (
     check_finetuned_service_health,
     public_service_health,
@@ -191,6 +195,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# The CSS 360 research benchmark's request-size cap, enforced from the headers
+# before a body is read, and the same 404 as an unmounted path while the
+# feature is off. Applies to `/api/research/css360/benchmark/*` and nothing
+# else; see app/research_benchmark_routes.py.
+app.add_middleware(ResearchBenchmarkBodyLimit)
+
 # The application's persistence routes. PostgreSQL is the system of record for
 # everything the browser reads or writes, and these are what it talks to.
 # Importing the router does not open a connection — an unset DATABASE_URL only
@@ -212,6 +222,13 @@ app.include_router(auth_router)
 # respectively; see app/admin_routes.py and app/student_invite_routes.py.
 app.include_router(admin_router)
 app.include_router(student_invite_router)
+
+# The CSS 360 controlled benchmark: a bearer-token research route that answers
+# one question with the base model and the fixed experiment adapters through
+# the benchmark-only inference service. 404 unless explicitly enabled and
+# configured; no cookie, session or database is involved. See
+# app/research_benchmark_routes.py.
+app.include_router(research_benchmark_router)
 
 
 # Inference and health endpoints are served under BOTH their original paths

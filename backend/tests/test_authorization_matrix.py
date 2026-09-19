@@ -14,6 +14,8 @@ they answer 503, 404 or 422 — which is fine: the guard is what is under test,
 and it is the only thing that can produce 401 or 403.
 
 The worker routes are checked separately: no browser principal reaches them.
+So are the research benchmark routes: 404 for every principal while the
+feature is off, and a bearer token rather than any session once it is on.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from route_classification import (
     REQUIRE_COURSE_STAFF,
     REQUIRE_PARTICIPANT,
     REQUIRE_USER,
+    RESEARCH_TOKEN,
     SESSION_OPTIONAL,
     SIGNED_IN,
     WORKER,
@@ -268,7 +271,7 @@ class AuthorizationMatrixTests(unittest.TestCase):
     def test_every_browser_route_against_every_principal(self) -> None:
         for method, path in self.routes:
             cls = CLASSIFICATION[(method, path)]
-            if cls == WORKER:
+            if cls in (WORKER, RESEARCH_TOKEN):
                 continue
             for principal_name, expected in EXPECTATIONS[cls].items():
                 with self.subTest(method=method, path=path, principal=principal_name):
@@ -299,6 +302,42 @@ class AuthorizationMatrixTests(unittest.TestCase):
                     # 503: the worker token is unconfigured under test, and the
                     # router refuses rather than serving openly.
                     self.assertEqual(response.status_code, 503)
+
+    def _research_routes(self) -> list[tuple[str, str]]:
+        return [key for key in self.routes if CLASSIFICATION[key] == RESEARCH_TOKEN]
+
+    def test_no_browser_principal_reaches_the_research_benchmark_routes(self) -> None:
+        """Off by default: 404 for everyone, the same 404 as an unmounted path.
+
+        Enabled, no session is the credential: every browser principal, the
+        administrator included, is 401 without the bearer token.
+        """
+        research = self._research_routes()
+        self.assertEqual(len(research), 2)
+        for method, path in research:
+            for principal_name in PRINCIPALS:
+                with self.subTest(method=method, path=path, principal=principal_name, state="off"):
+                    response = self._request(method, path, principal_name)
+                    self.assertEqual(response.status_code, 404)
+                    self.assertEqual(response.json(), {"detail": "Not Found"})
+
+        enabled = {
+            "CSS360_BENCHMARK_ENABLED": "true",
+            "CSS360_BENCHMARK_TOKEN": "t" * 64,
+            "CSS360_BENCHMARK_SERVICE_URL": "http://127.0.0.1:9002",
+        }
+        from app.research_benchmark_routes import reset_research_benchmark_state_for_tests
+
+        with patch.dict("os.environ", enabled):
+            for method, path in research:
+                for principal_name in PRINCIPALS:
+                    with self.subTest(method=method, path=path, principal=principal_name, state="on"):
+                        # Twelve refusals from one client would trip the
+                        # failure limiter, which is its own test.
+                        reset_research_benchmark_state_for_tests()
+                        response = self._request(method, path, principal_name)
+                        self.assertEqual(response.status_code, 401)
+                        self.assertEqual(response.headers.get("www-authenticate"), "Bearer")
 
     def test_a_participant_cannot_change_the_course_in_the_body(self) -> None:
         """The four generation routes take the course from JSON; a participant

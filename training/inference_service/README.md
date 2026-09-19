@@ -180,6 +180,42 @@ Neither needs Ollama.
 
 ---
 
+## The benchmark-only service (`benchmark_service.py`)
+
+A third process, for the CSS 360 controlled benchmark and nothing else. The
+production service above maps *courses and registered versions* to models and
+answers students; this one maps a fixed set of *experiment aliases* to Ollama
+tags and answers only the backend's research route
+(`POST /api/research/css360/benchmark/*`, off by default). The two v4
+adapters become servable here without ever entering `FINETUNED_OLLAMA_MODELS`.
+
+| | `benchmark_service.py` |
+| --- | --- |
+| Listens on | `127.0.0.1:9002`, no host override; runs beside `:9001` |
+| Aliases | `base`, `v2`, `v3`, `v4_vm`, `v4_tillicum`, fixed in code |
+| Alias → tag | `CSS360_BENCHMARK_OLLAMA_MODELS=base=llama3.2:3b,v2=css360-ft-v2:latest,…`; an unknown alias or malformed entry stops startup |
+| Decoding | the production service's own `build_generation_options`, with `num_ctx` pinned to 4096 (`FINETUNED_NUM_CTX` is ignored), reported on every response |
+| `POST /generate` | `{"alias": "v4_vm", "prompt": "…"}` and nothing else; answers `alias`, `model`, `modelDigest` (the tag's manifest digest from `/api/tags`, looked up per generation), `answer`, `promptSha256`, `options`, `generationSeconds`, `ollama` timings |
+| `GET /health` | every alias with `mapped`, `available` and the `digest` Ollama holds for its tag |
+| Failure codes | 409 `alias_not_mapped` / `model_missing`, 503 `ollama_*`, 502 `ollama_rejected` / `malformed_ollama_response` |
+
+```bash
+cd training/inference_service
+CSS360_BENCHMARK_OLLAMA_MODELS="base=llama3.2:3b,v2=css360-ft-v2:latest,v3=css360-cpu-v3-test:latest,v4_vm=css360-v4-test:latest,v4_tillicum=css360-v4-tillicum-test:latest" \
+  ../../backend/.venv/bin/python benchmark_service.py
+```
+
+Environment: `CSS360_BENCHMARK_OLLAMA_MODELS`, `OLLAMA_BASE_URL` (shared),
+`BENCHMARK_INFERENCE_PORT` (9002), `CSS360_BENCHMARK_OLLAMA_TIMEOUT_SECONDS`
+(120), `CSS360_BENCHMARK_KEEP_ALIVE` (unset). The production variables
+`INFERENCE_PORT`, `FINETUNED_NUM_CTX`, `FINETUNED_KEEP_ALIVE` and
+`FINETUNED_OLLAMA_TIMEOUT_SECONDS` are not read.
+
+Tests: `../../backend/.venv/bin/python -m pytest -q test_benchmark_service.py`
+here, and `tests/test_research_benchmark_service_contract.py` in the backend
+suite for the seam with the backend client. Design, configuration and the
+deployment steps: `docs/css360-benchmark-endpoint.md`.
+
 ## The Tillicum GPU service (`app.py`)
 
 Kept as the fallback and the reference implementation. Everything below is
