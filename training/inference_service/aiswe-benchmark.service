@@ -1,0 +1,24 @@
+# CSS 360 benchmark-only inference service (local Ollama), a user unit beside
+# aiswe-finetuned. Install with evaluation/css360_controlled_benchmark/vm.sh setup,
+# or by hand:
+#   cp training/inference_service/aiswe-benchmark.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now aiswe-benchmark
+# Stop and remove with: systemctl --user disable --now aiswe-benchmark
+#
+# Maps the five fixed aliases to the tags the lineage record names. Nothing
+# here touches the production mapping (FINETUNED_OLLAMA_MODELS) or PostgreSQL.
+[Unit]
+Description=CSS 360 benchmark-only inference (local Ollama, loopback :9002)
+After=network.target
+
+[Service]
+WorkingDirectory=%h/css360-syllabus-bot/training/inference_service
+Environment=CSS360_BENCHMARK_OLLAMA_MODELS=base=llama3.2:3b,v2=css360-ft-v2:latest,v3=css360-cpu-v3-test:latest,v4_vm=css360-v4-test:latest,v4_tillicum=css360-v4-tillicum-test:latest
+Environment=BENCHMARK_INFERENCE_PORT=9002
+Environment=CSS360_BENCHMARK_KEEP_ALIVE=30m
+ExecStart=%h/css360-syllabus-bot/backend/.venv/bin/python benchmark_service.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
