@@ -1,0 +1,191 @@
+{
+ "key": "repeat22/q18/standalone/g0",
+ "set": "repeat22",
+ "questionId": "q18",
+ "route": "standalone",
+ "group": 0,
+ "conditions": [
+  "base",
+  "ft:v2",
+  "ft:v3"
+ ],
+ "askedAt": "2026-09-19T15:01:23+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 36.401,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Are office hours drop-in, or do I need to schedule a time first?",
+  "prompt": "Are office hours drop-in, or do I need to schedule a time first?",
+  "promptSha256": "434b4a3d1b9eb0ac9920b08c4b7201de164ee96f586af7a81afbfbd2b4b761e0",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "base",
+    "kind": "base",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "I don't have personal office hours. I'm an AI designed to provide information and answer questions 24/7. However, if you're referring to a specific person's office hours, it depends on the individual or organization.\n\nSome people may have drop-in office hours, where you can visit them without needing to schedule a specific time. Others may require you to schedule a meeting or appointment in advance.\n\nIf you're unsure about someone's office hours, I recommend checking their website, social media, or contacting them directly to ask about their availability and scheduling process.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 13.716120148077607,
+     "generationSeconds": 13.672842601314187,
+     "ollama": {
+      "totalDurationNs": 13658277421,
+      "loadDurationNs": 5417641307,
+      "promptEvalCount": 41,
+      "promptEvalDurationNs": 498644000,
+      "evalCount": 114,
+      "evalDurationNs": 7738153000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v2",
+    "kind": "ft",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Office hours are typically drop-in, meaning you can visit during the designated time without needing to schedule an appointment in advance. However, some professors may prefer to schedule appointments for certain topics or require advance notice for complex issues. It's always best to check your course syllabus or contact your professor directly to confirm their office hours policy.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 10.807264050003141,
+     "generationSeconds": 10.775074196048081,
+     "ollama": {
+      "totalDurationNs": 10760760266,
+      "loadDurationNs": 5410794777,
+      "promptEvalCount": 41,
+      "promptEvalDurationNs": 558240000,
+      "evalCount": 67,
+      "evalDurationNs": 4788622000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v3",
+    "kind": "ft",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Office hours are typically drop-in, meaning you can visit during the designated time without needing to schedule an appointment in advance. However, some professors may prefer that you schedule a meeting in advance, especially if they have a heavy course load or limited office hours.\n\nTo be sure, you can check your course syllabus or contact your professor's office directly to confirm their office hours policy.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 11.873793707694858,
+     "generationSeconds": 11.84185803309083,
+     "ollama": {
+      "totalDurationNs": 11827288875,
+      "loadDurationNs": 5663092064,
+      "promptEvalCount": 41,
+      "promptEvalDurationNs": 567367000,
+      "evalCount": 77,
+      "evalDurationNs": 5593689000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 36.397483967244625
+ },
+ "errorBody": null
+}

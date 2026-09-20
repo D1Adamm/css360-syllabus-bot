@@ -1,0 +1,193 @@
+{
+ "key": "heldout/h08/pair/g1",
+ "set": "heldout",
+ "questionId": "h08",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T15:37:12+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 61.277,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Who is the guest speaker on October 28, and what is that session's topic?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Class format and structure]\nClass format and structure\n2\tConversation and discussion that happens in the group Discord server over the course of the week.\n\nI expect you to finish all readings and watch all lectures outside of our class meeting times before the class sessions on which they are assigned. Please note that this means I will not generally deliver lectures during our class meetings. Please also note that this means you are fully responsible for reading all readings and watching all recorded lecture material before you come to the associated synchronous part of class.\n\nI expect you to check in and participate in the Discord discussion. I plan to check and respond to conversation there at least daily throughout the quarter.\n\n[Section: In-class Goals]\nIn-class Goals\n•\tClass Discussion (see reading note)\n\n•\tGroup Discussion - Scenario matching (see reading note)\n\n•\tGroups assigned and announced.\n\n[Section: Special guest speaker: Aaron Halfaker]\nSpecial guest speaker: Aaron Halfaker\nAaron Halfaker is a Principal Applied Research Scientist at Microsoft, working in Experiences and Devices. His work is changing what it means to be a software engineer. He'll talk about how maintaining software products changes when you have an AI component, his view on where the opportunities are for doing work with LLMs, and the shifts he is seeing in the job market for fresh CS grads.\n\n[Section: Standup Meetings]\nStandup Meetings\nOnce project groups are formed and we have covered the Agile approach, you will meet in a standup format at the beginning of each class. In standup, you answer three questions: what did you do since the last standup, what will you do before the next standup, and do you have any blockers? One member will take on the role of Scrum Master, a duty that will rotate among group members. All members will update the Kanban board and the Scrum Master will pursue removing any blockers and send me post-standup notes so that everyone gets credit for the standup. Your performance in standup will be assessed according to the rubric described in the detailed page on assessment\n\n[Section: TED Interview with Linus Torvalds]\nTED Interview with Linus Torvalds\nOctober 3 (Friday)\n\nBot Project Task 1 due at 11:59 p.m. Pacific time. If you're done early, get started on Bot Project Task 2!\n\nOctober 7 (Tuesday) Learning from Failures and Fiascos Part 1\n\nRequested parts (address each exactly once):\n- Who is the guest speaker on October 28\n- that session's topic\n\nStudent question:\nWho is the guest speaker on October 28, and what is that session's topic?\n\nAnswer:",
+  "promptSha256": "1a3ba11a24b720709681d0de05b3137a869de5eae7ef5e9df202eac39796cc74",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-011",
+    "chunk-074",
+    "chunk-134",
+    "chunk-028",
+    "chunk-079"
+   ],
+   "setSha256": "b56bb4cd8c02d520affc846cd6e739207d24484eb4ecf0a9552812959777af50",
+   "facets": [
+    "Who is the guest speaker on October 28",
+    "that session's topic"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-011",
+    "section": "Class format and structure",
+    "text": "Class format and structure\n2\tConversation and discussion that happens in the group Discord server over the course of the week.\n\nI expect you to finish all readings and watch all lectures outside of our class meeting times before the class sessions on which they are assigned. Please note that this means I will not generally deliver lectures during our class meetings. Please also note that this means you are fully responsible for reading all readings and watching all recorded lecture material before you come to the associated synchronous part of class.\n\nI expect you to check in and participate in the Discord discussion. I plan to check and respond to conversation there at least daily throughout the quarter.",
+    "score": 0.6531598025247629
+   },
+   {
+    "chunkId": "chunk-074",
+    "section": "In-class Goals",
+    "text": "In-class Goals\n•\tClass Discussion (see reading note)\n\n•\tGroup Discussion - Scenario matching (see reading note)\n\n•\tGroups assigned and announced.",
+    "score": 0.6541255544040718
+   },
+   {
+    "chunkId": "chunk-134",
+    "section": "Special guest speaker: Aaron Halfaker",
+    "text": "Special guest speaker: Aaron Halfaker\nAaron Halfaker is a Principal Applied Research Scientist at Microsoft, working in Experiences and Devices. His work is changing what it means to be a software engineer. He'll talk about how maintaining software products changes when you have an AI component, his view on where the opportunities are for doing work with LLMs, and the shifts he is seeing in the job market for fresh CS grads.",
+    "score": 0.643441685476463
+   },
+   {
+    "chunkId": "chunk-028",
+    "section": "Standup Meetings",
+    "text": "Standup Meetings\nOnce project groups are formed and we have covered the Agile approach, you will meet in a standup format at the beginning of each class. In standup, you answer three questions: what did you do since the last standup, what will you do before the next standup, and do you have any blockers? One member will take on the role of Scrum Master, a duty that will rotate among group members. All members will update the Kanban board and the Scrum Master will pursue removing any blockers and send me post-standup notes so that everyone gets credit for the standup. Your performance in standup will be assessed according to the rubric described in the detailed page on assessment",
+    "score": 0.6363365436661356
+   },
+   {
+    "chunkId": "chunk-079",
+    "section": "TED Interview with Linus Torvalds",
+    "text": "TED Interview with Linus Torvalds\nOctober 3 (Friday)\n\nBot Project Task 1 due at 11:59 p.m. Pacific time. If you're done early, get started on Bot Project Task 2!\n\nOctober 7 (Tuesday) Learning from Failures and Fiascos Part 1",
+    "score": 0.5995239065449903
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not list a guest speaker for October 28. It does list Aaron Halfaker as the special guest speaker for October 28, who will talk about how maintaining software products changes when you have an AI component, his view on where the opportunities are for doing work with LLMs, and the shifts he is seeing in the job market for fresh CS grads.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 22.780026730149984,
+     "generationSeconds": 22.74840032402426,
+     "ollama": {
+      "totalDurationNs": 22734030601,
+      "loadDurationNs": 5669134394,
+      "promptEvalCount": 828,
+      "promptEvalDurationNs": 10413577000,
+      "evalCount": 77,
+      "evalDurationNs": 6643735000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not list a guest speaker for October 28. It does list Aaron Halfaker as the special guest speaker for October 28, who will talk about how maintaining software products changes when you have an AI component, his view on where the opportunities are for doing work with LLMs, and the shifts he is seeing in the job market for fresh CS grads. The session's topic is not specified in the syllabus. The syllabus does not assign a guest speaker for October 28. It does list Aaron Halfaker as the special guest speaker for October 28, who will talk about how maintaining software products changes when you have an AI component, his view on where the opportunities are for doing work with LLMs, and the shifts he is seeing in the job market for fresh CS grads. The session's topic is not specified in the syllabus. The syllabus does not assign a guest speaker for October 28. It does list Aaron Halfaker as the special guest speaker for October 28, who will talk about how maintaining software products changes when you have an AI component, his view on where the opportunities are for doing work with LLMs, and the shifts he is seeing in the job market for fresh CS grads. The session's topic",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 37.81286826822907,
+     "generationSeconds": 37.780608219094574,
+     "ollama": {
+      "totalDurationNs": 37765206928,
+      "loadDurationNs": 5413129758,
+      "promptEvalCount": 828,
+      "promptEvalDurationNs": 10612570000,
+      "evalCount": 256,
+      "evalDurationNs": 21732040000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 61.27364982711151
+ },
+ "errorBody": null
+}

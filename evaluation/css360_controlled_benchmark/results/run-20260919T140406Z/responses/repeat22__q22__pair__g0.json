@@ -1,0 +1,230 @@
+{
+ "key": "repeat22/q22/pair/g0",
+ "set": "repeat22",
+ "questionId": "q22",
+ "route": "pair",
+ "group": 0,
+ "conditions": [
+  "rag",
+  "ft_rag:v2",
+  "ft_rag:v3"
+ ],
+ "askedAt": "2026-09-19T15:11:53+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 61.303,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "What is the name of the TA for this course, and how do I contact them?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Contact]\nContact\nYour messages are important to me! I prefer, in this order:\n\n1\tpublic messages via Discord (others might have the same question or have the answer)\n\n2\tprivate messages via Discord\n\n3\tprivate messages via Canvas Note: all grade-related discussion must happen via Canvas\n\n4\temail only if absolutely necessary to kaylea@uw.edu\n\nIf you need to have a discussion with me, I would be happy to meet with you via an office hours appointment. This guarantees you my full attention (but, please book at least 24 hours in advance, I might miss your booking otherwise).\n\n[Section: Cold Calling]\nCold Calling\nCases rely roughly on the socratic method where instructors teaching cases cold call on students—i.e., instructors call on people without asking for volunteers first. I will be doing this in each class. Modern technical work environments include very similar situations: very few lectures (except for \"all hands\" type meetings and \"training\" activities), and a range of types of team meetings and group conversations, where you will be expected to be prepared and then participate in key moments.\n\n[Section: AI tools: Chat GPT, Microsoft CoPilot, and Gemini]\nAI tools: Chat GPT, Microsoft CoPilot, and Gemini\nThese websites, in turn, use a range of hosting providers including Amazon Web Services, Google, and Microsoft. As a result, participation in this course requires students to access Internet resources that may not be accessible directly in some places outside of the UWB campus. Anybody taking the class must ensure that they can access all Internet resources required for this course reliably and safely. For students who are off-campus temporarily and are in a situation where direct access to these required resources is not possible, UW-IT recommends that students use the official UW VPN, called Husky OnNet VPN. UW-IT advises students to use the VPN with the “All Internet Traffic” option enabled (see the UW Libraries instructions and UW-IT’s FAQs).\n\n[Section: Note about this Syllabus]\n•\tI will ask the class for voluntary anonymous feedback frequently — especially toward the beginning of the quarter. Please let me know what is working and what can be improved. In the past, I have made many adjustments to courses that I teach while the quarter progressed based on this feedback.\n\n•\tMany readings are marked as \"[Available through UW libraries]\". Most of these will be accessible to anybody who connects from the UW network. This means that if you're on campus, it will likely work. Although you can go through the UW libraries website to get most of these, the easiest way to get things using the UW library proxy bookmarklet. This is a little button you can drag-and-drop onto your bookmarks toolbar on your browser. When you press the button, it will ask you to log in using your UW NetID and then will automatically send your traffic through UW libraries.\n\nStudent question:\nWhat is the name of the TA for this course, and how do I contact them?\n\nAnswer:",
+  "promptSha256": "a64ec0b8ef71a03d45e87c6439edc7ea4d7c8fb457fc69d468e130dabb95bbef",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-002",
+    "chunk-024",
+    "chunk-018",
+    "chunk-021"
+   ],
+   "setSha256": "bd09bd72297fedb3371a44d81925979d92a884dce6c251dcb0bed2994299d9b3",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-002",
+    "section": "Contact",
+    "text": "Contact\nYour messages are important to me! I prefer, in this order:\n\n1\tpublic messages via Discord (others might have the same question or have the answer)\n\n2\tprivate messages via Discord\n\n3\tprivate messages via Canvas Note: all grade-related discussion must happen via Canvas\n\n4\temail only if absolutely necessary to kaylea@uw.edu\n\nIf you need to have a discussion with me, I would be happy to meet with you via an office hours appointment. This guarantees you my full attention (but, please book at least 24 hours in advance, I might miss your booking otherwise).",
+    "score": 0.6117351480569425
+   },
+   {
+    "chunkId": "chunk-024",
+    "section": "Cold Calling",
+    "text": "Cold Calling\nCases rely roughly on the socratic method where instructors teaching cases cold call on students—i.e., instructors call on people without asking for volunteers first. I will be doing this in each class. Modern technical work environments include very similar situations: very few lectures (except for \"all hands\" type meetings and \"training\" activities), and a range of types of team meetings and group conversations, where you will be expected to be prepared and then participate in key moments.",
+    "score": 0.5892719941313437
+   },
+   {
+    "chunkId": "chunk-018",
+    "section": "AI tools: Chat GPT, Microsoft CoPilot, and Gemini",
+    "text": "AI tools: Chat GPT, Microsoft CoPilot, and Gemini\nThese websites, in turn, use a range of hosting providers including Amazon Web Services, Google, and Microsoft. As a result, participation in this course requires students to access Internet resources that may not be accessible directly in some places outside of the UWB campus. Anybody taking the class must ensure that they can access all Internet resources required for this course reliably and safely. For students who are off-campus temporarily and are in a situation where direct access to these required resources is not possible, UW-IT recommends that students use the official UW VPN, called Husky OnNet VPN. UW-IT advises students to use the VPN with the “All Internet Traffic” option enabled (see the UW Libraries instructions and UW-IT’s FAQs).",
+    "score": 0.5865346081972547
+   },
+   {
+    "chunkId": "chunk-021",
+    "section": "Note about this Syllabus",
+    "text": "•\tI will ask the class for voluntary anonymous feedback frequently — especially toward the beginning of the quarter. Please let me know what is working and what can be improved. In the past, I have made many adjustments to courses that I teach while the quarter progressed based on this feedback.\n\n•\tMany readings are marked as \"[Available through UW libraries]\". Most of these will be accessible to anybody who connects from the UW network. This means that if you're on campus, it will likely work. Although you can go through the UW libraries website to get most of these, the easiest way to get things using the UW library proxy bookmarklet. This is a little button you can drag-and-drop onto your bookmarks toolbar on your browser. When you press the button, it will ask you to log in using your UW NetID and then will automatically send your traffic through UW libraries.",
+    "score": 0.5718140646656503
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "rag",
+    "kind": "rag",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not mention the name of the TA for this course. However, it does provide information on how to contact the instructor, which is listed under the \"Contact\" section. According to the instructor's preferred method of communication, you can reach out to them via public messages via Discord, private messages via Discord, private messages via Canvas, or email (only if absolutely necessary) at kaylea@uw.edu.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 22.389671457000077,
+     "generationSeconds": 22.3461502189748,
+     "ollama": {
+      "totalDurationNs": 22331466540,
+      "loadDurationNs": 5409900854,
+      "promptEvalCount": 893,
+      "promptEvalDurationNs": 10197381000,
+      "evalCount": 86,
+      "evalDurationNs": 6713264000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v2",
+    "kind": "ft_rag",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not mention the name of the TA for this course. However, it does provide information on how to contact the instructor, which is listed under the \"Contact\" section.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 20.237002493347973,
+     "generationSeconds": 20.20413851412013,
+     "ollama": {
+      "totalDurationNs": 20189208662,
+      "loadDurationNs": 5410676558,
+      "promptEvalCount": 893,
+      "promptEvalDurationNs": 11630028000,
+      "evalCount": 39,
+      "evalDurationNs": 3137714000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v3",
+    "kind": "ft_rag",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not mention the name of the TA for this course.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 18.341867870185524,
+     "generationSeconds": 18.309377329889685,
+     "ollama": {
+      "totalDurationNs": 18294693594,
+      "loadDurationNs": 5414603444,
+      "promptEvalCount": 893,
+      "promptEvalDurationNs": 11643722000,
+      "evalCount": 16,
+      "evalDurationNs": 1225139000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 61.3000491312705
+ },
+ "errorBody": null
+}

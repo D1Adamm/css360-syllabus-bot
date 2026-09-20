@@ -1,0 +1,230 @@
+{
+ "key": "repeat22/q04/pair/g0",
+ "set": "repeat22",
+ "questionId": "q04",
+ "route": "pair",
+ "group": 0,
+ "conditions": [
+  "rag",
+  "ft_rag:v2",
+  "ft_rag:v3"
+ ],
+ "askedAt": "2026-09-19T14:13:53+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 47.958,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "How much of my final grade comes from the third sprint?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Sprint 3]\nSprint 3\n15%\n\n[Section: Discuss Reading Note 17]\nDiscuss Reading Note 17\n•\tStandup\n\n•\tFinish up sprint planning if you did not finish in the last class\n\n[Section: Mapping Percentage to the 4.0 Scale]\nMapping Percentage to the 4.0 Scale\nInstructors have discretion in how we make use of the 4.0 grading scale; we select the weight for each element of the course, the number of points available, and we decide how best to map a percentage of those points into the 4.0 system. This mapping, and the evenness of spacing within the mapping, may vary from class to class, and it may be quite different from what you are accustomed to seeing elsewhere at UWB (or feel unnatural, if you grew up as I did, receiving letter grades!). For this quarter of this class, I will map an overall 97.0% to a 4.0 and a 60.0% to a 0.7, with even spacing in between. This means to receive a 2.0 for the course, you need a 74.6% in the class. Doing the bare minimum is a high-risk approach (what if life gets busy or messy later in the quarter?), and I don't recommend it.\n\n[Section: Grading]\nGrading\nI will follow the very detailed grading rubric described on my assessment page. Please read it carefully. I will assign grades for each of the following items on the UW 4.0 grade scale according to the weights below:\n\nStudent question:\nHow much of my final grade comes from the third sprint?\n\nAnswer:",
+  "promptSha256": "6b0c13018d369ed46aff9d89bea3407f59679f87461720ec475ab1a226385766",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-060",
+    "chunk-145",
+    "chunk-066",
+    "chunk-057"
+   ],
+   "setSha256": "3720137d0b9eaa09fbdcb4a337467ac0201e8dffc382f23e845b703870ff38d4",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-060",
+    "section": "Sprint 3",
+    "text": "Sprint 3\n15%",
+    "score": 0.7141927915216272
+   },
+   {
+    "chunkId": "chunk-145",
+    "section": "Discuss Reading Note 17",
+    "text": "Discuss Reading Note 17\n•\tStandup\n\n•\tFinish up sprint planning if you did not finish in the last class",
+    "score": 0.6340405661073656
+   },
+   {
+    "chunkId": "chunk-066",
+    "section": "Mapping Percentage to the 4.0 Scale",
+    "text": "Mapping Percentage to the 4.0 Scale\nInstructors have discretion in how we make use of the 4.0 grading scale; we select the weight for each element of the course, the number of points available, and we decide how best to map a percentage of those points into the 4.0 system. This mapping, and the evenness of spacing within the mapping, may vary from class to class, and it may be quite different from what you are accustomed to seeing elsewhere at UWB (or feel unnatural, if you grew up as I did, receiving letter grades!). For this quarter of this class, I will map an overall 97.0% to a 4.0 and a 60.0% to a 0.7, with even spacing in between. This means to receive a 2.0 for the course, you need a 74.6% in the class. Doing the bare minimum is a high-risk approach (what if life gets busy or messy later in the quarter?), and I don't recommend it.",
+    "score": 0.6189138010639488
+   },
+   {
+    "chunkId": "chunk-057",
+    "section": "Grading",
+    "text": "Grading\nI will follow the very detailed grading rubric described on my assessment page. Please read it carefully. I will assign grades for each of the following items on the UW 4.0 grade scale according to the weights below:",
+    "score": 0.5712835484371931
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "rag",
+    "kind": "rag",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not say how much of your final grade comes from the third sprint. It does state that the instructor has discretion in how they make use of the 4.0 grading scale, but it does not provide information on the specific weights assigned to each sprint.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 16.922895994968712,
+     "generationSeconds": 16.87877459032461,
+     "ollama": {
+      "totalDurationNs": 16863711065,
+      "loadDurationNs": 5424577634,
+      "promptEvalCount": 630,
+      "promptEvalDurationNs": 7320690000,
+      "evalCount": 56,
+      "evalDurationNs": 4111846999,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v2",
+    "kind": "ft_rag",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus states that Sprint 3 accounts for 15% of the final grade.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 15.544596789870411,
+     "generationSeconds": 15.51115333288908,
+     "ollama": {
+      "totalDurationNs": 15496612783,
+      "loadDurationNs": 5681252707,
+      "promptEvalCount": 630,
+      "promptEvalDurationNs": 8427128000,
+      "evalCount": 19,
+      "evalDurationNs": 1382106000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v3",
+    "kind": "ft_rag",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus states that Sprint 3 is worth 15% of the final grade.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 15.156175472773612,
+     "generationSeconds": 15.122660672757775,
+     "ollama": {
+      "totalDurationNs": 15107451248,
+      "loadDurationNs": 5444063528,
+      "promptEvalCount": 630,
+      "promptEvalDurationNs": 8284303000,
+      "evalCount": 19,
+      "evalDurationNs": 1372808000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 47.95469585387036
+ },
+ "errorBody": null
+}

@@ -1,0 +1,144 @@
+{
+ "key": "heldout/p03/standalone/g1",
+ "set": "heldout",
+ "questionId": "p03",
+ "route": "standalone",
+ "group": 1,
+ "conditions": [
+  "ft:v4_vm",
+  "ft:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T16:15:26+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 33.909,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Since Bot Feedback is submitted once per group, which team member should post our group's feedback paragraph?",
+  "prompt": "Since Bot Feedback is submitted once per group, which team member should post our group's feedback paragraph?",
+  "promptSha256": "973125baf5c1210a2228ff9626263eba939aa7354a3ac72b34482476bf8329aa",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft:v4_vm",
+    "kind": "ft",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The team member who posted the group's feedback paragraph should be the one who submitted it through the Bot Feedback form.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 7.804060484748334,
+     "generationSeconds": 7.7717802580446005,
+     "ollama": {
+      "totalDurationNs": 7757406594,
+      "loadDurationNs": 5386691408,
+      "promptEvalCount": 45,
+      "promptEvalDurationNs": 678335000,
+      "evalCount": 24,
+      "evalDurationNs": 1689134000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v4_tillicum",
+    "kind": "ft",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The team member who posted the feedback paragraph for the group you're in should post it again. The feedback is due at 11:59 p.m. Pacific time zone on the last day of the group period. The team member who posted the feedback paragraph for the group you're in should post it again. The feedback is due at 11:59 p.m. Pacific time zone on the last day of the group period. The team member who posted the feedback paragraph for the group you're in should post it again. The feedback is due at 11:59 p.m. Pacific time zone on the last day of the group period. The team member who posted the feedback paragraph for the group you're in should post it again. The feedback is due at 11:59 p.m. Pacific time zone on the last day of the group period. The team member who posted the feedback paragraph for the group you're in should post it again. The feedback is due at 11:59 p.m. Pacific time zone on the last day of the group period. The team member who posted the feedback paragraph for the group you're in should post it again. The feedback is due at 11:59 p.m. Pacific time zone on the last day of the group",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 26.10205933311954,
+     "generationSeconds": 26.06984748505056,
+     "ollama": {
+      "totalDurationNs": 26055627735,
+      "loadDurationNs": 5389704545,
+      "promptEvalCount": 45,
+      "promptEvalDurationNs": 628421000,
+      "evalCount": 256,
+      "evalDurationNs": 20034355000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 33.90635480592027
+ },
+ "errorBody": null
+}

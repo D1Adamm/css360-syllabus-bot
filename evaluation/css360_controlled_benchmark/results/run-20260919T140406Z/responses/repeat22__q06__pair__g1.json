@@ -1,0 +1,183 @@
+{
+ "key": "repeat22/q06/pair/g1",
+ "set": "repeat22",
+ "questionId": "q06",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:20:33+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 56.8,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Can I use my one 48-hour extension on the Bot Feedback assignment?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Late Policy]\nLate Policy\nWith respect to Bot Project 1-7, note that the assignments are due Fridays at 11:59 p.m. Pacific time. Among these 7 projects, you may choose one project for which you want to use one 48-hour extension per quarter, no questions asked. Use Canvas to make your request so that it is private and trackable. I suggest not using your extension unless you cannot avoid it (you might need it later!). Note that assignments in this class tend to build upon one another; being late with an assignment means less time to do the next stage. In addition, the group nature of the assignments means that if your work lands late, you may need to work much harder to resolve code conflicts and coordination problems. Do not expect your groupmates to do extra work to accommodate your need for an extension.\n\n[Section: Bot Feedback]\nBot Feedback\nTask: give feedback to 1 other group\n\nDue\n\nMonday, December 1, 11:59 p.m.\n\nDeliverables\n\na paragraph of highly specific feedback for the group you are assigned; grading will be according to my detailed rubric for giving feedback in brief\n\nTurn In\n\na text submission on Canvas\n\nTips\n\n•\tI will assign you to give feedback to the project from another group.\n\n•\tYou will work individually; each group will get feedback from multiple peers as well as from me.\n\n•\tIf you're not sure what to write based on the demo you saw, take a look at the group's repository and offer feedback based on the code and documentation you see.\n\n•\tThe feedback should be your view and grounded in your observations: do not use AI tools for this assignment.\n\n[Section: Pre-made Demos]\nPre-made Demos\nTask: Record a pre-made demo of your bot (2-5 minutes).\n\nDue\n\nMonday, November 24th, 11:59 p.m.\n\nDeliverables\n\nEach group member will record their own screencapture video of the bot in action with a voiceover.\n\nTurn In\n\na video upload to Canvas (one per student).\n\n[Section: US Thanksgiving]\nUS Thanksgiving\nNo class!\n\nDecember 1 (Monday)\n\nYour bot demo feedback is due, 11:59 p.m. Pacific time.\n\nDecember 2 (Tuesday) - Costing, Estimation, and Maintenance\n\nStudent question:\nCan I use my one 48-hour extension on the Bot Feedback assignment?\n\nAnswer:",
+  "promptSha256": "49d2b7d788394bf3b059ebf55abe519150ae083b8326a25b2c6ba78ff1aca98a",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-067",
+    "chunk-053",
+    "chunk-051",
+    "chunk-141"
+   ],
+   "setSha256": "ebf5ffe5ae4f7e5e0ad8f51c772579314c249d095d32059ccefbd25a4675f5b9",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-067",
+    "section": "Late Policy",
+    "text": "Late Policy\nWith respect to Bot Project 1-7, note that the assignments are due Fridays at 11:59 p.m. Pacific time. Among these 7 projects, you may choose one project for which you want to use one 48-hour extension per quarter, no questions asked. Use Canvas to make your request so that it is private and trackable. I suggest not using your extension unless you cannot avoid it (you might need it later!). Note that assignments in this class tend to build upon one another; being late with an assignment means less time to do the next stage. In addition, the group nature of the assignments means that if your work lands late, you may need to work much harder to resolve code conflicts and coordination problems. Do not expect your groupmates to do extra work to accommodate your need for an extension.",
+    "score": 0.7476442539132534
+   },
+   {
+    "chunkId": "chunk-053",
+    "section": "Bot Feedback",
+    "text": "Bot Feedback\nTask: give feedback to 1 other group\n\nDue\n\nMonday, December 1, 11:59 p.m.\n\nDeliverables\n\na paragraph of highly specific feedback for the group you are assigned; grading will be according to my detailed rubric for giving feedback in brief\n\nTurn In\n\na text submission on Canvas\n\nTips\n\n•\tI will assign you to give feedback to the project from another group.\n\n•\tYou will work individually; each group will get feedback from multiple peers as well as from me.\n\n•\tIf you're not sure what to write based on the demo you saw, take a look at the group's repository and offer feedback based on the code and documentation you see.\n\n•\tThe feedback should be your view and grounded in your observations: do not use AI tools for this assignment.",
+    "score": 0.6799066059546722
+   },
+   {
+    "chunkId": "chunk-051",
+    "section": "Pre-made Demos",
+    "text": "Pre-made Demos\nTask: Record a pre-made demo of your bot (2-5 minutes).\n\nDue\n\nMonday, November 24th, 11:59 p.m.\n\nDeliverables\n\nEach group member will record their own screencapture video of the bot in action with a voiceover.\n\nTurn In\n\na video upload to Canvas (one per student).",
+    "score": 0.6257052213041765
+   },
+   {
+    "chunkId": "chunk-141",
+    "section": "US Thanksgiving",
+    "text": "US Thanksgiving\nNo class!\n\nDecember 1 (Monday)\n\nYour bot demo feedback is due, 11:59 p.m. Pacific time.\n\nDecember 2 (Tuesday) - Costing, Estimation, and Maintenance",
+    "score": 0.6148253132897445
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not allow one 48-hour extension per quarter for any assignment, including the Bot Feedback assignment.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 18.2524397931993,
+     "generationSeconds": 18.218720282893628,
+     "ollama": {
+      "totalDurationNs": 18202950065,
+      "loadDurationNs": 5939123455,
+      "promptEvalCount": 781,
+      "promptEvalDurationNs": 10241251000,
+      "evalCount": 24,
+      "evalDurationNs": 2014885000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not allow one 48-hour extension per quarter for any assignment, including the Bot Feedback assignment. The syllabus suggests not using your extension unless you cannot avoid it, because the group nature of the assignments means that if your work lands late, you may need to work much harder to resolve code conflicts and coordination problems. You must use Canvas to make your request so that it is private and trackable. The deadline for the Bot Feedback assignment is Monday, December 1, 11:59 p.m. Pacific time. Your feedback should be highly specific and based on your observations of the group's code and documentation. The syllabus also notes that the group nature of the assignments means that if your work lands late, you may need to work much harder to resolve code conflicts and coordination problems. The syllabus does not allow one 48-hour extension per quarter for any assignment, including the Bot Feedback assignment. The syllabus suggests not using your extension unless you cannot avoid it, because the group nature of the assignments means that if your work lands late, you may need to work much harder to resolve code conflicts and coordination problems. You must use Canvas to make your request so that it is private and trackable. The deadline for the Bot Feedback assignment is Monday,",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 38.20874701812863,
+     "generationSeconds": 38.17489092098549,
+     "ollama": {
+      "totalDurationNs": 38160287397,
+      "loadDurationNs": 5682925389,
+      "promptEvalCount": 781,
+      "promptEvalDurationNs": 10166268000,
+      "evalCount": 256,
+      "evalDurationNs": 22303458000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 56.794878016225994
+ },
+ "errorBody": null
+}

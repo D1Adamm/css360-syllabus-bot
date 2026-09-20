@@ -1,0 +1,230 @@
+{
+ "key": "repeat22/q20/pair/g0",
+ "set": "repeat22",
+ "questionId": "q20",
+ "route": "pair",
+ "group": 0,
+ "conditions": [
+  "rag",
+  "ft_rag:v2",
+  "ft_rag:v3"
+ ],
+ "askedAt": "2026-09-19T15:05:30+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 58.079,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "What test coverage percentage does our bot code have to hit?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Bot Project Task #5]\nBot Project Task #5\nTask\n\nIdentify bugs, gaps, and technical debt in your assigned bot\n\nDue\n\nFriday, October 31, 11:59 p.m. Pacific time\n\nDeliverables\n\nYou are done with Task 5 if you have conducted an analysis of limitations and weaknesses in your assigned bot by (1) publishing a report to the main group repository (everyone from the group should contribute to a single report) and (2) creating user stories drawing from both the problems you've found and any new ideas for improving your bot that arise through this process.\n\nTurn in\n\nNo artifact turn-in required, Professor Champion will grade the state of your repository and project board.\n\nSteps\n\n1\tDivide up the different perspectives on code analysis into tasks for each group member, which might include...:\n\n1\tRunning automated tools on your code.\n\n2\tExamining your code for evidence of problems from our readings.\n\n[Section: Bot Project Task #3]\nBot Project Task #3\nTask\n\nVersion 1.1 of your bot\n\nDue\n\nFriday, October 17, 11:59 p.m. Pacific time\n\nDeliverables\n\nYou are done with task 3 if you have each completed at least one of the user stories supplied by Dr. Champion for your first sprint and successfully deployed the updated bot to your deployment environment for Dr. Champion to review. Tag the code so that it is clear which version is 1.1.\n\nTurn in\n\nA screenshot of version 1.1 of your bot in action.\n\nSteps\n\n1\tIn sprint planning, assign one of the user stories written by Dr. Champion to each member of the group.\n\n2\tDuring the sprint, resolve that user story.\n\n[Section: Bot Project Task #7]\nBot Project Task #7\nTask\n\nRelease version 2.1\n\nDue\n\nThursday, December 11, 11:59 p.m. Pacific Time (Note that this is AFTER the demo because you will be incorporating feedback from the demo.)\n\nDeliverables\n\nYou are done with Task 7 if you have each completed at least one user story from your third sprint and deployed version 2.1 to your production environment for Professor Champion to review. Tag the code so that it is clear which version is 2.1.\n\nTurn In\n\nScreenshots of each new feature added for v2.1. (This is during Finals Week, so a live demo for grading is not possible)\n\nSteps\n\n1\tIn sprint planning, think about how your demonstration went and reflect on what refinements you'd like to make\n\n2\tAssign a user story to each group member.\n\n3\tComplete at least one user story.\n\n4\tCommit, test, merge as usual.\n\n5\tTag a release as 2.1\n\n[Section: Bot Project Task #1]\nBot Project Task #1\nTask\n\nStudent question:\nWhat test coverage percentage does our bot code have to hit?\n\nAnswer:",
+  "promptSha256": "f073684cd117ff6c3ef844b0da61672ce1690ad1cbe0a6b2350130ca34d5887e",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-045",
+    "chunk-041",
+    "chunk-049",
+    "chunk-034"
+   ],
+   "setSha256": "cf143e908594d3edb423d6c17677ab104c3e635d26e3c2e3ac6e5bddcf42835c",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-045",
+    "section": "Bot Project Task #5",
+    "text": "Bot Project Task #5\nTask\n\nIdentify bugs, gaps, and technical debt in your assigned bot\n\nDue\n\nFriday, October 31, 11:59 p.m. Pacific time\n\nDeliverables\n\nYou are done with Task 5 if you have conducted an analysis of limitations and weaknesses in your assigned bot by (1) publishing a report to the main group repository (everyone from the group should contribute to a single report) and (2) creating user stories drawing from both the problems you've found and any new ideas for improving your bot that arise through this process.\n\nTurn in\n\nNo artifact turn-in required, Professor Champion will grade the state of your repository and project board.\n\nSteps\n\n1\tDivide up the different perspectives on code analysis into tasks for each group member, which might include...:\n\n1\tRunning automated tools on your code.\n\n2\tExamining your code for evidence of problems from our readings.",
+    "score": 0.6325825155702449
+   },
+   {
+    "chunkId": "chunk-041",
+    "section": "Bot Project Task #3",
+    "text": "Bot Project Task #3\nTask\n\nVersion 1.1 of your bot\n\nDue\n\nFriday, October 17, 11:59 p.m. Pacific time\n\nDeliverables\n\nYou are done with task 3 if you have each completed at least one of the user stories supplied by Dr. Champion for your first sprint and successfully deployed the updated bot to your deployment environment for Dr. Champion to review. Tag the code so that it is clear which version is 1.1.\n\nTurn in\n\nA screenshot of version 1.1 of your bot in action.\n\nSteps\n\n1\tIn sprint planning, assign one of the user stories written by Dr. Champion to each member of the group.\n\n2\tDuring the sprint, resolve that user story.",
+    "score": 0.6318915087184871
+   },
+   {
+    "chunkId": "chunk-049",
+    "section": "Bot Project Task #7",
+    "text": "Bot Project Task #7\nTask\n\nRelease version 2.1\n\nDue\n\nThursday, December 11, 11:59 p.m. Pacific Time (Note that this is AFTER the demo because you will be incorporating feedback from the demo.)\n\nDeliverables\n\nYou are done with Task 7 if you have each completed at least one user story from your third sprint and deployed version 2.1 to your production environment for Professor Champion to review. Tag the code so that it is clear which version is 2.1.\n\nTurn In\n\nScreenshots of each new feature added for v2.1. (This is during Finals Week, so a live demo for grading is not possible)\n\nSteps\n\n1\tIn sprint planning, think about how your demonstration went and reflect on what refinements you'd like to make\n\n2\tAssign a user story to each group member.\n\n3\tComplete at least one user story.\n\n4\tCommit, test, merge as usual.\n\n5\tTag a release as 2.1",
+    "score": 0.6236404519204637
+   },
+   {
+    "chunkId": "chunk-034",
+    "section": "Bot Project Task #1",
+    "text": "Bot Project Task #1\nTask",
+    "score": 0.6220358806828097
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "rag",
+    "kind": "rag",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not say what test coverage percentage our bot code has to hit. It does mention that for Bot Project Task #3, you need to successfully deploy the updated bot to your deployment environment for Dr. Champion to review, but it doesn't specify anything about test coverage.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 20.487021434120834,
+     "generationSeconds": 20.442825212609023,
+     "ollama": {
+      "totalDurationNs": 20428405591,
+      "loadDurationNs": 5421358445,
+      "promptEvalCount": 889,
+      "promptEvalDurationNs": 10168167000,
+      "evalCount": 58,
+      "evalDurationNs": 4831005000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v2",
+    "kind": "ft_rag",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not say what test coverage percentage our bot code has to hit.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 18.328590016812086,
+     "generationSeconds": 18.295975148212165,
+     "ollama": {
+      "totalDurationNs": 18281629282,
+      "loadDurationNs": 5434567785,
+      "promptEvalCount": 889,
+      "promptEvalDurationNs": 11346680000,
+      "evalCount": 18,
+      "evalDurationNs": 1492546000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v3",
+    "kind": "ft_rag",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not say what test coverage percentage our bot code has to hit.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 18.92323355190456,
+     "generationSeconds": 18.891273288056254,
+     "ollama": {
+      "totalDurationNs": 18876985665,
+      "loadDurationNs": 5424791561,
+      "promptEvalCount": 889,
+      "promptEvalDurationNs": 12056691000,
+      "evalCount": 18,
+      "evalDurationNs": 1387974000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 58.07564069982618
+ },
+ "errorBody": null
+}

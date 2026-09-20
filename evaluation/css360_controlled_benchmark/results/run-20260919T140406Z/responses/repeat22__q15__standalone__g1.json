@@ -1,0 +1,144 @@
+{
+ "key": "repeat22/q15/standalone/g1",
+ "set": "repeat22",
+ "questionId": "q15",
+ "route": "standalone",
+ "group": 1,
+ "conditions": [
+  "ft:v4_vm",
+  "ft:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:52:38+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 24.655,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "What happens the second time a student is caught plagiarizing in this course?",
+  "prompt": "What happens the second time a student is caught plagiarizing in this course?",
+  "promptSha256": "667f22fc5e3328145ce38e7c98f9959cd95e2141e19f11402ad26f8bf68e9f2c",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft:v4_vm",
+    "kind": "ft",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The second plagiarism offense will result in a zero on the assignment and a letter grade of F for the course.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 8.101143594831228,
+     "generationSeconds": 8.068511819001287,
+     "ollama": {
+      "totalDurationNs": 8054304656,
+      "loadDurationNs": 5420206273,
+      "promptEvalCount": 40,
+      "promptEvalDurationNs": 546618000,
+      "evalCount": 23,
+      "evalDurationNs": 2084216000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v4_tillicum",
+    "kind": "ft",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The second plagiarism offense will result in a zero on the assignment and a meeting with the instructor to discuss academic integrity. The student will also receive a warning email from the instructor. The student must then meet with the instructor during office hours to discuss the plagiarism and how it can be avoided in the future. The student must also write a reflection paper on what they learned about plagiarism and how they plan to avoid it in the future. The reflection paper is due one week after the meeting with the instructor. If the student is found to have plagiarized again, the instructor will refer the student to the university's plagiarism policy and the student will receive a failing grade for the course.",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 16.550655969884247,
+     "generationSeconds": 16.518693211954087,
+     "ollama": {
+      "totalDurationNs": 16503953258,
+      "loadDurationNs": 5409875564,
+      "promptEvalCount": 40,
+      "promptEvalDurationNs": 545247000,
+      "evalCount": 135,
+      "evalDurationNs": 10545377000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 24.652019012719393
+ },
+ "errorBody": null
+}

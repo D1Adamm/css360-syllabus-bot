@@ -1,0 +1,191 @@
+{
+ "key": "repeat22/q03/standalone/g0",
+ "set": "repeat22",
+ "questionId": "q03",
+ "route": "standalone",
+ "group": 0,
+ "conditions": [
+  "base",
+  "ft:v2",
+  "ft:v3"
+ ],
+ "askedAt": "2026-09-19T14:12:25+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 44.038,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Are any class sessions being held over Zoom instead of in the classroom, and if so, on which dates?",
+  "prompt": "Are any class sessions being held over Zoom instead of in the classroom, and if so, on which dates?",
+  "promptSha256": "2426b4cd82a0fc89bcd165b99fc466ad4dae8ac5c42e59c0145fb361925cdb42",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "base",
+    "kind": "base",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "I'm not able to access real-time information or specific schedules for classes. However, I can suggest a few options to help you find out if any class sessions are being held over Zoom:\n\n1. Check your course syllabus: Look for the course syllabus or course schedule, which should indicate whether classes will be held online or in-person.\n2. Contact your instructor: Reach out to your instructor directly via email or through their office hours to ask about Zoom classes and the schedule.\n3. Check your university's website: Visit your university's website and look for the course catalog or academic calendar, which may list Zoom classes and their corresponding dates.\n4. Log in to your student portal: If you have a student portal account, you can log in and check for any updates on class schedules and Zoom classes.\n\nIf you're unable to find this information, you can also try contacting your university's registrar's office or student affairs department for assistance.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 18.991143610794097,
+     "generationSeconds": 18.94519984908402,
+     "ollama": {
+      "totalDurationNs": 18929967308,
+      "loadDurationNs": 5419799465,
+      "promptEvalCount": 47,
+      "promptEvalDurationNs": 591108000,
+      "evalCount": 191,
+      "evalDurationNs": 12915831000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v2",
+    "kind": "ft",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, some classes will be held via Zoom. The following classes will be held remotely:\n\n* MWF 10:00-11:15 AM: Introduction to Psychology\n* W 2:00-3:15 PM: Introduction to Sociology\n* F 1:00-2:15 PM: Introduction to Anthropology\n\nPlease check the course syllabus for specific instructions on how to access the Zoom meeting.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 12.66874289419502,
+     "generationSeconds": 12.63549579679966,
+     "ollama": {
+      "totalDurationNs": 12620095295,
+      "loadDurationNs": 5668720109,
+      "promptEvalCount": 47,
+      "promptEvalDurationNs": 753051000,
+      "evalCount": 86,
+      "evalDurationNs": 6194788000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v3",
+    "kind": "ft",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, some classes will be held via Zoom. The following classes will be held remotely:\n\n* MWF 10:00-11:15 AM: Introduction to Psychology\n* W 2:00-3:15 PM: Introduction to Sociology\n* F 1:00-2:15 PM: Introduction to Anthropology\n\nPlease check the course syllabus for specific instructions on how to join the Zoom meeting.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 12.374845620710403,
+     "generationSeconds": 12.342241787351668,
+     "ollama": {
+      "totalDurationNs": 12327827816,
+      "loadDurationNs": 5422804361,
+      "promptEvalCount": 47,
+      "promptEvalDurationNs": 656077000,
+      "evalCount": 86,
+      "evalDurationNs": 6245757000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 44.03509664488956
+ },
+ "errorBody": null
+}

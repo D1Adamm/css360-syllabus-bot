@@ -1,0 +1,144 @@
+{
+ "key": "heldout/p06/standalone/g1",
+ "set": "heldout",
+ "questionId": "p06",
+ "route": "standalone",
+ "group": 1,
+ "conditions": [
+  "ft:v4_vm",
+  "ft:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T16:25:40+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 38.634,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "How do I package our bot so Dr. Champion can install and run it on her own machine for grading?",
+  "prompt": "How do I package our bot so Dr. Champion can install and run it on her own machine for grading?",
+  "promptSha256": "d6d197c102f2509acb6308467026eb712912ac499ad8d59447d3394e3c59a1a1",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft:v4_vm",
+    "kind": "ft",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "1. Create a zip file of the entire project directory using the `zip` command in the terminal: `zip -r my_bot.zip .`\n2. Upload the zip file to the Canvas dropbox folder.\n3. Give Dr. Champion the link to the zip file so she can download it and extract it to her own environment.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 11.619150896091014,
+     "generationSeconds": 11.587215994019061,
+     "ollama": {
+      "totalDurationNs": 11572736744,
+      "loadDurationNs": 5376098075,
+      "promptEvalCount": 47,
+      "promptEvalDurationNs": 662071000,
+      "evalCount": 69,
+      "evalDurationNs": 5531264000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v4_tillicum",
+    "kind": "ft",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "1. Create a zip file of the entire project directory using the command `zip -r project.zip .` in the terminal.\n2. Upload the zip file to the Canvas dropbox folder.\n3. Give Dr. Champion the link to the zip file so she can download it and extract it to her own environment.\n4. She should then navigate to the project directory and run `python main.py` to start the bot. The bot will run in headless mode, so you won't see any output in the terminal. It will instead print its results to the Discord server channel #grading-discussion. The bot will also send a message to the server with the URL of the Discord server channel where it's posting its results. You can use this URL to grade the assignments. The bot will continue to run until it is manually stopped by Dr. Champion. If you want to stop the bot, you can use the command `pkill python` in the terminal. This will kill all running instances of Python, including the bot. Once the bot is stopped, you can restart it by running `python main.py` again. The bot will then resume where it left off. The Discord server channel where the bot posts its results is #grading-discussion. You can use",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 27.0123065370135,
+     "generationSeconds": 26.980128626339138,
+     "ollama": {
+      "totalDurationNs": 26965355664,
+      "loadDurationNs": 5384746221,
+      "promptEvalCount": 47,
+      "promptEvalDurationNs": 668056000,
+      "evalCount": 256,
+      "evalDurationNs": 20909176000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 38.6316866572015
+ },
+ "errorBody": null
+}

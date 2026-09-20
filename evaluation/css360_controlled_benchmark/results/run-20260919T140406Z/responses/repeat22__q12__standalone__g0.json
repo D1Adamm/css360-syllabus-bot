@@ -1,0 +1,191 @@
+{
+ "key": "repeat22/q12/standalone/g0",
+ "set": "repeat22",
+ "questionId": "q12",
+ "route": "standalone",
+ "group": 0,
+ "conditions": [
+  "base",
+  "ft:v2",
+  "ft:v3"
+ ],
+ "askedAt": "2026-09-19T14:41:46+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 77.615,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "When our sprint is finished, should we open a pull request back to the class's original repository?",
+  "prompt": "When our sprint is finished, should we open a pull request back to the class's original repository?",
+  "promptSha256": "3e8e7f1b2a9ba9f9c5c093b5662696e2f22da96363e3b68bd6231f8fdcb9061a",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "base",
+    "kind": "base",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "When your sprint is finished, it's generally recommended to create a new branch from the main branch (usually `master` or `main`) and merge it into the original repository. This approach has several benefits:\n\n1. **Preserves the original codebase**: By not merging directly into the original repository, you preserve the original codebase and avoid introducing changes that might be lost in future updates.\n2. **Maintains a clean history**: Creating a new branch and merging it into the original repository helps maintain a clean and organized commit history.\n3. **Easier rollbacks**: If issues arise after merging your sprint into the original repository, it's easier to revert changes by checking out the previous branch.\n\nHere's a suggested workflow:\n\n1. Create a new branch from the main branch (e.g., `feature/sprint-<number>`).\n2. Merge the new branch into the original repository (e.g., `master` or `main`).\n3. Close the feature branch and remove it from the repository.\n4. Push the updated main branch to the original repository.\n\nBy following this approach, you ensure that the original repository remains intact, and your changes are properly integrated into the main branch.\n\nHowever, there might be scenarios where opening a pull request back to the",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 24.528116173110902,
+     "generationSeconds": 24.481010410934687,
+     "ollama": {
+      "totalDurationNs": 24465943872,
+      "loadDurationNs": 5687369406,
+      "promptEvalCount": 45,
+      "promptEvalDurationNs": 554917000,
+      "evalCount": 256,
+      "evalDurationNs": 18219966000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v2",
+    "kind": "ft",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, it's a good practice to open a pull request back to the class's original repository after your sprint is finished. This allows you to share your changes with the team and get feedback before merging them into the main branch.\n\nHere are some benefits of opening a pull request:\n\n1. **Code review**: It allows the team to review your code and provide feedback before it gets merged into the main branch.\n2. **Version control**: It keeps a record of your changes and makes it easier to track changes over time.\n3. **Collaboration**: It enables collaboration between team members who may not be working on the same branch.\n4. **Merge tracking**: It helps track which changes have been merged into the main branch and which ones still need to be reviewed.\n\nHowever, it's also important to consider the following:\n\n1. **Branching strategy**: If you're using a branching strategy like GitFlow or Feature Branching, you might want to keep your feature branch separate from the main branch until it's fully reviewed and tested.\n2. **Merge policy**: Make sure you understand your team's merge policy and follow it when opening a pull request.\n\nIn general, it's a good idea to open a pull request after your sprint is finished, but before you start",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 27.067712396383286,
+     "generationSeconds": 27.033490917179734,
+     "ollama": {
+      "totalDurationNs": 27018602091,
+      "loadDurationNs": 5433305025,
+      "promptEvalCount": 45,
+      "promptEvalDurationNs": 1609732000,
+      "evalCount": 256,
+      "evalDurationNs": 19972041000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v3",
+    "kind": "ft",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, it's a good practice to open a pull request back to the class's original repository after your sprint is finished. This allows you to share your changes with the team and get feedback before merging them into the main branch.\n\nHere are some benefits of opening a pull request:\n\n1. **Code review**: It allows the team to review your code and provide feedback before it gets merged into the main branch.\n2. **Version control**: It keeps a record of your changes and makes it easier to track changes over time.\n3. **Collaboration**: It enables collaboration between team members who may not be working on the same branch.\n4. **Merge tracking**: It helps track which changes have been merged into the main branch and which ones still need to be reviewed.\n\nHowever, it's also important to consider the following:\n\n1. **Branching strategy**: If you're using a branching strategy like GitFlow or Feature Branching, you might want to keep your feature branch separate from the main branch until it's fully reviewed and tested.\n2. **Merge policy**: Make sure you have a clear merge policy in place that outlines how changes will be merged into the main branch.\n\nIn general, it's a good idea to open a pull request back to the class's original",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 26.014292016159743,
+     "generationSeconds": 25.981918152887374,
+     "ollama": {
+      "totalDurationNs": 25967088285,
+      "loadDurationNs": 5421967648,
+      "promptEvalCount": 45,
+      "promptEvalDurationNs": 629514000,
+      "evalCount": 256,
+      "evalDurationNs": 19911611000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 77.61053763888776
+ },
+ "errorBody": null
+}

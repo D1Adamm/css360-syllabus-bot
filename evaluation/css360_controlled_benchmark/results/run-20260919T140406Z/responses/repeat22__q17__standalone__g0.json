@@ -1,0 +1,191 @@
+{
+ "key": "repeat22/q17/standalone/g0",
+ "set": "repeat22",
+ "questionId": "q17",
+ "route": "standalone",
+ "group": 0,
+ "conditions": [
+  "base",
+  "ft:v2",
+  "ft:v3"
+ ],
+ "askedAt": "2026-09-19T14:57:55+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 57.527,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Is there a deadline for asking for a religious accommodation, and what form do I use?",
+  "prompt": "Is there a deadline for asking for a religious accommodation, and what form do I use?",
+  "promptSha256": "5a6acedcbc5e3591f06b1a8f4c4ff52580904abeec55378c7afb31ad8126be0e",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "base",
+    "kind": "base",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "In the United States, there is no specific deadline for requesting a religious accommodation, but it's generally recommended to request accommodations as soon as possible after experiencing a conflict between your religious beliefs and an employment requirement.\n\nThe process for requesting a religious accommodation typically involves the following steps:\n\n1. **Notify your supervisor or HR representative**: Inform your supervisor or HR representative about your need for a religious accommodation as soon as possible. This can be done in writing or in person.\n2. **Provide documentation**: You may be asked to provide documentation from a licensed clergy member, rabbi, imam, or other qualified religious leader that supports your request for a religious accommodation.\n3. **Complete a religious accommodation request form**: Your employer may require you to complete a religious accommodation request form, which will ask for information about your religious beliefs, the specific accommodation you are requesting, and any relevant supporting documentation.\n\nThe form you use may vary depending on your employer and the specific circumstances of your request. Some common forms include:\n\n* **EEOC Form 700**: This form is used to report employment discrimination complaints, including requests for religious accommodations.\n* **Company-specific religious accommodation request form**: Your employer may have its own form that you need to complete to request a religious accommodation.\n\nIt's essential to",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 25.33181298011914,
+     "generationSeconds": 25.28494443790987,
+     "ollama": {
+      "totalDurationNs": 25270378599,
+      "loadDurationNs": 5426495310,
+      "promptEvalCount": 43,
+      "promptEvalDurationNs": 539402000,
+      "evalCount": 256,
+      "evalDurationNs": 19301019000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v2",
+    "kind": "ft",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, there is a deadline for requesting a religious accommodation. You must submit your request within 30 days of the date you need the accommodation to take effect. The form you use will depend on the type of accommodation you are requesting and the employer's policies.\n\nFor federal contractors and subcontractors, you can use Form 3030, which is available on the U.S. Department of Labor's website. For private employers, you can use the Equal Employment Opportunity Commission's (EEOC) Form 700, which is also available on their website.\n\nIt's always best to check with your HR department or supervisor to confirm the specific form and deadline requirements for your workplace.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 16.067143148276955,
+     "generationSeconds": 16.03499107901007,
+     "ollama": {
+      "totalDurationNs": 16020300113,
+      "loadDurationNs": 5425797282,
+      "promptEvalCount": 43,
+      "promptEvalDurationNs": 641565000,
+      "evalCount": 136,
+      "evalDurationNs": 9949700000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v3",
+    "kind": "ft",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, there is a deadline for requesting a religious accommodation. You must submit your request within 30 days of the date you need the accommodation to take effect. The form you use will depend on the type of accommodation you are requesting and the employer's policies.\n\nFor most employers, you will need to complete Form I-9, Employment Eligibility Verification, and provide documentation that supports your request for a religious accommodation. You may also need to complete other forms or provide additional documentation depending on the specific circumstances of your request.\n\nIt's always best to check with your HR department or supervisor to confirm the specific requirements and deadlines for requesting a religious accommodation in your workplace.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 16.124883968383074,
+     "generationSeconds": 16.093421288765967,
+     "ollama": {
+      "totalDurationNs": 16079134374,
+      "loadDurationNs": 5415428967,
+      "promptEvalCount": 43,
+      "promptEvalDurationNs": 616727000,
+      "evalCount": 133,
+      "evalDurationNs": 10043725000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 57.5241461279802
+ },
+ "errorBody": null
+}

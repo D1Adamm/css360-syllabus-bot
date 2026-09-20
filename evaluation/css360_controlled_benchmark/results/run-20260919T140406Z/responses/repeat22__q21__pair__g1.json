@@ -1,0 +1,183 @@
+{
+ "key": "repeat22/q21/pair/g1",
+ "set": "repeat22",
+ "questionId": "q21",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T15:09:55+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 55.868,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "One of my teammates stopped contributing. How much will my individual grade be adjusted to make up for it?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Impact of Missing Class]\nImpact of Missing Class\nIf you must miss class, must be late, or must leave early, file the class absence form to alert me. Not filing this form ('no call, no show') will impact your in-class activities grade. Advance notice lets you avoid a penalty, but it does not serve as a makeup. There is no direct way to make up for missing in-class activities. Instead, you can expect to be called upon more often in subsequent classes to balance out your participation. Please note that if you miss too many classes, it will eventually become impossible to receive full credit for the in-class activities portion of the grade as I will not be cold calling the same person an excessive number of times in a single class session.\n\n[Section: Real-world]\nDo you want an excellent grade in the course? Be clear about your expectations and priorities, and seek out groupmates who share your level of commitment.\n\nAre your skills still emerging? Be ready to work hard, to learn from classmates, and to be flexible about which tasks you take on (but don't plan to coast on the efforts of others!).\n\nHave you made life choices that mean you will need to simply be satisfied with an okay grade? Be transparent with your groupmates and only make commitments you can keep.\n\nAlthough some developers work alone or nearly so, that is not the model for this course. Some of our learning goals require trying out ideas related to coordinating the work of groups of people.\n\n[Section: Mapping Percentage to the 4.0 Scale]\nMapping Percentage to the 4.0 Scale\nInstructors have discretion in how we make use of the 4.0 grading scale; we select the weight for each element of the course, the number of points available, and we decide how best to map a percentage of those points into the 4.0 system. This mapping, and the evenness of spacing within the mapping, may vary from class to class, and it may be quite different from what you are accustomed to seeing elsewhere at UWB (or feel unnatural, if you grew up as I did, receiving letter grades!). For this quarter of this class, I will map an overall 97.0% to a 4.0 and a 60.0% to a 0.7, with even spacing in between. This means to receive a 2.0 for the course, you need a 74.6% in the class. Doing the bare minimum is a high-risk approach (what if life gets busy or messy later in the quarter?), and I don't recommend it.\n\n[Section: Cold Calling]\nI have written a computer program that will generate a random list of students each day and I will use this list to randomly cold call students in the class. To try to maintain participation balance, the program will try to ensure that everybody is cold called a similar number of times during the quarter. Although there is always some chance that you will called upon next, you will become less likely to be called upon relative to your classmates each time you are called upon.\n\nStudent question:\nOne of my teammates stopped contributing. How much will my individual grade be adjusted to make up for it?\n\nAnswer:",
+  "promptSha256": "0c6cac2789065278b37ebcabd5451e77d474fcdce13324057a827209f25e728c",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-063",
+    "chunk-032",
+    "chunk-066",
+    "chunk-025"
+   ],
+   "setSha256": "a98f79bb414cc9b585ddbcb35b7fbc70665605aec79b01076d1a81c05541bedb",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-063",
+    "section": "Impact of Missing Class",
+    "text": "Impact of Missing Class\nIf you must miss class, must be late, or must leave early, file the class absence form to alert me. Not filing this form ('no call, no show') will impact your in-class activities grade. Advance notice lets you avoid a penalty, but it does not serve as a makeup. There is no direct way to make up for missing in-class activities. Instead, you can expect to be called upon more often in subsequent classes to balance out your participation. Please note that if you miss too many classes, it will eventually become impossible to receive full credit for the in-class activities portion of the grade as I will not be cold calling the same person an excessive number of times in a single class session.",
+    "score": 0.6008379521363453
+   },
+   {
+    "chunkId": "chunk-032",
+    "section": "Real-world",
+    "text": "Do you want an excellent grade in the course? Be clear about your expectations and priorities, and seek out groupmates who share your level of commitment.\n\nAre your skills still emerging? Be ready to work hard, to learn from classmates, and to be flexible about which tasks you take on (but don't plan to coast on the efforts of others!).\n\nHave you made life choices that mean you will need to simply be satisfied with an okay grade? Be transparent with your groupmates and only make commitments you can keep.\n\nAlthough some developers work alone or nearly so, that is not the model for this course. Some of our learning goals require trying out ideas related to coordinating the work of groups of people.",
+    "score": 0.5944919260590598
+   },
+   {
+    "chunkId": "chunk-066",
+    "section": "Mapping Percentage to the 4.0 Scale",
+    "text": "Mapping Percentage to the 4.0 Scale\nInstructors have discretion in how we make use of the 4.0 grading scale; we select the weight for each element of the course, the number of points available, and we decide how best to map a percentage of those points into the 4.0 system. This mapping, and the evenness of spacing within the mapping, may vary from class to class, and it may be quite different from what you are accustomed to seeing elsewhere at UWB (or feel unnatural, if you grew up as I did, receiving letter grades!). For this quarter of this class, I will map an overall 97.0% to a 4.0 and a 60.0% to a 0.7, with even spacing in between. This means to receive a 2.0 for the course, you need a 74.6% in the class. Doing the bare minimum is a high-risk approach (what if life gets busy or messy later in the quarter?), and I don't recommend it.",
+    "score": 0.561439036627948
+   },
+   {
+    "chunkId": "chunk-025",
+    "section": "Cold Calling",
+    "text": "I have written a computer program that will generate a random list of students each day and I will use this list to randomly cold call students in the class. To try to maintain participation balance, the program will try to ensure that everybody is cold called a similar number of times during the quarter. Although there is always some chance that you will called upon next, you will become less likely to be called upon relative to your classmates each time you are called upon.",
+    "score": 0.548180083726795
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not provide a way to adjust your individual grade to compensate for a teammate not contributing. It notes that if you miss too many classes, it will become impossible to receive full credit for the in-class activities portion of the grade because the instructor won't be able to cold-call the same person multiple times in a single class session.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 24.80040872981772,
+     "generationSeconds": 24.767197235953063,
+     "ollama": {
+      "totalDurationNs": 24752340311,
+      "loadDurationNs": 5664883629,
+      "promptEvalCount": 934,
+      "promptEvalDurationNs": 12094550000,
+      "evalCount": 70,
+      "evalDurationNs": 6982198000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not provide a way to adjust your individual grade to compensate for a teammate not contributing. It notes that if you miss too many classes, it will become impossible to receive full credit for the in-class activities portion of the grade because the instructor won't be able to cold-call the same person multiple times. The syllabus also suggests that you should be ready to work hard, learn from classmates, and be flexible about which tasks you take on, but it doesn't provide a way to adjust your grade individually. The instructor recommends being transparent with your groupmates and making commitments you can keep. The syllabus emphasizes the importance of teamwork and collaboration in the course, noting that some learning goals require trying out ideas related to coordinating the work of groups of people.",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 30.73013004194945,
+     "generationSeconds": 30.69785859202966,
+     "ollama": {
+      "totalDurationNs": 30683457315,
+      "loadDurationNs": 5674927638,
+      "promptEvalCount": 934,
+      "promptEvalDurationNs": 11959236000,
+      "evalCount": 155,
+      "evalDurationNs": 13038918000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 55.864727231208235
+ },
+ "errorBody": null
+}

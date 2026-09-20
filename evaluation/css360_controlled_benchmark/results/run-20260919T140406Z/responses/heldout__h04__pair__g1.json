@@ -1,0 +1,193 @@
+{
+ "key": "heldout/h04/pair/g1",
+ "set": "heldout",
+ "questionId": "h04",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T15:24:59+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 60.138,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "If a reading is marked \"[Tentative]\" and the instructor has not changed it by the deadline, do I still have to do it?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Note about this Syllabus]\nNote about this Syllabus\nYou should expect this syllabus to be a dynamic document (not a 'contract'). Although the core expectations for this class are fixed, the details of projects, readings, and assignments will shift based on how the class goes, guest speakers that I arrange, my own readings in this area, etc. As a result, there are four important things to keep in mind:\n\n•\tAlthough details on this syllabus will change, I will try to ensure that I never change readings more than six days before they are due. This means that if I don't fill in a reading marked \"[To Be Decided]\" six days before it's due, it is dropped. If I don't change something marked \"[Tentative]\" before the deadline, then it is assigned. This also means that if you plan to read more than six days ahead, contact me first.\n\n[Section: Grade Questions]\nGrade Questions\nEveryone makes mistakes and I want to fix mine as quickly as possible. If you have questions about a grade, book a private timeslot on my calendar within 1 week of the grade being released. In a grade consultation session, I will ask you to take the lead: show me in specific detail how your work fulfills the rubric for the assignment type overall, how you fulfilled the criteria for the specific assignment, and how your work meets the learning goals of the course.\n\n[Section: Out of Class: Read, Watch, Write, and Code]\nOut of Class: Read, Watch, Write, and Code\nEach class session will require advance preparation from you, including engagement with class materials and working on course projects. More details on the class materials are in the daily schedule, and more details on course projects are in the assignments section.\n\n[Section: Late Policy]\nIf you experience a severe or extraordinary interruption to your ability to complete class work in a timely manner, I expect to follow the UWB policy around incompletes and to work with you, the advising office, and the disability services office as required to navigate your difficult situation.\n\n[Section: Assignments]\nAssignments\nThe assignments in this class are designed to give you an opportunity to try your hand at using the conceptual material taught in the class. We will do one project and have one short writing assignment reflecting on that project and course topics. Any quizzes will be short and low-stakes. There will be no exams.\n\nUnless otherwise noted, all assignments are due at the end of the day (i.e., 11:59pm on the day they are listed as being due, Pacific time zone).\n\nRequested parts (address each exactly once):\n- If a reading is marked \"[Tentative]\" and the instructor has not changed it by the deadline\n- do I still have to do it\n\nStudent question:\nIf a reading is marked \"[Tentative]\" and the instructor has not changed it by the deadline, do I still have to do it?\n\nAnswer:",
+  "promptSha256": "f05e4ed5744db161d033015963fae2a16b5daeb3d11a2d16cdd62992218204a8",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-020",
+    "chunk-065",
+    "chunk-029",
+    "chunk-068",
+    "chunk-022"
+   ],
+   "setSha256": "f62172c41454a1d9bb903c5f6a55b273054e41628cb79aa712dc4895194dca8d",
+   "facets": [
+    "If a reading is marked \"[Tentative]\" and the instructor has not changed it by the deadline",
+    "do I still have to do it"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-020",
+    "section": "Note about this Syllabus",
+    "text": "Note about this Syllabus\nYou should expect this syllabus to be a dynamic document (not a 'contract'). Although the core expectations for this class are fixed, the details of projects, readings, and assignments will shift based on how the class goes, guest speakers that I arrange, my own readings in this area, etc. As a result, there are four important things to keep in mind:\n\n•\tAlthough details on this syllabus will change, I will try to ensure that I never change readings more than six days before they are due. This means that if I don't fill in a reading marked \"[To Be Decided]\" six days before it's due, it is dropped. If I don't change something marked \"[Tentative]\" before the deadline, then it is assigned. This also means that if you plan to read more than six days ahead, contact me first.",
+    "score": 0.7361410868302796
+   },
+   {
+    "chunkId": "chunk-065",
+    "section": "Grade Questions",
+    "text": "Grade Questions\nEveryone makes mistakes and I want to fix mine as quickly as possible. If you have questions about a grade, book a private timeslot on my calendar within 1 week of the grade being released. In a grade consultation session, I will ask you to take the lead: show me in specific detail how your work fulfills the rubric for the assignment type overall, how you fulfilled the criteria for the specific assignment, and how your work meets the learning goals of the course.",
+    "score": 0.6232137642411132
+   },
+   {
+    "chunkId": "chunk-029",
+    "section": "Out of Class: Read, Watch, Write, and Code",
+    "text": "Out of Class: Read, Watch, Write, and Code\nEach class session will require advance preparation from you, including engagement with class materials and working on course projects. More details on the class materials are in the daily schedule, and more details on course projects are in the assignments section.",
+    "score": 0.6367486258328786
+   },
+   {
+    "chunkId": "chunk-068",
+    "section": "Late Policy",
+    "text": "If you experience a severe or extraordinary interruption to your ability to complete class work in a timely manner, I expect to follow the UWB policy around incompletes and to work with you, the advising office, and the disability services office as required to navigate your difficult situation.",
+    "score": 0.605032965163856
+   },
+   {
+    "chunkId": "chunk-022",
+    "section": "Assignments",
+    "text": "Assignments\nThe assignments in this class are designed to give you an opportunity to try your hand at using the conceptual material taught in the class. We will do one project and have one short writing assignment reflecting on that project and course topics. Any quizzes will be short and low-stakes. There will be no exams.\n\nUnless otherwise noted, all assignments are due at the end of the day (i.e., 11:59pm on the day they are listed as being due, Pacific time zone).",
+    "score": 0.5968473844700685
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, you must do the reading marked \"[Tentative]\" if the instructor has not changed it by the deadline.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 19.86665175203234,
+     "generationSeconds": 19.83460186002776,
+     "ollama": {
+      "totalDurationNs": 19820064268,
+      "loadDurationNs": 5419287905,
+      "promptEvalCount": 890,
+      "promptEvalDurationNs": 11968385000,
+      "evalCount": 25,
+      "evalDurationNs": 2421194000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, you must do it because the syllabus says that if the instructor doesn't change something marked \"[Tentative]\" before the deadline, it is assigned. The syllabus also says that if you plan to read more than six days ahead, contact the instructor first. The syllabus does not say that you can ignore a reading marked \"[Tentative]\" if the instructor hasn't changed it by the deadline. It does say that the instructor tries to avoid changing readings more than six days before they are due, but it does not guarantee that the instructor will change a reading marked \"[Tentative]\" by the deadline. The syllabus does not cover what happens if the instructor changes a reading marked \"[Tentative]\" after the deadline. It does say that the instructor will not change readings more than six days before they are due, which means that if the instructor doesn't fill in a reading marked \"[To Be Decided]\" six days before it's due, it is dropped. It also says that if you plan to read more than six days ahead, contact the instructor first. The syllabus does not cover what happens if the instructor changes a reading marked \"[Tentative]\" after the deadline. It does say that the instructor will not change readings more than six",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 39.59267460787669,
+     "generationSeconds": 39.55907414201647,
+     "ollama": {
+      "totalDurationNs": 39543876983,
+      "loadDurationNs": 5415651095,
+      "promptEvalCount": 890,
+      "promptEvalDurationNs": 11694693000,
+      "evalCount": 256,
+      "evalDurationNs": 22422661000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 60.134827992878854
+ },
+ "errorBody": null
+}

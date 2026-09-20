@@ -1,0 +1,240 @@
+{
+ "key": "repeat22/q18/pair/g0",
+ "set": "repeat22",
+ "questionId": "q18",
+ "route": "pair",
+ "group": 0,
+ "conditions": [
+  "rag",
+  "ft_rag:v2",
+  "ft_rag:v3"
+ ],
+ "askedAt": "2026-09-19T14:59:32+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 50.998,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Are office hours drop-in, or do I need to schedule a time first?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Office Hours]\nOffice Hours\nThe best way to get in touch with me about issues in class will in the Discord server via asychronous messages sent to one of the text channels. This is preferable because any questions you have can be answered in a way that is visible to others in the class.\n\nMy available hours are visible in this calendar scheduling site. If my planned availability does not work for you, please contact me in the Discord server or over email to arrange a meeting at another time.\n\n[Section: 1 Time for you to ask your questions]\n1\tTime for you to ask your questions\n2\tTime to work on your assignments with immediate help at hand\n\nAttending open lab periods and office hours is optional.\n\n[Section: Required Task]\nRequired Task\nComplete the class setup checklist. This will take as much as 90 minutes (and includes a tutorial on JavaScript) so please plan in advance.\n\nAs with most other assignments, you must complete this task by 11:59pm Seattle time.\n\nSeptember 30 (Tuesday): Organizing Patterns: Agile, Waterfall, and All That\n\n[Section: Class format and structure]\nClass format and structure\nI plan to check and respond to conversation there at least daily throughout the quarter.\n\nThe synchronous elements of the course will be two weekly class meetings and optional open lab periods. Class meetings will happen at the normal time and in the normal place, unless I communicate otherwise. I will also offer open lab periods where you can drop in and ask questions. Open lab is an experiment I'm trying for this quarter to see if it's useful: I'll try to announce when they're coming up in a weekly announcement e-mail and I'll definitely mention them on Discord. For my more focused attention, please book an office hours appointment with me. Please note that if you book your appointment less than 24 hours in advance, I may not see your booking, so do ping me on Discord to confirm. Why should students book office hours appointments?\n\n[Section: Late Policy]\nIf you experience a severe or extraordinary interruption to your ability to complete class work in a timely manner, I expect to follow the UWB policy around incompletes and to work with you, the advising office, and the disability services office as required to navigate your difficult situation.\n\nRequested parts (address each exactly once):\n- Are office hours drop-in\n- or do I need to schedule a time first\n\nStudent question:\nAre office hours drop-in, or do I need to schedule a time first?\n\nAnswer:",
+  "promptSha256": "8508c9b59fcac01425a429828fec7b231a3340c61f462aedaac3525b6e05910f",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-151",
+    "chunk-014",
+    "chunk-072",
+    "chunk-012",
+    "chunk-068"
+   ],
+   "setSha256": "758859e1d57d1b672de7270556a8b40fdefb9172688d3f0ca97aeeb4095ef705",
+   "facets": [
+    "Are office hours drop-in",
+    "or do I need to schedule a time first"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-151",
+    "section": "Office Hours",
+    "text": "Office Hours\nThe best way to get in touch with me about issues in class will in the Discord server via asychronous messages sent to one of the text channels. This is preferable because any questions you have can be answered in a way that is visible to others in the class.\n\nMy available hours are visible in this calendar scheduling site. If my planned availability does not work for you, please contact me in the Discord server or over email to arrange a meeting at another time.",
+    "score": 0.6965456693512949
+   },
+   {
+    "chunkId": "chunk-014",
+    "section": "1\tTime for you to ask your questions",
+    "text": "1\tTime for you to ask your questions\n2\tTime to work on your assignments with immediate help at hand\n\nAttending open lab periods and office hours is optional.",
+    "score": 0.6493805170203116
+   },
+   {
+    "chunkId": "chunk-072",
+    "section": "Required Task",
+    "text": "Required Task\nComplete the class setup checklist. This will take as much as 90 minutes (and includes a tutorial on JavaScript) so please plan in advance.\n\nAs with most other assignments, you must complete this task by 11:59pm Seattle time.\n\nSeptember 30 (Tuesday): Organizing Patterns: Agile, Waterfall, and All That",
+    "score": 0.576892800013638
+   },
+   {
+    "chunkId": "chunk-012",
+    "section": "Class format and structure",
+    "text": "Class format and structure\nI plan to check and respond to conversation there at least daily throughout the quarter.\n\nThe synchronous elements of the course will be two weekly class meetings and optional open lab periods. Class meetings will happen at the normal time and in the normal place, unless I communicate otherwise. I will also offer open lab periods where you can drop in and ask questions. Open lab is an experiment I'm trying for this quarter to see if it's useful: I'll try to announce when they're coming up in a weekly announcement e-mail and I'll definitely mention them on Discord. For my more focused attention, please book an office hours appointment with me. Please note that if you book your appointment less than 24 hours in advance, I may not see your booking, so do ping me on Discord to confirm. Why should students book office hours appointments?",
+    "score": 0.5729024307492333
+   },
+   {
+    "chunkId": "chunk-068",
+    "section": "Late Policy",
+    "text": "If you experience a severe or extraordinary interruption to your ability to complete class work in a timely manner, I expect to follow the UWB policy around incompletes and to work with you, the advising office, and the disability services office as required to navigate your difficult situation.",
+    "score": 0.5609800391479886
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "rag",
+    "kind": "rag",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Office hours are not drop-in. You need to schedule a time first.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 15.883041174151003,
+     "generationSeconds": 15.839332488831133,
+     "ollama": {
+      "totalDurationNs": 15824905946,
+      "loadDurationNs": 5442925903,
+      "promptEvalCount": 794,
+      "promptEvalDurationNs": 9259602000,
+      "evalCount": 16,
+      "evalDurationNs": 1115205000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v2",
+    "kind": "ft_rag",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Office hours are not drop-in. You need to schedule a time first.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 16.93897331226617,
+     "generationSeconds": 16.906207379419357,
+     "ollama": {
+      "totalDurationNs": 16891305902,
+      "loadDurationNs": 5415604050,
+      "promptEvalCount": 794,
+      "promptEvalDurationNs": 10260812000,
+      "evalCount": 16,
+      "evalDurationNs": 1207630000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v3",
+    "kind": "ft_rag",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Office hours are not drop-in. You need to schedule a time first.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 17.487117025069892,
+     "generationSeconds": 17.45491422433406,
+     "ollama": {
+      "totalDurationNs": 17440386203,
+      "loadDurationNs": 5421847393,
+      "promptEvalCount": 794,
+      "promptEvalDurationNs": 10838014000,
+      "evalCount": 16,
+      "evalDurationNs": 1173110000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 50.9952904493548
+ },
+ "errorBody": null
+}

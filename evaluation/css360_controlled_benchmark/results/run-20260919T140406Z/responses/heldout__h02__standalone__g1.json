@@ -1,0 +1,144 @@
+{
+ "key": "heldout/h02/standalone/g1",
+ "set": "heldout",
+ "questionId": "h02",
+ "route": "standalone",
+ "group": 1,
+ "conditions": [
+  "ft:v4_vm",
+  "ft:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T15:20:35+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 37.757,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "What three questions does each person answer at standup, and who is responsible for sending the post-standup notes to the instructor?",
+  "prompt": "What three questions does each person answer at standup, and who is responsible for sending the post-standup notes to the instructor?",
+  "promptSha256": "801dcd1e36bbd5b3b1fda9553cbea850b068e27773fc0bf80ee14bf8ffcb3e16",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft:v4_vm",
+    "kind": "ft",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Each person answers three questions at standup: one from the instructor, one from the audience, and one from their peer. The peer question is a surprise question that the peer comes up with during the standup. The instructor's question is about the student's experience with the course material so far. The audience question is about the student's interests or goals related to the course material.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 12.232014760840684,
+     "generationSeconds": 12.200361064169556,
+     "ollama": {
+      "totalDurationNs": 12186218784,
+      "loadDurationNs": 5406357445,
+      "promptEvalCount": 52,
+      "promptEvalDurationNs": 683874000,
+      "evalCount": 78,
+      "evalDurationNs": 6092705000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v4_tillicum",
+    "kind": "ft",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Each person answers three questions at standup: one from the instructor, one from the audience, and one from their peer. The peer question is a surprise question that the peer comes up with during the standup. The instructor's question is about the student's progress in the course, the audience question is about the student's interests or hobbies, and the peer question is a surprise question that the peer comes up with during the standup. The peer question is not something that the student has prepared for, but it is an opportunity for the student to showcase their creativity and humor. The instructor's question is about the student's progress in the course, the audience question is about the student's interests or hobbies, and the peer question is a surprise question that the peer comes up with during the standup. The peer question is not something that the student has prepared for, but it is an opportunity for the student to showcase their creativity and humor. The instructor's question is about the student's progress in the course, the audience question is about the student's interests or hobbies, and the peer question is a surprise question that the peer comes up with during the standup. The peer question is not something that the student has prepared for, but it is an opportunity for the student to",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 25.52171721868217,
+     "generationSeconds": 25.4901131442748,
+     "ollama": {
+      "totalDurationNs": 25475610056,
+      "loadDurationNs": 5398727768,
+      "promptEvalCount": 52,
+      "promptEvalDurationNs": 685983000,
+      "evalCount": 256,
+      "evalDurationNs": 19387329000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 37.75398344406858
+ },
+ "errorBody": null
+}

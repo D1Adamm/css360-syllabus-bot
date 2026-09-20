@@ -1,0 +1,191 @@
+{
+ "key": "repeat22/q14/standalone/g0",
+ "set": "repeat22",
+ "questionId": "q14",
+ "route": "standalone",
+ "group": 0,
+ "conditions": [
+  "base",
+  "ft:v2",
+  "ft:v3"
+ ],
+ "askedAt": "2026-09-19T14:48:50+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 37.099,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "How many midterm exams are there, and what percentage of the grade do they count for?",
+  "prompt": "How many midterm exams are there, and what percentage of the grade do they count for?",
+  "promptSha256": "9e4c0b7112fcf2713ffac2fc9d7efc3eabc7aeffc1296e970a11ffbf548fddfe",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "base",
+    "kind": "base",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "I don't have specific information about the number of midterm exams or their weight in the grade for a particular course. The number and weight of midterm exams can vary significantly depending on the course, instructor, and institution.\n\nHowever, I can provide some general information about midterm exams:\n\n1. Number of midterm exams: Typically, there are two to three midterm exams in a semester-long course, but this can vary depending on the course and instructor.\n2. Weight in the grade: Midterm exams usually account for a significant portion of the overall grade, but the exact percentage can vary. Common ranges include:\n* 20-30% of the total grade\n* 40-50% of the total grade\n* 60-70% of the total grade\n\nIt's essential to check with your instructor or consult the course syllabus to determine the exact number of midterm exams and their weight in the grade.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 18.972201091703027,
+     "generationSeconds": 18.926040935330093,
+     "ollama": {
+      "totalDurationNs": 18911089401,
+      "loadDurationNs": 5423592816,
+      "promptEvalCount": 43,
+      "promptEvalDurationNs": 608555000,
+      "evalCount": 183,
+      "evalDurationNs": 12875422000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v2",
+    "kind": "ft",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "There are two midterm exams in the course. The first midterm exam counts for 20% of the final grade, and the second midterm exam counts for 30%.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 9.57204686710611,
+     "generationSeconds": 9.540103860199451,
+     "ollama": {
+      "totalDurationNs": 9525681251,
+      "loadDurationNs": 5421113187,
+      "promptEvalCount": 43,
+      "promptEvalDurationNs": 605362000,
+      "evalCount": 34,
+      "evalDurationNs": 3495752000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v3",
+    "kind": "ft",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "There are two midterm exams in the course. The first midterm exam counts for 20% of the final grade, and the second midterm exam counts for 30%.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 8.551405860576779,
+     "generationSeconds": 8.519897809252143,
+     "ollama": {
+      "totalDurationNs": 8505355971,
+      "loadDurationNs": 5413728518,
+      "promptEvalCount": 43,
+      "promptEvalDurationNs": 610336000,
+      "evalCount": 34,
+      "evalDurationNs": 2478131000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 37.09599217120558
+ },
+ "errorBody": null
+}

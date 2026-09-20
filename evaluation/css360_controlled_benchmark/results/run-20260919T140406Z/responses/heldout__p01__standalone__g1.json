@@ -1,0 +1,144 @@
+{
+ "key": "heldout/p01/standalone/g1",
+ "set": "heldout",
+ "questionId": "p01",
+ "route": "standalone",
+ "group": 1,
+ "conditions": [
+  "ft:v4_vm",
+  "ft:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T16:08:04+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 25.422,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Which edition of the required textbook should I buy, and is an older edition acceptable?",
+  "prompt": "Which edition of the required textbook should I buy, and is an older edition acceptable?",
+  "promptSha256": "3ba970bb9baa39c62a06b73c66cc3d2bb5ced1381d3e93d6791c6c494c4b6fef",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft:v4_vm",
+    "kind": "ft",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The required textbook for the course is the 7th edition of \"Introduction to Algorithms\" by Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, and Clifford Stein.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 8.894816513173282,
+     "generationSeconds": 8.863335283007473,
+     "ollama": {
+      "totalDurationNs": 8849075353,
+      "loadDurationNs": 5149301080,
+      "promptEvalCount": 42,
+      "promptEvalDurationNs": 587217000,
+      "evalCount": 43,
+      "evalDurationNs": 3109095000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v4_tillicum",
+    "kind": "ft",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The required textbook for the course is the 7th edition of \"Introduction to Algorithms\" by Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, and Clifford Stein. An older edition (6th or 5th edition) is not acceptable. The instructor will use the 7th edition in class, so it's best to purchase that one. If you're unable to find the 7th edition, you can also consider purchasing the 8th edition, as it is the next edition available. However, please note that the instructor has not used the 8th edition in the past, so it may not be exactly what you expect.",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 16.523925674147904,
+     "generationSeconds": 16.49209139123559,
+     "ollama": {
+      "totalDurationNs": 16477150987,
+      "loadDurationNs": 5400410370,
+      "promptEvalCount": 42,
+      "promptEvalDurationNs": 585245000,
+      "evalCount": 140,
+      "evalDurationNs": 10487924000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 25.418964616023004
+ },
+ "errorBody": null
+}

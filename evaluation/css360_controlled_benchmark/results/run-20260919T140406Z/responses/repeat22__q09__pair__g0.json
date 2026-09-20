@@ -1,0 +1,240 @@
+{
+ "key": "repeat22/q09/pair/g0",
+ "set": "repeat22",
+ "questionId": "q09",
+ "route": "pair",
+ "group": 0,
+ "conditions": [
+  "rag",
+  "ft_rag:v2",
+  "ft_rag:v3"
+ ],
+ "askedAt": "2026-09-19T14:29:46+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 65.083,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "If I skip a session, is there any way to earn back the in-class participation points I lost?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Impact of Missing Class]\nImpact of Missing Class\nIf you must miss class, must be late, or must leave early, file the class absence form to alert me. Not filing this form ('no call, no show') will impact your in-class activities grade. Advance notice lets you avoid a penalty, but it does not serve as a makeup. There is no direct way to make up for missing in-class activities. Instead, you can expect to be called upon more often in subsequent classes to balance out your participation. Please note that if you miss too many classes, it will eventually become impossible to receive full credit for the in-class activities portion of the grade as I will not be cold calling the same person an excessive number of times in a single class session.\n\n[Section: Your Presence in Class]\nYour Presence in Class\nAs detailed in section on case studies and discussion and in my detailed page on assessment, your homework in the class is to prepare for discussion as well as to work on projects. Case discussion and team standup are an important ways that I will assess your learning. Obviously, you must be in class in order to participate. If you need to miss class for any reason, please fill out the course absence form so that I know you are not coming and do not include you in my cold call list. In the event of an absence, you are responsible for obtaining class notes, handouts, assignments, etc.\n\n[Section: Late Policy]\nIf you experience a severe or extraordinary interruption to your ability to complete class work in a timely manner, I expect to follow the UWB policy around incompletes and to work with you, the advising office, and the disability services office as required to navigate your difficult situation.\n\n[Section: Out of Class: Read, Watch, Write, and Code]\nOut of Class: Read, Watch, Write, and Code\nEach class session will require advance preparation from you, including engagement with class materials and working on course projects. More details on the class materials are in the daily schedule, and more details on course projects are in the assignments section.\n\n[Section: Class format and structure]\nClass format and structure\n2\tConversation and discussion that happens in the group Discord server over the course of the week.\n\nI expect you to finish all readings and watch all lectures outside of our class meeting times before the class sessions on which they are assigned. Please note that this means I will not generally deliver lectures during our class meetings. Please also note that this means you are fully responsible for reading all readings and watching all recorded lecture material before you come to the associated synchronous part of class.\n\nI expect you to check in and participate in the Discord discussion. I plan to check and respond to conversation there at least daily throughout the quarter.\n\nRequested parts (address each exactly once):\n- If I skip a session\n- is there any way to earn back the in-class participation points I lost\n\nStudent question:\nIf I skip a session, is there any way to earn back the in-class participation points I lost?\n\nAnswer:",
+  "promptSha256": "9685cd0faa7dc7f9c1e0ac52a3ba62077eb9b079d93ed934f026f0ab216bb151",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-063",
+    "chunk-149",
+    "chunk-068",
+    "chunk-029",
+    "chunk-011"
+   ],
+   "setSha256": "367e1eb06100dd9045da2ad1c5fecc0de5d6147d1da847aa19d9aaac370e0ebd",
+   "facets": [
+    "If I skip a session",
+    "is there any way to earn back the in-class participation points I lost"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-063",
+    "section": "Impact of Missing Class",
+    "text": "Impact of Missing Class\nIf you must miss class, must be late, or must leave early, file the class absence form to alert me. Not filing this form ('no call, no show') will impact your in-class activities grade. Advance notice lets you avoid a penalty, but it does not serve as a makeup. There is no direct way to make up for missing in-class activities. Instead, you can expect to be called upon more often in subsequent classes to balance out your participation. Please note that if you miss too many classes, it will eventually become impossible to receive full credit for the in-class activities portion of the grade as I will not be cold calling the same person an excessive number of times in a single class session.",
+    "score": 0.705718600893785
+   },
+   {
+    "chunkId": "chunk-149",
+    "section": "Your Presence in Class",
+    "text": "Your Presence in Class\nAs detailed in section on case studies and discussion and in my detailed page on assessment, your homework in the class is to prepare for discussion as well as to work on projects. Case discussion and team standup are an important ways that I will assess your learning. Obviously, you must be in class in order to participate. If you need to miss class for any reason, please fill out the course absence form so that I know you are not coming and do not include you in my cold call list. In the event of an absence, you are responsible for obtaining class notes, handouts, assignments, etc.",
+    "score": 0.6222910841722856
+   },
+   {
+    "chunkId": "chunk-068",
+    "section": "Late Policy",
+    "text": "If you experience a severe or extraordinary interruption to your ability to complete class work in a timely manner, I expect to follow the UWB policy around incompletes and to work with you, the advising office, and the disability services office as required to navigate your difficult situation.",
+    "score": 0.5672057096038718
+   },
+   {
+    "chunkId": "chunk-029",
+    "section": "Out of Class: Read, Watch, Write, and Code",
+    "text": "Out of Class: Read, Watch, Write, and Code\nEach class session will require advance preparation from you, including engagement with class materials and working on course projects. More details on the class materials are in the daily schedule, and more details on course projects are in the assignments section.",
+    "score": 0.5663886645727192
+   },
+   {
+    "chunkId": "chunk-011",
+    "section": "Class format and structure",
+    "text": "Class format and structure\n2\tConversation and discussion that happens in the group Discord server over the course of the week.\n\nI expect you to finish all readings and watch all lectures outside of our class meeting times before the class sessions on which they are assigned. Please note that this means I will not generally deliver lectures during our class meetings. Please also note that this means you are fully responsible for reading all readings and watching all recorded lecture material before you come to the associated synchronous part of class.\n\nI expect you to check in and participate in the Discord discussion. I plan to check and respond to conversation there at least daily throughout the quarter.",
+    "score": 0.5534169007099126
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "rag",
+    "kind": "rag",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "According to the syllabus, if you miss a session, you can expect to be called upon more often in subsequent classes to balance out your participation. This means that while you may not be able to directly earn back the in-class participation points you lost, your increased participation in later classes may help to mitigate the impact of your missed session.\n\nPlease review the daily schedule and assignments section for more information on how to prepare for class and stay on top of your work.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 23.702580987941474,
+     "generationSeconds": 23.65681202802807,
+     "ollama": {
+      "totalDurationNs": 23641398062,
+      "loadDurationNs": 5699580655,
+      "promptEvalCount": 898,
+      "promptEvalDurationNs": 10418019000,
+      "evalCount": 94,
+      "evalDurationNs": 7512307000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v2",
+    "kind": "ft_rag",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "If you skip a session, you can expect to be called upon more often in subsequent classes to balance out your participation. \n\nPlease review the class materials and catch up on any missed work as soon as possible.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 21.829992031678557,
+     "generationSeconds": 21.796059099957347,
+     "ollama": {
+      "totalDurationNs": 21781217062,
+      "loadDurationNs": 6682935526,
+      "promptEvalCount": 898,
+      "promptEvalDurationNs": 11586719000,
+      "evalCount": 43,
+      "evalDurationNs": 3501104000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v3",
+    "kind": "ft_rag",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "If you skip a session, you can expect to be called upon more often in subsequent classes to balance out your participation.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 18.83563548885286,
+     "generationSeconds": 18.80302223516628,
+     "ollama": {
+      "totalDurationNs": 18788465766,
+      "loadDurationNs": 5423729625,
+      "promptEvalCount": 898,
+      "promptEvalDurationNs": 11327457000,
+      "evalCount": 25,
+      "evalDurationNs": 2026527000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 65.07892921427265
+ },
+ "errorBody": null
+}

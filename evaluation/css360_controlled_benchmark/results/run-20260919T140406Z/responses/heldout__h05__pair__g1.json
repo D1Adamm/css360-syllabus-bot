@@ -1,0 +1,193 @@
+{
+ "key": "heldout/h05/pair/g1",
+ "set": "heldout",
+ "questionId": "h05",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T15:27:44+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 56.276,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "How long is each group's live demo slot on Demo Day, and how will presenters get their screen onto the projector?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Pre-made Demos]\nPre-made Demos\nTask: Record a pre-made demo of your bot (2-5 minutes).\n\nDue\n\nMonday, November 24th, 11:59 p.m.\n\nDeliverables\n\nEach group member will record their own screencapture video of the bot in action with a voiceover.\n\nTurn In\n\na video upload to Canvas (one per student).\n\n[Section: Task: Conduct a live demo of your bot]\nTask: Conduct a live demo of your bot\nDue\n\nIn class on Tuesday, November 25th.\n\nDeliverables\n\nDuring your 10 minute slot, show off what your bot (and web page) can do.\n\nTurn In\n\nno artifact -- just be present and prepared. The full group should expect to stand up front or otherwise be involved.\n\nSteps\n\n1\tI'll determine an order for presentation; you'll determine how to present the work.\n\n2\tSlides are not necessary, but a view of your bot in action is.\n\n3\tTo avoid awkwardness around switching laptops, the podium computer will drive the projector. However, you will present from your own computer. To accomplish this, all presenting laptops will join a Zoom room and screenshare to present.\n\n4\tWe'll allow time for questions / clarifications after the presentation.\n\nTips\n\n[Section: Between-Sprint PlanningNovember 24 (Monday)]\nBetween-Sprint PlanningNovember 24 (Monday)\nPre-made demos of your bot are due today at 11:59 p.m. Pacific time.\n\nNovember 25 (Tuesday) -- Demo Day!\n\nDemo Day! Your demo of your bot should be done live in class today\n\nNovember 27 (Thursday)\n\n[Section: Presentation (Pre-made Demo and Feedback)]\nPresentation (Pre-made Demo and Feedback)\n5%\n\n[Section: Demonstration of Bot 2.0]\nDemonstration of Bot 2.0\nYou will demonstrate version 2 of your bot to the class in two ways: a live demo and a pre-made demo, as follows.\n\nRequested parts (address each exactly once):\n- long is each group's live demo slot on Demo Day\n- presenters get their screen onto the projector\n\nStudent question:\nHow long is each group's live demo slot on Demo Day, and how will presenters get their screen onto the projector?\n\nAnswer:",
+  "promptSha256": "4a659418c2c889ef9ae32d798f0005f9b1d6fd6cc954fcd25b3847dbc9e30fcd",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-051",
+    "chunk-052",
+    "chunk-140",
+    "chunk-061",
+    "chunk-050"
+   ],
+   "setSha256": "b26739c0aa537ec5b95362248939618d37c526b27cf2531e229f3019a111078e",
+   "facets": [
+    "long is each group's live demo slot on Demo Day",
+    "presenters get their screen onto the projector"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-051",
+    "section": "Pre-made Demos",
+    "text": "Pre-made Demos\nTask: Record a pre-made demo of your bot (2-5 minutes).\n\nDue\n\nMonday, November 24th, 11:59 p.m.\n\nDeliverables\n\nEach group member will record their own screencapture video of the bot in action with a voiceover.\n\nTurn In\n\na video upload to Canvas (one per student).",
+    "score": 0.7276514396170999
+   },
+   {
+    "chunkId": "chunk-052",
+    "section": "Task: Conduct a live demo of your bot",
+    "text": "Task: Conduct a live demo of your bot\nDue\n\nIn class on Tuesday, November 25th.\n\nDeliverables\n\nDuring your 10 minute slot, show off what your bot (and web page) can do.\n\nTurn In\n\nno artifact -- just be present and prepared. The full group should expect to stand up front or otherwise be involved.\n\nSteps\n\n1\tI'll determine an order for presentation; you'll determine how to present the work.\n\n2\tSlides are not necessary, but a view of your bot in action is.\n\n3\tTo avoid awkwardness around switching laptops, the podium computer will drive the projector. However, you will present from your own computer. To accomplish this, all presenting laptops will join a Zoom room and screenshare to present.\n\n4\tWe'll allow time for questions / clarifications after the presentation.\n\nTips",
+    "score": 0.7226559577711483
+   },
+   {
+    "chunkId": "chunk-140",
+    "section": "Between-Sprint PlanningNovember 24 (Monday)",
+    "text": "Between-Sprint PlanningNovember 24 (Monday)\nPre-made demos of your bot are due today at 11:59 p.m. Pacific time.\n\nNovember 25 (Tuesday) -- Demo Day!\n\nDemo Day! Your demo of your bot should be done live in class today\n\nNovember 27 (Thursday)",
+    "score": 0.7051286539272712
+   },
+   {
+    "chunkId": "chunk-061",
+    "section": "Presentation (Pre-made Demo and Feedback)",
+    "text": "Presentation (Pre-made Demo and Feedback)\n5%",
+    "score": 0.675456580996079
+   },
+   {
+    "chunkId": "chunk-050",
+    "section": "Demonstration of Bot 2.0",
+    "text": "Demonstration of Bot 2.0\nYou will demonstrate version 2 of your bot to the class in two ways: a live demo and a pre-made demo, as follows.",
+    "score": 0.6364234255199809
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The live demo slot is 10 minutes long. Presenters will join a Zoom room and screenshare to present from their own laptop, while the podium computer drives the projector.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 18.18120386218652,
+     "generationSeconds": 18.149170036893338,
+     "ollama": {
+      "totalDurationNs": 18134524131,
+      "loadDurationNs": 5417153190,
+      "promptEvalCount": 754,
+      "promptEvalDurationNs": 9759662000,
+      "evalCount": 36,
+      "evalDurationNs": 2950238000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The live demo slot is 10 minutes long. Presenters will join a Zoom room and screenshare to present from their own laptop, while the podium computer drives the projector. Slides are not necessary, but a view of the bot in action is required. There is time for questions and clarifications after the presentation. The full group should expect to stand up front or otherwise be involved. The instructor will determine an order for presentation, and the students will determine how to present their work. The group should be prepared to present their bot and web page during the 10-minute slot. The instructor will allow time for questions and clarifications after the presentation. The group should be prepared to present their work in a way that shows off what the bot and web page can do. The instructor will allow time for questions and clarifications after the presentation. The group should be prepared to present their work in a way that shows off what the bot and web page can do. The instructor will allow time for questions and clarifications after the presentation. The group should be prepared to present their work in a way that shows off what the bot and web page can do. The instructor will allow time for questions and clarifications after the presentation. The group should be prepared to present their work in a",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 37.39311460684985,
+     "generationSeconds": 37.36168442107737,
+     "ollama": {
+      "totalDurationNs": 37346871538,
+      "loadDurationNs": 5398739113,
+      "promptEvalCount": 754,
+      "promptEvalDurationNs": 10458985000,
+      "evalCount": 256,
+      "evalDurationNs": 21481926000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 56.2732403408736
+ },
+ "errorBody": null
+}

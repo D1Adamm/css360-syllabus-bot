@@ -1,0 +1,230 @@
+{
+ "key": "repeat22/q15/pair/g0",
+ "set": "repeat22",
+ "questionId": "q15",
+ "route": "pair",
+ "group": 0,
+ "conditions": [
+  "rag",
+  "ft_rag:v2",
+  "ft_rag:v3"
+ ],
+ "askedAt": "2026-09-19T14:49:54+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 51.574,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "What happens the second time a student is caught plagiarizing in this course?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Academic Dishonesty]\nAcademic Dishonesty\nThis includes: cheating on assignments, plagiarizing (misrepresenting work by another author as your own, paraphrasing or quoting sources without acknowledging the original author, or using information from the internet -- including from AI tools -- without proper citation), and submitting the same or similar paper to meet the requirements of more than one course without instructor approval. Please note that fabricated citations are a form of academic dishonesty. Academic dishonesty in any part of this course is grounds for failure and further disciplinary action. The first incident of plagiarism will result in the student’s receiving a zero on the plagiarized assignment. The second incident of plagiarism will result in the student’s receiving a zero in the class.\n\n[Section: Use of AI Tools]\nUse of AI Tools\nIn this course, students are permitted to use AI-based tools (such as UW’s version of Copilot) on some assignments. The instructions for each assignment will include information about whether and how you may use AI-based tools to complete the assignment. All sources, including AI tools, must be properly cited. Use of AI in ways that are inconsistent with the parameters above will be considered academic misconduct and subject to investigation.\n\nPlease note that AI results can be biased and inaccurate. It is your responsibility to ensure that the information you use from AI is accurate. Additionally, pay attention to the privacy of your data. Many AI tools will incorporate and use any content you share, so be careful not to unintentionally share copyrighted materials, original work, or personal information.\n\n[Section: Out of Class: Read, Watch, Write, and Code]\nOut of Class: Read, Watch, Write, and Code\nEach class session will require advance preparation from you, including engagement with class materials and working on course projects. More details on the class materials are in the daily schedule, and more details on course projects are in the assignments section.\n\n[Section: The University of]\nThe University of\nWashington Student Conduct Code (WAC 478-121) defines prohibited academic and behavioral conduct and describes how the University holds students accountable as they pursue their academic goals. Allegations of misconduct by students may be referred to the appropriate campus office for investigation and resolution. More information can be found online at https://www.washington.edu/studentconduct/\n\nStudent question:\nWhat happens the second time a student is caught plagiarizing in this course?\n\nAnswer:",
+  "promptSha256": "ddcdcfa1605b78b4e6aec6f8c95e9a326004b6e833341afd5a87438b238078b0",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-158",
+    "chunk-155",
+    "chunk-029",
+    "chunk-153"
+   ],
+   "setSha256": "5d5b46a20e7ef94fd24aa7cbf69d73fede95fad22dd0e9c012dd84a99a722849",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-158",
+    "section": "Academic Dishonesty",
+    "text": "Academic Dishonesty\nThis includes: cheating on assignments, plagiarizing (misrepresenting work by another author as your own, paraphrasing or quoting sources without acknowledging the original author, or using information from the internet -- including from AI tools -- without proper citation), and submitting the same or similar paper to meet the requirements of more than one course without instructor approval. Please note that fabricated citations are a form of academic dishonesty. Academic dishonesty in any part of this course is grounds for failure and further disciplinary action. The first incident of plagiarism will result in the student’s receiving a zero on the plagiarized assignment. The second incident of plagiarism will result in the student’s receiving a zero in the class.",
+    "score": 0.7657212126014031
+   },
+   {
+    "chunkId": "chunk-155",
+    "section": "Use of AI Tools",
+    "text": "Use of AI Tools\nIn this course, students are permitted to use AI-based tools (such as UW’s version of Copilot) on some assignments. The instructions for each assignment will include information about whether and how you may use AI-based tools to complete the assignment. All sources, including AI tools, must be properly cited. Use of AI in ways that are inconsistent with the parameters above will be considered academic misconduct and subject to investigation.\n\nPlease note that AI results can be biased and inaccurate. It is your responsibility to ensure that the information you use from AI is accurate. Additionally, pay attention to the privacy of your data. Many AI tools will incorporate and use any content you share, so be careful not to unintentionally share copyrighted materials, original work, or personal information.",
+    "score": 0.612936506080105
+   },
+   {
+    "chunkId": "chunk-029",
+    "section": "Out of Class: Read, Watch, Write, and Code",
+    "text": "Out of Class: Read, Watch, Write, and Code\nEach class session will require advance preparation from you, including engagement with class materials and working on course projects. More details on the class materials are in the daily schedule, and more details on course projects are in the assignments section.",
+    "score": 0.6020277674892301
+   },
+   {
+    "chunkId": "chunk-153",
+    "section": "The University of",
+    "text": "The University of\nWashington Student Conduct Code (WAC 478-121) defines prohibited academic and behavioral conduct and describes how the University holds students accountable as they pursue their academic goals. Allegations of misconduct by students may be referred to the appropriate campus office for investigation and resolution. More information can be found online at https://www.washington.edu/studentconduct/",
+    "score": 0.5884117115870402
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "rag",
+    "kind": "rag",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "According to the syllabus, the second incident of plagiarism will result in the student receiving a zero in the class.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 16.20793351205066,
+     "generationSeconds": 16.16316639399156,
+     "ollama": {
+      "totalDurationNs": 16148392983,
+      "loadDurationNs": 5415741445,
+      "promptEvalCount": 768,
+      "promptEvalDurationNs": 8875010000,
+      "evalCount": 24,
+      "evalDurationNs": 1849948000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v2",
+    "kind": "ft_rag",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "According to the syllabus, the second incident of plagiarism will result in the student receiving a zero in the class.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 17.92869906872511,
+     "generationSeconds": 17.896749536972493,
+     "ollama": {
+      "totalDurationNs": 17881966181,
+      "loadDurationNs": 5665671512,
+      "promptEvalCount": 768,
+      "promptEvalDurationNs": 10245783000,
+      "evalCount": 24,
+      "evalDurationNs": 1963024000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v3",
+    "kind": "ft_rag",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "According to the syllabus, the second incident of plagiarism will result in the student receiving a zero in the class.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 17.10378758702427,
+     "generationSeconds": 17.07123039290309,
+     "ollama": {
+      "totalDurationNs": 17056755266,
+      "loadDurationNs": 5426299899,
+      "promptEvalCount": 768,
+      "promptEvalDurationNs": 9662955000,
+      "evalCount": 24,
+      "evalDurationNs": 1959919000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 51.57123693777248
+ },
+ "errorBody": null
+}

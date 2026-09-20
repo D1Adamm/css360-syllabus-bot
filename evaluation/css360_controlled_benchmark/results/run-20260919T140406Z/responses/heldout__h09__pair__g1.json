@@ -1,0 +1,193 @@
+{
+ "key": "heldout/h09/pair/g1",
+ "set": "heldout",
+ "questionId": "h09",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T15:40:08+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 57.989,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "When is Bot Project Task 7 due, and why is it scheduled after the demo?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Bot Project Task #1]\nBot Project Task #1\nTask\n\n[Section: Between-Sprint PlanningNovember 24 (Monday)]\nBetween-Sprint PlanningNovember 24 (Monday)\nPre-made demos of your bot are due today at 11:59 p.m. Pacific time.\n\nNovember 25 (Tuesday) -- Demo Day!\n\nDemo Day! Your demo of your bot should be done live in class today\n\nNovember 27 (Thursday)\n\n[Section: Bot Project Task #7]\nBot Project Task #7\nTask\n\nRelease version 2.1\n\nDue\n\nThursday, December 11, 11:59 p.m. Pacific Time (Note that this is AFTER the demo because you will be incorporating feedback from the demo.)\n\nDeliverables\n\nYou are done with Task 7 if you have each completed at least one user story from your third sprint and deployed version 2.1 to your production environment for Professor Champion to review. Tag the code so that it is clear which version is 2.1.\n\nTurn In\n\nScreenshots of each new feature added for v2.1. (This is during Finals Week, so a live demo for grading is not possible)\n\nSteps\n\n1\tIn sprint planning, think about how your demonstration went and reflect on what refinements you'd like to make\n\n2\tAssign a user story to each group member.\n\n3\tComplete at least one user story.\n\n4\tCommit, test, merge as usual.\n\n5\tTag a release as 2.1\n\n[Section: Pre-made Demos]\nPre-made Demos\nTask: Record a pre-made demo of your bot (2-5 minutes).\n\nDue\n\nMonday, November 24th, 11:59 p.m.\n\nDeliverables\n\nEach group member will record their own screencapture video of the bot in action with a voiceover.\n\nTurn In\n\na video upload to Canvas (one per student).\n\n[Section: TED Interview with Linus Torvalds]\nTED Interview with Linus Torvalds\nOctober 3 (Friday)\n\nBot Project Task 1 due at 11:59 p.m. Pacific time. If you're done early, get started on Bot Project Task 2!\n\nOctober 7 (Tuesday) Learning from Failures and Fiascos Part 1\n\nRequested parts (address each exactly once):\n- is Bot Project Task 7 due\n- and why is it scheduled after the demo\n\nStudent question:\nWhen is Bot Project Task 7 due, and why is it scheduled after the demo?\n\nAnswer:",
+  "promptSha256": "c45291f2757bfe98755efc5e192bc06c4c45a3ecd42d66c481668bce074362ef",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-034",
+    "chunk-140",
+    "chunk-049",
+    "chunk-051",
+    "chunk-079"
+   ],
+   "setSha256": "69ecc03cabfe8a2ce70c46a1871ecc63264a2fe4d5cb16e4e41452e831835c8d",
+   "facets": [
+    "is Bot Project Task 7 due",
+    "and why is it scheduled after the demo"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-034",
+    "section": "Bot Project Task #1",
+    "text": "Bot Project Task #1\nTask",
+    "score": 0.7889418817933195
+   },
+   {
+    "chunkId": "chunk-140",
+    "section": "Between-Sprint PlanningNovember 24 (Monday)",
+    "text": "Between-Sprint PlanningNovember 24 (Monday)\nPre-made demos of your bot are due today at 11:59 p.m. Pacific time.\n\nNovember 25 (Tuesday) -- Demo Day!\n\nDemo Day! Your demo of your bot should be done live in class today\n\nNovember 27 (Thursday)",
+    "score": 0.7368023122280953
+   },
+   {
+    "chunkId": "chunk-049",
+    "section": "Bot Project Task #7",
+    "text": "Bot Project Task #7\nTask\n\nRelease version 2.1\n\nDue\n\nThursday, December 11, 11:59 p.m. Pacific Time (Note that this is AFTER the demo because you will be incorporating feedback from the demo.)\n\nDeliverables\n\nYou are done with Task 7 if you have each completed at least one user story from your third sprint and deployed version 2.1 to your production environment for Professor Champion to review. Tag the code so that it is clear which version is 2.1.\n\nTurn In\n\nScreenshots of each new feature added for v2.1. (This is during Finals Week, so a live demo for grading is not possible)\n\nSteps\n\n1\tIn sprint planning, think about how your demonstration went and reflect on what refinements you'd like to make\n\n2\tAssign a user story to each group member.\n\n3\tComplete at least one user story.\n\n4\tCommit, test, merge as usual.\n\n5\tTag a release as 2.1",
+    "score": 0.7481147429844119
+   },
+   {
+    "chunkId": "chunk-051",
+    "section": "Pre-made Demos",
+    "text": "Pre-made Demos\nTask: Record a pre-made demo of your bot (2-5 minutes).\n\nDue\n\nMonday, November 24th, 11:59 p.m.\n\nDeliverables\n\nEach group member will record their own screencapture video of the bot in action with a voiceover.\n\nTurn In\n\na video upload to Canvas (one per student).",
+    "score": 0.7353761330108587
+   },
+   {
+    "chunkId": "chunk-079",
+    "section": "TED Interview with Linus Torvalds",
+    "text": "TED Interview with Linus Torvalds\nOctober 3 (Friday)\n\nBot Project Task 1 due at 11:59 p.m. Pacific time. If you're done early, get started on Bot Project Task 2!\n\nOctober 7 (Tuesday) Learning from Failures and Fiascos Part 1",
+    "score": 0.7235094892030979
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus sets the deadline for Task 7 as Thursday, December 11, 11:59 p.m. Pacific Time, which is after the demo because you will incorporate feedback from the demo.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 19.672288990113884,
+     "generationSeconds": 19.64022496715188,
+     "ollama": {
+      "totalDurationNs": 19625880325,
+      "loadDurationNs": 5404953809,
+      "promptEvalCount": 798,
+      "promptEvalDurationNs": 10793172000,
+      "evalCount": 42,
+      "evalDurationNs": 3420465000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Bot Project Task 7 is due Thursday, December 11, 11:59 p.m. Pacific Time. It is scheduled after the demo because you will be incorporating feedback from the demo. You are done with Task 7 if you have each completed at least one user story from your third sprint and deployed version 2.1 to your production environment for Professor Champion to review. Tag the code so that it is clear which version is 2.1. Screenshots of each new feature added for v2.1 are required during Finals Week, so a live demo for grading is not possible. The steps to complete Task 7 are: 1. In sprint planning, think about how your demonstration went and reflect on what refinements you'd like to make, 2. Assign a user story to each group member, 3. Complete at least one user story, 4. Commit, test, merge as usual, and 5. Tag a release as 2.1. The deliverables include screenshots of each new feature added for v2.1. The task is due Thursday, December 11, 11:59 p.m. Pacific Time. The syllabus does not provide a reason for the deadline being after the demo. The syllabus",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 37.65579014411196,
+     "generationSeconds": 37.622976628132164,
+     "ollama": {
+      "totalDurationNs": 37608327917,
+      "loadDurationNs": 5410332903,
+      "promptEvalCount": 798,
+      "promptEvalDurationNs": 10109321000,
+      "evalCount": 256,
+      "evalDurationNs": 22081123000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 57.985818343702704
+ },
+ "errorBody": null
+}

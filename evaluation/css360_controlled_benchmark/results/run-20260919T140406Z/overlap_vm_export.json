@@ -1,0 +1,862 @@
+{
+ "at": "2026-09-19T14:04:13+00:00",
+ "trainingRows": 225,
+ "sets": {
+  "repeat22": {
+   "q01": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "I know grade questions have to go by email. Which address do I use?",
+     "measures": {
+      "jaccard": 0.3,
+      "containment": 0.5,
+      "ratio": 0.316
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "email is kaylea@uw.edu",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "How do I contact Kaylea Champion if I have a question?"
+     }
+    ],
+    "keyFactCoverage": "1/3"
+   },
+   "q02": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Where can I park for class?",
+     "measures": {
+      "jaccard": 0.111,
+      "containment": 0.5,
+      "ratio": 0.22
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "Tuesday and Thursday",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "When and where does CSS 360 meet?"
+     },
+     {
+      "fact": "UW2 room 131",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "How many seats are in UW2 room 131?"
+     }
+    ],
+    "keyFactCoverage": "2/3"
+   },
+   "q03": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Where can I park for class?",
+     "measures": {
+      "jaccard": 0.1,
+      "containment": 0.5,
+      "ratio": 0.19
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/4"
+   },
+   "q04": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Can I switch to a different group after the first sprint?",
+     "measures": {
+      "jaccard": 0.1,
+      "containment": 0.2,
+      "ratio": 0.518
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "Sprint 3 is 15%",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Since Task 7 is due before the demo, how are we supposed to work demo feedback into version 2.1?"
+     }
+    ],
+    "keyFactCoverage": "1/1"
+   },
+   "q05": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Is grammar checking allowed with AI in this course?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.512
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/1"
+   },
+   "q06": {
+    "questionVerdict": "REVIEW (resolve by hand)",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "When is the Bot Feedback due?",
+     "measures": {
+      "jaccard": 0.222,
+      "containment": 0.667,
+      "ratio": 0.505
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "Demo and Feedback assignments get no extension",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Can I get an extension for my Bot Project 1-7?"
+     }
+    ],
+    "keyFactCoverage": "1/3"
+   },
+   "q07": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Since Task 7 is due before the demo, how are we supposed to work demo feedback into version 2.1?",
+     "measures": {
+      "jaccard": 0.045,
+      "containment": 0.1,
+      "ratio": 0.417
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "one extension per quarter",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Can I get an extension for my Bot Project 1-7?"
+     },
+     {
+      "fact": "48 hours",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Where is the instructor's office located?"
+     }
+    ],
+    "keyFactCoverage": "2/4"
+   },
+   "q08": {
+    "questionVerdict": "REVIEW (resolve by hand)",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "When and where does CSS 360 meet?",
+     "measures": {
+      "jaccard": 0.222,
+      "containment": 0.667,
+      "ratio": 0.396
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/3"
+   },
+   "q09": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Where can I park for class?",
+     "measures": {
+      "jaccard": 0.1,
+      "containment": 0.5,
+      "ratio": 0.336
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "file the absence form",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Standup is at the end of class, so can I arrive a bit late?"
+     }
+    ],
+    "keyFactCoverage": "1/3"
+   },
+   "q10": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Does the Reflection have to be submitted as a PDF?",
+     "measures": {
+      "jaccard": 0.167,
+      "containment": 0.333,
+      "ratio": 0.531
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/1"
+   },
+   "q11": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "What should I do if I can't find where to ask my question in Discord?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.418
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "q12": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Where can I park for class?",
+     "measures": {
+      "jaccard": 0.091,
+      "containment": 0.5,
+      "ratio": 0.27
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/3"
+   },
+   "q13": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Can I take this course S/NS instead of for a grade?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.422
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/3"
+   },
+   "q14": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "How many students are in each project group?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.45
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "q15": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "What happens if I commit plagiarism for the first time in this course?",
+     "measures": {
+      "jaccard": 0.222,
+      "containment": 0.4,
+      "ratio": 0.599
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/1"
+   },
+   "q16": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Can I use AI tools to help debug my bot code?",
+     "measures": {
+      "jaccard": 0.188,
+      "containment": 0.429,
+      "ratio": 0.547
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "q17": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Do I need to request religious accommodations early in the course?",
+     "measures": {
+      "jaccard": 0.111,
+      "containment": 0.25,
+      "ratio": 0.543
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "within the first two weeks of the course",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Do I need to request religious accommodations early in the course?"
+     },
+     {
+      "fact": "Religious Accommodations Request form",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Do I need to request religious accommodations early in the course?"
+     }
+    ],
+    "keyFactCoverage": "2/2"
+   },
+   "q18": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "What should I do if I need to miss class?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.514
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "open lab periods are the drop-in option",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Are there any lab fees I have to pay?"
+     }
+    ],
+    "keyFactCoverage": "1/3"
+   },
+   "q19": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "How many students are in each project group?",
+     "measures": {
+      "jaccard": 0.125,
+      "containment": 0.25,
+      "ratio": 0.545
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "q20": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "What steps should I follow to implement a user story for Bot Project Task #3?",
+     "measures": {
+      "jaccard": 0.071,
+      "containment": 0.167,
+      "ratio": 0.453
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "q21": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Can I make up for missing in-class activities?",
+     "measures": {
+      "jaccard": 0.167,
+      "containment": 0.4,
+      "ratio": 0.25
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "q22": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "What is the deadline for assignments in this course?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.508
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   }
+  },
+  "heldout": {
+   "h01": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Where can I park for class?",
+     "measures": {
+      "jaccard": 0.091,
+      "containment": 0.5,
+      "ratio": 0.292
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/3"
+   },
+   "h02": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "How many questions do I need to answer in class to get credit for standup participation?",
+     "measures": {
+      "jaccard": 0.214,
+      "containment": 0.5,
+      "ratio": 0.389
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/4"
+   },
+   "h03": {
+    "questionVerdict": "REVIEW (resolve by hand)",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "When is the Bot Feedback due?",
+     "measures": {
+      "jaccard": 0.25,
+      "containment": 0.667,
+      "ratio": 0.37
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "Friday, October 24 at 11:59 p.m. Pacific",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "When is the deadline for setting up the Git environment for the Bot Project?"
+     }
+    ],
+    "keyFactCoverage": "1/3"
+   },
+   "h04": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "What is the deadline for assignments in this course?",
+     "measures": {
+      "jaccard": 0.1,
+      "containment": 0.5,
+      "ratio": 0.296
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "h05": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Is there a dress code for the live demo?",
+     "measures": {
+      "jaccard": 0.133,
+      "containment": 0.5,
+      "ratio": 0.235
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "the podium computer drives the projector",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Is there a dress code for the live demo?"
+     }
+    ],
+    "keyFactCoverage": "1/3"
+   },
+   "h06": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Do I need to finish all readings and watch lectures before class?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.31
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/3"
+   },
+   "h07": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Where can I park for class?",
+     "measures": {
+      "jaccard": 0.125,
+      "containment": 0.5,
+      "ratio": 0.289
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "h08": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "What time on Saturday is the Reflection on Software Engineering and the Bot Project essay due?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.431
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/3"
+   },
+   "h09": {
+    "questionVerdict": "REVIEW (resolve by hand)",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "When is the Bot Feedback due?",
+     "measures": {
+      "jaccard": 0.222,
+      "containment": 0.667,
+      "ratio": 0.4
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "Thursday, December 11 at 11:59 p.m. Pacific",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Since Task 7 is due before the demo, how are we supposed to work demo feedback into version 2.1?"
+     }
+    ],
+    "keyFactCoverage": "1/2"
+   },
+   "h10": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Where can I park for class?",
+     "measures": {
+      "jaccard": 0.091,
+      "containment": 0.5,
+      "ratio": 0.359
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/1"
+   },
+   "u01": {
+    "questionVerdict": "REJECT (too similar)",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "How many students are in each project group?",
+     "measures": {
+      "jaccard": 0.333,
+      "containment": 0.75,
+      "ratio": 0.638
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "u02": {
+    "questionVerdict": "REJECT (too similar)",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Is there any extra credit?",
+     "measures": {
+      "jaccard": 0.222,
+      "containment": 1.0,
+      "ratio": 0.404
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "u03": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Is there a dress code for the live demo?",
+     "measures": {
+      "jaccard": 0.1,
+      "containment": 0.25,
+      "ratio": 0.551
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "u04": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Is there a minimum GPA I have to keep to stay enrolled in this course?",
+     "measures": {
+      "jaccard": 0.1,
+      "containment": 0.2,
+      "ratio": 0.503
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "u05": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "What is the deadline for assignments in this course?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.471
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "u06": {
+    "questionVerdict": "REVIEW (resolve by hand)",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "What is the deadline for assignments in this course?",
+     "measures": {
+      "jaccard": 0.0,
+      "containment": 0.0,
+      "ratio": 0.629
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "the invitation link is in the Class Setup Checklist on Canvas",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "What's the Slack workspace name for the course?"
+     }
+    ],
+    "keyFactCoverage": "1/2"
+   },
+   "u07": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "How far in advance should I book an office hours appointment?",
+     "measures": {
+      "jaccard": 0.182,
+      "containment": 0.333,
+      "ratio": 0.473
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "p01": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "If I'm off-campus and can't access the required Internet resources directly, what should I do to ensure reliable and safe access?",
+     "measures": {
+      "jaccard": 0.059,
+      "containment": 0.167,
+      "ratio": 0.452
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "p02": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Can I use AI tools to help me write my Reflection on Software Engineering and the Bot Project assignment?",
+     "measures": {
+      "jaccard": 0.2,
+      "containment": 0.429,
+      "ratio": 0.521
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "p03": {
+    "questionVerdict": "REVIEW (resolve by hand)",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "When is the Bot Feedback due?",
+     "measures": {
+      "jaccard": 0.154,
+      "containment": 0.667,
+      "ratio": 0.275
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "it is individual, not per group",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "Since the bot project is individual, do I still need a group repository?"
+     }
+    ],
+    "keyFactCoverage": "1/2"
+   },
+   "p04": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Where do I submit my reading-note answers each week?",
+     "measures": {
+      "jaccard": 0.25,
+      "containment": 0.5,
+      "ratio": 0.446
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   },
+   "p05": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Attendance isn't graded, so can I skip the case discussions?",
+     "measures": {
+      "jaccard": 0.188,
+      "containment": 0.429,
+      "ratio": 0.494
+     }
+    },
+    "keyFactsInTrainingResponses": [
+     {
+      "fact": "no makeup for a missed standup",
+      "file": "approved-finetune.jsonl",
+      "format": "bare",
+      "question": "How do I schedule the makeup for the standup I missed last week?"
+     }
+    ],
+    "keyFactCoverage": "1/2"
+   },
+   "p06": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Do I need to install my bot on Dr. Champion's account to get her to join the server?",
+     "measures": {
+      "jaccard": 0.357,
+      "containment": 0.556,
+      "ratio": 0.536
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/3"
+   },
+   "p07": {
+    "questionVerdict": "clearly held out",
+    "nearest": {
+     "file": "approved-finetune.jsonl",
+     "format": "bare",
+     "kind": null,
+     "question": "Since the bot project is individual, do I still need a group repository?",
+     "measures": {
+      "jaccard": 0.056,
+      "containment": 0.143,
+      "ratio": 0.406
+     }
+    },
+    "keyFactsInTrainingResponses": [],
+    "keyFactCoverage": "0/2"
+   }
+  }
+ }
+}

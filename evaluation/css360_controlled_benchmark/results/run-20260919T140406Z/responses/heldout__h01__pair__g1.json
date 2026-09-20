@@ -1,0 +1,194 @@
+{
+ "key": "heldout/h01/pair/g1",
+ "set": "heldout",
+ "questionId": "h01",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T15:15:47+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 61.729,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "How many hours per week does the syllabus say to plan for outside class, in class, and in lab or office hours?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Class format and structure]\nClass format and structure\nI plan to check and respond to conversation there at least daily throughout the quarter.\n\nThe synchronous elements of the course will be two weekly class meetings and optional open lab periods. Class meetings will happen at the normal time and in the normal place, unless I communicate otherwise. I will also offer open lab periods where you can drop in and ask questions. Open lab is an experiment I'm trying for this quarter to see if it's useful: I'll try to announce when they're coming up in a weekly announcement e-mail and I'll definitely mention them on Discord. For my more focused attention, please book an office hours appointment with me. Please note that if you book your appointment less than 24 hours in advance, I may not see your booking, so do ping me on Discord to confirm. Why should students book office hours appointments?\n\n[Section: 1 Time for you to ask your questions]\n1\tTime for you to ask your questions\n2\tTime to work on your assignments with immediate help at hand\n\nAttending open lab periods and office hours is optional.\n\n[Section: Your Presence in Class]\nYour Presence in Class\nAs detailed in section on case studies and discussion and in my detailed page on assessment, your homework in the class is to prepare for discussion as well as to work on projects. Case discussion and team standup are an important ways that I will assess your learning. Obviously, you must be in class in order to participate. If you need to miss class for any reason, please fill out the course absence form so that I know you are not coming and do not include you in my cold call list. In the event of an absence, you are responsible for obtaining class notes, handouts, assignments, etc.\n\n[Section: Devices in Class]\nDevices in Class\nI ask you to stay focused and avoid distractions for yourself and your peers in the classroom. Spending class time gaming and shopping is a waste of your precious dollars and your precious minutes here --- live, face-to-face opportunities to learn are getting harder to find and they mean so much when we engage with them. That said, you are an adult, and I myself cannot imagine taking a class without being able to take notes on a device and look up topics as they come up. Learning to be present and to control our attention is part of being a modern adult. I promise not to spend class time goofing off online and I think you owe it to yourself to promise the same.\n\n[Section: Out of Class: Read, Watch, Write, and Code]\nOut of Class: Read, Watch, Write, and Code\nEach class session will require advance preparation from you, including engagement with class materials and working on course projects. More details on the class materials are in the daily schedule, and more details on course projects are in the assignments section.\n\nRequested parts (address each exactly once):\n- many hours per week does the syllabus say to plan for outside class\n- in class\n- and in lab or office hours\n\nStudent question:\nHow many hours per week does the syllabus say to plan for outside class, in class, and in lab or office hours?\n\nAnswer:",
+  "promptSha256": "c002a0072b43145fb42cab810ed58393921bebb47592f0575f297888df4cbba3",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-012",
+    "chunk-014",
+    "chunk-149",
+    "chunk-150",
+    "chunk-029"
+   ],
+   "setSha256": "3e80d96b05a88282df62bfbc80298bc0c113eb2aeabd0aaac929f0cf53d25dfb",
+   "facets": [
+    "many hours per week does the syllabus say to plan for outside class",
+    "in class",
+    "and in lab or office hours"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-012",
+    "section": "Class format and structure",
+    "text": "Class format and structure\nI plan to check and respond to conversation there at least daily throughout the quarter.\n\nThe synchronous elements of the course will be two weekly class meetings and optional open lab periods. Class meetings will happen at the normal time and in the normal place, unless I communicate otherwise. I will also offer open lab periods where you can drop in and ask questions. Open lab is an experiment I'm trying for this quarter to see if it's useful: I'll try to announce when they're coming up in a weekly announcement e-mail and I'll definitely mention them on Discord. For my more focused attention, please book an office hours appointment with me. Please note that if you book your appointment less than 24 hours in advance, I may not see your booking, so do ping me on Discord to confirm. Why should students book office hours appointments?",
+    "score": 0.7400356392733867
+   },
+   {
+    "chunkId": "chunk-014",
+    "section": "1\tTime for you to ask your questions",
+    "text": "1\tTime for you to ask your questions\n2\tTime to work on your assignments with immediate help at hand\n\nAttending open lab periods and office hours is optional.",
+    "score": 0.7750786791165142
+   },
+   {
+    "chunkId": "chunk-149",
+    "section": "Your Presence in Class",
+    "text": "Your Presence in Class\nAs detailed in section on case studies and discussion and in my detailed page on assessment, your homework in the class is to prepare for discussion as well as to work on projects. Case discussion and team standup are an important ways that I will assess your learning. Obviously, you must be in class in order to participate. If you need to miss class for any reason, please fill out the course absence form so that I know you are not coming and do not include you in my cold call list. In the event of an absence, you are responsible for obtaining class notes, handouts, assignments, etc.",
+    "score": 0.7251562761166094
+   },
+   {
+    "chunkId": "chunk-150",
+    "section": "Devices in Class",
+    "text": "Devices in Class\nI ask you to stay focused and avoid distractions for yourself and your peers in the classroom. Spending class time gaming and shopping is a waste of your precious dollars and your precious minutes here --- live, face-to-face opportunities to learn are getting harder to find and they mean so much when we engage with them. That said, you are an adult, and I myself cannot imagine taking a class without being able to take notes on a device and look up topics as they come up. Learning to be present and to control our attention is part of being a modern adult. I promise not to spend class time goofing off online and I think you owe it to yourself to promise the same.",
+    "score": 0.7114806588057332
+   },
+   {
+    "chunkId": "chunk-029",
+    "section": "Out of Class: Read, Watch, Write, and Code",
+    "text": "Out of Class: Read, Watch, Write, and Code\nEach class session will require advance preparation from you, including engagement with class materials and working on course projects. More details on the class materials are in the daily schedule, and more details on course projects are in the assignments section.",
+    "score": 0.7092948027021119
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus asks you to plan for at least one hour per week outside of class, and at least one hour in lab or office hours.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 19.88939985493198,
+     "generationSeconds": 19.856461924035102,
+     "ollama": {
+      "totalDurationNs": 19841195832,
+      "loadDurationNs": 5433977875,
+      "promptEvalCount": 929,
+      "promptEvalDurationNs": 12051089000,
+      "evalCount": 30,
+      "evalDurationNs": 2344842000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus asks you to plan for at least one hour per week outside of class time, and at least one hour in class time, and at least one hour in lab or office hours. It does not specify how many hours in total you should plan for outside of class time. The syllabus asks you to book an office hours appointment at least 24 hours in advance because the instructor may not see your booking otherwise. Attending open lab periods and office hours is optional. You must be in class to participate in case discussions and team standups, and you are responsible for obtaining class notes, handouts, assignments, etc. in the event of an absence. The syllabus asks you to stay focused and avoid distractions during class time, and to promise not to spend class time goofing off online. Each class session requires advance preparation from you, including engagement with class materials and working on course projects. The syllabus does not ask you to plan for time in lab or office hours, but it does ask you to book an office hours appointment at least 24 hours in advance. Attending open lab periods is optional. The syllabus asks you to book an office hours appointment at least 24 hours in advance because the instructor may not see your booking otherwise. Attending",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 41.0180638730526,
+     "generationSeconds": 40.983968565706164,
+     "ollama": {
+      "totalDurationNs": 40968782943,
+      "loadDurationNs": 5671511802,
+      "promptEvalCount": 929,
+      "promptEvalDurationNs": 12662387000,
+      "evalCount": 256,
+      "evalDurationNs": 22623783000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 61.725129320286214
+ },
+ "errorBody": null
+}

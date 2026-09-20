@@ -1,0 +1,157 @@
+{
+ "runId": "run-20260919T140406Z",
+ "startedAt": "2026-09-19T14:04:06+00:00",
+ "origin": "http://127.0.0.1:8001",
+ "courseId": "css-360-winter-2026-a7rp",
+ "sets": [
+  "repeat22",
+  "heldout"
+ ],
+ "conditions": {
+  "pair": [
+   "rag",
+   "ft_rag:v2",
+   "ft_rag:v3",
+   "ft_rag:v4_vm",
+   "ft_rag:v4_tillicum"
+  ],
+  "standalone": [
+   "base",
+   "ft:v2",
+   "ft:v3",
+   "ft:v4_vm",
+   "ft:v4_tillicum"
+  ]
+ },
+ "groupSize": 3,
+ "groups": {
+  "pair": [
+   [
+    "rag",
+    "ft_rag:v2",
+    "ft_rag:v3"
+   ],
+   [
+    "ft_rag:v4_vm",
+    "ft_rag:v4_tillicum"
+   ]
+  ],
+  "standalone": [
+   [
+    "base",
+    "ft:v2",
+    "ft:v3"
+   ],
+   [
+    "ft:v4_vm",
+    "ft:v4_tillicum"
+   ]
+  ]
+ },
+ "pauseSeconds": 2.0,
+ "conditionTimeoutSeconds": 120.0,
+ "fingerprints": {
+  "gitHead": "1e6920c3c47f91db1064f65a97cc0edcc414b361",
+  "indexSha256": "115a0dfca9aaa81f0fe2a2b91858bcf7108ea2f18e39d00c9fdc3f34238991fa",
+  "indexChunkCount": 163,
+  "syllabusSha256": "a00613cfed6d041073ff36a76813798eaecd75126cb334d14288c153ccf9b9c8",
+  "hostname": "aiswe"
+ },
+ "questionSets": {
+  "repeat22": {
+   "sha256": "e8cb109f8d1ef00e9269ad56a3457faff286ed735696f32544e43e5191f7edb5",
+   "count": 22
+  },
+  "heldout": {
+   "sha256": "1461007c9e58b2c9e8fb498130084913e3077596b904ddfa5fc8202cbe557d65",
+   "count": 24
+  }
+ },
+ "tagsAndDigests": {
+  "ok": true,
+  "aliases": {
+   "base": {
+    "mapped": true,
+    "available": true,
+    "servedTag": "llama3.2:3b",
+    "expectedTag": "llama3.2:3b",
+    "tagMatches": true,
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "expectedDigest": "a80c4f17acd5",
+    "digestMatches": true
+   },
+   "v2": {
+    "mapped": true,
+    "available": true,
+    "servedTag": "css360-ft-v2:latest",
+    "expectedTag": "css360-ft-v2:latest",
+    "tagMatches": true,
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "expectedDigest": "dea74c57f25a",
+    "digestMatches": true
+   },
+   "v3": {
+    "mapped": true,
+    "available": true,
+    "servedTag": "css360-cpu-v3-test:latest",
+    "expectedTag": "css360-cpu-v3-test:latest",
+    "tagMatches": true,
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "expectedDigest": "0d723f0db28f",
+    "digestMatches": true
+   },
+   "v4_vm": {
+    "mapped": true,
+    "available": true,
+    "servedTag": "css360-v4-test:latest",
+    "expectedTag": "css360-v4-test:latest",
+    "tagMatches": true,
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "expectedDigest": "b8763e820e93",
+    "digestMatches": true
+   },
+   "v4_tillicum": {
+    "mapped": true,
+    "available": true,
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "expectedTag": "css360-v4-tillicum-test:latest",
+    "tagMatches": true,
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "expectedDigest": "d323b6f366b6",
+    "digestMatches": true
+   }
+  }
+ },
+ "v1": {
+  "lineageId": "css360-v1",
+  "tag": "css360-ft-v1-test:latest",
+  "digest": "063ce8788f88",
+  "role": "historical",
+  "includeInControlledClaims": false,
+  "ggufDtype": "F16",
+  "adapterDtype": "F32"
+ },
+ "trainingExportFiles": {
+  "approved-finetune.jsonl": {
+   "sha256": "a0dcdc240bb381c9004eea066dfff36572c931fc42f87cca4630269088bdf07f",
+   "records": 88
+  },
+  "train.jsonl": {
+   "sha256": "35818198431415964538b48c7d567a7e6449c792eb776b4d9cfce94d8ba0abd7",
+   "records": 122
+  },
+  "validation.jsonl": {
+   "sha256": "1d64373152060925b5e8af6b43221a3b6e98ccea4b9ee98035da6037f1c523c0",
+   "records": 15
+  },
+  "manifest.json": {
+   "sha256": "f96634423cb4084f0f50c64024050ee3472ecd5c3192a525e78e0107dfd431ae",
+   "datasetVersion": "css-360-winter-2026-a7rp-mixed-split-seed360-n137",
+   "trainExamples": 122,
+   "validationExamples": 15,
+   "totalExamples": 137,
+   "createdAt": "2026-09-12T07:22:23.916755+00:00"
+  }
+ },
+ "note": "The bearer token is read from backend/.env and is never written here."
+}

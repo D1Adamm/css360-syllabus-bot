@@ -1,0 +1,49 @@
+{
+ "status": "ok",
+ "engine": "ollama",
+ "aliases": [
+  {
+   "alias": "base",
+   "ollamaModel": "llama3.2:3b",
+   "mapped": true,
+   "available": true,
+   "digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72"
+  },
+  {
+   "alias": "v2",
+   "ollamaModel": "css360-ft-v2:latest",
+   "mapped": true,
+   "available": true,
+   "digest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629"
+  },
+  {
+   "alias": "v3",
+   "ollamaModel": "css360-cpu-v3-test:latest",
+   "mapped": true,
+   "available": true,
+   "digest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62"
+  },
+  {
+   "alias": "v4_vm",
+   "ollamaModel": "css360-v4-test:latest",
+   "mapped": true,
+   "available": true,
+   "digest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2"
+  },
+  {
+   "alias": "v4_tillicum",
+   "ollamaModel": "css360-v4-tillicum-test:latest",
+   "mapped": true,
+   "available": true,
+   "digest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b"
+  }
+ ],
+ "servable": [
+  "base",
+  "v2",
+  "v3",
+  "v4_vm",
+  "v4_tillicum"
+ ],
+ "detail": null
+}

@@ -1,0 +1,230 @@
+{
+ "key": "heldout/u05/pair/g0",
+ "set": "heldout",
+ "questionId": "u05",
+ "route": "pair",
+ "group": 0,
+ "conditions": [
+  "rag",
+  "ft_rag:v2",
+  "ft_rag:v3"
+ ],
+ "askedAt": "2026-09-19T15:56:27+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 56.384,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "What is the penalty if I accidentally upload the wrong file to Canvas for an assignment?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Late Policy]\nLate Policy\nWith respect to Bot Project 1-7, note that the assignments are due Fridays at 11:59 p.m. Pacific time. Among these 7 projects, you may choose one project for which you want to use one 48-hour extension per quarter, no questions asked. Use Canvas to make your request so that it is private and trackable. I suggest not using your extension unless you cannot avoid it (you might need it later!). Note that assignments in this class tend to build upon one another; being late with an assignment means less time to do the next stage. In addition, the group nature of the assignments means that if your work lands late, you may need to work much harder to resolve code conflicts and coordination problems. Do not expect your groupmates to do extra work to accommodate your need for an extension.\n\n[Section: Git and GitHub Demo Script]\nGit and GitHub Demo Script\nHow to undo a bad change\n\n[Section: Academic Dishonesty]\nAcademic Dishonesty\nThis includes: cheating on assignments, plagiarizing (misrepresenting work by another author as your own, paraphrasing or quoting sources without acknowledging the original author, or using information from the internet -- including from AI tools -- without proper citation), and submitting the same or similar paper to meet the requirements of more than one course without instructor approval. Please note that fabricated citations are a form of academic dishonesty. Academic dishonesty in any part of this course is grounds for failure and further disciplinary action. The first incident of plagiarism will result in the student’s receiving a zero on the plagiarized assignment. The second incident of plagiarism will result in the student’s receiving a zero in the class.\n\n[Section: Prepare Case Material]\nPrepare Case Material\n•\tRead this account of the incident (from the GitHub blog) -- no need to watch the video, it's a bit long.\n\nStudent question:\nWhat is the penalty if I accidentally upload the wrong file to Canvas for an assignment?\n\nAnswer:",
+  "promptSha256": "dcf22102a8af6a424f769f5ffbc74cffcc9908a1daf0d39378456cd8619e2959",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-067",
+    "chunk-102",
+    "chunk-158",
+    "chunk-126"
+   ],
+   "setSha256": "2c602f3f5d314a3a45dce7e29dad93a8d528796d7fc4094be71de824286225d1",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-067",
+    "section": "Late Policy",
+    "text": "Late Policy\nWith respect to Bot Project 1-7, note that the assignments are due Fridays at 11:59 p.m. Pacific time. Among these 7 projects, you may choose one project for which you want to use one 48-hour extension per quarter, no questions asked. Use Canvas to make your request so that it is private and trackable. I suggest not using your extension unless you cannot avoid it (you might need it later!). Note that assignments in this class tend to build upon one another; being late with an assignment means less time to do the next stage. In addition, the group nature of the assignments means that if your work lands late, you may need to work much harder to resolve code conflicts and coordination problems. Do not expect your groupmates to do extra work to accommodate your need for an extension.",
+    "score": 0.597231855347818
+   },
+   {
+    "chunkId": "chunk-102",
+    "section": "Git and GitHub Demo Script",
+    "text": "Git and GitHub Demo Script\nHow to undo a bad change",
+    "score": 0.5790283317144822
+   },
+   {
+    "chunkId": "chunk-158",
+    "section": "Academic Dishonesty",
+    "text": "Academic Dishonesty\nThis includes: cheating on assignments, plagiarizing (misrepresenting work by another author as your own, paraphrasing or quoting sources without acknowledging the original author, or using information from the internet -- including from AI tools -- without proper citation), and submitting the same or similar paper to meet the requirements of more than one course without instructor approval. Please note that fabricated citations are a form of academic dishonesty. Academic dishonesty in any part of this course is grounds for failure and further disciplinary action. The first incident of plagiarism will result in the student’s receiving a zero on the plagiarized assignment. The second incident of plagiarism will result in the student’s receiving a zero in the class.",
+    "score": 0.5590294252695723
+   },
+   {
+    "chunkId": "chunk-126",
+    "section": "Prepare Case Material",
+    "text": "Prepare Case Material\n•\tRead this account of the incident (from the GitHub blog) -- no need to watch the video, it's a bit long.",
+    "score": 0.5564925135876544
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "rag",
+    "kind": "rag",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not say what the penalty is for accidentally uploading the wrong file to Canvas for an assignment. However, it does state that assignments in this class tend to build upon one another, and being late with an assignment means less time to do the next stage.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 17.278882548213005,
+     "generationSeconds": 17.235993570182472,
+     "ollama": {
+      "totalDurationNs": 17221278949,
+      "loadDurationNs": 5405548261,
+      "promptEvalCount": 689,
+      "promptEvalDurationNs": 7828905000,
+      "evalCount": 55,
+      "evalDurationNs": 3979660000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v2",
+    "kind": "ft_rag",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not say what the penalty is if you accidentally upload the wrong file to Canvas for an assignment. However, it does state that assignments in this class tend to build upon one another, and being late with an assignment means less time to do the next stage.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 18.978370622731745,
+     "generationSeconds": 18.946071085054427,
+     "ollama": {
+      "totalDurationNs": 18929703469,
+      "loadDurationNs": 5393789143,
+      "promptEvalCount": 689,
+      "promptEvalDurationNs": 8692405000,
+      "evalCount": 56,
+      "evalDurationNs": 4836490000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v3",
+    "kind": "ft_rag",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not say what the penalty is if you accidentally upload the wrong file to Canvas for an assignment. However, it does state that assignments in this class tend to build upon one another, and being late with an assignment means less time to do the next stage.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 19.791774925775826,
+     "generationSeconds": 19.757434376049787,
+     "ollama": {
+      "totalDurationNs": 19741271109,
+      "loadDurationNs": 5672415025,
+      "promptEvalCount": 689,
+      "promptEvalDurationNs": 9750906000,
+      "evalCount": 56,
+      "evalDurationNs": 4310042000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 56.37932425690815
+ },
+ "errorBody": null
+}

@@ -1,0 +1,191 @@
+{
+ "key": "heldout/u05/standalone/g0",
+ "set": "heldout",
+ "questionId": "u05",
+ "route": "standalone",
+ "group": 0,
+ "conditions": [
+  "base",
+  "ft:v2",
+  "ft:v3"
+ ],
+ "askedAt": "2026-09-19T15:58:24+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 73.676,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "What is the penalty if I accidentally upload the wrong file to Canvas for an assignment?",
+  "prompt": "What is the penalty if I accidentally upload the wrong file to Canvas for an assignment?",
+  "promptSha256": "3905d15ae6d6b6c40f439bfc9147d93cf52dd9a409af1f7d6f5fffd0b8295daa",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "base",
+    "kind": "base",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The penalty for accidentally uploading the wrong file to Canvas for an assignment varies depending on the institution's policies and the instructor's discretion. Here are some possible outcomes:\n\n1. **No penalty**: If you notify your instructor promptly and explain the situation, they may choose not to penalize you. They may even accept the incorrect file as a legitimate submission.\n2. **Partial credit**: In some cases, your instructor might accept part of the incorrect file, such as the first few pages or a specific section, and deduct points for the remaining portion.\n3. **Zero credit**: Unfortunately, some instructors might not accept any part of the incorrect file, resulting in zero credit for the assignment.\n4. **Late submission penalty**: Even if the instructor accepts the incorrect file, you might still face a late submission penalty, which could result in a reduced grade or additional points deducted from your final score.\n\nTo minimize the risk of penalties, it's essential to:\n\n* Double-check your file before submitting it\n* Use the \"Save As\" feature to create a backup of your original file\n* Notify your instructor as soon as possible if you realize your mistake\n* Be prepared to explain the situation and provide evidence (e.g., a screenshot of your original file)\n\nRemember that each institution and",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 23.716741371899843,
+     "generationSeconds": 23.67306555295363,
+     "ollama": {
+      "totalDurationNs": 23658159582,
+      "loadDurationNs": 5142187714,
+      "promptEvalCount": 42,
+      "promptEvalDurationNs": 524019000,
+      "evalCount": 256,
+      "evalDurationNs": 17988695000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v2",
+    "kind": "ft",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "If you accidentally upload the wrong file to Canvas for an assignment, the penalty will depend on the specific course and instructor policies. However, here are some general guidelines:\n\n1. If you notify the instructor within a reasonable time frame (usually before the deadline), they may accept the corrected file and allow you to submit it.\n2. If you fail to notify the instructor or wait too long to correct the mistake, you may receive a late penalty, which can range from 10% to 50% of the total points available for the assignment, depending on the instructor's discretion.\n3. In some cases, the instructor may not accept the corrected file at all, especially if it's submitted after the deadline.\n\nIt's always best to communicate with your instructor as soon as possible if you make a mistake like this. They may be able to work with you to find a solution, such as accepting the corrected file or providing additional time to complete the assignment.\n\nRemember, honesty and transparency are key in situations like this. Don't try to hide the mistake or blame someone else – own up to it and take responsibility for your actions.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 23.572428508196026,
+     "generationSeconds": 23.539696054998785,
+     "ollama": {
+      "totalDurationNs": 23525189165,
+      "loadDurationNs": 5397022314,
+      "promptEvalCount": 42,
+      "promptEvalDurationNs": 953794000,
+      "evalCount": 227,
+      "evalDurationNs": 17171036000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v3",
+    "kind": "ft",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "If you accidentally upload the wrong file to Canvas for an assignment, the penalty will depend on the specific course and instructor policies. However, here are some general guidelines:\n\n1. If you notify the instructor within a reasonable time frame (usually within 24 hours) after realizing the mistake, they may be willing to accept the corrected file or provide an extension.\n2. If you fail to notify the instructor, you may receive a late penalty, which can range from 10% to 50% of the total points available for the assignment, depending on the instructor's discretion.\n3. In some cases, the instructor may not accept the corrected file at all, especially if it's submitted after the original deadline.\n\nIt's essential to communicate with your instructor as soon as possible if you've made an error in uploading the wrong file. They may be able to work with you to find a solution, such as accepting the corrected file or providing an extension.\n\nTo avoid this situation in the future, make sure to:\n\n* Double-check the file name and contents before submitting\n* Use the \"Save As\" feature to create a backup of your file before uploading\n* Review the assignment instructions carefully to ensure you're uploading the correct file\n\nRemember, it's always better to err on the",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 26.38312441110611,
+     "generationSeconds": 26.350928938947618,
+     "ollama": {
+      "totalDurationNs": 26336167441,
+      "loadDurationNs": 6405175844,
+      "promptEvalCount": 42,
+      "promptEvalDurationNs": 573746000,
+      "evalCount": 256,
+      "evalDurationNs": 19354051000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 73.67263567401096
+ },
+ "errorBody": null
+}

@@ -1,0 +1,191 @@
+{
+ "key": "heldout/p03/standalone/g0",
+ "set": "heldout",
+ "questionId": "p03",
+ "route": "standalone",
+ "group": 0,
+ "conditions": [
+  "base",
+  "ft:v2",
+  "ft:v3"
+ ],
+ "askedAt": "2026-09-19T16:14:25+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 58.809,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Since Bot Feedback is submitted once per group, which team member should post our group's feedback paragraph?",
+  "prompt": "Since Bot Feedback is submitted once per group, which team member should post our group's feedback paragraph?",
+  "promptSha256": "973125baf5c1210a2228ff9626263eba939aa7354a3ac72b34482476bf8329aa",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "base",
+    "kind": "base",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "It's generally a good idea to have all team members contribute to the feedback paragraph, rather than designating one person to post it. This way, everyone has a chance to share their thoughts and opinions.\n\nHere are a few suggestions:\n\n1. Rotate who posts the feedback: Each team member can take turns posting the feedback paragraph, so that everyone gets a chance to contribute.\n2. Have a designated team lead: Choose one team member to be the primary point of contact for the feedback, and have them post the paragraph on behalf of the team.\n3. Use a collaborative tool: Consider using a collaborative tool like Google Docs or Trello, where all team members can edit and contribute to the feedback paragraph simultaneously.\n\nUltimately, the best approach will depend on your team's communication style and preferences. The important thing is to make sure everyone has a voice and feels included in the process.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 18.654378982260823,
+     "generationSeconds": 18.611621082760394,
+     "ollama": {
+      "totalDurationNs": 18597308437,
+      "loadDurationNs": 5400470845,
+      "promptEvalCount": 45,
+      "promptEvalDurationNs": 551674000,
+      "evalCount": 178,
+      "evalDurationNs": 12641715000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v2",
+    "kind": "ft",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "For the purpose of this exercise, let's assume that the group has decided to submit their feedback paragraph as a single entry. In this case, it doesn't matter who posts the feedback paragraph, as it will be submitted by the group as a whole.\n\nHowever, if you want to know who should post the feedback paragraph in general, it's usually best to have one person post it on behalf of the group. This can be done for a few reasons:\n\n1. Clarity: Having one person post the feedback paragraph ensures that everyone's thoughts and opinions are clearly represented.\n2. Organization: It helps to keep track of who posted what, making it easier to review and respond to feedback.\n3. Time-saving: Not having to worry about who posted what saves time and reduces confusion.\n\nIn general, it's a good idea to have one person post the feedback paragraph, but it ultimately depends on the group's preferences and workflow.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 20.86719008302316,
+     "generationSeconds": 20.835716639179736,
+     "ollama": {
+      "totalDurationNs": 20821387743,
+      "loadDurationNs": 5385527644,
+      "promptEvalCount": 45,
+      "promptEvalDurationNs": 690191000,
+      "evalCount": 188,
+      "evalDurationNs": 14742424000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v3",
+    "kind": "ft",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "In general, it's best to have the team member who was most actively involved in the project and has the most insights to share post the feedback paragraph. This could be the team lead, the person who worked on the most challenging part of the project, or the person who had the most significant impact on the outcome.\n\nHowever, if you have a team with multiple members who were equally involved and have valuable insights, you can rotate the responsibility among them. For example, you could have each team member take turns posting the feedback paragraph for a few rounds, so that everyone gets a chance to share their thoughts and ideas.\n\nUltimately, the decision of who posts the feedback paragraph should be based on what works best for your team and what will help you get the most out of the Bot Feedback process.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 19.284268877003342,
+     "generationSeconds": 19.252911468036473,
+     "ollama": {
+      "totalDurationNs": 19238582274,
+      "loadDurationNs": 5658386163,
+      "promptEvalCount": 45,
+      "promptEvalDurationNs": 623942000,
+      "evalCount": 160,
+      "evalDurationNs": 12952985000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 58.806161551736295
+ },
+ "errorBody": null
+}

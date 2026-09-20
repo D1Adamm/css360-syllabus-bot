@@ -1,0 +1,144 @@
+{
+ "key": "repeat22/q06/standalone/g1",
+ "set": "repeat22",
+ "questionId": "q06",
+ "route": "standalone",
+ "group": 1,
+ "conditions": [
+  "ft:v4_vm",
+  "ft:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:21:58+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 38.098,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Can I use my one 48-hour extension on the Bot Feedback assignment?",
+  "prompt": "Can I use my one 48-hour extension on the Bot Feedback assignment?",
+  "promptSha256": "e472ce129f89b038c6132a87623bbacca596850fba399c241c67e2166c61c593",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft:v4_vm",
+    "kind": "ft",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, you can use your one 48-hour extension on the Bot Feedback assignment.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 7.692020446993411,
+     "generationSeconds": 7.659913381095976,
+     "ollama": {
+      "totalDurationNs": 7645602518,
+      "loadDurationNs": 5422003450,
+      "promptEvalCount": 40,
+      "promptEvalDurationNs": 573235000,
+      "evalCount": 18,
+      "evalDurationNs": 1646851000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v4_tillicum",
+    "kind": "ft",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, you can use your one 48-hour extension on the Bot Feedback assignment. You must submit a request through Canvas by 11:59 p.m. Pacific Time on the day of the deadline. The request must include a brief explanation of why you need the extension and a plan for how you will complete the assignment within the new time frame. The instructor will review your request and respond with an approval or denial by the next business day. If approved, the deadline for the assignment will be extended by 48 hours. If denied, you must complete the assignment by the original deadline. You cannot use your extension on the Bot Feedback assignment to work on the Bot Feedback assignment itself. You must complete the assignment before using your extension. You cannot use your extension on the Bot Feedback assignment to work on the Bot Feedback assignment itself. You must complete the assignment before using your extension. You cannot use your extension on the Bot Feedback assignment to work on the Bot Feedback assignment itself. You must complete the assignment before using your extension. You cannot use your extension on the Bot Feedback assignment to work on the Bot Feedback assignment itself. You must complete the assignment before using your extension. You cannot use your extension on the Bot Feedback assignment to work on the Bot Feedback assignment itself. You must complete",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 30.402555086184293,
+     "generationSeconds": 30.37090939981863,
+     "ollama": {
+      "totalDurationNs": 30356293920,
+      "loadDurationNs": 5423724245,
+      "promptEvalCount": 40,
+      "promptEvalDurationNs": 568954000,
+      "evalCount": 256,
+      "evalDurationNs": 24360114000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 38.09482524031773
+ },
+ "errorBody": null
+}

@@ -112,11 +112,17 @@ notes); the directory contains no token.
 
 ## Scoring and report
 
-`RUBRIC.md` was written before any answer was read. Scoring is blind
-(`blind.py` shuffles conditions behind letters per question) and every score
-cites a syllabus passage. `summarize.py` produces the tables; `REPORT.md`
-holds the write-up, with the 2026-09-11 scores kept in their own directory and
-never merged.
+`RUBRIC.md` was written before any answer was read. Scoring is blind:
+`blind.py build <run-id>` shuffles each question's ten conditions behind the
+letters A–J and writes the key to `results/<run-id>/blind/key.json`, which
+nothing reads until `summarize.py`; `blind.py show <run-id> q01 …` prints the
+answers with letters only; `addscores.py <run-id>` appends compact score lines
+to `blind/scores_blind.jsonl`, one per answer, each with a cited passage.
+`summarize.py <run-id>` unblinds, writes `results/<run-id>/scores.json` (every
+answer with its condition, outcome, timing and digest) and `summary.md` (all
+tables). `REPORT.md` is the write-up for `run-20260919T140406Z`; the
+2026-09-11 scores stay in `evaluation/model_version_benchmark/` and are never
+merged.
 
 ## Tests
 

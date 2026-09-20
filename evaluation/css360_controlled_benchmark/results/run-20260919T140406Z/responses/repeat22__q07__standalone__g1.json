@@ -1,0 +1,144 @@
+{
+ "key": "repeat22/q07/standalone/g1",
+ "set": "repeat22",
+ "questionId": "q07",
+ "route": "standalone",
+ "group": 1,
+ "conditions": [
+  "ft:v4_vm",
+  "ft:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:25:20+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 36.213,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "How many no-questions-asked extensions do I get this quarter, how long is each one, and how am I supposed to request it?",
+  "prompt": "How many no-questions-asked extensions do I get this quarter, how long is each one, and how am I supposed to request it?",
+  "promptSha256": "0779229aa8f2f3104e7c5b7af9c2e22439595b345a22f2f36d184619e883b8c1",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft:v4_vm",
+    "kind": "ft",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "You get one no-questions-asked extension per quarter. Each one is 7 days long. You can request a no-questions-asked extension by submitting a request through the Canvas course dropbox for the assignment you want to extend.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 10.201371133327484,
+     "generationSeconds": 10.16841262485832,
+     "ollama": {
+      "totalDurationNs": 10153108456,
+      "loadDurationNs": 5673551927,
+      "promptEvalCount": 55,
+      "promptEvalDurationNs": 770582000,
+      "evalCount": 51,
+      "evalDurationNs": 3705572000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v4_tillicum",
+    "kind": "ft",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "One no-questions-asked extension per quarter, 2 weeks long. You must request it by the end of the day on the Friday before the quarter begins. The request form is at https://forms.gle/6K9qyG7eX4WY8tV9A. The deadline for the first extension is 11:59 p.m. Pacific time on the Friday before the quarter begins. The deadline for the second extension is 11:59 p.m. Pacific time on the Monday after the quarter begins. The deadline for the third extension is 11:59 p.m. Pacific time on the Friday after the quarter begins. The deadline for the fourth extension is 11:59 p.m. Pacific time on the Monday after the quarter ends. The deadline for the fifth extension is 11:59 p.m. Pacific time on the Friday after the quarter ends. The deadline for the sixth extension is 11:59 p.m. Pacific time on the Monday after the quarter ends. The deadline for the seventh extension is 11:59 p.m. Pacific time on the Friday after the quarter ends. The deadline for the eighth extension is 11:59 p.m. Pacific time on the Monday after the quarter ends. The",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 26.007168873678893,
+     "generationSeconds": 25.97387674357742,
+     "ollama": {
+      "totalDurationNs": 25957938823,
+      "loadDurationNs": 5678127222,
+      "promptEvalCount": 55,
+      "promptEvalDurationNs": 746772000,
+      "evalCount": 256,
+      "evalDurationNs": 19529660000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 36.2088120453991
+ },
+ "errorBody": null
+}

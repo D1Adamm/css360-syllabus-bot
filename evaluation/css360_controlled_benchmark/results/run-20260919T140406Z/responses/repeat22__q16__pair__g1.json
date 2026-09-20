@@ -1,0 +1,183 @@
+{
+ "key": "repeat22/q16/pair/g1",
+ "set": "repeat22",
+ "questionId": "q16",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:54:06+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 55.754,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Can I paste my bot's Discord API token into ChatGPT to help me debug an auth error?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Bot Project Task #5]\nMaybe that's a bug or feature request?\n\n•\tThink like a bad actor: what happens if you try to break your bot?\n\n•\tConsider building a threat model as a way to uncover potential problems.\n\n•\tFeel free to use AI tools as a tutor or source for debugging any issues that come up, however you are responsible for the content you turn in.\n\n[Section: Bot Project Task #2]\nBot Project Task #2\nTask\n\nVersion 1.0 of your bot\n\nDue\n\nFriday, October 10, 11:59 p.m. Pacific time\n\nDeliverables\n\nYou are done with task 2 if you have cloned your group repository from our class organization, deployed a working Discord bot in your individual test environment, and deployed a working Discord bot in your team's deployment environment ('working' in this case means, able to play the simple 7-option rock-paper-scissors style game described in the tutorial).\n\nTurn In\n\n2 Screenshots with a visible chat history which demonstrates that this is the case: one for your group deployment of the bot, one for your personal test server version of the bot\n\nSteps\n\n[Section: Project]\nProject\nDeveloping a Discord Bot as a Team\n\nYour team will develop, analyze, and deploy a Discord bot in ways that indicate your understanding of key course concepts. This overall project has been broken up into multiple tasks, each building on the previous.\n\n[Section: Set up your project environment]\nDiscord deployment server (one per group) (in class). Some screenshots of the process and Discord has a how-to page as well.\n\n4\tCreate a Discord test server (one per student).\n\n5\tAll group members and Dr. Champion need invites to and should join all group environments.\n\n6\tPing Dr. Champion in Discord to tell her you're done. She does not want to install your bot, she only wants to be a member of your server!\n\nTips\n\n•\tFeel free to add customizations / tweak the icons (it will help you tell your environments apart from your classmates')\n\n•\tFeel free to use AI tools as a tutor or source for debugging any issues that come up.\n\nStudent question:\nCan I paste my bot's Discord API token into ChatGPT to help me debug an auth error?\n\nAnswer:",
+  "promptSha256": "477d781cf6559aabc0dfba3f3ff05b56633d63091ae6930186776cb4e209352a",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-046",
+    "chunk-037",
+    "chunk-033",
+    "chunk-036"
+   ],
+   "setSha256": "77b0dda8b0025ccc1d1dcf0fd14b12a200f4687444dcb6a5b85a43534383dbbe",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-046",
+    "section": "Bot Project Task #5",
+    "text": "Maybe that's a bug or feature request?\n\n•\tThink like a bad actor: what happens if you try to break your bot?\n\n•\tConsider building a threat model as a way to uncover potential problems.\n\n•\tFeel free to use AI tools as a tutor or source for debugging any issues that come up, however you are responsible for the content you turn in.",
+    "score": 0.6485625167116164
+   },
+   {
+    "chunkId": "chunk-037",
+    "section": "Bot Project Task #2",
+    "text": "Bot Project Task #2\nTask\n\nVersion 1.0 of your bot\n\nDue\n\nFriday, October 10, 11:59 p.m. Pacific time\n\nDeliverables\n\nYou are done with task 2 if you have cloned your group repository from our class organization, deployed a working Discord bot in your individual test environment, and deployed a working Discord bot in your team's deployment environment ('working' in this case means, able to play the simple 7-option rock-paper-scissors style game described in the tutorial).\n\nTurn In\n\n2 Screenshots with a visible chat history which demonstrates that this is the case: one for your group deployment of the bot, one for your personal test server version of the bot\n\nSteps",
+    "score": 0.6380033394144677
+   },
+   {
+    "chunkId": "chunk-033",
+    "section": "Project",
+    "text": "Project\nDeveloping a Discord Bot as a Team\n\nYour team will develop, analyze, and deploy a Discord bot in ways that indicate your understanding of key course concepts. This overall project has been broken up into multiple tasks, each building on the previous.",
+    "score": 0.6232770117248329
+   },
+   {
+    "chunkId": "chunk-036",
+    "section": "Set up your project environment",
+    "text": "Discord deployment server (one per group) (in class). Some screenshots of the process and Discord has a how-to page as well.\n\n4\tCreate a Discord test server (one per student).\n\n5\tAll group members and Dr. Champion need invites to and should join all group environments.\n\n6\tPing Dr. Champion in Discord to tell her you're done. She does not want to install your bot, she only wants to be a member of your server!\n\nTips\n\n•\tFeel free to add customizations / tweak the icons (it will help you tell your environments apart from your classmates')\n\n•\tFeel free to use AI tools as a tutor or source for debugging any issues that come up.",
+    "score": 0.6182267515472941
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not allow you to use AI tools to generate your own Discord API token. You must create your own token and use it in your code.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 18.658696996979415,
+     "generationSeconds": 18.626306452788413,
+     "ollama": {
+      "totalDurationNs": 18611089610,
+      "loadDurationNs": 5667857183,
+      "promptEvalCount": 753,
+      "promptEvalDurationNs": 10382446000,
+      "evalCount": 33,
+      "evalDurationNs": 2553482000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus does not allow you to use AI tools to generate code or turn in work that is not your own. You are responsible for the content you turn in, and you can use AI tools as a tutor or source for debugging any issues that come up. The Discord API token is not something you would turn in, but rather something you need to set up in your Discord environment. You should not paste your bot's Discord API token into ChatGPT or anywhere else. Instead, you should set up your own Discord test server and group deployment server, and then use the Discord API token to authenticate your bot. This will help you identify and fix the auth error. Your group deployment server should be set up in class, and your Discord test server should be set up in your individual environment. Once you've set up your test server, ping Dr. Champion in Discord to let her know you're done, and then she'll invite you to the group deployment server. The syllabus also provides screenshots of the process and a how-to page for Discord deployment servers. You can use these resources to help you set up your environment. The syllabus does not provide a way to use the Discord API token to debug an auth error, so you'll need to figure out how to",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 36.76001114491373,
+     "generationSeconds": 36.727657116018236,
+     "ollama": {
+      "totalDurationNs": 36712570250,
+      "loadDurationNs": 5416877467,
+      "promptEvalCount": 753,
+      "promptEvalDurationNs": 9716358000,
+      "evalCount": 256,
+      "evalDurationNs": 21571949000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 55.750515853986144
+ },
+ "errorBody": null
+}

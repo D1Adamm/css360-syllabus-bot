@@ -1,0 +1,144 @@
+{
+ "key": "repeat22/q08/standalone/g1",
+ "set": "repeat22",
+ "questionId": "q08",
+ "route": "standalone",
+ "group": 1,
+ "conditions": [
+  "ft:v4_vm",
+  "ft:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:29:10+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 34.573,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Could I actually be dropped from CSS 360 for missing the first week?",
+  "prompt": "Could I actually be dropped from CSS 360 for missing the first week?",
+  "promptSha256": "a697dd33902384681d12d26965aaff53bc05fa847efb692ed27dc88d7033e219",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft:v4_vm",
+    "kind": "ft",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, you could be dropped from the course if you miss the first week.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 8.476045201998204,
+     "generationSeconds": 8.441882446873933,
+     "ollama": {
+      "totalDurationNs": 8426868836,
+      "loadDurationNs": 5683187482,
+      "promptEvalCount": 40,
+      "promptEvalDurationNs": 1582543000,
+      "evalCount": 17,
+      "evalDurationNs": 1157473000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v4_tillicum",
+    "kind": "ft",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, you could be dropped from the course if you miss the first week. The instructor will not accept late work or assignments during the first week, and you must meet with the instructor to discuss your situation before the end of the first week. If you are unable to meet with the instructor, you must email them by the end of the first week to request an extension. You must also complete a course drop form and meet with the instructor again to confirm the drop. If you miss the first week, you will not receive a zero on the first assignment, but you will not receive credit for it either. You will still need to complete the assignment to get credit for it. If you miss the first week, you will not receive a zero on the first assignment, but you will not receive credit for it either. You will still need to complete the assignment to get credit for it. If you miss the first week, you will not receive a zero on the first assignment, but you will not receive credit for it either. You will still need to complete the assignment to get credit for it. If you miss the first week, you will not receive a zero on the first assignment, but you will not receive credit for it either. You will still need to complete the assignment",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 26.093659415841103,
+     "generationSeconds": 26.06089635612443,
+     "ollama": {
+      "totalDurationNs": 26044831861,
+      "loadDurationNs": 5685650614,
+      "promptEvalCount": 40,
+      "promptEvalDurationNs": 553717000,
+      "evalCount": 256,
+      "evalDurationNs": 19801968000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 34.56999905779958
+ },
+ "errorBody": null
+}

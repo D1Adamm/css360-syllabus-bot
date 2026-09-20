@@ -1,0 +1,194 @@
+{
+ "key": "repeat22/q01/pair/g1",
+ "set": "repeat22",
+ "questionId": "q01",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:05:15+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 59.051,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Who is the instructor for this course, and what email address should I use if I absolutely have to email them?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Instructor]\nInstructor\nKaylea Champion\n\n[Section: Contact]\nContact\nYour messages are important to me! I prefer, in this order:\n\n1\tpublic messages via Discord (others might have the same question or have the answer)\n\n2\tprivate messages via Discord\n\n3\tprivate messages via Canvas Note: all grade-related discussion must happen via Canvas\n\n4\temail only if absolutely necessary to kaylea@uw.edu\n\nIf you need to have a discussion with me, I would be happy to meet with you via an office hours appointment. This guarantees you my full attention (but, please book at least 24 hours in advance, I might miss your booking otherwise).\n\n[Section: Course Websites]\nCourse Websites\n•\tWe will use Canvas for announcements and turning in assignments.\n\n•\tWe will use Discord for chat, including to ask questions and share information around the course material. (Invitation link is in the Class Setup Checklist on Canvas.)\n\n•\tCourse absence form: It is important to tell me if you are not coming to class at least one hour before class begins.\n\n•\tEverything else will be linked on this page.\n\n•\tGot a question? Maybe it's on the UWB CSS 360 FAQs page?\n\n•\tOptional! Pitch in to the Spotify playlist for this quarter's class. Share what's fun, what's cool, what's speaking to you this quarter, what more people should know about: the Software Engineering Fall 2025 Spotify Playlist. Otherwise we're just going to listen to things Prof. Champion picked ;).\n\n[Section: Class format and structure]\nClass format and structure\nIn general, the organization of the course adopts a \"flipped\" approach where you engage with instructional materials on your own or in groups and we use synchronous meetings to answer questions, address challenges or concerns, work through solutions, and hold semi-structured discussions in the form of cases—discussed in detail below. This is a 5-credit class; you should plan to spend 10 hours per week working on class work as well as 4 hours per week in class and as much as 1 hour per week in lab or office hours. If you are spending substantially more than this, you should consider setting up an office hours appointment with me to think through learning strategies to boost your efficiency. If you are spending substantially less than this, you may find you are losing out on opportunities to learn, grow, and demonstrate your skills.\n\n[Section: Watch my mini-lecture on Patterns]\nWatch my mini-lecture on Patterns\n•\tPrepare to answer the questions from the Reading Note using the following resources:\n\n•\tCode patterns from the Wikipedia article on Software design patterns\n\nRequested parts (address each exactly once):\n- Who is the instructor for this course\n- and what email address\n- use if I absolutely have to email them\n\nStudent question:\nWho is the instructor for this course, and what email address should I use if I absolutely have to email them?\n\nAnswer:",
+  "promptSha256": "fb76d209cbf593b09ac5179c25ec4e0a24606a26b1fc2310ebb58a007aef4268",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-001",
+    "chunk-002",
+    "chunk-006",
+    "chunk-010",
+    "chunk-095"
+   ],
+   "setSha256": "02cd6926102255d36b09caaef82dc00768c845fda07daab6e358e656c8031f5c",
+   "facets": [
+    "Who is the instructor for this course",
+    "and what email address",
+    "use if I absolutely have to email them"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-001",
+    "section": "Instructor",
+    "text": "Instructor\nKaylea Champion",
+    "score": 0.7187213381875546
+   },
+   {
+    "chunkId": "chunk-002",
+    "section": "Contact",
+    "text": "Contact\nYour messages are important to me! I prefer, in this order:\n\n1\tpublic messages via Discord (others might have the same question or have the answer)\n\n2\tprivate messages via Discord\n\n3\tprivate messages via Canvas Note: all grade-related discussion must happen via Canvas\n\n4\temail only if absolutely necessary to kaylea@uw.edu\n\nIf you need to have a discussion with me, I would be happy to meet with you via an office hours appointment. This guarantees you my full attention (but, please book at least 24 hours in advance, I might miss your booking otherwise).",
+    "score": 0.6474574477957321
+   },
+   {
+    "chunkId": "chunk-006",
+    "section": "Course Websites",
+    "text": "Course Websites\n•\tWe will use Canvas for announcements and turning in assignments.\n\n•\tWe will use Discord for chat, including to ask questions and share information around the course material. (Invitation link is in the Class Setup Checklist on Canvas.)\n\n•\tCourse absence form: It is important to tell me if you are not coming to class at least one hour before class begins.\n\n•\tEverything else will be linked on this page.\n\n•\tGot a question? Maybe it's on the UWB CSS 360 FAQs page?\n\n•\tOptional! Pitch in to the Spotify playlist for this quarter's class. Share what's fun, what's cool, what's speaking to you this quarter, what more people should know about: the Software Engineering Fall 2025 Spotify Playlist. Otherwise we're just going to listen to things Prof. Champion picked ;).",
+    "score": 0.6331927522574532
+   },
+   {
+    "chunkId": "chunk-010",
+    "section": "Class format and structure",
+    "text": "Class format and structure\nIn general, the organization of the course adopts a \"flipped\" approach where you engage with instructional materials on your own or in groups and we use synchronous meetings to answer questions, address challenges or concerns, work through solutions, and hold semi-structured discussions in the form of cases—discussed in detail below. This is a 5-credit class; you should plan to spend 10 hours per week working on class work as well as 4 hours per week in class and as much as 1 hour per week in lab or office hours. If you are spending substantially more than this, you should consider setting up an office hours appointment with me to think through learning strategies to boost your efficiency. If you are spending substantially less than this, you may find you are losing out on opportunities to learn, grow, and demonstrate your skills.",
+    "score": 0.6308210884567845
+   },
+   {
+    "chunkId": "chunk-095",
+    "section": "Watch my mini-lecture on Patterns",
+    "text": "Watch my mini-lecture on Patterns\n•\tPrepare to answer the questions from the Reading Note using the following resources:\n\n•\tCode patterns from the Wikipedia article on Software design patterns",
+    "score": 0.617984698737039
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The instructor for this course is Kaylea Champion, and you should email her at kaylea@uw.edu if it is absolutely necessary.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 19.437274381984025,
+     "generationSeconds": 19.404688149690628,
+     "ollama": {
+      "totalDurationNs": 19388163426,
+      "loadDurationNs": 5191743695,
+      "promptEvalCount": 882,
+      "promptEvalDurationNs": 11445340000,
+      "evalCount": 28,
+      "evalDurationNs": 2740291000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The instructor for this course is Kaylea Champion, and you should email her at kaylea@uw.edu if it is absolutely necessary. All grade-related discussion must happen via Canvas, and private messages via Discord are preferred over public messages. The syllabus also sets up a Discord server for chat and questions, with an invitation link in the Class Setup Checklist on Canvas. The course absence form is due at least one hour before class begins, and everything else is linked on the course website. If you have a question, maybe it's on the UWB CSS 360 FAQs page. Optional: pitch in to the Spotify playlist for this quarter's class by sharing what's fun, cool, or speaking to you. Otherwise, you'll just listen to what Prof. Champion picked. The syllabus also describes the course format and structure, which is a flipped approach with synchronous meetings for questions and discussions. You should plan to spend 10 hours per week on class work, 4 hours in class, and 1 hour in lab or office hours. If you're spending more time than this, set up an office hours appointment to discuss learning strategies. If you're spending less time, you might miss out on opportunities to learn and grow. The syllabus also includes a mini-lecture",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 38.742682381067425,
+     "generationSeconds": 38.70995281264186,
+     "ollama": {
+      "totalDurationNs": 38694062000,
+      "loadDurationNs": 5429089126,
+      "promptEvalCount": 882,
+      "promptEvalDurationNs": 11576559000,
+      "evalCount": 256,
+      "evalDurationNs": 21677253000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 59.04679767694324
+ },
+ "errorBody": null
+}

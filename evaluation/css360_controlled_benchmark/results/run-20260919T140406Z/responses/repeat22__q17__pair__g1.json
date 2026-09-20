@@ -1,0 +1,183 @@
+{
+ "key": "repeat22/q17/pair/g1",
+ "set": "repeat22",
+ "questionId": "q17",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:56:55+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 57.779,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Is there a deadline for asking for a religious accommodation, and what form do I use?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Religious Accommodations]\nReligious Accommodations\nWashington state law requires that UW develop a policy for accommodation of student absences or significant hardship due to reasons of faith or conscience, or for organized religious activities. The UW’s policy, including more information about how to request an accommodation, is available at Religious Accommodations Policy. Accommodations must be requested within the first two weeks of this course using the Religious Accommodations Request form.\n\n[Section: Disability Resources]\nDisability Resources\nIf you have already established accommodations with Disability Resources for Students (DRS), please communicate your approved accommodations through their processes at your earliest convenience so we can discuss your needs in this course.\n\nIf you have not yet established services through DRS, but have a temporary health condition or permanent disability that requires accommodations (conditions include but not limited to; mental health, attention-related, learning, vision, hearing, physical or health impacts), you are welcome to contact DRS at 425-352-5426 or uwbdrs@uw.edu or disability.uw.edu. DRS offers resources and coordinates reasonable accommodations for students with disabilities and/or temporary health conditions. Reasonable accommodations are established through an interactive process between you, your instructor(s) and DRS.\n\n[Section: Turnaround time commitment]\nTurnaround time commitment\nIf I do not respond to your message in 48 hours, please understand that this is unintentional and nudge me via a Discord DM. My inbox and message queues sometimes get flooded due to a very wide range of commitments. This is not your fault, but an unfortunate fact of life. That said, a polite and focused request will receive a faster reply; an unprofessional request might get eaten by my spam filter; a message containing information unrelated to your question might be misunderstood or misfiled.\n\nYou can call me \"Doctor Champion\" or \"Professor Champion\"! Please note that there is another Champion in the department (Mia) and I am not her :-). I'm the one with the purple hair!\n\n[Section: Contact]\nContact\nYour messages are important to me! I prefer, in this order:\n\n1\tpublic messages via Discord (others might have the same question or have the answer)\n\n2\tprivate messages via Discord\n\n3\tprivate messages via Canvas Note: all grade-related discussion must happen via Canvas\n\n4\temail only if absolutely necessary to kaylea@uw.edu\n\nIf you need to have a discussion with me, I would be happy to meet with you via an office hours appointment. This guarantees you my full attention (but, please book at least 24 hours in advance, I might miss your booking otherwise).\n\nStudent question:\nIs there a deadline for asking for a religious accommodation, and what form do I use?\n\nAnswer:",
+  "promptSha256": "cd09cccf3730c6986d290ffe4e4774af62b7c347b82eb11e6baedf94104ef73c",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-152",
+    "chunk-159",
+    "chunk-003",
+    "chunk-002"
+   ],
+   "setSha256": "b0d8db8f7c02045cd88763242ee8d6b0472894aea39759b538ee80dae30ed80c",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-152",
+    "section": "Religious Accommodations",
+    "text": "Religious Accommodations\nWashington state law requires that UW develop a policy for accommodation of student absences or significant hardship due to reasons of faith or conscience, or for organized religious activities. The UW’s policy, including more information about how to request an accommodation, is available at Religious Accommodations Policy. Accommodations must be requested within the first two weeks of this course using the Religious Accommodations Request form.",
+    "score": 0.7861423045843463
+   },
+   {
+    "chunkId": "chunk-159",
+    "section": "Disability Resources",
+    "text": "Disability Resources\nIf you have already established accommodations with Disability Resources for Students (DRS), please communicate your approved accommodations through their processes at your earliest convenience so we can discuss your needs in this course.\n\nIf you have not yet established services through DRS, but have a temporary health condition or permanent disability that requires accommodations (conditions include but not limited to; mental health, attention-related, learning, vision, hearing, physical or health impacts), you are welcome to contact DRS at 425-352-5426 or uwbdrs@uw.edu or disability.uw.edu. DRS offers resources and coordinates reasonable accommodations for students with disabilities and/or temporary health conditions. Reasonable accommodations are established through an interactive process between you, your instructor(s) and DRS.",
+    "score": 0.5976852384502873
+   },
+   {
+    "chunkId": "chunk-003",
+    "section": "Turnaround time commitment",
+    "text": "Turnaround time commitment\nIf I do not respond to your message in 48 hours, please understand that this is unintentional and nudge me via a Discord DM. My inbox and message queues sometimes get flooded due to a very wide range of commitments. This is not your fault, but an unfortunate fact of life. That said, a polite and focused request will receive a faster reply; an unprofessional request might get eaten by my spam filter; a message containing information unrelated to your question might be misunderstood or misfiled.\n\nYou can call me \"Doctor Champion\" or \"Professor Champion\"! Please note that there is another Champion in the department (Mia) and I am not her :-). I'm the one with the purple hair!",
+    "score": 0.5747531682380319
+   },
+   {
+    "chunkId": "chunk-002",
+    "section": "Contact",
+    "text": "Contact\nYour messages are important to me! I prefer, in this order:\n\n1\tpublic messages via Discord (others might have the same question or have the answer)\n\n2\tprivate messages via Discord\n\n3\tprivate messages via Canvas Note: all grade-related discussion must happen via Canvas\n\n4\temail only if absolutely necessary to kaylea@uw.edu\n\nIf you need to have a discussion with me, I would be happy to meet with you via an office hours appointment. This guarantees you my full attention (but, please book at least 24 hours in advance, I might miss your booking otherwise).",
+    "score": 0.5642003158017082
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, the deadline for requesting a religious accommodation is within the first two weeks of the course, and you must use the Religious Accommodations Request form.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 18.767120181117207,
+     "generationSeconds": 18.733496128115803,
+     "ollama": {
+      "totalDurationNs": 18718616876,
+      "loadDurationNs": 5436373788,
+      "promptEvalCount": 838,
+      "promptEvalDurationNs": 10755952000,
+      "evalCount": 32,
+      "evalDurationNs": 2515062000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus sets the deadline for requesting a religious accommodation within the first two weeks of the course using the Religious Accommodations Request form. It does not set a deadline for requesting a disability accommodation, but asks you to communicate your approved accommodations through DRS' processes at your earliest convenience. The syllabus also sets a deadline for turning in assignments: Friday at 11:59 p.m. Pacific Time zone. Your messages are important to me, and you should use public messages via Discord first, followed by private messages via Discord, then private messages via Canvas, and email only if absolutely necessary. If you need to discuss a grade, you must do so via Canvas. You can call me \"Doctor Champion\" or \"Professor Champion,\" and please note that there is another Champion in the department (Mia) and I am not her. I'm the one with the purple hair! The syllabus does not set a deadline for turning in assignments, but asks you to turn them in by Friday at 11:59 p.m. Pacific Time zone. The syllabus sets the deadline for turning in assignments: Friday at 11:59 p.m. Pacific Time zone. Your messages are important to me, and you should use public messages via Discord first, followed by private",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 38.67674863804132,
+     "generationSeconds": 38.64292706409469,
+     "ollama": {
+      "totalDurationNs": 38626706557,
+      "loadDurationNs": 5930174298,
+      "promptEvalCount": 838,
+      "promptEvalDurationNs": 10527443000,
+      "evalCount": 256,
+      "evalDurationNs": 22156277000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 57.774869699031115
+ },
+ "errorBody": null
+}

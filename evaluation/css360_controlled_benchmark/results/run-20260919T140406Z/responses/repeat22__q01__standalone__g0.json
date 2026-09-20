@@ -1,0 +1,191 @@
+{
+ "key": "repeat22/q01/standalone/g0",
+ "set": "repeat22",
+ "questionId": "q01",
+ "route": "standalone",
+ "group": 0,
+ "conditions": [
+  "base",
+  "ft:v2",
+  "ft:v3"
+ ],
+ "askedAt": "2026-09-19T14:06:16+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 42.412,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Who is the instructor for this course, and what email address should I use if I absolutely have to email them?",
+  "prompt": "Who is the instructor for this course, and what email address should I use if I absolutely have to email them?",
+  "promptSha256": "60b124545f49d149c41a8cfb6c3dcee66a48e43fdb7f629f8863db483fa26209",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "base",
+    "kind": "base",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "I don't have any information about a specific course you're referring to. If you could provide more context or details about the course, such as the name of the institution or organization offering it, I may be able to help you find the instructor's contact information.\n\nIf you're looking for general guidance on how to contact an instructor via email, I can suggest that you try searching for the instructor's name along with the institution's name or department, followed by \"email\" or \"contact.\" You can also try checking the institution's website or contacting their student services department for assistance.\n\nHowever, I want to emphasize that it's generally best to reach out to instructors through official channels, such as through the institution's website or through a designated contact form. This helps ensure that your message is seen by the right person and reduces the risk of miscommunication or misdirection.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 17.823034532833844,
+     "generationSeconds": 17.785761452279985,
+     "ollama": {
+      "totalDurationNs": 17757957874,
+      "loadDurationNs": 5425921956,
+      "promptEvalCount": 48,
+      "promptEvalDurationNs": 559902000,
+      "evalCount": 175,
+      "evalDurationNs": 11768580000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v2",
+    "kind": "ft",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The instructor for this course is Dr. [Instructor's Name]. If you need to contact Dr. [Instructor's Name] via email, please use the following email address:\n\n[Instructor's Email]\n\nPlease note that Dr. [Instructor's Name] may not be available to respond to emails immediately, so it's best to check the course website or discussion board for updates on their availability.",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 12.246104567777365,
+     "generationSeconds": 12.211671757977456,
+     "ollama": {
+      "totalDurationNs": 12197100398,
+      "loadDurationNs": 5426640128,
+      "promptEvalCount": 48,
+      "promptEvalDurationNs": 671419000,
+      "evalCount": 83,
+      "evalDurationNs": 6095780000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v3",
+    "kind": "ft",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The instructor for this course is Dr. [Instructor's Name]. If you need to contact Dr. [Instructor's Name] via email, please use the following email address:\n\n[dr.instructor@university.edu](mailto:dr.instructor@university.edu)\n\nPlease note that this email address is only for official course-related inquiries and should not be used for personal matters.",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 12.337361379992217,
+     "generationSeconds": 12.301675247959793,
+     "ollama": {
+      "totalDurationNs": 12285748887,
+      "loadDurationNs": 5421597208,
+      "promptEvalCount": 48,
+      "promptEvalDurationNs": 625267000,
+      "evalCount": 79,
+      "evalDurationNs": 6234773000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 42.406984370201826
+ },
+ "errorBody": null
+}

@@ -1,0 +1,183 @@
+{
+ "key": "repeat22/q05/pair/g1",
+ "set": "repeat22",
+ "questionId": "q05",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:17:35+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 57.92,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "What overall percentage do I need to end up with a 4.0 in this course?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Mapping Percentage to the 4.0 Scale]\nMapping Percentage to the 4.0 Scale\nInstructors have discretion in how we make use of the 4.0 grading scale; we select the weight for each element of the course, the number of points available, and we decide how best to map a percentage of those points into the 4.0 system. This mapping, and the evenness of spacing within the mapping, may vary from class to class, and it may be quite different from what you are accustomed to seeing elsewhere at UWB (or feel unnatural, if you grew up as I did, receiving letter grades!). For this quarter of this class, I will map an overall 97.0% to a 4.0 and a 60.0% to a 0.7, with even spacing in between. This means to receive a 2.0 for the course, you need a 74.6% in the class. Doing the bare minimum is a high-risk approach (what if life gets busy or messy later in the quarter?), and I don't recommend it.\n\n[Section: Grading]\nGrading\nI will follow the very detailed grading rubric described on my assessment page. Please read it carefully. I will assign grades for each of the following items on the UW 4.0 grade scale according to the weights below:\n\n[Section: Real-world]\nDo you want an excellent grade in the course? Be clear about your expectations and priorities, and seek out groupmates who share your level of commitment.\n\nAre your skills still emerging? Be ready to work hard, to learn from classmates, and to be flexible about which tasks you take on (but don't plan to coast on the efforts of others!).\n\nHave you made life choices that mean you will need to simply be satisfied with an okay grade? Be transparent with your groupmates and only make commitments you can keep.\n\nAlthough some developers work alone or nearly so, that is not the model for this course. Some of our learning goals require trying out ideas related to coordinating the work of groups of people.\n\n[Section: Grade Questions]\nGrade Questions\nEveryone makes mistakes and I want to fix mine as quickly as possible. If you have questions about a grade, book a private timeslot on my calendar within 1 week of the grade being released. In a grade consultation session, I will ask you to take the lead: show me in specific detail how your work fulfills the rubric for the assignment type overall, how you fulfilled the criteria for the specific assignment, and how your work meets the learning goals of the course.\n\nStudent question:\nWhat overall percentage do I need to end up with a 4.0 in this course?\n\nAnswer:",
+  "promptSha256": "231e49c67bda4fae9a93722a503381efc7d1caa14210695e914192a0a3a34210",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 4,
+   "chunkIds": [
+    "chunk-066",
+    "chunk-057",
+    "chunk-032",
+    "chunk-065"
+   ],
+   "setSha256": "c72c3fe2577c02e5fbca9b730a310189d8874f285023bccc16ddae676f4120e7",
+   "facets": []
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-066",
+    "section": "Mapping Percentage to the 4.0 Scale",
+    "text": "Mapping Percentage to the 4.0 Scale\nInstructors have discretion in how we make use of the 4.0 grading scale; we select the weight for each element of the course, the number of points available, and we decide how best to map a percentage of those points into the 4.0 system. This mapping, and the evenness of spacing within the mapping, may vary from class to class, and it may be quite different from what you are accustomed to seeing elsewhere at UWB (or feel unnatural, if you grew up as I did, receiving letter grades!). For this quarter of this class, I will map an overall 97.0% to a 4.0 and a 60.0% to a 0.7, with even spacing in between. This means to receive a 2.0 for the course, you need a 74.6% in the class. Doing the bare minimum is a high-risk approach (what if life gets busy or messy later in the quarter?), and I don't recommend it.",
+    "score": 0.7944677139241375
+   },
+   {
+    "chunkId": "chunk-057",
+    "section": "Grading",
+    "text": "Grading\nI will follow the very detailed grading rubric described on my assessment page. Please read it carefully. I will assign grades for each of the following items on the UW 4.0 grade scale according to the weights below:",
+    "score": 0.6917914870278714
+   },
+   {
+    "chunkId": "chunk-032",
+    "section": "Real-world",
+    "text": "Do you want an excellent grade in the course? Be clear about your expectations and priorities, and seek out groupmates who share your level of commitment.\n\nAre your skills still emerging? Be ready to work hard, to learn from classmates, and to be flexible about which tasks you take on (but don't plan to coast on the efforts of others!).\n\nHave you made life choices that mean you will need to simply be satisfied with an okay grade? Be transparent with your groupmates and only make commitments you can keep.\n\nAlthough some developers work alone or nearly so, that is not the model for this course. Some of our learning goals require trying out ideas related to coordinating the work of groups of people.",
+    "score": 0.6493489764199083
+   },
+   {
+    "chunkId": "chunk-065",
+    "section": "Grade Questions",
+    "text": "Grade Questions\nEveryone makes mistakes and I want to fix mine as quickly as possible. If you have questions about a grade, book a private timeslot on my calendar within 1 week of the grade being released. In a grade consultation session, I will ask you to take the lead: show me in specific detail how your work fulfills the rubric for the assignment type overall, how you fulfilled the criteria for the specific assignment, and how your work meets the learning goals of the course.",
+    "score": 0.5983060490937296
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "You need a 74.6% in the class to receive a 2.0 for the course.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 18.556216799188405,
+     "generationSeconds": 18.523398596793413,
+     "ollama": {
+      "totalDurationNs": 18508386502,
+      "loadDurationNs": 5690631846,
+      "promptEvalCount": 838,
+      "promptEvalDurationNs": 11008160000,
+      "evalCount": 23,
+      "evalDurationNs": 1801980000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "The syllabus maps an overall 97.0% to a 4.0 and a 60.0% to a 0.7, with even spacing in between. To receive a 2.0 for the course, you need a 74.6% in the class. Doing the bare minimum is a high-risk approach, and the instructor does not recommend it. The syllabus does not provide a single overall percentage for a 4.0, but rather maps percentages to the 4.0 scale in a way that varies from class to class. The instructor's mapping for this course is 97.0% to 4.0 and 60.0% to 0.7. The syllabus does not provide a range of acceptable percentages for a 4.0, but it does emphasize the importance of doing the work required to earn a good grade. The instructor wants students to be clear about their expectations and priorities and to be ready to work hard and learn from their classmates. The syllabus does not provide a specific percentage for a 4.0, but it does describe the instructor's mapping for this course as 97.0% to 4.0 and 60.0% to 0.7.",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 39.03841048805043,
+     "generationSeconds": 39.00606495095417,
+     "ollama": {
+      "totalDurationNs": 38991002449,
+      "loadDurationNs": 5427612673,
+      "promptEvalCount": 838,
+      "promptEvalDurationNs": 10794474000,
+      "evalCount": 256,
+      "evalDurationNs": 22761265000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 57.916516561061144
+ },
+ "errorBody": null
+}

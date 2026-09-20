@@ -1,0 +1,240 @@
+{
+ "key": "repeat22/q03/pair/g0",
+ "set": "repeat22",
+ "questionId": "q03",
+ "route": "pair",
+ "group": 0,
+ "conditions": [
+  "rag",
+  "ft_rag:v2",
+  "ft_rag:v3"
+ ],
+ "askedAt": "2026-09-19T14:10:12+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 71.809,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Are any class sessions being held over Zoom instead of in the classroom, and if so, on which dates?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Case: Left-pad]\nCase: Left-pad\nNote: Class will be via zoom this day.\n\n[Section: Between-Sprint PlanningNovember 24 (Monday)]\nBetween-Sprint PlanningNovember 24 (Monday)\nPre-made demos of your bot are due today at 11:59 p.m. Pacific time.\n\nNovember 25 (Tuesday) -- Demo Day!\n\nDemo Day! Your demo of your bot should be done live in class today\n\nNovember 27 (Thursday)\n\n[Section: Class format and structure]\nClass format and structure\n2\tConversation and discussion that happens in the group Discord server over the course of the week.\n\nI expect you to finish all readings and watch all lectures outside of our class meeting times before the class sessions on which they are assigned. Please note that this means I will not generally deliver lectures during our class meetings. Please also note that this means you are fully responsible for reading all readings and watching all recorded lecture material before you come to the associated synchronous part of class.\n\nI expect you to check in and participate in the Discord discussion. I plan to check and respond to conversation there at least daily throughout the quarter.\n\n[Section: Devices in Class]\nDevices in Class\nI ask you to stay focused and avoid distractions for yourself and your peers in the classroom. Spending class time gaming and shopping is a waste of your precious dollars and your precious minutes here --- live, face-to-face opportunities to learn are getting harder to find and they mean so much when we engage with them. That said, you are an adult, and I myself cannot imagine taking a class without being able to take notes on a device and look up topics as they come up. Learning to be present and to control our attention is part of being a modern adult. I promise not to spend class time goofing off online and I think you owe it to yourself to promise the same.\n\n[Section: Someone even wrote a snarky microservice]\nSomeone even wrote a snarky microservice\nNovember 11 (Tuesday) -- No class: Veterans DayNovember 13 (Thursday) -- Infrastructures and Supply Chains (Part 2)\n\nNote: Class will be via Zoom this day\n\nRequested parts (address each exactly once):\n- Are any class sessions being held over Zoom instead of in the classroom\n- on which dates\n\nStudent question:\nAre any class sessions being held over Zoom instead of in the classroom, and if so, on which dates?\n\nAnswer:",
+  "promptSha256": "af6618ea306207a17f0a77200b7a56cab3024f1d6865ec2979120a33a71a0d78",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-119",
+    "chunk-140",
+    "chunk-011",
+    "chunk-150",
+    "chunk-124"
+   ],
+   "setSha256": "10971c51701cf1df8de6c36ac4a351d7c5e61293b2a0768e444c7871248c6991",
+   "facets": [
+    "Are any class sessions being held over Zoom instead of in the classroom",
+    "on which dates"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-119",
+    "section": "Case: Left-pad",
+    "text": "Case: Left-pad\nNote: Class will be via zoom this day.",
+    "score": 0.6934207030207656
+   },
+   {
+    "chunkId": "chunk-140",
+    "section": "Between-Sprint PlanningNovember 24 (Monday)",
+    "text": "Between-Sprint PlanningNovember 24 (Monday)\nPre-made demos of your bot are due today at 11:59 p.m. Pacific time.\n\nNovember 25 (Tuesday) -- Demo Day!\n\nDemo Day! Your demo of your bot should be done live in class today\n\nNovember 27 (Thursday)",
+    "score": 0.5765216385280189
+   },
+   {
+    "chunkId": "chunk-011",
+    "section": "Class format and structure",
+    "text": "Class format and structure\n2\tConversation and discussion that happens in the group Discord server over the course of the week.\n\nI expect you to finish all readings and watch all lectures outside of our class meeting times before the class sessions on which they are assigned. Please note that this means I will not generally deliver lectures during our class meetings. Please also note that this means you are fully responsible for reading all readings and watching all recorded lecture material before you come to the associated synchronous part of class.\n\nI expect you to check in and participate in the Discord discussion. I plan to check and respond to conversation there at least daily throughout the quarter.",
+    "score": 0.6749710202960209
+   },
+   {
+    "chunkId": "chunk-150",
+    "section": "Devices in Class",
+    "text": "Devices in Class\nI ask you to stay focused and avoid distractions for yourself and your peers in the classroom. Spending class time gaming and shopping is a waste of your precious dollars and your precious minutes here --- live, face-to-face opportunities to learn are getting harder to find and they mean so much when we engage with them. That said, you are an adult, and I myself cannot imagine taking a class without being able to take notes on a device and look up topics as they come up. Learning to be present and to control our attention is part of being a modern adult. I promise not to spend class time goofing off online and I think you owe it to yourself to promise the same.",
+    "score": 0.6740901413353747
+   },
+   {
+    "chunkId": "chunk-124",
+    "section": "Someone even wrote a snarky microservice",
+    "text": "Someone even wrote a snarky microservice\nNovember 11 (Tuesday) -- No class: Veterans DayNovember 13 (Thursday) -- Infrastructures and Supply Chains (Part 2)\n\nNote: Class will be via Zoom this day",
+    "score": 0.6710591801053232
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "rag",
+    "kind": "rag",
+    "alias": "base",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, some class sessions will be held over Zoom instead of in the classroom. These sessions are:\n\n* November 11 (Tuesday) -- No class: Veterans Day\n* November 13 (Thursday) -- Infrastructures and Supply Chains (Part 2)\n* The case: Left-pad, which will be via Zoom this day.\n\nAdditionally, Demo Day, which is scheduled for November 25 (Tuesday), will also be held live in class, but it's not clear if it will be in-person or via Zoom.",
+    "servedTag": "llama3.2:3b",
+    "servedDigest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "base",
+     "lineageId": null,
+     "version": null,
+     "role": "base",
+     "trainingLabel": null,
+     "includeInControlledClaims": null,
+     "expectedTag": "llama3.2:3b",
+     "ollamaDigest": "a80c4f17acd5",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": "meta-llama/Llama-3.2-3B-Instruct",
+     "adapterSha256": null,
+     "adapterDtype": null,
+     "ggufBlobSha256": null,
+     "ggufDtype": null,
+     "ggufBytes": null,
+     "gitCommitSha": null
+    },
+    "timing": {
+     "wallSeconds": 22.64463758794591,
+     "generationSeconds": 22.599845721852034,
+     "ollama": {
+      "totalDurationNs": 22584951463,
+      "loadDurationNs": 5431840402,
+      "promptEvalCount": 778,
+      "promptEvalDurationNs": 9102862000,
+      "evalCount": 107,
+      "evalDurationNs": 8042833000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v2",
+    "kind": "ft_rag",
+    "alias": "v2",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, some class sessions will be held over Zoom instead of in the classroom. These sessions are:\n\n* November 11 (Tuesday) -- No class: Veterans Day\n* November 13 (Thursday) -- Infrastructures and Supply Chains (Part 2)\n* November 24 (Monday) -- Pre-made demos of your bot are due today at 11:59 p.m. Pacific time\n* November 25 (Tuesday) -- Demo Day!\n* November 27 (Thursday)",
+    "servedTag": "css360-ft-v2:latest",
+    "servedDigest": "dea74c57f25a4d7892873a909f3bc97cce166a4759e27eac24c3fe90949af629",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v2",
+     "lineageId": "css360-v2",
+     "version": "v2",
+     "role": "production",
+     "trainingLabel": "Production model, Tillicum through the training queue, 2026-09-04",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-ft-v2:latest",
+     "ollamaDigest": "dea74c57f25a",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "8466d16e1e1be2d5fd4ec1dcd06e2ad805bc981e266bc96de39cf2255f9b7d59",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "af2f6c875d34141ea460ed7f4970cefc57f08ff696a692c295f5948a2cc3da41",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "732f0fed8a25d869f5b281947571f92550cb843f"
+    },
+    "timing": {
+     "wallSeconds": 23.80648564407602,
+     "generationSeconds": 23.77392155583948,
+     "ollama": {
+      "totalDurationNs": 23758873638,
+      "loadDurationNs": 5424925731,
+      "promptEvalCount": 778,
+      "promptEvalDurationNs": 9841541000,
+      "evalCount": 100,
+      "evalDurationNs": 8485394000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v3",
+    "kind": "ft_rag",
+    "alias": "v3",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "Yes, some class sessions will be held over Zoom instead of in the classroom. These sessions are:\n\n* November 11 (Tuesday) -- No class: Veterans Day\n* November 13 (Thursday) -- Infrastructures and Supply Chains (Part 2)\n* November 24 (Monday) -- Between-Sprint Planning\n* Demo Day! (November 25, Tuesday) - Your demo of your bot should be done live in class today\n* November 27 (Thursday)",
+    "servedTag": "css360-cpu-v3-test:latest",
+    "servedDigest": "0d723f0db28f0e4bf2938fd889437320aae486d8f0c6e74995ac13585277fe62",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v3",
+     "lineageId": "css360-v3",
+     "version": "v3",
+     "role": "experimental",
+     "trainingLabel": "Experimental CPU run on the UWB VM, 2026-09-10",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-cpu-v3-test:latest",
+     "ollamaDigest": "0d723f0db28f",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "0a12db1544e62f0ecb0971fd93ccc5214128b6dff2f49012c59b00c4c60c8d62",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "63dcaa76d400fb2a57c39621f5348fdd30cadd8c2235c69c9dc88c7a980af93d",
+     "ggufDtype": "F32",
+     "ggufBytes": 48655072,
+     "gitCommitSha": "c5772f2c2977c538880daa25339b0bfad05fff1d"
+    },
+    "timing": {
+     "wallSeconds": 24.656264510937035,
+     "generationSeconds": 24.62285166280344,
+     "ollama": {
+      "totalDurationNs": 24607903393,
+      "loadDurationNs": 5425467576,
+      "promptEvalCount": 778,
+      "promptEvalDurationNs": 10129676000,
+      "evalCount": 99,
+      "evalDurationNs": 9045895000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 3,
+   "scorable": 3,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 71.805225584656
+ },
+ "errorBody": null
+}

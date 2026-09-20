@@ -1,0 +1,144 @@
+{
+ "key": "repeat22/q17/standalone/g1",
+ "set": "repeat22",
+ "questionId": "q17",
+ "route": "standalone",
+ "group": 1,
+ "conditions": [
+  "ft:v4_vm",
+  "ft:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T14:58:54+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 36.002,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "standalone",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "Is there a deadline for asking for a religious accommodation, and what form do I use?",
+  "prompt": "Is there a deadline for asking for a religious accommodation, and what form do I use?",
+  "promptSha256": "5a6acedcbc5e3591f06b1a8f4c4ff52580904abeec55378c7afb31ad8126be0e",
+  "promptTemplate": null,
+  "retrieval": null,
+  "retrievedChunks": [],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft:v4_vm",
+    "kind": "ft",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "You must submit your request for a religious accommodation by the end of the first day of class. You will need to complete the Religious Accommodation Request Form (RAF) and submit it to the instructor or the Disability Services office.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 9.511180805973709,
+     "generationSeconds": 9.478829548694193,
+     "ollama": {
+      "totalDurationNs": 9464523678,
+      "loadDurationNs": 5422991130,
+      "promptEvalCount": 43,
+      "promptEvalDurationNs": 599467000,
+      "evalCount": 47,
+      "evalDurationNs": 3438971000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft:v4_tillicum",
+    "kind": "ft",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "You must submit your request for a religious accommodation by the end of the first day of classes. You must use the Religious Accommodation Request Form (RAF) available on the course website. The form asks for your name, course number, instructor's name, and a brief description of your religious accommodation request. You must also attach a copy of your religious accommodation request letter from your religious organization or faith leader. The instructor will review your request and respond within one week. If your request is approved, you must complete the Religious Accommodation Agreement form and return it to the instructor by the end of the second week of classes. If your request is denied, the instructor will notify you in writing. You may appeal the denial by submitting an appeal letter to the instructor by the end of the third week of classes. The instructor will review your appeal and respond within one week. If your appeal is approved, you must complete the Religious Accommodation Agreement form and return it to the instructor by the end of the fourth week of classes. If your appeal is denied, the instructor will notify you in writing. You may appeal the denial again by submitting an appeal letter to the instructor by the end of the fifth week of classes. The instructor will review your appeal and respond within one week. If",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 26.48748270282522,
+     "generationSeconds": 26.45492267003283,
+     "ollama": {
+      "totalDurationNs": 26440024880,
+      "loadDurationNs": 5419436875,
+      "promptEvalCount": 43,
+      "promptEvalDurationNs": 604004000,
+      "evalCount": 256,
+      "evalDurationNs": 20413293000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 35.99888321291655
+ },
+ "errorBody": null
+}

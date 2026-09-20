@@ -1,0 +1,193 @@
+{
+ "key": "heldout/h02/pair/g1",
+ "set": "heldout",
+ "questionId": "h02",
+ "route": "pair",
+ "group": 1,
+ "conditions": [
+  "ft_rag:v4_vm",
+  "ft_rag:v4_tillicum"
+ ],
+ "askedAt": "2026-09-19T15:18:44+00:00",
+ "httpStatus": 200,
+ "wallSeconds": 61.505,
+ "attempt": 1,
+ "error": null,
+ "response": {
+  "route": "pair",
+  "courseId": "css-360-winter-2026-a7rp",
+  "question": "What three questions does each person answer at standup, and who is responsible for sending the post-standup notes to the instructor?",
+  "prompt": "You are answering a student's question about their course. Answer using only the syllabus excerpts below.\n\nRules:\n- Use only what the excerpts say. Do not add policies, dates, numbers, names, reasons, conditions, or procedures from general knowledge.\n- Copy numbers, dates, times, percentages, ranges, task numbers, and deadlines exactly as written, and keep numbered or ordered lists in the order shown. Do not round, widen, narrow, renumber, or reorder them.\n- Keep each rule attached to the assignment, session, or situation it is stated for, and keep separate conditions separate. Do not extend a rule to other situations or merge consequences unless the excerpts do.\n- If the excerpts do not contain the answer, say that the syllabus does not say, then briefly give what it does say about the topic if that helps. Do not guess.\n- If the question assumes something the excerpts contradict, say so plainly and give what the syllabus actually says instead.\n- Answer every part of a multi-part question exactly once. For a part the excerpts do not cover, say so.\n- Write two to five sentences of natural prose addressed to the student. Do not mention excerpts, sections, context, retrieval, or AI.\n\nSyllabus excerpts:\n[Section: Standup Meetings]\nStandup Meetings\nOnce project groups are formed and we have covered the Agile approach, you will meet in a standup format at the beginning of each class. In standup, you answer three questions: what did you do since the last standup, what will you do before the next standup, and do you have any blockers? One member will take on the role of Scrum Master, a duty that will rotate among group members. All members will update the Kanban board and the Scrum Master will pursue removing any blockers and send me post-standup notes so that everyone gets credit for the standup. Your performance in standup will be assessed according to the rubric described in the detailed page on assessment\n\n[Section: Impact of Missing Class]\nStandup participation is equivalent to answering one question in class. You can also receive credit for serving as scrum master (that is, taking extra effort to remove blockers on behalf of your groupmates issues shared in standup). If you take on scrum master work after a standup, document this and point it out to me when it occurs. Scrum master for a standup is equivalent to answering one additional question in class. There is no way to directly make up missing a standup meeting with your group -- you may find it useful to share an update, but there is no substitute for the synchronous and timely participation in a standup. If you miss standup, the self-balancing approach I use to randomize who answers questions will mean that you are more likely to be called on in subsequent classes.\n\n[Section: Cold Calling]\nCold Calling\nCases rely roughly on the socratic method where instructors teaching cases cold call on students—i.e., instructors call on people without asking for volunteers first. I will be doing this in each class. Modern technical work environments include very similar situations: very few lectures (except for \"all hands\" type meetings and \"training\" activities), and a range of types of team meetings and group conversations, where you will be expected to be prepared and then participate in key moments.\n\n[Section: Discuss Reading Note 12]\nDiscuss Reading Note 12\n•\tStandup\n\n[Section: Discuss Reading Note 3]\nDiscuss Reading Note 3\n•\tStandup\n\n•\tHands-on / triage issues with Task 2\n\nRequested parts (address each exactly once):\n- three questions does each person answer at standup\n- and who is responsible for sending the post-standup notes to the instructor\n\nStudent question:\nWhat three questions does each person answer at standup, and who is responsible for sending the post-standup notes to the instructor?\n\nAnswer:",
+  "promptSha256": "c09b2f8bccbfce256cb369a36d93fe8b2ecf40daba7e87e013e020fa2f2807e4",
+  "promptTemplate": {
+   "name": "grounded-v1",
+   "sha256": "c963ffb5bd97aa946e730fb916b7ddedcf3a7cab9049199be186b994752d7a93"
+  },
+  "retrieval": {
+   "topK": 4,
+   "chunkCount": 5,
+   "chunkIds": [
+    "chunk-028",
+    "chunk-064",
+    "chunk-024",
+    "chunk-122",
+    "chunk-084"
+   ],
+   "setSha256": "696bea9abd1acb71e9e4b6f8039f114e829a5f9eb6c9a80e0f2c10d4ba37c168",
+   "facets": [
+    "three questions does each person answer at standup",
+    "and who is responsible for sending the post-standup notes to the instructor"
+   ]
+  },
+  "retrievedChunks": [
+   {
+    "chunkId": "chunk-028",
+    "section": "Standup Meetings",
+    "text": "Standup Meetings\nOnce project groups are formed and we have covered the Agile approach, you will meet in a standup format at the beginning of each class. In standup, you answer three questions: what did you do since the last standup, what will you do before the next standup, and do you have any blockers? One member will take on the role of Scrum Master, a duty that will rotate among group members. All members will update the Kanban board and the Scrum Master will pursue removing any blockers and send me post-standup notes so that everyone gets credit for the standup. Your performance in standup will be assessed according to the rubric described in the detailed page on assessment",
+    "score": 0.786428149839888
+   },
+   {
+    "chunkId": "chunk-064",
+    "section": "Impact of Missing Class",
+    "text": "Standup participation is equivalent to answering one question in class. You can also receive credit for serving as scrum master (that is, taking extra effort to remove blockers on behalf of your groupmates issues shared in standup). If you take on scrum master work after a standup, document this and point it out to me when it occurs. Scrum master for a standup is equivalent to answering one additional question in class. There is no way to directly make up missing a standup meeting with your group -- you may find it useful to share an update, but there is no substitute for the synchronous and timely participation in a standup. If you miss standup, the self-balancing approach I use to randomize who answers questions will mean that you are more likely to be called on in subsequent classes.",
+    "score": 0.7598416757479847
+   },
+   {
+    "chunkId": "chunk-024",
+    "section": "Cold Calling",
+    "text": "Cold Calling\nCases rely roughly on the socratic method where instructors teaching cases cold call on students—i.e., instructors call on people without asking for volunteers first. I will be doing this in each class. Modern technical work environments include very similar situations: very few lectures (except for \"all hands\" type meetings and \"training\" activities), and a range of types of team meetings and group conversations, where you will be expected to be prepared and then participate in key moments.",
+    "score": 0.6745278878399259
+   },
+   {
+    "chunkId": "chunk-122",
+    "section": "Discuss Reading Note 12",
+    "text": "Discuss Reading Note 12\n•\tStandup",
+    "score": 0.659987586748467
+   },
+   {
+    "chunkId": "chunk-084",
+    "section": "Discuss Reading Note 3",
+    "text": "Discuss Reading Note 3\n•\tStandup\n\n•\tHands-on / triage issues with Task 2",
+    "score": 0.6583607265601714
+   }
+  ],
+  "decoding": {
+   "num_predict": 256,
+   "temperature": 0,
+   "repeat_penalty": 1.05,
+   "repeat_last_n": 4096,
+   "seed": 360,
+   "num_ctx": 4096
+  },
+  "conditionTimeoutSeconds": 120.0,
+  "lineageRecord": {
+   "title": "CSS 360 model lineage",
+   "schemaVersion": 1,
+   "generatedAt": "2026-09-16T07:18:22+00:00",
+   "courseId": "css-360-winter-2026-a7rp"
+  },
+  "conditions": [
+   {
+    "condition": "ft_rag:v4_vm",
+    "kind": "ft_rag",
+    "alias": "v4_vm",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "At standup, each person answers three questions: what did you do since the last standup, what will you do before the next standup, and do you have any blockers? The Scrum Master is responsible for sending post-standup notes to the instructor so that everyone gets credit for the standup.",
+    "servedTag": "css360-v4-test:latest",
+    "servedDigest": "b8763e820e934f28a423ac4bc2e101fd59bff307c087cfecebd1809a15b9b0f2",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_vm",
+     "lineageId": "css360-v4-vm",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 CPU run on the UWB VM, 2026-09-12",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-test:latest",
+     "ollamaDigest": "b8763e820e93",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "1e845b5a9a1e3af37e963bb274d40b0bf77488128f435275d6366d7a666dde04",
+     "adapterDtype": "BF16",
+     "ggufBlobSha256": "3c497e878699d8446768f4ab028869cd1b4818682f2c5d9e65b3db797b68373a",
+     "ggufDtype": "F16",
+     "ggufBytes": 24341216,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 21.482906111050397,
+     "generationSeconds": 21.44989584898576,
+     "ollama": {
+      "totalDurationNs": 21435473234,
+      "loadDurationNs": 5428542898,
+      "promptEvalCount": 828,
+      "promptEvalDurationNs": 10706769000,
+      "evalCount": 64,
+      "evalDurationNs": 5292581000,
+      "doneReason": "stop"
+     }
+    },
+    "error": null
+   },
+   {
+    "condition": "ft_rag:v4_tillicum",
+    "kind": "ft_rag",
+    "alias": "v4_tillicum",
+    "status": "ok",
+    "outcome": "scorable",
+    "answer": "At standup, each person answers three questions: what did you do since the last standup, what will you do before the next standup, and do you have any blockers? The Scrum Master takes on the role of removing blockers and sends post-standup notes to the instructor so everyone gets credit for the standup. Your performance in standup is assessed according to the rubric described in the detailed page on assessment. Standup participation is equivalent to answering one question in class, and serving as scrum master is equivalent to answering one additional question in class. If you miss standup, the self-balancing approach means you're more likely to be called on in subsequent classes. There's no direct way to make up missing a standup meeting with your group. You can share an update, but it's not a substitute for synchronous and timely participation. The instructor will be doing cold calling in each class, using the socratic method where they call on students without asking for volunteers first. Modern technical work environments include similar situations where you'll be expected to be prepared and participate in key moments. The syllabus does not provide a way to make up missing a standup meeting with your group. It does say that standup participation is equivalent to answering one question in",
+    "servedTag": "css360-v4-tillicum-test:latest",
+    "servedDigest": "d323b6f366b6c7149c99aa32e2f7a80c6fbae4e098597ab4f4441b6ec639368b",
+    "tagMatchesLineage": true,
+    "digestMatchesLineage": true,
+    "decodingMatchesSpec": true,
+    "promptEchoMatches": true,
+    "lineage": {
+     "alias": "v4_tillicum",
+     "lineageId": "css360-v4-tillicum",
+     "version": null,
+     "role": "experimental",
+     "trainingLabel": "Experimental mixed-v4 GPU run on Tillicum, 2026-09-15",
+     "includeInControlledClaims": true,
+     "expectedTag": "css360-v4-tillicum-test:latest",
+     "ollamaDigest": "d323b6f366b6",
+     "baseQuantization": "Q4_K_M",
+     "huggingFaceId": null,
+     "adapterSha256": "60052cf82890113342fa41a95edb0c91d3b58ebc77f6e7b57982e2411b79926e",
+     "adapterDtype": "F32",
+     "ggufBlobSha256": "8a958186e72738989ee198b23dfe9b90963132c2f3ed81113caf8f3b573e8528",
+     "ggufDtype": "F32",
+     "ggufBytes": 48654880,
+     "gitCommitSha": "1104ad505b2e6d18a0e97b05297b6cd602b98288"
+    },
+    "timing": {
+     "wallSeconds": 39.318988339044154,
+     "generationSeconds": 39.28579087695107,
+     "ollama": {
+      "totalDurationNs": 39269551507,
+      "loadDurationNs": 5660948157,
+      "promptEvalCount": 828,
+      "promptEvalDurationNs": 11227995000,
+      "evalCount": 256,
+      "evalDurationNs": 22372606000,
+      "doneReason": "length"
+     }
+    },
+    "error": null
+   }
+  ],
+  "summary": {
+   "attempted": 2,
+   "scorable": 2,
+   "failedGenerations": 0,
+   "invalid": 0,
+   "errors": 0
+  },
+  "requestSeconds": 61.50152982585132
+ },
+ "errorBody": null
+}

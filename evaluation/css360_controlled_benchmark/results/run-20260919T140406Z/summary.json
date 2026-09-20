@@ -1,0 +1,538 @@
+{
+ "run": "run-20260919T140406Z",
+ "attempted": 460,
+ "perCondition": {
+  "base": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 1.4545454545454546,
+    "overall": 1.9092727272727272,
+    "hallucinated": 0
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 1.5,
+    "overall": 1.8057916666666667,
+    "hallucinated": 1
+   }
+  },
+  "rag": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 3.409090909090909,
+    "overall": 3.6363636363636362,
+    "hallucinated": 5
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 3.2916666666666665,
+    "overall": 3.5277083333333334,
+    "hallucinated": 3
+   }
+  },
+  "ft:v2": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 1.0909090909090908,
+    "overall": 1.2272727272727273,
+    "hallucinated": 15
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 1.5,
+    "overall": 1.5277916666666667,
+    "hallucinated": 16
+   }
+  },
+  "ft_rag:v2": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 3.4545454545454546,
+    "overall": 3.621136363636364,
+    "hallucinated": 5
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 3.25,
+    "overall": 3.4444166666666667,
+    "hallucinated": 7
+   }
+  },
+  "ft:v3": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 1.1818181818181819,
+    "overall": 1.3636818181818182,
+    "hallucinated": 13
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 1.4166666666666667,
+    "overall": 1.4583333333333333,
+    "hallucinated": 17
+   }
+  },
+  "ft_rag:v3": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 3.3636363636363638,
+    "overall": 3.5605,
+    "hallucinated": 5
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 3.3333333333333335,
+    "overall": 3.5693750000000004,
+    "hallucinated": 4
+   }
+  },
+  "ft:v4_vm": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 1.3181818181818181,
+    "overall": 1.3181818181818181,
+    "hallucinated": 20
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 1.4166666666666667,
+    "overall": 1.4166666666666667,
+    "hallucinated": 21
+   }
+  },
+  "ft_rag:v4_vm": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 3.227272727272727,
+    "overall": 3.4242272727272725,
+    "hallucinated": 5
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 3.75,
+    "overall": 3.9027499999999997,
+    "hallucinated": 4
+   }
+  },
+  "ft:v4_tillicum": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 1.0454545454545454,
+    "overall": 1.030318181818182,
+    "hallucinated": 22
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 1.25,
+    "overall": 1.2361250000000001,
+    "hallucinated": 23
+   }
+  },
+  "ft_rag:v4_tillicum": {
+   "repeat22": {
+    "n": 22,
+    "correctness": 3.090909090909091,
+    "overall": 3.4090454545454545,
+    "hallucinated": 12
+   },
+   "heldout": {
+    "n": 24,
+    "correctness": 3.5833333333333335,
+    "overall": 3.861041666666667,
+    "hallucinated": 8
+   }
+  }
+ },
+ "paired": {
+  "repeat22:RAG vs FT+RAG v2": {
+   "n": 22,
+   "wins": 8,
+   "ties": 11,
+   "losses": 3,
+   "meanOverallDiff": 0.015227272727272685,
+   "meanCorrectnessDiff": -0.045454545454545456,
+   "signTestP": 0.2265625
+  },
+  "repeat22:RAG vs FT+RAG v3": {
+   "n": 22,
+   "wins": 9,
+   "ties": 10,
+   "losses": 3,
+   "meanOverallDiff": 0.0758636363636363,
+   "meanCorrectnessDiff": 0.045454545454545456,
+   "signTestP": 0.14599609375
+  },
+  "repeat22:RAG vs FT+RAG v4-VM": {
+   "n": 22,
+   "wins": 7,
+   "ties": 13,
+   "losses": 2,
+   "meanOverallDiff": 0.21213636363636362,
+   "meanCorrectnessDiff": 0.18181818181818182,
+   "signTestP": null
+  },
+  "repeat22:RAG vs FT+RAG v4-Tillicum": {
+   "n": 22,
+   "wins": 14,
+   "ties": 1,
+   "losses": 7,
+   "meanOverallDiff": 0.22731818181818178,
+   "meanCorrectnessDiff": 0.3181818181818182,
+   "signTestP": 0.18924713134765625
+  },
+  "repeat22:Base vs FT v2": {
+   "n": 22,
+   "wins": 17,
+   "ties": 5,
+   "losses": 0,
+   "meanOverallDiff": 0.6819999999999999,
+   "meanCorrectnessDiff": 0.36363636363636365,
+   "signTestP": 1.52587890625e-05
+  },
+  "repeat22:Base vs FT v3": {
+   "n": 22,
+   "wins": 14,
+   "ties": 7,
+   "losses": 1,
+   "meanOverallDiff": 0.5455909090909091,
+   "meanCorrectnessDiff": 0.2727272727272727,
+   "signTestP": 0.0009765625
+  },
+  "repeat22:Base vs FT v4-VM": {
+   "n": 22,
+   "wins": 18,
+   "ties": 0,
+   "losses": 4,
+   "meanOverallDiff": 0.5910909090909091,
+   "meanCorrectnessDiff": 0.13636363636363635,
+   "signTestP": 0.004343509674072266
+  },
+  "repeat22:Base vs FT v4-Tillicum": {
+   "n": 22,
+   "wins": 22,
+   "ties": 0,
+   "losses": 0,
+   "meanOverallDiff": 0.8789545454545454,
+   "meanCorrectnessDiff": 0.4090909090909091,
+   "signTestP": 4.76837158203125e-07
+  },
+  "repeat22:FT+RAG v4-VM vs FT+RAG v4-Tillicum": {
+   "n": 22,
+   "wins": 11,
+   "ties": 2,
+   "losses": 9,
+   "meanOverallDiff": 0.015181818181818185,
+   "meanCorrectnessDiff": 0.13636363636363635,
+   "signTestP": 0.8238029479980469
+  },
+  "repeat22:FT v4-VM vs FT v4-Tillicum": {
+   "n": 22,
+   "wins": 4,
+   "ties": 18,
+   "losses": 0,
+   "meanOverallDiff": 0.2878636363636364,
+   "meanCorrectnessDiff": 0.2727272727272727,
+   "signTestP": null
+  },
+  "repeat22:FT+RAG v4-VM vs FT+RAG v2": {
+   "n": 22,
+   "wins": 6,
+   "ties": 10,
+   "losses": 6,
+   "meanOverallDiff": -0.19690909090909095,
+   "meanCorrectnessDiff": -0.22727272727272727,
+   "signTestP": 1.0
+  },
+  "repeat22:FT+RAG v4-Tillicum vs FT+RAG v2": {
+   "n": 22,
+   "wins": 8,
+   "ties": 2,
+   "losses": 12,
+   "meanOverallDiff": -0.2120909090909091,
+   "meanCorrectnessDiff": -0.36363636363636365,
+   "signTestP": 0.5034446716308594
+  },
+  "repeat22:FT+RAG v4-VM vs FT+RAG v3": {
+   "n": 22,
+   "wins": 7,
+   "ties": 9,
+   "losses": 6,
+   "meanOverallDiff": -0.1362727272727273,
+   "meanCorrectnessDiff": -0.13636363636363635,
+   "signTestP": 1.0
+  },
+  "repeat22:FT v4-VM vs FT v2": {
+   "n": 22,
+   "wins": 4,
+   "ties": 12,
+   "losses": 6,
+   "meanOverallDiff": 0.0909090909090909,
+   "meanCorrectnessDiff": 0.22727272727272727,
+   "signTestP": 0.75390625
+  },
+  "heldout:RAG vs FT+RAG v2": {
+   "n": 24,
+   "wins": 5,
+   "ties": 18,
+   "losses": 1,
+   "meanOverallDiff": 0.08329166666666668,
+   "meanCorrectnessDiff": 0.041666666666666664,
+   "signTestP": null
+  },
+  "heldout:RAG vs FT+RAG v3": {
+   "n": 24,
+   "wins": 2,
+   "ties": 20,
+   "losses": 2,
+   "meanOverallDiff": -0.04166666666666666,
+   "meanCorrectnessDiff": -0.041666666666666664,
+   "signTestP": null
+  },
+  "heldout:RAG vs FT+RAG v4-VM": {
+   "n": 24,
+   "wins": 4,
+   "ties": 8,
+   "losses": 12,
+   "meanOverallDiff": -0.37504166666666666,
+   "meanCorrectnessDiff": -0.4583333333333333,
+   "signTestP": 0.076812744140625
+  },
+  "heldout:RAG vs FT+RAG v4-Tillicum": {
+   "n": 24,
+   "wins": 8,
+   "ties": 5,
+   "losses": 11,
+   "meanOverallDiff": -0.3333333333333333,
+   "meanCorrectnessDiff": -0.2916666666666667,
+   "signTestP": 0.6476058959960938
+  },
+  "heldout:Base vs FT v2": {
+   "n": 24,
+   "wins": 13,
+   "ties": 8,
+   "losses": 3,
+   "meanOverallDiff": 0.27799999999999997,
+   "meanCorrectnessDiff": 0.0,
+   "signTestP": 0.021270751953125
+  },
+  "heldout:Base vs FT v3": {
+   "n": 24,
+   "wins": 13,
+   "ties": 8,
+   "losses": 3,
+   "meanOverallDiff": 0.34745833333333326,
+   "meanCorrectnessDiff": 0.08333333333333333,
+   "signTestP": 0.021270751953125
+  },
+  "heldout:Base vs FT v4-VM": {
+   "n": 24,
+   "wins": 17,
+   "ties": 3,
+   "losses": 4,
+   "meanOverallDiff": 0.38912499999999994,
+   "meanCorrectnessDiff": 0.08333333333333333,
+   "signTestP": 0.007197380065917969
+  },
+  "heldout:Base vs FT v4-Tillicum": {
+   "n": 24,
+   "wins": 18,
+   "ties": 4,
+   "losses": 2,
+   "meanOverallDiff": 0.5696666666666667,
+   "meanCorrectnessDiff": 0.25,
+   "signTestP": 0.0004024505615234375
+  },
+  "heldout:FT+RAG v4-VM vs FT+RAG v4-Tillicum": {
+   "n": 24,
+   "wins": 6,
+   "ties": 12,
+   "losses": 6,
+   "meanOverallDiff": 0.04170833333333332,
+   "meanCorrectnessDiff": 0.16666666666666666,
+   "signTestP": 1.0
+  },
+  "heldout:FT v4-VM vs FT v4-Tillicum": {
+   "n": 24,
+   "wins": 4,
+   "ties": 20,
+   "losses": 0,
+   "meanOverallDiff": 0.18054166666666668,
+   "meanCorrectnessDiff": 0.16666666666666666,
+   "signTestP": null
+  },
+  "heldout:FT+RAG v4-VM vs FT+RAG v2": {
+   "n": 24,
+   "wins": 11,
+   "ties": 10,
+   "losses": 3,
+   "meanOverallDiff": 0.4583333333333333,
+   "meanCorrectnessDiff": 0.5,
+   "signTestP": 0.057373046875
+  },
+  "heldout:FT+RAG v4-Tillicum vs FT+RAG v2": {
+   "n": 24,
+   "wins": 11,
+   "ties": 8,
+   "losses": 5,
+   "meanOverallDiff": 0.416625,
+   "meanCorrectnessDiff": 0.3333333333333333,
+   "signTestP": 0.210113525390625
+  },
+  "heldout:FT+RAG v4-VM vs FT+RAG v3": {
+   "n": 24,
+   "wins": 11,
+   "ties": 8,
+   "losses": 5,
+   "meanOverallDiff": 0.333375,
+   "meanCorrectnessDiff": 0.4166666666666667,
+   "signTestP": 0.210113525390625
+  },
+  "heldout:FT v4-VM vs FT v2": {
+   "n": 24,
+   "wins": 1,
+   "ties": 17,
+   "losses": 6,
+   "meanOverallDiff": -0.11112499999999999,
+   "meanCorrectnessDiff": -0.08333333333333333,
+   "signTestP": null
+  },
+  "both:RAG vs FT+RAG v2": {
+   "n": 46,
+   "wins": 13,
+   "ties": 29,
+   "losses": 4,
+   "meanOverallDiff": 0.0507391304347826,
+   "meanCorrectnessDiff": 0.0,
+   "signTestP": 0.049041748046875
+  },
+  "both:RAG vs FT+RAG v3": {
+   "n": 46,
+   "wins": 11,
+   "ties": 30,
+   "losses": 5,
+   "meanOverallDiff": 0.014543478260869542,
+   "meanCorrectnessDiff": 0.0,
+   "signTestP": 0.210113525390625
+  },
+  "both:RAG vs FT+RAG v4-VM": {
+   "n": 46,
+   "wins": 11,
+   "ties": 21,
+   "losses": 14,
+   "meanOverallDiff": -0.09421739130434782,
+   "meanCorrectnessDiff": -0.15217391304347827,
+   "signTestP": 0.6900379657745361
+  },
+  "both:RAG vs FT+RAG v4-Tillicum": {
+   "n": 46,
+   "wins": 22,
+   "ties": 6,
+   "losses": 18,
+   "meanOverallDiff": -0.06519565217391304,
+   "meanCorrectnessDiff": 0.0,
+   "signTestP": 0.6358280026288412
+  },
+  "both:Base vs FT v2": {
+   "n": 46,
+   "wins": 30,
+   "ties": 13,
+   "losses": 3,
+   "meanOverallDiff": 0.4712173913043478,
+   "meanCorrectnessDiff": 0.17391304347826086,
+   "signTestP": 1.4011748135089874e-06
+  },
+  "both:Base vs FT v3": {
+   "n": 46,
+   "wins": 27,
+   "ties": 15,
+   "losses": 4,
+   "meanOverallDiff": 0.4422173913043478,
+   "meanCorrectnessDiff": 0.17391304347826086,
+   "signTestP": 3.39532271027565e-05
+  },
+  "both:Base vs FT v4-VM": {
+   "n": 46,
+   "wins": 35,
+   "ties": 3,
+   "losses": 8,
+   "meanOverallDiff": 0.4857173913043478,
+   "meanCorrectnessDiff": 0.10869565217391304,
+   "signTestP": 4.1934157934520044e-05
+  },
+  "both:Base vs FT v4-Tillicum": {
+   "n": 46,
+   "wins": 40,
+   "ties": 4,
+   "losses": 2,
+   "meanOverallDiff": 0.7175869565217391,
+   "meanCorrectnessDiff": 0.32608695652173914,
+   "signTestP": 4.1109160520136356e-10
+  },
+  "both:FT+RAG v4-VM vs FT+RAG v4-Tillicum": {
+   "n": 46,
+   "wins": 17,
+   "ties": 14,
+   "losses": 15,
+   "meanOverallDiff": 0.029021739130434775,
+   "meanCorrectnessDiff": 0.15217391304347827,
+   "signTestP": 0.860050065908581
+  },
+  "both:FT v4-VM vs FT v4-Tillicum": {
+   "n": 46,
+   "wins": 8,
+   "ties": 38,
+   "losses": 0,
+   "meanOverallDiff": 0.2318695652173913,
+   "meanCorrectnessDiff": 0.21739130434782608,
+   "signTestP": null
+  },
+  "both:FT+RAG v4-VM vs FT+RAG v2": {
+   "n": 46,
+   "wins": 17,
+   "ties": 20,
+   "losses": 9,
+   "meanOverallDiff": 0.14495652173913043,
+   "meanCorrectnessDiff": 0.15217391304347827,
+   "signTestP": 0.16863754391670227
+  },
+  "both:FT+RAG v4-Tillicum vs FT+RAG v2": {
+   "n": 46,
+   "wins": 19,
+   "ties": 10,
+   "losses": 17,
+   "meanOverallDiff": 0.11593478260869564,
+   "meanCorrectnessDiff": 0.0,
+   "signTestP": 0.8679394004284404
+  },
+  "both:FT+RAG v4-VM vs FT+RAG v3": {
+   "n": 46,
+   "wins": 18,
+   "ties": 17,
+   "losses": 11,
+   "meanOverallDiff": 0.10876086956521737,
+   "meanCorrectnessDiff": 0.15217391304347827,
+   "signTestP": 0.26493089646101
+  },
+  "both:FT v4-VM vs FT v2": {
+   "n": 46,
+   "wins": 5,
+   "ties": 29,
+   "losses": 12,
+   "meanOverallDiff": -0.0145,
+   "meanCorrectnessDiff": 0.06521739130434782,
+   "signTestP": 0.143463134765625
+  }
+ },
+ "outcomes": {
+  "rag:scorable": 46,
+  "ft_rag:v2:scorable": 46,
+  "ft_rag:v3:scorable": 46,
+  "ft_rag:v4_vm:scorable": 46,
+  "ft_rag:v4_tillicum:scorable": 46,
+  "base:scorable": 46,
+  "ft:v2:scorable": 46,
+  "ft:v3:scorable": 46,
+  "ft:v4_vm:scorable": 46,
+  "ft:v4_tillicum:scorable": 46
+ }
+}
