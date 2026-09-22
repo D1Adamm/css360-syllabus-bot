@@ -86,6 +86,41 @@ unit-tested.
 
 ---
 
+## VM-local fine-tuned serving, 2026-09-22
+
+Observed on `aiswe` after the tracked `aiswe-finetuned` unit replaced the
+hand-written one (checkout `265a64d` plus the installer fix that followed).
+
+- The unit was migrated live: `install`, three `set-mapping` calls, `check`,
+  `restart`. Port 9001 changed owner from the old process to the new one with
+  no tunnel involved; lingering was already on.
+- `scripts/verify_finetuned_production.py` passed **28 of 28** checks as an
+  administrator: unit enabled and active, a python process on 9001, all three
+  mapped Ollama models present, `/health` ok with every mapped version
+  servable, direct `/generate` for CSS 350 v2, CSS 360 v2 and CSS 360 v3 with
+  the requested course and version echoed, and through the backend
+  Fine-Tuned, Fine-Tuned + RAG, Base and RAG for both courses.
+- The published adapters are the run artifacts: on Tillicum,
+  `serving/css-350-spring-2026-n3h9/v2` hashes `773761a1…08fd`, identical to
+  run `20260827T205338Z-full`, and `serving/css-360-winter-2026-a7rp/v2`
+  hashes `8466d16e…7d59`, identical to run `20260905T040428Z-full`; both
+  `current.json` pointers name those runs.
+- `scripts/finetuned_latency_probe.py` at its defaults (20 requests, both
+  courses, both fine-tuned modes, concurrency 1 and 2; `FINETUNED_KEEP_ALIVE`
+  30m) recorded, in seconds:
+
+  | Course | Mode | First | c=1 median / p95 | c=2 median / p95 / max |
+  | --- | --- | --- | --- | --- |
+  | CSS 350 | Fine-Tuned | 7.1 | 2.1 / 2.3 | 2.9 / 3.8 / 3.8 |
+  | CSS 350 | Fine-Tuned + RAG | 12.4 | 3.8 / 3.9 | 6.1 / 8.0 / 8.0 |
+  | CSS 360 | Fine-Tuned | 7.2 | 1.9 / 1.9 | 2.8 / 3.8 / 3.8 |
+  | CSS 360 | Fine-Tuned + RAG | 10.6 | 4.0 / 4.3 | 7.0 / 8.7 / 8.7 |
+
+  No failures, no timeouts. The first request of each cell pays the model
+  load; concurrency 2 roughly doubles the median, which is the serialised
+  Ollama path queueing as expected. Two students asking at once wait under
+  ten seconds for a grounded answer.
+
 ## What was not run
 
 Neither `scripts/sync_training_data_to_tillicum.sh` nor
