@@ -1,0 +1,40 @@
+# Per-course fine-tuned inference on the UWB VM: a systemd *user* unit beside
+# aiswe-backend, running training/inference_service/ollama_service.py against
+# the VM's own Ollama on loopback :9001. This is the normal production path;
+# the Tillicum GPU service and its SSH tunnel are the fallback and claim the
+# same port, so the two must never run at once.
+#
+# Install and update with the helper, which renders @REPO_ROOT@ to the checkout
+# it is run from and never edits this tracked copy:
+#   ./scripts/aiswe_finetuned.sh install
+#
+# Mutable settings live in ~/.config/aiswe/finetuned.env (mode 600), not here:
+#   FINETUNED_OLLAMA_MODELS   courseId@vN=ollamaTag, comma separated
+#   FINETUNED_KEEP_ALIVE      how long a model stays resident, e.g. 30m
+# Change a mapping with `./scripts/aiswe_finetuned.sh set-mapping ...`, then
+# `restart`. The preflight refuses to start on a malformed mapping or when the
+# Tillicum tunnel already owns the port, so the failure is in `status`, not in
+# a browser.
+[Unit]
+Description=Per-course fine-tuned inference (VM-local Ollama, loopback :9001)
+After=network.target
+# A permanent misconfiguration (bad mapping, port owned by the tunnel) must not
+# restart forever: five failures in five minutes stop the unit until an
+# operator runs `systemctl --user reset-failed aiswe-finetuned`.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_ROOT@/training/inference_service
+EnvironmentFile=%h/.config/aiswe/finetuned.env
+Environment=INFERENCE_PORT=9001
+# Validates the mapping, refuses a port the tunnel owns, waits for Ollama.
+ExecStartPre=@REPO_ROOT@/scripts/aiswe_finetuned.sh preflight
+ExecStart=@REPO_ROOT@/backend/.venv/bin/python ollama_service.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

@@ -162,13 +162,20 @@ every other course was being served with.
 
 Publication does **not** start or restart inference.
 
-### D) Inference (separate)
+### D) Serving (separate, and on the VM)
+
+Production inference runs on the UWB VM, not on Tillicum: convert the adapter
+and build its Ollama model with `scripts/install_finetuned_adapter.py`, map it
+with `scripts/aiswe_finetuned.sh set-mapping`, restart the `aiswe-finetuned`
+unit. See [docs/deployment.md](../docs/deployment.md#fine-tuned-inference-on-the-vm).
+
+The Tillicum GPU service is the emergency fallback only:
 
 ```bash
 ./training/start_finetuned_service.sh
 ./training/status_finetuned_service.sh
 ./training/stop_finetuned_service.sh
-# on aiswe.uwb.edu:
+# on aiswe.uwb.edu, after ./scripts/aiswe_finetuned.sh stop:
 ./scripts/start_finetuned_tunnel.sh --from-backend
 ```
 
@@ -322,9 +329,10 @@ backend/.venv/bin/python scripts/register_course_model.py \
   --status ready --deployment offline
 ```
 
-then convert `adapter/` to GGUF and `ollama create` a model from it as
-described in `training/inference_service/README.md`. The training queue
-worker still targets Tillicum; a CPU run is launched by hand.
+then install it into the VM's Ollama with `scripts/install_finetuned_adapter.py`
+(conversion, versioned tag, verification) and map it with
+`scripts/aiswe_finetuned.sh set-mapping`. The training queue worker still
+targets Tillicum; a CPU run is launched by hand.
 
 Tests for this path (no ML stack needed): `pytest training` runs
 `training/test_train_qlora_cpu_mode.py` and the launcher/helper tests in

@@ -37,6 +37,10 @@ usage() {
   cat <<'EOF'
 Open the UWB VM -> Tillicum -> compute-node tunnel for fine-tuned inference.
 
+FALLBACK ONLY. Normal production serving is the VM-local service
+(aiswe-finetuned, ./scripts/aiswe_finetuned.sh), which owns the same local
+port; this script refuses to run while that unit is active.
+
 Usage:
   ./scripts/start_finetuned_tunnel.sh --from-backend
   ./scripts/start_finetuned_tunnel.sh <compute-node>
@@ -205,6 +209,20 @@ require_cmd systemctl
 
 mkdir -p "${STATE_ROOT}"
 
+# The VM-local service (`aiswe-finetuned`, the normal production path) listens
+# on the same 127.0.0.1:${LOCAL_PORT}. This tunnel is the fallback, and it never
+# takes the port from the service: the operator stops the service first, on
+# purpose, and starts it again with ./scripts/aiswe_finetuned.sh start when the
+# fallback is over.
+LOCAL_UNIT="${LOCAL_UNIT:-aiswe-finetuned}"
+if systemctl --user is-active --quiet "${LOCAL_UNIT}" 2>/dev/null; then
+  die "The VM-local fine-tuned service (${LOCAL_UNIT}) is active and owns 127.0.0.1:${LOCAL_PORT}.
+  This tunnel is the Tillicum fallback and must not run beside it. If you really need the fallback:
+    ./scripts/aiswe_finetuned.sh stop
+  then retry. Return to local serving afterwards with:
+    ./scripts/stop_finetuned_tunnel.sh && ./scripts/aiswe_finetuned.sh start"
+fi
+
 echo "Fine-tuned tunnel startup"
 echo "Node: ${NODE}"
 echo "Local forward: ${FINETUNED_LOCAL_URL} -> ${NODE}:${REMOTE_PORT}"
@@ -224,7 +242,7 @@ if health_ready "${FINETUNED_LOCAL_URL}/health"; then
       die "Healthy managed tunnel on localhost:${LOCAL_PORT} is for node '${SAVED_NODE}', not requested '${NODE}'. Run: ./scripts/stop_finetuned_tunnel.sh then retry with ${NODE}."
     fi
   else
-    die "localhost:${LOCAL_PORT}/health is healthy, but there is no trustworthy project tunnel state/control socket proving it belongs to ${NODE}. Refusing to overwrite state or kill arbitrary processes. Free the port or identify the forwarder, then retry. If this was our tunnel, run: ./scripts/stop_finetuned_tunnel.sh"
+    die "localhost:${LOCAL_PORT}/health is healthy, but there is no trustworthy project tunnel state/control socket proving it belongs to ${NODE}. This is usually the VM-local service (check: ./scripts/aiswe_finetuned.sh status; stop it deliberately with ./scripts/aiswe_finetuned.sh stop). Refusing to overwrite state or kill arbitrary processes. If this was our tunnel, run: ./scripts/stop_finetuned_tunnel.sh"
   fi
 else
   if local_tcp_open "${LOCAL_PORT}"; then

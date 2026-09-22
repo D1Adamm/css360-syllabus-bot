@@ -68,6 +68,16 @@ training/state/
 *.pth
 *.ckpt
 *.onnx
+# Local Ollama build inputs: GGUF conversions, Modelfiles and install records
+# live under ~/model_artifacts on the VM, never in the checkout.
+**/model_artifacts/
+**/Modelfile
+**/*.Modelfile
+**/install-record.json
+# The aiswe-finetuned unit's environment file is installed to ~/.config/aiswe;
+# only the example is tracked.
+finetuned.env
+!scripts/finetuned.env.example
 
 # ---------------------------------------------------------------------------
 # Generated diagnostics

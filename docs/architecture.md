@@ -234,14 +234,21 @@ See [css360-benchmark-endpoint.md](css360-benchmark-endpoint.md).
 `FINETUNED_SERVICE_URL` points at `http://127.0.0.1:9001` on the VM. That is
 `training/inference_service/ollama_service.py`, a loopback-only service that
 answers the same `/health` and `/generate` contract the Tillicum GPU service
-does, but by asking the VM's own Ollama for a per-course model. Which course
-maps to which Ollama model is configuration (`FINETUNED_OLLAMA_MODELS`); an
-unmapped course is refused, never answered by another course's model.
+does, but by asking the VM's own Ollama for a per-course model. It runs as the
+systemd user unit `aiswe-finetuned` (tracked as
+`training/inference_service/aiswe-finetuned.service`, operated by
+`scripts/aiswe_finetuned.sh`), enabled at boot and restarted on failure, so
+answering questions needs nothing outside the VM. Which course maps to which
+Ollama model is configuration (`FINETUNED_OLLAMA_MODELS`, in
+`~/.config/aiswe/finetuned.env`); an unmapped course is refused, never
+answered by another course's model.
 
 The Tillicum GPU service (`training/inference_service/app.py`) is kept as the
-fallback and reference implementation. Its tunnel helper forwards the same
-`127.0.0.1:9001` to whichever compute node holds the allocation, so the backend
-cannot tell the two apart — and the two must not run at once.
+emergency fallback and reference implementation. Its tunnel helper forwards the
+same `127.0.0.1:9001` to whichever compute node holds the allocation, so the
+backend cannot tell the two apart — and the two must not run at once: the
+tunnel script refuses while the unit is active, and the unit refuses while the
+tunnel owns the port.
 
 The fine-tuned paths share the VM's Ollama process with Base and RAG, so on a
 CPU host they queue behind one another rather than overlapping.

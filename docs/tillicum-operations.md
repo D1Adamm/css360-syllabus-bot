@@ -80,9 +80,17 @@ the recovery tool for registering an artifact by hand.
 
 ---
 
-## Inference: the normal flow
+## Inference: the Tillicum fallback
 
-Before a class or a demo:
+**This is not the normal path.** Fine-Tuned and Fine-Tuned + RAG are served on
+the UWB VM by the `aiswe-finetuned` user unit through the VM's own Ollama, with
+no Tillicum allocation, tunnel, Duo prompt or open terminal; see
+[deployment.md](deployment.md#fine-tuned-inference-on-the-vm). The GPU service
+below is kept for emergencies — the VM's Ollama is broken, or an adapter has
+not been converted yet — and it claims the same `127.0.0.1:9001`, so the local
+unit must be stopped first and started again afterwards.
+
+To use the fallback:
 
 ```bash
 ssh $USER@tillicum.hyak.uw.edu           # UW password + Duo, by hand
@@ -95,6 +103,7 @@ Then, on the application VM:
 ```bash
 ssh <you>@aiswe.uwb.edu                  # UW password + Duo, by hand
 cd ~/css360-syllabus-bot
+./scripts/aiswe_finetuned.sh stop        # release 127.0.0.1:9001; the tunnel refuses while the unit is active
 ./scripts/start_finetuned_tunnel.sh --from-backend
 ```
 
@@ -129,18 +138,17 @@ Status and stop:
 # UWB VM
 ./scripts/status_finetuned_tunnel.sh
 ./scripts/stop_finetuned_tunnel.sh
+./scripts/aiswe_finetuned.sh start       # back to VM-local serving
 ```
 
-### The one step that is still manual, and why
+### Why the fallback needs a person, and the normal path does not
 
 The tunnel is opened **from** the UWB VM **to** Tillicum, and opening it
 authenticates to UW. Duo is not automated, bypassed, or stored anywhere, so that
-SSH is a person at a keyboard.
-
-What has been removed is everything around it: the operator no longer has to
-discover a hostname, keep it accurate across job restarts, or edit
-`backend/.env` by hand. The remaining action is one command that prompts for the
-authentication it needs.
+SSH is a person at a keyboard, and a session that ends when the Slurm job does.
+That is exactly why it is the fallback: ordinary student use runs on the VM's
+own unit, which needs none of it, survives logout, and comes back after a
+reboot.
 
 ---
 

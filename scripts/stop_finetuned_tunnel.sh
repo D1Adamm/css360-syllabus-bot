@@ -65,6 +65,7 @@ if [[ "${ACTIVE}" -eq 0 ]]; then
   exit 0
 fi
 
-echo "Local Fine-Tuned / Fine-Tuned + RAG paths will be unavailable until the tunnel is started again."
+echo "Fine-Tuned / Fine-Tuned + RAG are unavailable until a service owns port ${LOCAL_PORT:-9001} again."
+echo "Return to normal VM-local serving now:  ./scripts/aiswe_finetuned.sh start"
 echo "Base and RAG on the UWB VM are unaffected."
 echo "Remember to scancel the Tillicum GPU job if you are done using the GPU."

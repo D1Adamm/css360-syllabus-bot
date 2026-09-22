@@ -19,8 +19,8 @@ Internally `base`, `rag`, `fineTuned`, and `fineTunedRag`. What everyone sees:
 | --- | --- | --- |
 | Base | A base model with no course context at all | Local Ollama |
 | RAG | Retrieval: syllabus passages are found and put in the prompt | Local Ollama |
-| Fine-Tuned | A LoRA adapter fine-tuned on this course's approved examples | Local Ollama, as a per-course model (Tillicum GPU as fallback) |
-| Fine-Tuned + RAG | The fine-tuned adapter, prompted with retrieved passages | Local Ollama, the same per-course model (Tillicum GPU as fallback) |
+| Fine-Tuned | A LoRA adapter fine-tuned on this course's approved examples | Local Ollama, as a per-course model, via the `aiswe-finetuned` unit (Tillicum GPU as emergency fallback) |
+| Fine-Tuned + RAG | The fine-tuned adapter, prompted with retrieved passages | Local Ollama, the same per-course model (Tillicum GPU as emergency fallback) |
 
 All four are real. Nothing is simulated.
 
@@ -81,7 +81,7 @@ FastAPI  ───────────────►  PostgreSQL          s
   └──►  Tillicum GPU cluster
           ├─ training queue          via authenticated outbound HTTPS
           │                          from the cluster back to FastAPI
-          └─ fine-tuned inference    fallback only, via an SSH tunnel opened by hand
+          └─ fine-tuned inference    emergency fallback only, via an SSH tunnel opened by hand
 ```
 
 **On the UWB VM:** Nginx, the React build, FastAPI, PostgreSQL, Ollama, the
@@ -194,9 +194,10 @@ query strings; see `src/app/LegacyRedirects.tsx`.
 
 **Optional, and not required for local Base/RAG development:**
 
-- **Tillicum access** — only for fine-tuned inference and training. Without it,
-  Base and RAG work normally and the two fine-tuned paths report that no
-  service is configured.
+- **Tillicum access** — only for training (and the emergency inference
+  fallback). Without it, Base and RAG work normally, and on the VM the two
+  fine-tuned paths are served by the local `aiswe-finetuned` unit; on a
+  developer machine they report that no service is configured.
 - **`TRAINING_WORKER_TOKEN`** — only for the training queue API. Leave it unset
   and that router refuses every request with 503, which is the correct behaviour
   for an unconfigured deployment.
@@ -371,10 +372,12 @@ closed if a test tries to reach any of them — see
 - **Password reset is administrator-issued.** There is no mail path, so a
   forgotten professor password means asking an administrator for a one-time
   reset link.
-- **A newly trained adapter reaches the VM by hand.** Fine-tuned answers on the
-  VM come from Ollama models built from GGUF-converted adapters; a new version
-  is not served until someone converts it, creates the Ollama model, and maps
-  it in `FINETUNED_OLLAMA_MODELS`.
+- **A newly trained adapter reaches the VM by hand, on purpose.** Fine-tuned
+  answers on the VM come from Ollama models built from GGUF-converted adapters;
+  a new version is not served until someone runs
+  `scripts/install_finetuned_adapter.py` and maps it with
+  `scripts/aiswe_finetuned.sh set-mapping`. Serving a model is a decision, not
+  a side effect of training.
 - **Syllabus artifacts and indexes are local disk only**, so the backend is not
   horizontally scalable as written.
 - The archived Firebase snapshot is retained deliberately; nothing deletes it.

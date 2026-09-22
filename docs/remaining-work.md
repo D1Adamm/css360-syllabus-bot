@@ -76,30 +76,23 @@ first thing to hit if this grows.
 
 ## 6. Fine-tuned inference without Tillicum
 
-Fine-tuned inference used to require a GPU session opened by hand, because the
-tunnel authenticates to UW and two-factor is deliberately not automated. That
-made the Fine-Tuned paths unavailable outside a scheduled session.
+Done. Fine-Tuned and Fine-Tuned + RAG are served on the UWB VM by the
+`aiswe-finetuned` user unit (`training/inference_service/ollama_service.py`
+against the VM's own Ollama, on `127.0.0.1:9001`, the same contract the GPU
+service answers). It is installed, mapped, verified and switched to and from
+the Tillicum fallback with tracked tooling (`scripts/aiswe_finetuned.sh`,
+`scripts/install_finetuned_adapter.py`, `scripts/verify_finetuned_production.py`,
+`scripts/finetuned_latency_probe.py`); see
+[deployment.md](deployment.md#fine-tuned-inference-on-the-vm). Ordinary
+student use needs no Tillicum allocation, SSH tunnel, Duo prompt, laptop,
+`caffeinate` or open terminal. The Tillicum GPU service remains the emergency
+fallback and the reference implementation; the training queue still submits
+to Tillicum, which is where training belongs.
 
-The CSS 360 v2 adapter now runs on the UWB VM's CPU through Ollama, and
-`training/inference_service/ollama_service.py` serves it behind the same
-`/health` and `/generate` contract the GPU service answers, on the same
-`127.0.0.1:9001`. The backend client is unchanged. Courses are mapped to Ollama
-models by configuration, so CSS 350 is one more entry once its adapter is
-converted.
-
-Training can now run on the VM as well: `train_qlora.py --cpu` and
-`training/start_cpu_qlora_training.sh` run the same recipe (same split, chat
-formatting, LoRA and NF4 configuration) with float32 compute on the VM's
-cores, writing the cluster's output layout, and neither device mode ever
-falls back to the other. See "CPU training on the UWB VM" in
-`training/README.md`.
-
-Still open: converting adapters to GGUF is a by-hand step; latency on the VM
-under classroom load has not been measured; the training queue worker still
-submits to Tillicum, so a CPU run is launched and registered by hand; and the
-Tillicum GPU service remains the known-good baseline and fallback, so nothing
-has been removed from it. See the "UWB VM" section of
-`training/inference_service/README.md`.
+Still by hand, deliberately: deciding that a trained version should be served
+(publication in PostgreSQL, then one `set-mapping` on the VM). Still open: the
+CPU training path (`train_qlora.py --cpu`) is launched and registered by hand
+rather than through the queue.
 
 ---
 

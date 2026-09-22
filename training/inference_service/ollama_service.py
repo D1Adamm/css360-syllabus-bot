@@ -50,11 +50,14 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from helpers import (
+from helpers import (  # noqa: F401 - the map helpers are re-exported for callers
     DEFAULT_MAX_NEW_TOKENS,
     DEFAULT_REPETITION_PENALTY,
     DEFAULT_SEED,
+    MODEL_MAP_ENV,
     CourseAdapterError,
+    normalize_ollama_model_name,
+    parse_model_map,
     validate_course_id,
     validate_model_version,
     validate_question,
@@ -79,8 +82,6 @@ DEFAULT_NUM_CTX = 4096
 #: Reported as `model` on /health, where the Tillicum service reports its base
 #: model id. The per-course Ollama models are built on top of this one.
 DEFAULT_BASE_MODEL = "llama3.2:3b"
-
-MODEL_MAP_ENV = "FINETUNED_OLLAMA_MODELS"
 
 
 class OllamaUnavailable(Exception):
@@ -143,74 +144,6 @@ def resolve_keep_alive() -> Optional[str]:
 
 def resolve_base_model() -> str:
     return (os.environ.get("FINETUNED_BASE_MODEL") or DEFAULT_BASE_MODEL).strip()
-
-
-def normalize_ollama_model_name(name: str) -> str:
-    """`css360-ft-v2` and `css360-ft-v2:latest` are the same Ollama model.
-
-    `/api/tags` always reports the tagged form, so the mapping is compared to it
-    in that form regardless of how the operator wrote it.
-    """
-    value = (name or "").strip()
-    if not value:
-        raise CourseAdapterError("An Ollama model name must not be blank.")
-    if any(char.isspace() for char in value):
-        raise CourseAdapterError(
-            "Invalid Ollama model name: {0!r} (contains whitespace).".format(name)
-        )
-    # A registry prefix can carry a port, e.g. localhost:5000/ns/model:tag, so
-    # only the final path segment is checked for a tag.
-    head, sep, tail = value.rpartition("/")
-    if ":" not in tail:
-        tail = tail + ":latest"
-    return head + sep + tail if sep else tail
-
-
-def parse_model_map(raw: Optional[str]) -> Dict[str, Dict[str, str]]:
-    """Parse `FINETUNED_OLLAMA_MODELS` into {courseId: {version: ollamaModel}}.
-
-    Entries are `courseId@vN=ollamaModel`, separated by commas, whitespace or
-    newlines::
-
-        css-360-winter-2026-a7rp@v2=css360-ft-v2:latest
-        css-360-winter-2026-a7rp@v2=css360-ft-v2,css-350-spring-2026-n3h9@v1=css350-ft-v1
-
-    Every course id and version is validated with the rules the Tillicum
-    service applies to a serving path, so a request can never be resolved from
-    an entry the other implementation would have refused. A malformed entry
-    fails the whole map rather than being skipped: a mapping that silently lost
-    a course would answer that course with a 409 and no hint why.
-    """
-    mapping: Dict[str, Dict[str, str]] = {}
-    text = (raw or "").replace(",", " ")
-    for token in text.split():
-        entry = token.strip()
-        if not entry:
-            continue
-        if "=" not in entry or "@" not in entry.split("=", 1)[0]:
-            raise CourseAdapterError(
-                "Invalid {0} entry {1!r}. Expected courseId@vN=ollamaModel.".format(
-                    MODEL_MAP_ENV, entry
-                )
-            )
-        course_and_version, model_name = entry.split("=", 1)
-        course_id, version = course_and_version.rsplit("@", 1)
-        safe_course_id = validate_course_id(course_id)
-        safe_version = validate_model_version(version)
-        safe_model = normalize_ollama_model_name(model_name)
-        versions = mapping.setdefault(safe_course_id, {})
-        if safe_version in versions and versions[safe_version] != safe_model:
-            raise CourseAdapterError(
-                "{0} maps {1} {2} to two different models ({3} and {4}).".format(
-                    MODEL_MAP_ENV,
-                    safe_course_id,
-                    safe_version,
-                    versions[safe_version],
-                    safe_model,
-                )
-            )
-        versions[safe_version] = safe_model
-    return mapping
 
 
 def load_model_map() -> Dict[str, Dict[str, str]]:

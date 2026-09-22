@@ -13,7 +13,7 @@ apart.
 | Needs a person | no | yes: SSH + Duo to open the tunnel |
 | Listens on | `127.0.0.1:9001`, nothing else | compute node `:8001`, tunnelled to `127.0.0.1:9001` |
 | Python deps | FastAPI, uvicorn, pydantic, httpx (all in `backend/.venv`) | plus torch, Transformers, PEFT, bitsandbytes |
-| Role | current path (CSS 360 v2) | fallback and reference implementation |
+| Role | the production path, as the `aiswe-finetuned` user unit | emergency fallback and reference implementation; needs a person at a Duo prompt |
 
 Both refuse a course they have nothing for, and both echo the course and
 version they answered with; the backend discards a response naming a different
@@ -25,7 +25,10 @@ course. **Never run both at once**: they claim the same `127.0.0.1:9001`.
 
 Training writes a PEFT adapter directory. Ollama loads a LoRA adapter from
 GGUF, so convert it once (llama.cpp's `convert_lora_to_gguf.py`, against the
-same base model) and build a model from it:
+same base model) and build a model from it. `scripts/install_finetuned_adapter.py`
+does all of this for one course and version — validation, conversion, a
+versioned tag, verification, and the mapping entry to add — and has a
+`--dry-run`; what follows is what it runs:
 
 ```text
 # Modelfile
@@ -65,11 +68,23 @@ Nothing is mapped by default. With an empty mapping `/health` reports no
 courses and every `/generate` is a 409. A malformed entry stops the service at
 startup rather than silently dropping a course.
 
-### 3) Run it
+### 3) Run it as the `aiswe-finetuned` user unit
 
-From the repository root on the VM, with the backend's virtualenv. It already
-has everything this service imports; no torch, Transformers, PEFT or
-bitsandbytes is installed or needed.
+The tracked unit is `aiswe-finetuned.service` beside this file; the helper
+renders it for the checkout, keeps the mapping in a restricted environment
+file, and refuses to start while the Tillicum tunnel owns the port. The whole
+procedure — install, mapping, verify, fallback, reboot — is in
+[docs/deployment.md](../../docs/deployment.md#fine-tuned-inference-on-the-vm).
+
+```bash
+./scripts/aiswe_finetuned.sh install      # unit + ~/.config/aiswe/finetuned.env + FINETUNED_SERVICE_URL
+./scripts/aiswe_finetuned.sh set-mapping css-360-winter-2026-a7rp v2 css360-ft-v2
+./scripts/aiswe_finetuned.sh start        # check | status | restart | stop | logs
+```
+
+By hand, from the repository root on the VM with the backend's virtualenv
+(it already has everything this service imports; no torch, Transformers, PEFT
+or bitsandbytes is installed or needed):
 
 ```bash
 cd training/inference_service
@@ -77,32 +92,9 @@ FINETUNED_OLLAMA_MODELS="css-360-winter-2026-a7rp@v2=css360-ft-v2:latest" \
   ../../backend/.venv/bin/python ollama_service.py
 ```
 
-It binds `127.0.0.1:9001` and nothing else; there is no host override. For an
-always-on service, a user unit beside `aiswe-backend`:
+It binds `127.0.0.1:9001` and nothing else; there is no host override.
 
-```ini
-# ~/.config/systemd/user/aiswe-finetuned.service
-[Unit]
-Description=Per-course fine-tuned inference (local Ollama)
-After=network.target
-
-[Service]
-WorkingDirectory=%h/css360-syllabus-bot/training/inference_service
-Environment=FINETUNED_OLLAMA_MODELS=css-360-winter-2026-a7rp@v2=css360-ft-v2:latest
-Environment=FINETUNED_KEEP_ALIVE=30m
-ExecStart=%h/css360-syllabus-bot/backend/.venv/bin/python ollama_service.py
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-```
-
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now aiswe-finetuned
-```
-
-Environment:
+Environment (the unit reads these from `~/.config/aiswe/finetuned.env`):
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -111,7 +103,7 @@ Environment:
 | `INFERENCE_PORT` | `9001` | Loopback port; must match the backend's `FINETUNED_SERVICE_URL` |
 | `FINETUNED_OLLAMA_TIMEOUT_SECONDS` | `120` | Per-generation Ollama timeout |
 | `FINETUNED_NUM_CTX` | `4096` | Context window. Ollama truncates a longer prompt from the front, which for Fine-Tuned + RAG would drop the grounding rules first |
-| `FINETUNED_KEEP_ALIVE` | Ollama's default (5 min) | How long a model stays resident after a request. Set e.g. `30m` before a class so the first question does not pay the model load |
+| `FINETUNED_KEEP_ALIVE` | Ollama's default (5 min) | How long a model stays resident after a request. The env example sets `30m` so the first question of a class does not pay the model load |
 | `FINETUNED_BASE_MODEL` | `llama3.2:3b` | Reported as `model` on `/health` |
 
 ### 4) Wire the backend
@@ -122,10 +114,10 @@ Environment:
 FINETUNED_SERVICE_URL=http://127.0.0.1:9001
 ```
 
-That is the value the tunnel script used to write, so an existing `.env` may
-already say it — but the tunnel has to be closed first
-(`./scripts/stop_finetuned_tunnel.sh`), or this service cannot take the port.
-Restart `aiswe-backend` if the value changed.
+`./scripts/aiswe_finetuned.sh install` sets this. It is the value the tunnel
+script also writes, so an existing `.env` may already say it — but the tunnel
+has to be closed first (`./scripts/stop_finetuned_tunnel.sh`), or this service
+cannot take the port. Restart `aiswe-backend` if the value changed.
 
 ### 5) Check
 
