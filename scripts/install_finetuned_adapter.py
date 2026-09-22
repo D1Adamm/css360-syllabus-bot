@@ -59,8 +59,11 @@ COMPATIBLE_OLLAMA_BASES = {
 }
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_ARTIFACTS_ROOT = "~/model_artifacts"
-DEFAULT_LLAMA_CPP_DIRS = ("~/llama.cpp",)
-DEFAULT_CONVERTER_VENVS = ("~/cpu-training-venv",)
+#: Where a llama.cpp checkout is looked for; the VM keeps one under model_artifacts.
+DEFAULT_LLAMA_CPP_DIRS = ("~/model_artifacts/llama.cpp", "~/llama.cpp")
+#: Interpreters that may hold llama.cpp's Python requirements (gguf, torch,
+#: safetensors): the checkout's own venv first, then the CPU training venv.
+DEFAULT_CONVERTER_VENVS = ("~/model_artifacts/llama.cpp/.venv", "~/llama.cpp/.venv", "~/cpu-training-venv")
 CONVERTER_NAME = "convert_lora_to_gguf.py"
 ADAPTER_WEIGHT_NAMES = ("adapter_model.safetensors", "adapter_model.bin", "adapter_model.pt")
 SMOKE_QUESTION = "When does the course meet?"
@@ -212,14 +215,21 @@ def find_converter(explicit: str | None, llama_cpp_dir: str | None) -> Path | No
     return None
 
 
-def find_converter_python(explicit: str | None) -> str:
-    """The interpreter that has llama.cpp's Python requirements (gguf, torch, safetensors)."""
+def find_converter_python(explicit: str | None, converter: Path | None = None) -> str:
+    """The interpreter that has llama.cpp's Python requirements (gguf, torch, safetensors).
+
+    A venv beside the converter wins, because that is the one its requirements
+    were installed into; then `$CPU_TRAINING_VENV`, then the defaults.
+    """
     if explicit:
         return str(_existing_file(explicit, "Converter interpreter"))
+    candidates: list[Path] = []
+    if converter is not None:
+        candidates.append(converter.parent / ".venv" / "bin" / "python")
     env_venv = os.environ.get("CPU_TRAINING_VENV")
-    candidates = ([Path(os.path.expanduser(env_venv)) / "bin" / "python"] if env_venv else []) + [
-        Path(os.path.expanduser(d)) / "bin" / "python" for d in DEFAULT_CONVERTER_VENVS
-    ]
+    if env_venv:
+        candidates.append(Path(os.path.expanduser(env_venv)) / "bin" / "python")
+    candidates += [Path(os.path.expanduser(d)) / "bin" / "python" for d in DEFAULT_CONVERTER_VENVS]
     for candidate in candidates:
         if candidate.is_file():
             return str(candidate.resolve())
@@ -328,7 +338,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
         raise InstallError(f"GGUF already exists: {gguf}. Pass --replace to overwrite it, or --gguf to reuse it.")
 
     converter = find_converter(args.converter, args.llama_cpp_dir)
-    converter_python = find_converter_python(args.converter_python)
+    converter_python = find_converter_python(args.converter_python, converter)
     command = [converter_python, str(converter) if converter else CONVERTER_NAME]
     if args.base_model_path:
         command += ["--base", str(_existing_dir(args.base_model_path, "Base model directory"))]
@@ -522,8 +532,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--artifacts-root", default=DEFAULT_ARTIFACTS_ROOT, help=f"where GGUF, Modelfile and record go (default {DEFAULT_ARTIFACTS_ROOT}/<course>/<version>/)")
     conv = parser.add_argument_group("conversion")
     conv.add_argument("--converter", help=f"path to llama.cpp's {CONVERTER_NAME}")
-    conv.add_argument("--llama-cpp-dir", help=f"llama.cpp checkout containing {CONVERTER_NAME} (also $LLAMA_CPP_DIR; default ~/llama.cpp)")
-    conv.add_argument("--converter-python", help="interpreter with gguf/torch/safetensors (default: $CPU_TRAINING_VENV or ~/cpu-training-venv, else this one)")
+    conv.add_argument("--llama-cpp-dir", help=f"llama.cpp checkout containing {CONVERTER_NAME} (also $LLAMA_CPP_DIR; default ~/model_artifacts/llama.cpp, then ~/llama.cpp)")
+    conv.add_argument("--converter-python", help="interpreter with gguf/torch/safetensors (default: the checkout's .venv, then $CPU_TRAINING_VENV, then this one)")
     conv.add_argument("--base-model-path", help="local Hugging Face directory of the base model for the converter (--base)")
     conv.add_argument("--base-model-id", default=DEFAULT_BASE_MODEL_ID, help=f"Hugging Face id the adapter was trained on (default {DEFAULT_BASE_MODEL_ID})")
     conv.add_argument("--outtype", default="f16", choices=("f16", "f32", "bf16", "q8_0", "auto"), help="GGUF tensor type (default f16)")

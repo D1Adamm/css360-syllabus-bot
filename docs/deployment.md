@@ -256,9 +256,9 @@ backend/.venv/bin/python scripts/install_finetuned_adapter.py --course <courseId
 ```
 
 Drop `--dry-run` to run it. Conversion uses llama.cpp's
-`convert_lora_to_gguf.py` (default `~/llama.cpp`, or `--llama-cpp-dir`) under
-the CPU training venv (`~/cpu-training-venv`, which holds `gguf`, `torch` and
-`safetensors`, and the Hugging Face cache with the base model). If the VM
+`convert_lora_to_gguf.py` from the checkout at `~/model_artifacts/llama.cpp`
+(or `--llama-cpp-dir`) under that checkout's own `.venv`, which holds `gguf`,
+`torch` and `safetensors`; the base model resolves from the Hugging Face cache. If the VM
 cannot convert, convert on Tillicum and pass the result with `--gguf <file>`;
 the GGUF and the Ollama model always end up on the VM. An existing GGUF or tag
 for the same course and version is refused without `--replace`. Artifacts land

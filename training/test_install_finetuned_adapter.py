@@ -167,6 +167,13 @@ class PlanTests(unittest.TestCase):
         self.assertIsNone(plan["convert"])
         self.assertEqual(plan["gguf"], gguf)
 
+    def test_the_converters_own_venv_is_preferred(self) -> None:
+        venv_python = self.converter.parent / ".venv" / "bin" / "python"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.write_text("#!/bin/sh\n")
+        plan = self._plan()
+        self.assertEqual(plan["convert"]["python"], str(venv_python))
+
     def test_a_missing_converter_is_a_plan_warning_not_an_error(self) -> None:
         plan = self._plan(converter=None, llama_cpp_dir=str(self.root / "absent"))
         self.assertIsNone(plan["convert"]["converter"])
