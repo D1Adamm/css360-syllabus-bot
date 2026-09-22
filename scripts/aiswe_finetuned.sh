@@ -403,8 +403,20 @@ cmd_check() {
 }
 
 cmd_logs() {
+  # The VM keeps no per-user journal ("No journal files were found" from
+  # `journalctl --user`), so fall back to the system journal's view of the
+  # user unit, which works when the account may read it.
   require_cmd journalctl
-  journalctl --user -u "${UNIT}" -n "${1:-50}" --no-pager
+  local out
+  out="$(journalctl --user -u "${UNIT}" -n "${1:-50}" --no-pager 2>&1)" || true
+  if [[ -z "${out}" || "${out}" == *"No journal files were found"* ]]; then
+    out="$(journalctl --user-unit "${UNIT}" -n "${1:-50}" --no-pager 2>&1)" || true
+  fi
+  if [[ -z "${out}" || "${out}" == *"No journal files were found"* || "${out}" == *"No entries"* ]]; then
+    echo "No journal entries readable for ${UNIT}. Live state: $0 status; startup messages: systemctl --user status ${UNIT}"
+    return 0
+  fi
+  printf '%s\n' "${out}"
 }
 
 case "${1:-}" in

@@ -120,6 +120,16 @@ hand-written one (checkout `265a64d` plus the installer fix that followed).
   load; concurrency 2 roughly doubles the median, which is the serialised
   Ollama path queueing as expected. Two students asking at once wait under
   ten seconds for a grounded answer.
+- **Reboot.** `sudo reboot` at 12:03 PDT with nobody logged in afterward
+  until the check itself. Ollama (system unit) was active; `aiswe-backend`
+  entered active at 12:03:34 and `aiswe-finetuned` at 12:03:38, from
+  lingering alone; port 9001 was owned by the new python process (pid 2737)
+  with no `ssh` forward; `verify_finetuned_production.py` passed 28 of 28
+  again. The first CSS 350 generation after boot took 25 s (model load), the
+  rest 7 to 14 s. No Tillicum allocation, tunnel, Duo prompt or laptop was
+  involved at any point. `journalctl --user` reports no journal on this VM,
+  so the unit's preflight lines are not readable after the fact;
+  `aiswe_finetuned.sh logs` falls back to the system journal's view.
 
 ## What was not run
 
