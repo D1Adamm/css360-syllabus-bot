@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from app.main import app
+from course_record_fake import patch_course_records
 from app.starter_jobs import (
     clear_active_starter_jobs_for_tests,
     is_auto_starter_seed_generation_enabled,
@@ -312,6 +313,7 @@ class StarterJobUploadIntegrationTests(unittest.TestCase):
             new=AsyncMock(return_value=[0.1, -0.2, 0.3]),
         )
         self._embed_patch.start()
+        patch_course_records(self)
         self.client = TestClient(app)
 
     def tearDown(self) -> None:

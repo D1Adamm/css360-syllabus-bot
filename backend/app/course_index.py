@@ -44,14 +44,18 @@ async def embed_chunks(chunks: list[SyllabusChunk]) -> list[dict[str, Any]]:
     return indexed
 
 
-async def build_course_rag_index(
+async def prepare_course_rag_index(
     *,
     course_id: str,
     source_file: str,
     syllabus_text: str,
-    storage: CourseArtifactStorage,
     strict_validation: bool = False,
 ) -> dict[str, Any]:
+    """Chunk and embed a syllabus into index data, writing nothing.
+
+    Kept separate from saving so that a failure here — most often the
+    embedding service — leaves whatever index the course already has in place.
+    """
     chunks = chunk_syllabus_text(syllabus_text)
     if not chunks:
         raise SyllabusUploadError(
@@ -68,23 +72,37 @@ async def build_course_rag_index(
     )
     summary = summarize_chunking(chunks)
 
-    try:
-        indexed_chunks = await embed_chunks(chunks)
-        index_data: dict[str, Any] = {
-            "indexVersion": INDEX_VERSION,
-            "courseId": course_id,
-            "sourceFile": source_file,
-            "documentTitle": document_title,
-            "embeddingModel": OLLAMA_EMBEDDING_MODEL,
-            "createdAt": datetime.now(timezone.utc).isoformat(),
-            "chunkCount": len(indexed_chunks),
-            "sectionCount": summary["sectionCount"],
-            "chunks": indexed_chunks,
-        }
-        if warnings:
-            index_data["chunkingWarnings"] = warnings
-        storage.save_index(course_id, index_data)
-        return index_data
-    except Exception:
-        storage.remove_index(course_id)
-        raise
+    indexed_chunks = await embed_chunks(chunks)
+    index_data: dict[str, Any] = {
+        "indexVersion": INDEX_VERSION,
+        "courseId": course_id,
+        "sourceFile": source_file,
+        "documentTitle": document_title,
+        "embeddingModel": OLLAMA_EMBEDDING_MODEL,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "chunkCount": len(indexed_chunks),
+        "sectionCount": summary["sectionCount"],
+        "chunks": indexed_chunks,
+    }
+    if warnings:
+        index_data["chunkingWarnings"] = warnings
+    return index_data
+
+
+async def build_course_rag_index(
+    *,
+    course_id: str,
+    source_file: str,
+    syllabus_text: str,
+    storage: CourseArtifactStorage,
+    strict_validation: bool = False,
+) -> dict[str, Any]:
+    """Prepare the index and save it. On failure the existing index is untouched."""
+    index_data = await prepare_course_rag_index(
+        course_id=course_id,
+        source_file=source_file,
+        syllabus_text=syllabus_text,
+        strict_validation=strict_validation,
+    )
+    storage.save_index(course_id, index_data)
+    return index_data

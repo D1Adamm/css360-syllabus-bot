@@ -132,6 +132,8 @@ export interface SyllabusUploadResponse {
   fileSize: number;
   characterCount: number;
   chunkCount: number;
+  /** True when this upload replaced a syllabus the course already had. */
+  replaced?: boolean;
 }
 
 export interface SyllabusTextResponse {

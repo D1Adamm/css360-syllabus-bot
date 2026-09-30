@@ -2,14 +2,15 @@ import { useId, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FormFieldError } from '../../components/FormFieldError';
 import { SyllabusDropzone } from '../../components/upload/SyllabusDropzone';
-import { Button } from '../../components/ui/Button';
+import { Button, LinkButton } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { useSession } from '../../context/SessionContext';
 import { uploadCourseSyllabus } from '../../lib/api';
-import { updateCourseMetadata } from '../../lib/coursesDb';
 import { createCourse } from '../../lib/createCourse';
 import { toUserMessage } from '../../lib/errorMessages';
-import { professorCourseHomePath } from '../../lib/roleRoutes';
+import { professorCourseHomePath, professorCoursePath } from '../../lib/roleRoutes';
+import { validateSyllabusFile } from '../../lib/syllabusFile';
 
 interface FormValues {
   name: string;
@@ -36,13 +37,6 @@ const INITIAL_VALUES: FormValues = {
   syllabusFile: null,
 };
 
-const ALLOWED_SYLLABUS_EXTENSIONS = new Set(['pdf', 'txt']);
-
-function getFileExtension(fileName: string): string {
-  const parts = fileName.toLowerCase().split('.');
-  return parts.length > 1 ? (parts.at(-1) ?? '') : '';
-}
-
 function validate(values: FormValues): FormErrors {
   const errors: FormErrors = {};
 
@@ -55,13 +49,9 @@ function validate(values: FormValues): FormErrors {
   if (!values.term.trim()) {
     errors.term = 'Term is required.';
   }
-  if (!values.syllabusFile) {
-    errors.syllabusFile = 'A PDF or TXT syllabus file is required.';
-  } else {
-    const extension = getFileExtension(values.syllabusFile.name);
-    if (!ALLOWED_SYLLABUS_EXTENSIONS.has(extension)) {
-      errors.syllabusFile = 'Only .pdf and .txt syllabus files are supported.';
-    }
+  const syllabusError = validateSyllabusFile(values.syllabusFile);
+  if (syllabusError) {
+    errors.syllabusFile = syllabusError;
   }
 
   return errors;
@@ -85,11 +75,15 @@ function progressMessage(progress: ProgressState): string | null {
 export function CreateCoursePage() {
   const formId = useId();
   const navigate = useNavigate();
+  const { refresh: refreshSession } = useSession();
   const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<FormErrors>({});
   const [progress, setProgress] = useState<ProgressState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Set once the course exists. From then on a submit only retries the
+  // syllabus upload into it: a failed upload must never lead to a duplicate.
+  const [createdCourseId, setCreatedCourseId] = useState<string | null>(null);
 
   const saving =
     progress === 'creating' || progress === 'uploading' || progress === 'indexing';
@@ -121,49 +115,40 @@ export function CreateCoursePage() {
     }
 
     const syllabusFile = values.syllabusFile;
-    let courseId: string | null = null;
+    let courseId = createdCourseId;
 
     try {
-      setProgress('creating');
-      const created = await createCourse({
-        name: values.name,
-        title: values.title,
-        term: values.term,
-        instructorName: values.instructorName,
-      });
-      courseId = created.courseId;
+      if (!courseId) {
+        setProgress('creating');
+        const created = await createCourse({
+          name: values.name,
+          title: values.title,
+          term: values.term,
+          instructorName: values.instructorName,
+        });
+        courseId = created.courseId;
+        setCreatedCourseId(courseId);
+        // The backend made this professor the course's instructor in the same
+        // transaction. The cached session predates that membership, and the
+        // course routes' guard reads it, so ask again before navigating there.
+        await refreshSession();
+      }
 
+      // The upload records the syllabus state on the course itself, success
+      // or failure, so there is nothing left for this page to write.
       setProgress('indexing');
-      const uploadResult = await uploadCourseSyllabus(courseId, syllabusFile);
-
-      await updateCourseMetadata(courseId, {
-        syllabusStatus: 'indexed',
-        syllabusFileName: uploadResult.syllabusFileName,
-        syllabusType: uploadResult.syllabusType,
-        chunkCount: uploadResult.chunkCount,
-      });
+      await uploadCourseSyllabus(courseId, syllabusFile);
 
       setProgress('created');
       setSuccessMessage('Course created. Opening it now…');
       navigate(professorCourseHomePath(courseId));
     } catch (caughtError) {
-      if (courseId) {
-        try {
-          await updateCourseMetadata(courseId, {
-            syllabusStatus: 'index_failed',
-            chunkCount: 0,
-          });
-        } catch {
-          // Keep the original upload/create error if metadata rollback fails.
-        }
-      }
-
       // Upload failures often carry a usable validation message; anything else
       // becomes role-appropriate copy rather than raw infrastructure text.
       setSaveError(
         toUserMessage(caughtError, {
           audience: 'professor',
-          context: 'syllabus-upload',
+          context: courseId ? 'syllabus-upload' : 'course-create',
         }).message,
       );
       setProgress('idle');
@@ -179,9 +164,24 @@ export function CreateCoursePage() {
       />
 
       <form className="course-form" onSubmit={handleSubmit} noValidate>
-        {saveError && (
+        {saveError && !createdCourseId && (
           <Callout tone="danger" title="We couldn't create this course">
             {saveError}
+          </Callout>
+        )}
+
+        {saveError && createdCourseId && (
+          <Callout
+            tone="danger"
+            title="Your course was created, but its syllabus could not be processed"
+            actions={
+              <LinkButton to={professorCoursePath(createdCourseId, 'syllabus')} variant="secondary">
+                Open the course
+              </LinkButton>
+            }
+          >
+            {saveError} Upload it again below and it goes into the same course, or open
+            the course and add the syllabus from its Syllabus page later.
           </Callout>
         )}
 
@@ -207,7 +207,7 @@ export function CreateCoursePage() {
                 placeholder="CSS 430"
                 aria-invalid={errors.name ? true : undefined}
                 aria-describedby={errors.name ? nameErrorId : undefined}
-                disabled={saving}
+                disabled={saving || createdCourseId !== null}
                 maxLength={80}
               />
             </div>
@@ -226,7 +226,7 @@ export function CreateCoursePage() {
                 placeholder="Summer 2026"
                 aria-invalid={errors.term ? true : undefined}
                 aria-describedby={errors.term ? termErrorId : undefined}
-                disabled={saving}
+                disabled={saving || createdCourseId !== null}
                 maxLength={80}
               />
             </div>
@@ -246,7 +246,7 @@ export function CreateCoursePage() {
               placeholder="Operating Systems"
               aria-invalid={errors.title ? true : undefined}
               aria-describedby={errors.title ? titleErrorId : undefined}
-              disabled={saving}
+              disabled={saving || createdCourseId !== null}
               maxLength={160}
             />
           </div>
@@ -263,7 +263,7 @@ export function CreateCoursePage() {
               value={values.instructorName}
               onChange={(event) => updateField('instructorName', event.target.value)}
               placeholder="Shown to students on the course page"
-              disabled={saving}
+              disabled={saving || createdCourseId !== null}
               maxLength={120}
             />
           </div>
@@ -284,7 +284,7 @@ export function CreateCoursePage() {
             loading={saving}
             loadingLabel={progressMessage(progress) ?? 'Working…'}
           >
-            Create course
+            {createdCourseId ? 'Upload syllabus' : 'Create course'}
           </Button>
         </div>
       </form>

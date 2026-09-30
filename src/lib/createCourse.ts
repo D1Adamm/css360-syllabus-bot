@@ -1,6 +1,7 @@
 import type { CourseMetadata } from '../types';
 import { generateCourseId } from './courseId';
-import { courseExists, createCourseMetadata } from './coursesDb';
+import { createCourseMetadata } from './coursesDb';
+import { ApiError } from './httpClient';
 
 const MAX_COURSE_ID_ATTEMPTS = 8;
 
@@ -30,20 +31,31 @@ function buildCourseMetadata(input: CreateCourseInput): CourseMetadata {
   };
 }
 
+function isIdCollision(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409;
+}
+
 /**
- * Generate a unique courseId, then save CourseMetadata as its `courses` row.
- * Regenerates the random suffix if courseExists reports a collision.
+ * Generate a courseId and save CourseMetadata as its `courses` row,
+ * regenerating the random suffix when the backend answers 409 for a taken id.
+ *
+ * The database decides uniqueness. There is deliberately no read-before-create:
+ * reading a course the caller does not staff yet is refused (403) for every
+ * professor — it is how course creation broke for all non-admin staff — and
+ * a check-then-insert would race another create anyway.
  */
 export async function createCourse(input: CreateCourseInput): Promise<CreateCourseResult> {
   const metadata = buildCourseMetadata(input);
 
   for (let attempt = 0; attempt < MAX_COURSE_ID_ATTEMPTS; attempt += 1) {
     const courseId = generateCourseId(metadata.name, metadata.term);
-    const exists = await courseExists(courseId);
-
-    if (!exists) {
+    try {
       await createCourseMetadata(courseId, metadata);
       return { courseId, metadata };
+    } catch (error) {
+      if (!isIdCollision(error)) {
+        throw error;
+      }
     }
   }
 

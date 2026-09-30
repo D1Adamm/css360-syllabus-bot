@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -9,12 +9,18 @@ const {
   createCourseMock,
   uploadCourseSyllabusMock,
   updateCourseMetadataMock,
+  fetchSessionMock,
 } = vi.hoisted(() => ({
   createCourseMock: vi.fn(),
   uploadCourseSyllabusMock: vi.fn(),
   updateCourseMetadataMock: vi.fn(),
+  fetchSessionMock: vi.fn(),
 }));
 
+vi.mock('../../lib/authApi', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/authApi')>('../../lib/authApi');
+  return { ...actual, fetchSession: fetchSessionMock };
+});
 
 vi.mock('../../lib/createCourse', () => ({
   createCourse: createCourseMock,
@@ -38,21 +44,51 @@ vi.mock('../../lib/coursesDb', async () => {
   };
 });
 
+import { RequireCourseStaff } from '../../components/auth/RouteGuards';
+import { SessionProvider, type Session } from '../../context/SessionContext';
 import { CreateCoursePage } from './CreateCoursePage';
+
+const NEW_COURSE = 'css-430-summer-2026-a82f';
+
+function professorSession(...courseIds: string[]): Session {
+  return {
+    user: {
+      userId: 'user-prof',
+      email: 'prof@uw.edu',
+      displayName: 'Prof',
+      role: 'professor',
+      courseIds,
+    },
+    participant: null,
+  };
+}
 
 function LocationProbe() {
   const location = useLocation();
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-function renderCreateCoursePage() {
+// A professor with no courses yet, and the real course-staff guard on the page
+// the form navigates to: the route a professor lands on after creating a course
+// is only reachable once the session knows about the new membership.
+function renderCreateCoursePage(initialSession: Session = professorSession()) {
   return render(
     <MemoryRouter initialEntries={['/professor/courses/new']}>
-      <Routes>
-        <Route path="/professor/courses/new" element={<CreateCoursePage />} />
-        <Route path="/professor/course/:courseId" element={<div>Course home</div>} />
-      </Routes>
-      <LocationProbe />
+      <SessionProvider initialSession={initialSession}>
+        <Routes>
+          <Route path="/professor/courses/new" element={<CreateCoursePage />} />
+          <Route
+            path="/professor/course/:courseId"
+            element={
+              <RequireCourseStaff>
+                <div>Course home</div>
+              </RequireCourseStaff>
+            }
+          />
+          <Route path="/forbidden" element={<div>Forbidden</div>} />
+        </Routes>
+        <LocationProbe />
+      </SessionProvider>
     </MemoryRouter>,
   );
 }
@@ -81,6 +117,9 @@ describe('CreateCoursePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     updateCourseMetadataMock.mockResolvedValue(undefined);
+    // What /api/auth/session answers once the course exists: the creator now
+    // holds its instructor membership.
+    fetchSessionMock.mockResolvedValue(professorSession(NEW_COURSE));
   });
 
   afterEach(() => {
@@ -102,9 +141,9 @@ describe('CreateCoursePage', () => {
     expect(uploadCourseSyllabusMock).not.toHaveBeenCalled();
   });
 
-  it('uploads multipart syllabus and updates course metadata before redirecting', async () => {
+  it('a professor with no courses creates one, uploads its syllabus and lands in it', async () => {
     createCourseMock.mockResolvedValue({
-      courseId: 'css-430-summer-2026-a82f',
+      courseId: NEW_COURSE,
       metadata: {
         name: 'CSS 430',
         title: 'Operating Systems',
@@ -118,7 +157,7 @@ describe('CreateCoursePage', () => {
       },
     });
     uploadCourseSyllabusMock.mockResolvedValue({
-      courseId: 'css-430-summer-2026-a82f',
+      courseId: NEW_COURSE,
       syllabusFileName: 'css430-syllabus.pdf',
       syllabusType: 'pdf',
       syllabusStatus: 'indexed',
@@ -137,31 +176,27 @@ describe('CreateCoursePage', () => {
     });
     await waitFor(() => {
       expect(uploadCourseSyllabusMock).toHaveBeenCalledWith(
-        'css-430-summer-2026-a82f',
+        NEW_COURSE,
         file,
       );
     });
     await waitFor(() => {
-      expect(updateCourseMetadataMock).toHaveBeenCalledWith(
-        'css-430-summer-2026-a82f',
-        expect.objectContaining({
-          syllabusStatus: 'indexed',
-          syllabusFileName: 'css430-syllabus.pdf',
-          syllabusType: 'pdf',
-          chunkCount: 18,
-        }),
-      );
-    });
-    await waitFor(() => {
       expect(view.getByTestId('location')).toHaveTextContent(
-        '/professor/course/css-430-summer-2026-a82f',
+        `/professor/course/${NEW_COURSE}`,
       );
     });
+    // Regression: the session was re-read after creation, so the course-staff
+    // guard admits the new instructor instead of redirecting to /forbidden.
+    expect(fetchSessionMock).toHaveBeenCalled();
+    expect(await screen.findByText('Course home')).toBeInTheDocument();
+    expect(screen.queryByText('Forbidden')).not.toBeInTheDocument();
+    // The upload records the syllabus on the course; the page writes nothing.
+    expect(updateCourseMetadataMock).not.toHaveBeenCalled();
   });
 
-  it('shows a readable upload error and does not redirect on failure', async () => {
+  it('a failed upload keeps the created course and a retry uploads into it', async () => {
     createCourseMock.mockResolvedValue({
-      courseId: 'css-430-summer-2026-a82f',
+      courseId: NEW_COURSE,
       metadata: {
         name: 'CSS 430',
         title: 'Operating Systems',
@@ -174,25 +209,58 @@ describe('CreateCoursePage', () => {
         chunkCount: 0,
       },
     });
-    uploadCourseSyllabusMock.mockRejectedValue(
-      new ApiError('Only .pdf and .txt syllabus files are supported.', 400),
-    );
+    uploadCourseSyllabusMock
+      .mockRejectedValueOnce(new ApiError('Ollama is unavailable for embeddings.', 503))
+      .mockResolvedValueOnce({
+        courseId: NEW_COURSE,
+        syllabusFileName: 'css430-syllabus.pdf',
+        syllabusType: 'pdf',
+        syllabusStatus: 'indexed',
+        fileSize: 16,
+        characterCount: 18000,
+        chunkCount: 18,
+      });
 
     renderCreateCoursePage();
     fillRequiredTextFields();
-    selectSyllabusFile();
+    const file = selectSyllabusFile();
     fireEvent.click(screen.getByRole('button', { name: 'Create course' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Only .pdf and .txt syllabus files are supported.',
+    // It says the course exists, offers a way into it, and stays put.
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/course was created, but its syllabus could not be processed/i);
+    expect(alert).not.toHaveTextContent(/ollama/i);
+    expect(within(alert).getByRole('link', { name: 'Open the course' })).toHaveAttribute(
+      'href',
+      `/professor/course/${NEW_COURSE}/syllabus`,
     );
-    expect(updateCourseMetadataMock).toHaveBeenCalledWith(
-      'css-430-summer-2026-a82f',
-      expect.objectContaining({ syllabusStatus: 'index_failed', chunkCount: 0 }),
-    );
-    expect(screen.getByTestId('location')).toHaveTextContent(
-      '/professor/courses/new',
-    );
+    expect(screen.getByTestId('location')).toHaveTextContent('/professor/courses/new');
+    // The course details belong to the created course now and are locked.
+    expect(screen.getByLabelText(/Course name or code/)).toBeDisabled();
+
+    // Retrying uploads into the same course; nothing is created twice.
+    fireEvent.click(screen.getByRole('button', { name: 'Upload syllabus' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent(
+        `/professor/course/${NEW_COURSE}`,
+      );
+    });
+    expect(createCourseMock).toHaveBeenCalledTimes(1);
+    expect(uploadCourseSyllabusMock).toHaveBeenCalledTimes(2);
+    expect(uploadCourseSyllabusMock).toHaveBeenLastCalledWith(NEW_COURSE, file);
+    expect(updateCourseMetadataMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a file over 10 MB before creating anything', async () => {
+    renderCreateCoursePage();
+    fillRequiredTextFields();
+    const big = new File(['x'], 'syllabus.pdf', { type: 'application/pdf' });
+    Object.defineProperty(big, 'size', { value: 10 * 1024 * 1024 + 1 });
+    fireEvent.change(screen.getByLabelText(/Syllabus file/), { target: { files: [big] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create course' }));
+
+    expect(await screen.findByText('Syllabus files must be 10 MB or smaller.')).toBeInTheDocument();
+    expect(createCourseMock).not.toHaveBeenCalled();
   });
 
   it('reports a save failure without naming the database', async () => {

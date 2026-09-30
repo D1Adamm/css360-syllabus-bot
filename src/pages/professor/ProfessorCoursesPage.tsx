@@ -5,6 +5,8 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { LinkButton } from '../../components/ui/Button';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusPill } from '../../components/ui/StatusPill';
+import { useSession } from '../../context/SessionContext';
+import { canStaffCourse, isParticipantOf } from '../../context/session';
 import { useCourses } from '../../hooks/useCourses';
 import { toUserMessage } from '../../lib/errorMessages';
 import { professorCourseHomePath } from '../../lib/roleRoutes';
@@ -44,6 +46,18 @@ function syllabusPresentation(status: SyllabusStatus): SyllabusPresentation {
 
 export function ProfessorCoursesPage() {
   const { state, retry } = useCourses();
+  const { session } = useSession();
+  // The list endpoint also returns a course this browser joined with a class
+  // code. Its staff pages are refused, so it does not belong here. Everything
+  // else the backend listed is kept even if the cached session has not caught
+  // up with a new membership yet: the course guard re-checks on the way in.
+  const courses =
+    state.status === 'ready'
+      ? state.courses.filter(
+          ({ courseId }) =>
+            !isParticipantOf(session, courseId) || canStaffCourse(session, courseId),
+        )
+      : [];
 
   return (
     <div className="ui-stack ui-stack--loose">
@@ -76,7 +90,7 @@ export function ProfessorCoursesPage() {
         />
       )}
 
-      {state.status === 'ready' && state.courses.length === 0 && (
+      {state.status === 'ready' && courses.length === 0 && (
         <EmptyState
           illustration="empty-course"
           size="full"
@@ -90,9 +104,9 @@ export function ProfessorCoursesPage() {
         />
       )}
 
-      {state.status === 'ready' && state.courses.length > 0 && (
+      {state.status === 'ready' && courses.length > 0 && (
         <ul className="course-rows" aria-label="Your courses">
-          {state.courses.map(({ courseId, metadata }) => {
+          {courses.map(({ courseId, metadata }) => {
             const syllabus = syllabusPresentation(metadata.syllabusStatus);
             const instructor = metadata.instructorName.trim();
 

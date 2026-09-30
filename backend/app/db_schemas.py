@@ -78,7 +78,9 @@ class CourseCreateRequest(BaseModel):
     name: str = Field(min_length=1)
     title: str = Field(min_length=1)
     term: str = Field(min_length=1)
-    instructor_name: str = Field(alias="instructorName", min_length=1)
+    # Optional on the create-course form, so blank is valid; stored as '' in a
+    # NOT NULL column, and every page that shows it already skips an empty one.
+    instructor_name: str = Field(default="", alias="instructorName")
     created_at: str | None = Field(default=None, alias="createdAt")
     syllabus_status: str = Field(default="none", alias="syllabusStatus")
     syllabus_file_name: str | None = Field(default=None, alias="syllabusFileName")

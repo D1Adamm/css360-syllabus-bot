@@ -100,6 +100,55 @@ class CourseArtifactStorage(ABC):
     def remove_fact_inventory(self, course_id: str) -> None:
         raise NotImplementedError
 
+    def commit_syllabus(
+        self,
+        course_id: str,
+        *,
+        syllabus_type: str,
+        content: bytes,
+        extracted_text: str,
+        index_data: dict[str, Any],
+    ) -> None:
+        """Write a processed syllabus — original, extracted text, index — as one unit.
+
+        Everything expensive (extraction, chunking, embedding) has already
+        succeeded by the time this runs, so the only failure left is the disk.
+        If a write fails, the course is put back exactly as it was: nothing for
+        a course that had no syllabus, the previous syllabus and index for a
+        replacement. A failed replacement must never cost a course the syllabus
+        it was already answering from.
+        """
+        snapshot = self._snapshot_syllabus(course_id)
+        try:
+            self.save_original_syllabus(course_id, syllabus_type, content)
+            self.save_extracted_text(course_id, extracted_text)
+            self.save_index(course_id, index_data)
+        except Exception:
+            self.delete_partial_files(course_id)
+            if snapshot is not None:
+                self._restore_syllabus(course_id, snapshot)
+            raise
+
+    def _snapshot_syllabus(self, course_id: str) -> dict[str, Any] | None:
+        text = self.load_extracted_text(course_id)
+        index = self.load_index(course_id)
+        if text is None and index is None:
+            return None
+        originals = {}
+        for extension in ALLOWED_SYLLABUS_EXTENSIONS:
+            path = self.original_syllabus_path(course_id, extension)
+            if path.is_file():
+                originals[extension] = path.read_bytes()
+        return {"text": text, "index": index, "originals": originals}
+
+    def _restore_syllabus(self, course_id: str, snapshot: dict[str, Any]) -> None:
+        for extension, original in snapshot["originals"].items():
+            self.save_original_syllabus(course_id, extension, original)
+        if snapshot["text"] is not None:
+            self.save_extracted_text(course_id, snapshot["text"])
+        if snapshot["index"] is not None:
+            self.save_index(course_id, snapshot["index"])
+
 
 class LocalCourseArtifactStorage(CourseArtifactStorage):
     def __init__(
@@ -143,6 +192,12 @@ class LocalCourseArtifactStorage(CourseArtifactStorage):
         self.ensure_course_dir(course_id)
         destination = self.original_syllabus_path(course_id, syllabus_type)
         destination.write_bytes(content)
+        # One original per course: a PDF replaced by a TXT must not leave the
+        # PDF behind looking current.
+        for extension in ALLOWED_SYLLABUS_EXTENSIONS - {destination.suffix.lstrip(".")}:
+            stale = self.original_syllabus_path(course_id, extension)
+            if stale.exists():
+                stale.unlink()
         return destination
 
     def extracted_text_path(self, course_id: str) -> Path:

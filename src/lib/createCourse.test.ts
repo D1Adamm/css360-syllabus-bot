@@ -1,18 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
-  courseExistsMock,
+  getCourseMock,
   createCourseMetadataMock,
   generateCourseIdMock,
 } = vi.hoisted(() => ({
-  courseExistsMock: vi.fn(),
+  getCourseMock: vi.fn(),
   createCourseMetadataMock: vi.fn(),
   generateCourseIdMock: vi.fn(),
 }));
 
 vi.mock('./coursesDb', () => ({
-  courseExists: courseExistsMock,
   createCourseMetadata: createCourseMetadataMock,
+}));
+
+// Any read of the course being created would go through here. Professors are
+// refused (403) on a course they do not staff yet, so there must be none.
+vi.mock('./dbApi', () => ({
+  getCourse: getCourseMock,
 }));
 
 vi.mock('./courseId', async () => {
@@ -23,6 +28,7 @@ vi.mock('./courseId', async () => {
   };
 });
 
+import { ApiError } from './httpClient';
 import { createCourse } from './createCourse';
 
 describe('createCourse', () => {
@@ -33,7 +39,6 @@ describe('createCourse', () => {
 
   it('saves metadata as the course’s row', async () => {
     generateCourseIdMock.mockReturnValue('css-430-summer-2026-a82f');
-    courseExistsMock.mockResolvedValue(false);
 
     const result = await createCourse({
       name: 'CSS 430',
@@ -63,11 +68,22 @@ describe('createCourse', () => {
     expect(createCourseMetadataMock.mock.calls[0][0]).toBe(result.courseId);
   });
 
-  it('regenerates the course id when a collision is detected', async () => {
+  it('never reads the course before creating it', async () => {
+    generateCourseIdMock.mockReturnValue('css-430-summer-2026-a82f');
+
+    await createCourse({ name: 'CSS 430', title: 'Operating Systems', term: 'Summer 2026' });
+
+    expect(getCourseMock).not.toHaveBeenCalled();
+    expect(createCourseMetadataMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('regenerates the course id when the backend reports it taken (409)', async () => {
     generateCourseIdMock
       .mockReturnValueOnce('css-430-summer-2026-aaaa')
       .mockReturnValueOnce('css-430-summer-2026-bbbb');
-    courseExistsMock.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    createCourseMetadataMock
+      .mockRejectedValueOnce(new ApiError('Course "css-430-summer-2026-aaaa" already exists.', 409))
+      .mockResolvedValueOnce(undefined);
 
     const result = await createCourse({
       name: 'CSS 430',
@@ -76,17 +92,28 @@ describe('createCourse', () => {
     });
 
     expect(result.courseId).toBe('css-430-summer-2026-bbbb');
-    expect(courseExistsMock).toHaveBeenCalledTimes(2);
-    expect(createCourseMetadataMock).toHaveBeenCalledTimes(1);
-    expect(createCourseMetadataMock).toHaveBeenCalledWith(
+    expect(createCourseMetadataMock).toHaveBeenCalledTimes(2);
+    expect(createCourseMetadataMock).toHaveBeenLastCalledWith(
       'css-430-summer-2026-bbbb',
       expect.any(Object),
     );
   });
 
+  it('surfaces any other failure at once instead of retrying', async () => {
+    generateCourseIdMock.mockReturnValue('css-430-summer-2026-a82f');
+    createCourseMetadataMock.mockRejectedValue(
+      new ApiError('You do not have access to this.', 403),
+    );
+
+    await expect(
+      createCourse({ name: 'CSS 430', title: 'Operating Systems', term: 'Summer 2026' }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(createCourseMetadataMock).toHaveBeenCalledTimes(1);
+  });
+
   it('throws when unique ids cannot be allocated', async () => {
     generateCourseIdMock.mockReturnValue('css-430-summer-2026-zzzz');
-    courseExistsMock.mockResolvedValue(true);
+    createCourseMetadataMock.mockRejectedValue(new ApiError('already exists', 409));
 
     await expect(
       createCourse({
@@ -96,6 +123,6 @@ describe('createCourse', () => {
       }),
     ).rejects.toThrow(/unique course id/);
 
-    expect(createCourseMetadataMock).not.toHaveBeenCalled();
+    expect(createCourseMetadataMock).toHaveBeenCalledTimes(8);
   });
 });

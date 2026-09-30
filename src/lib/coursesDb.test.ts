@@ -31,7 +31,6 @@ vi.mock('./dbApi', () => dbApiMock);
 
 import { ApiError } from './api';
 import {
-  courseExists,
   createCourseMetadata,
   getCourseMetadata,
   isCourseMetadata,
@@ -146,13 +145,6 @@ describe('course metadata through the API', () => {
     await updateCourseMetadata(COURSE_A, { chunkCount: 12 });
 
     expect(dbApiMock.updateCourse).toHaveBeenCalledWith(COURSE_A, { chunkCount: 12 });
-  });
-
-  it('checks existence by reading the course', async () => {
-    await expect(courseExists(COURSE_A)).resolves.toBe(true);
-
-    dbApiMock.getCourse.mockRejectedValue(new ApiError('not found', 404));
-    await expect(courseExists(COURSE_A)).resolves.toBe(false);
   });
 
   it('rejects invalid course ids before any request', async () => {

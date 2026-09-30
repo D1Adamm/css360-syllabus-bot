@@ -17,6 +17,10 @@ type SyllabusViewState =
 
 export interface SyllabusViewProps {
   audience: Role;
+  /** Change it to read the syllabus again, e.g. after a new one was uploaded. */
+  refreshToken?: number;
+  /** Rendered between the page header and the syllabus. */
+  children?: React.ReactNode;
 }
 
 /**
@@ -26,7 +30,7 @@ export interface SyllabusViewProps {
  * 400, unreachable, other — only the wording changed. Classification is
  * unchanged so behaviour is identical.
  */
-export function SyllabusView({ audience }: SyllabusViewProps) {
+export function SyllabusView({ audience, refreshToken = 0, children }: SyllabusViewProps) {
   const courseId = useCourseId();
   const [state, setState] = useState<SyllabusViewState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -73,7 +77,7 @@ export function SyllabusView({ audience }: SyllabusViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [courseId, audience, attempt]);
+  }, [courseId, audience, attempt, refreshToken]);
 
   return (
     <div className="ui-stack ui-stack--loose">
@@ -85,6 +89,8 @@ export function SyllabusView({ audience }: SyllabusViewProps) {
             : "The course syllabus as your instructor provided it. For the latest updates, check your instructor's official course channels."
         }
       />
+
+      {children}
 
       {state.status === 'loading' && (
         <p className="ui-text-muted" role="status" aria-live="polite">

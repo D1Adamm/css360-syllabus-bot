@@ -12,21 +12,29 @@ vi.mock('../../lib/coursesDb', () => ({
   subscribeToCourses: subscribeToCoursesMock,
 }));
 
+import { SessionProvider, type Session } from '../../context/SessionContext';
 import { ProfessorCoursesPage } from './ProfessorCoursesPage';
+
+const ADMIN_SESSION: Session = {
+  user: { userId: 'u-admin', email: 'a@uw.edu', displayName: 'A', role: 'admin', courseIds: [] },
+  participant: null,
+};
 
 interface CourseListItem {
   courseId: string;
   metadata: CourseMetadata;
 }
 
-function renderCoursePicker() {
+function renderCoursePicker(session: Session = ADMIN_SESSION) {
   return render(
     <MemoryRouter initialEntries={['/']}>
-      <Routes>
-        <Route path="/" element={<ProfessorCoursesPage />} />
-        <Route path="/create-course" element={<div>Create course page</div>} />
-        <Route path="/course/:courseId/home" element={<div>Course home</div>} />
-      </Routes>
+      <SessionProvider initialSession={session}>
+        <Routes>
+          <Route path="/" element={<ProfessorCoursesPage />} />
+          <Route path="/create-course" element={<div>Create course page</div>} />
+          <Route path="/course/:courseId/home" element={<div>Course home</div>} />
+        </Routes>
+      </SessionProvider>
     </MemoryRouter>,
   );
 }
@@ -157,5 +165,45 @@ describe('ProfessorCoursesPage', () => {
 
     const links = screen.getAllByRole('link', { name: 'Create course' });
     expect(links[0]).toHaveAttribute('href', '/professor/courses/new');
+  });
+  it('lists only courses the professor staffs, not one joined with a class code', async () => {
+    subscribeToCoursesMock.mockImplementation((onData: (courses: CourseListItem[]) => void) => {
+      onData([
+        sampleCourse('css-430-summer-2026-ibce', { name: 'CSS 430' }),
+        sampleCourse('css-350-spring-2026-abcd', { name: 'CSS 350' }),
+      ]);
+      return () => undefined;
+    });
+
+    renderCoursePicker({
+      user: {
+        userId: 'u-prof',
+        email: 'p@uw.edu',
+        displayName: 'P',
+        role: 'professor',
+        courseIds: ['css-430-summer-2026-ibce'],
+      },
+      participant: { courseId: 'css-350-spring-2026-abcd' },
+    });
+
+    const list = await screen.findByRole('list', { name: 'Your courses' });
+    expect(within(list).getAllByRole('link')).toHaveLength(1);
+    expect(within(list).getByText('CSS 430')).toBeInTheDocument();
+    expect(within(list).queryByText('CSS 350')).not.toBeInTheDocument();
+  });
+  it('lists a course the backend returned even before the cached session knows of it', async () => {
+    subscribeToCoursesMock.mockImplementation((onData: (courses: CourseListItem[]) => void) => {
+      onData([sampleCourse('css-430-summer-2026-ibce', { name: 'CSS 430' })]);
+      return () => undefined;
+    });
+
+    // Granted by an administrator after this browser read its session.
+    renderCoursePicker({
+      user: { userId: 'u-prof', email: 'p@uw.edu', displayName: 'P', role: 'professor', courseIds: [] },
+      participant: null,
+    });
+
+    const list = await screen.findByRole('list', { name: 'Your courses' });
+    expect(within(list).getByText('CSS 430')).toBeInTheDocument();
   });
 });

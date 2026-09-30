@@ -29,12 +29,17 @@ One row per course. `course_id` is the partition key for the whole system.
 | `syllabus_status` | TEXT | See below |
 | `syllabus_file_name` | TEXT NULL | Original upload name; NULL until uploaded |
 | `syllabus_type` | TEXT NULL | `pdf` or `txt` |
-| `chunk_count` | INTEGER | Chunks in the retrieval index, as recorded when it was built. `>= 0` enforced. Written by the browser after an upload and by `python -m app.reindex_course` after a rebuild (or `--sync-record` to copy the count from the existing index file). The index file on disk is what retrieval reads; the admin course page flags a mismatch between the two and names the fix |
+| `chunk_count` | INTEGER | Chunks in the retrieval index, as recorded when it was built. `>= 0` enforced. Written by the syllabus upload route (`POST /api/courses/{id}/syllabus`) when an upload succeeds, and by `python -m app.reindex_course` after a rebuild (or `--sync-record` to copy the count from the existing index file). The index file on disk is what retrieval reads; the admin course page flags a mismatch between the two and names the fix |
 | `created_by` | UUID NULL FK `users` | The account that created it. NULL for courses from before accounts existed |
 
 `syllabus_status` values (`SyllabusStatus` in `src/types/index.ts`):
 `none`, `not_uploaded`, `uploaded`, `extracted`, `indexed`, `upload_failed`,
 `index_failed`, `processing`, `ready`, `error`.
+
+The upload route writes `indexed` (with the file name, type and chunk count)
+when an upload succeeds, and `index_failed` when a course's *first* syllabus
+could not be processed. A failed *replacement* changes nothing: the previous
+syllabus and index keep serving, so the row keeps describing them.
 
 The syllabus **file** is not in the database. See *Filesystem artifacts* below.
 

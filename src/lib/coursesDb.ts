@@ -162,11 +162,6 @@ export function subscribeToCourseMetadata(
   });
 }
 
-export async function courseExists(courseId: string): Promise<boolean> {
-  assertValidCourseId(courseId);
-  return (await getCourseMetadata(courseId)) !== null;
-}
-
 export async function updateCourseMetadata(
   courseId: string,
   updates: Partial<CourseMetadata>,

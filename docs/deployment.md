@@ -182,6 +182,7 @@ must have, checked with `sudo nginx -T`.
       proxy_set_header Host $host;
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $scheme;
+      client_max_body_size 11m;
   }
   ```
 
@@ -190,6 +191,27 @@ must have, checked with `sudo nginx -T`.
   for everyone for ten minutes. If a load balancer ever sits in front of the
   VM, add `set_real_ip_from <its address>; real_ip_header X-Forwarded-For;` so
   `$remote_addr` is the student's address rather than the balancer's.
+- **Let a 10 MB syllabus through.** The backend accepts syllabus files up to
+  10 MB (`MAX_SYLLABUS_BYTES` in `backend/app/syllabus_upload.py`) and says so
+  when one is larger. Nginx refuses any request body over its
+  `client_max_body_size` first — **1 MB when it is not set** — with a bare 413
+  the application never sees. `11m` in the `/api/` location leaves room for the
+  multipart envelope around a 10 MB file, so the backend's limit is the one
+  professors meet. The directive may be set in the `http`, `server` or
+  `location` context, and the innermost one that applies wins, so check every
+  occurrence rather than the first:
+
+  ```bash
+  sudo nginx -T 2>/dev/null | grep -nE '^# configuration file|^\s*(server_name|location|client_max_body_size|proxy_read_timeout)\b'
+  ```
+
+  That lists each file, each server and location, and every limit, in order;
+  a `/api/` location with no `client_max_body_size` above or inside it is on
+  the 1 MB default. `proxy_read_timeout` is in the same listing because an
+  upload is processed before it answers (extraction and embedding, typically
+  well under a minute): if Nginx gives up first (60 s by default), the browser
+  shows an error while the backend finishes and records the syllabus, and a
+  reload shows it ready.
 - Nothing rewrites cookies. The backend sets `Secure; HttpOnly; SameSite=Lax;
   Path=/api` itself, from configuration rather than from proxy headers.
 
