@@ -156,7 +156,7 @@ export function CourseOverviewPage() {
       key: 'syllabus',
       text: 'This course has no syllabus ready yet',
       to: professorCoursePath(courseId, 'syllabus'),
-      action: 'View syllabus',
+      action: 'Upload syllabus',
     });
   }
 

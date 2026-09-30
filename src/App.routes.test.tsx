@@ -78,11 +78,17 @@ vi.mock('./hooks/useCourseActivity', () => ({
   }),
 }));
 
+// What `/api/auth/session` answers: whoever the test signed in as. A guard
+// re-reads it before refusing, and the backend would say the same thing.
+const backendSession = vi.hoisted(() => ({
+  current: { user: null, participant: null } as unknown,
+}));
+
 vi.mock('./lib/authApi', async () => {
   const actual = await vi.importActual<typeof import('./lib/authApi')>('./lib/authApi');
   return {
     ...actual,
-    fetchSession: vi.fn().mockResolvedValue({ user: null, participant: null }),
+    fetchSession: vi.fn(async () => backendSession.current),
     logout: vi.fn().mockResolvedValue(undefined),
   };
 });
@@ -108,6 +114,7 @@ vi.mock('./lib/adminPeopleApi', async () => {
 });
 
 import { AppRoutes } from './App';
+import { fetchSession } from './lib/authApi';
 import { ComparisonRunProvider } from './context/ComparisonRunContext';
 import { SessionProvider, type Session } from './context/SessionContext';
 
@@ -154,6 +161,7 @@ function LocationProbe() {
 }
 
 function renderAt(path: string, who: Who = 'student') {
+  backendSession.current = SESSIONS[who];
   return render(
     <MemoryRouter initialEntries={[path]}>
       <SessionProvider initialSession={SESSIONS[who]}>
@@ -228,6 +236,42 @@ describe('landing', () => {
 });
 
 describe('route guards', () => {
+  it('re-reads a stale session once before refusing, and admits a newly granted course', async () => {
+    const stale = SESSIONS.professor;
+    // An administrator granted OTHER after this browser read its session.
+    backendSession.current = {
+      ...stale,
+      user: { ...stale.user!, courseIds: [...stale.user!.courseIds, OTHER] },
+    };
+    vi.mocked(fetchSession).mockClear();
+    const view = render(
+      <MemoryRouter initialEntries={[`/professor/course/${OTHER}`]}>
+        <SessionProvider initialSession={stale}>
+          <ComparisonRunProvider>
+            <LocationProbe />
+            <AppRoutes />
+          </ComparisonRunProvider>
+        </SessionProvider>
+      </MemoryRouter>,
+    );
+
+    await expectLocation(view, `/professor/course/${OTHER}`);
+    expect(fetchSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses after one re-read when the backend agrees, and never re-reads an allowed page', async () => {
+    vi.mocked(fetchSession).mockClear();
+    const unassigned = renderAt(`/professor/course/${OTHER}`, 'professor');
+    await expectLocation(unassigned, '/forbidden');
+    expect(fetchSession).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    vi.mocked(fetchSession).mockClear();
+    const assigned = renderAt(`/professor/course/${COURSE}`, 'professor');
+    await expectLocation(assigned, `/professor/course/${COURSE}`);
+    expect(fetchSession).not.toHaveBeenCalled();
+  });
+
   it('sends an anonymous visitor on a student course page to the join page', async () => {
     const view = renderAt(`/student/course/${COURSE}/compare`, 'anonymous');
     await expectLocation(view, '/join');

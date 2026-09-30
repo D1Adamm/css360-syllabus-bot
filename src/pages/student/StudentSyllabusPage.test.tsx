@@ -185,4 +185,17 @@ describe('StudentSyllabusPage course-specific text', () => {
     expect(paragraph).toHaveTextContent(/Mondays 1-2pm/);
     expect(paragraph).toHaveTextContent(/Wednesdays 3-4pm/);
   });
+  it('offers students no way to upload or replace the syllabus', async () => {
+    fetchCourseSyllabusTextMock.mockResolvedValue({
+      courseId: 'css-350-spring-2026-abcd',
+      text: 'CSS 350 Course Policies',
+      characterCount: 23,
+    });
+
+    renderSyllabusPage('css-350-spring-2026-abcd');
+
+    expect(await screen.findByText('CSS 350 Course Policies')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Syllabus file/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /syllabus/i })).not.toBeInTheDocument();
+  });
 });

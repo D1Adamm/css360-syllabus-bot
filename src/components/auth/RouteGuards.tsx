@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useSession } from '../../context/SessionContext';
 import {
@@ -20,6 +21,13 @@ import { joinPath, loginPath } from '../../lib/roleRoutes';
  * every request the page issues, and the backend's answer is the one that
  * counts: a guard that let the wrong page render would show empty panels and
  * 403 banners, not data.
+ *
+ * The cached session can be out of date: an administrator may have given a
+ * signed-in professor a course since it was fetched. So before sending anyone
+ * to the forbidden page, a guard asks the backend once more — one request, only
+ * on a refusal — and decides again with the answer. A revoked course needs no
+ * such step: the backend already refuses its requests, and the next navigation
+ * re-checks.
  */
 
 type Verdict = 'allow' | 'sign-in' | 'join' | 'forbidden';
@@ -31,22 +39,41 @@ function Gate({
   decide: (session: Session, courseId: string | undefined) => Verdict;
   children: React.ReactNode;
 }) {
-  const { state, session } = useSession();
+  const { state, session, refresh } = useSession();
   const location = useLocation();
   const { courseId } = useParams<{ courseId?: string }>();
+  // The path this guard has already re-checked the session for.
+  const [recheckedPath, setRecheckedPath] = useState<string | null>(null);
 
-  if (state.status === 'loading') {
+  // A course id that fails validation is the course route's problem to
+  // explain; the guard must not redirect a typo to the sign-in page.
+  const scopedCourse = courseId && isValidCourseId(courseId) ? courseId : undefined;
+  const verdict = state.status === 'loading' ? null : decide(session, scopedCourse);
+  const recheck = verdict === 'forbidden' && recheckedPath !== location.pathname;
+
+  useEffect(() => {
+    if (!recheck) {
+      return;
+    }
+    let cancelled = false;
+    const path = location.pathname;
+    void refresh().finally(() => {
+      if (!cancelled) {
+        setRecheckedPath(path);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [recheck, location.pathname, refresh]);
+
+  if (state.status === 'loading' || recheck) {
     return (
       <p className="ui-text-muted" role="status" aria-live="polite">
         Checking your session…
       </p>
     );
   }
-
-  // A course id that fails validation is the course route's problem to
-  // explain; the guard must not redirect a typo to the sign-in page.
-  const scopedCourse = courseId && isValidCourseId(courseId) ? courseId : undefined;
-  const verdict = decide(session, scopedCourse);
 
   switch (verdict) {
     case 'allow':

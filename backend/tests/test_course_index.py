@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.main import app
+from course_record_fake import patch_course_records
 from app.storage import LocalCourseArtifactStorage
 
 
@@ -52,6 +53,7 @@ class CourseIndexEndpointTests(unittest.TestCase):
             ),
         )
         self._queue_patch.start()
+        self.course_records = patch_course_records(self)
         self.client = TestClient(app)
 
     def tearDown(self) -> None:

@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Any
 
 # Load backend/.env before other app modules read configuration.
 from app import config as _config  # noqa: F401
@@ -21,7 +22,7 @@ from app.auth.dependencies import (
 from app.auth.principal import Principal
 from app.config import app_env, is_test_mode
 from app.course_id import assert_valid_course_id
-from app.course_index import build_course_rag_index
+from app.course_index import prepare_course_rag_index
 from app.course_model_resolution import (
     resolve_course_model_version,
     resolve_current_course_model,
@@ -135,7 +136,7 @@ from app.seed_split import (
 from app.seed_review import REVIEW_STATUSES, resolve_review_status
 from app.seed_allocation import allocate_slots
 from app.seed_generation import generate_seeds_from_chunk, generate_starter_seeds_for_course
-from app import db_admin_actions
+from app import db_admin_actions, db_courses
 from app.fact_inventory_cache import (
     fact_inventory_build_status,
     load_or_build_fact_inventory,
@@ -554,6 +555,26 @@ async def generate_model_testing_pair(
     )
 
 
+def _syllabus_course_exists(course_id: str) -> bool:
+    with translate_db_errors("checking the course"):
+        with db_connection() as connection:
+            return db_courses.course_exists(connection, course_id)
+
+
+def _record_syllabus_state(course_id: str, patch: dict[str, Any]) -> None:
+    with translate_db_errors("recording the syllabus"):
+        with db_connection() as connection:
+            db_courses.update_course(connection, course_id, patch)
+
+
+def _record_syllabus_failure(course_id: str) -> None:
+    """Best effort: the failure being reported matters more than this write."""
+    try:
+        _record_syllabus_state(course_id, {"syllabusStatus": "index_failed", "chunkCount": 0})
+    except Exception:  # noqa: BLE001 - never mask the upload's own error
+        logger.warning("Could not record a failed syllabus upload for %s", course_id)
+
+
 @app.post(
     "/api/courses/{course_id}/syllabus",
     response_model=SyllabusUploadResponse,
@@ -565,6 +586,16 @@ async def upload_course_syllabus(
     syllabus_file: UploadFile = File(...),
     principal: Principal = Depends(require_course_staff),
 ) -> SyllabusUploadResponse:
+    """Upload a course's first syllabus, retry a failed one, or replace it.
+
+    One route for all three, and nothing is written until the file has been
+    extracted, chunked and embedded. So a failure leaves the course as it was:
+    a replacement that fails keeps the previous syllabus and index serving, and
+    a first upload that fails leaves a course the professor retries into rather
+    than one they have to recreate. The course record is written here too, so
+    its syllabus status can never disagree with what is on disk because a
+    browser closed between two requests.
+    """
     storage = get_course_artifact_storage()
 
     try:
@@ -574,42 +605,59 @@ async def upload_course_syllabus(
     finally:
         await syllabus_file.close()
 
-    try:
-        storage.save_original_syllabus(
-            validated.course_id,
-            validated.syllabus_type,
-            validated.content,
+    if not _syllabus_course_exists(validated.course_id):
+        raise HTTPException(
+            status_code=404, detail=f'Course "{validated.course_id}" was not found.'
         )
+    replacing = storage.index_exists(validated.course_id)
+
+    try:
         extracted_text = extract_clean_syllabus_text(validated)
-        storage.save_extracted_text(validated.course_id, extracted_text)
-        index_data = await build_course_rag_index(
+        index_data = await prepare_course_rag_index(
             course_id=validated.course_id,
             source_file=validated.original_filename,
             syllabus_text=extracted_text,
-            storage=storage,
+        )
+        storage.commit_syllabus(
+            validated.course_id,
+            syllabus_type=validated.syllabus_type,
+            content=validated.content,
+            extracted_text=extracted_text,
+            index_data=index_data,
         )
     except SyllabusUploadError as exc:
-        try:
-            storage.delete_partial_files(validated.course_id)
-        except Exception:
-            pass
+        if not replacing:
+            _record_syllabus_failure(validated.course_id)
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     except Exception as exc:  # noqa: BLE001 - map unexpected storage failures to HTTP 500
-        try:
-            storage.delete_partial_files(validated.course_id)
-        except Exception:
-            pass
+        if not replacing:
+            _record_syllabus_failure(validated.course_id)
         raise HTTPException(
             status_code=500,
             detail="Could not save, extract, or index the syllabus file.",
         ) from exc
 
-    queue_result = await try_queue_starter_seed_generation(validated.course_id)
-    if queue_result.get("queued"):
-        background_tasks.add_task(
-            run_auto_starter_seed_generation,
-            validated.course_id,
-        )
+    chunk_count = int(index_data["chunkCount"])
+    _record_syllabus_state(
+        validated.course_id,
+        {
+            "syllabusStatus": "indexed",
+            "syllabusFileName": validated.original_filename,
+            "syllabusType": validated.syllabus_type,
+            "chunkCount": chunk_count,
+        },
+    )
+
+    # Starter examples come from a course's first syllabus. A replacement
+    # keeps the examples it has; an administrator can generate more.
+    queue_result: dict[str, Any] = {"status": None}
+    if not replacing:
+        queue_result = await try_queue_starter_seed_generation(validated.course_id)
+        if queue_result.get("queued"):
+            background_tasks.add_task(
+                run_auto_starter_seed_generation,
+                validated.course_id,
+            )
 
     return SyllabusUploadResponse(
         courseId=validated.course_id,
@@ -618,7 +666,8 @@ async def upload_course_syllabus(
         syllabusStatus="indexed",
         fileSize=validated.file_size,
         characterCount=len(extracted_text),
-        chunkCount=int(index_data["chunkCount"]),
+        chunkCount=chunk_count,
+        replaced=replacing,
         starterSeedGenerationStatus=queue_result.get("status"),
     )
 

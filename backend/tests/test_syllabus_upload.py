@@ -2,14 +2,17 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app.course_id import assert_valid_course_id, is_valid_course_id
 from app.main import app
+from course_record_fake import patch_course_records
 from app.storage import LocalCourseArtifactStorage
 from app.syllabus_extract import (
     UNUSABLE_TEXT_MESSAGE,
@@ -158,6 +161,7 @@ class SyllabusUploadEndpointTests(unittest.TestCase):
             ),
         )
         self._queue_patch.start()
+        self.course_records = patch_course_records(self)
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
@@ -393,6 +397,197 @@ class SyllabusUploadEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], UNUSABLE_TEXT_MESSAGE)
         self.assertFalse((self.course_data_dir / "course-extract-fail").exists())
+
+
+REPLACEMENT_TEXT = (
+    "Course Overview\n\n"
+    "Revised for Fall: this course now covers distributed systems, consensus, "
+    "and fault tolerance in addition to operating systems.\n\n"
+    "Office Hours\n\n"
+    "Office hours moved to Tuesdays and Thursdays."
+)
+
+EMBEDDING_DOWN = HTTPException(status_code=503, detail="Ollama is unavailable for embeddings.")
+
+
+class SyllabusRecoveryAndReplacementTests(unittest.TestCase):
+    """A failed upload is recoverable, and a replacement is a real replacement.
+
+    Every upload goes through the one route; these tests pin what it leaves
+    behind on disk and on the course row when it succeeds, when it fails on a
+    course with no syllabus, and when it fails on a course that already has one.
+    """
+
+    COURSE = "css-430-fall-2026-k7q2"
+
+    def setUp(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        root = Path(temp_dir.name)
+        self.course_data_dir = root / "course_data"
+        self.storage = LocalCourseArtifactStorage(
+            root_dir=self.course_data_dir, index_dir=root / "indexes"
+        )
+        for target, kwargs in (
+            ("app.main.get_course_artifact_storage", {"return_value": self.storage}),
+            ("app.course_index.get_embedding", {"new": AsyncMock(return_value=[0.1, 0.2, 0.3])}),
+        ):
+            patcher = patch(target, **kwargs)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        queue = patch(
+            "app.main.try_queue_starter_seed_generation",
+            new=AsyncMock(return_value={"queued": False, "status": "not_started"}),
+        )
+        self.queue = queue.start()
+        self.addCleanup(queue.stop)
+        self.records = patch_course_records(self, existing={self.COURSE})
+        self.client = TestClient(app)
+
+    def _upload_txt(self, text: str, filename: str = "syllabus.txt") -> Any:
+        return self.client.post(
+            f"/api/courses/{self.COURSE}/syllabus",
+            files={"syllabus_file": (filename, io.BytesIO(text.encode()), "text/plain")},
+        )
+
+    def _upload_pdf(self, text: str, filename: str = "syllabus.pdf") -> Any:
+        return self.client.post(
+            f"/api/courses/{self.COURSE}/syllabus",
+            files={"syllabus_file": (filename, io.BytesIO(build_text_pdf([text])), "application/pdf")},
+        )
+
+    def _embedding_fails(self) -> Any:
+        return patch("app.course_index.get_embedding", new=AsyncMock(side_effect=EMBEDDING_DOWN))
+
+    # ---- a first upload that fails, then a retry ----
+
+    def test_a_failed_first_upload_marks_the_course_and_a_retry_recovers_it(self) -> None:
+        with self._embedding_fails():
+            failed = self._upload_txt(SAMPLE_SYLLABUS_TEXT)
+        self.assertEqual(failed.status_code, 503)
+        # Recoverable: the course says so, and nothing half-written is left.
+        self.assertEqual(
+            self.records.last(self.COURSE), {"syllabusStatus": "index_failed", "chunkCount": 0}
+        )
+        self.assertFalse(self.storage.index_exists(self.COURSE))
+        self.assertIsNone(self.storage.load_extracted_text(self.COURSE))
+        self.queue.assert_not_awaited()
+
+        retried = self._upload_txt(SAMPLE_SYLLABUS_TEXT)
+        self.assertEqual(retried.status_code, 201, retried.text)
+        self.assertFalse(retried.json()["replaced"])
+        self.assertEqual(
+            self.records.last(self.COURSE),
+            {
+                "syllabusStatus": "indexed",
+                "syllabusFileName": "syllabus.txt",
+                "syllabusType": "txt",
+                "chunkCount": retried.json()["chunkCount"],
+            },
+        )
+        self.assertTrue(self.storage.index_exists(self.COURSE))
+        self.assertEqual(self.storage.load_extracted_text(self.COURSE), SAMPLE_SYLLABUS_TEXT)
+        # The first working syllabus is what starts starter-example generation.
+        self.queue.assert_awaited_once_with(self.COURSE)
+
+    def test_a_rejected_file_on_a_new_course_changes_nothing(self) -> None:
+        response = self.client.post(
+            f"/api/courses/{self.COURSE}/syllabus",
+            files={"syllabus_file": ("syllabus.docx", io.BytesIO(b"x" * 64), "application/octet-stream")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.records.records, {})
+
+    def test_a_course_that_does_not_exist_gets_no_files(self) -> None:
+        response = self.client.post(
+            "/api/courses/css-999-fall-2026-none/syllabus",
+            files={"syllabus_file": ("s.txt", io.BytesIO(SAMPLE_SYLLABUS_TEXT.encode()), "text/plain")},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(self.course_data_dir.exists())
+
+    # ---- replacing a working syllabus ----
+
+    def test_a_replacement_swaps_text_index_original_and_record(self) -> None:
+        self.assertEqual(self._upload_txt(SAMPLE_SYLLABUS_TEXT).status_code, 201)
+        self.storage.save_fact_inventory(self.COURSE, {"facts": ["stale"]})
+
+        replaced = self._upload_pdf(REPLACEMENT_TEXT, filename="fall-syllabus.pdf")
+        self.assertEqual(replaced.status_code, 201, replaced.text)
+        body = replaced.json()
+        self.assertTrue(body["replaced"])
+
+        # What students read and what the assistant answers from both moved.
+        text = self.storage.load_extracted_text(self.COURSE)
+        self.assertIn("distributed systems", text)
+        index = self.storage.load_index(self.COURSE)
+        self.assertEqual(index["sourceFile"], "fall-syllabus.pdf")
+        self.assertIn("distributed systems", " ".join(c["text"] for c in index["chunks"]))
+        # The facts cached from the old syllabus are gone, not served.
+        self.assertIsNone(self.storage.load_fact_inventory(self.COURSE))
+        # One original per course: the old .txt does not linger beside the .pdf.
+        self.assertTrue(self.storage.original_syllabus_path(self.COURSE, "pdf").is_file())
+        self.assertFalse(self.storage.original_syllabus_path(self.COURSE, "txt").exists())
+
+        self.assertEqual(
+            self.records.last(self.COURSE),
+            {
+                "syllabusStatus": "indexed",
+                "syllabusFileName": "fall-syllabus.pdf",
+                "syllabusType": "pdf",
+                "chunkCount": body["chunkCount"],
+            },
+        )
+        # Starter examples came from the first syllabus; a replacement keeps them.
+        self.queue.assert_awaited_once()
+
+        text_route = self.client.get(f"/api/courses/{self.COURSE}/syllabus/text")
+        self.assertIn("distributed systems", text_route.json()["text"])
+
+    def test_a_replacement_that_fails_keeps_the_previous_syllabus_serving(self) -> None:
+        self.assertEqual(self._upload_txt(SAMPLE_SYLLABUS_TEXT).status_code, 201)
+        index_before = self.storage.load_index(self.COURSE)
+        writes_before = len(self.records.records[self.COURSE])
+
+        with self._embedding_fails():
+            failed = self._upload_txt(REPLACEMENT_TEXT, filename="new.txt")
+
+        self.assertEqual(failed.status_code, 503)
+        self.assertEqual(self.storage.load_extracted_text(self.COURSE), SAMPLE_SYLLABUS_TEXT)
+        self.assertEqual(self.storage.load_index(self.COURSE), index_before)
+        # The record still describes the syllabus that is actually serving.
+        self.assertEqual(len(self.records.records[self.COURSE]), writes_before)
+        self.assertEqual(self.records.last(self.COURSE)["syllabusStatus"], "indexed")
+
+        # And the course is still usable: the next attempt replaces it.
+        self.assertEqual(self._upload_txt(REPLACEMENT_TEXT).status_code, 201)
+        self.assertIn("distributed systems", self.storage.load_extracted_text(self.COURSE))
+
+    def test_a_replacement_that_fails_while_writing_restores_the_previous_files(self) -> None:
+        self.assertEqual(self._upload_txt(SAMPLE_SYLLABUS_TEXT).status_code, 201)
+        index_before = self.storage.load_index(self.COURSE)
+        original_before = self.storage.original_syllabus_path(self.COURSE, "txt").read_bytes()
+
+        real_save_index = self.storage.save_index
+        calls = {"n": 0}
+
+        def save_index_fails_once(course_id: str, data: dict[str, Any]) -> Path:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise OSError("disk full")
+            return real_save_index(course_id, data)
+
+        with patch.object(self.storage, "save_index", side_effect=save_index_fails_once):
+            failed = self._upload_pdf(REPLACEMENT_TEXT)
+
+        self.assertEqual(failed.status_code, 500)
+        self.assertEqual(self.storage.load_extracted_text(self.COURSE), SAMPLE_SYLLABUS_TEXT)
+        self.assertEqual(self.storage.load_index(self.COURSE), index_before)
+        self.assertEqual(
+            self.storage.original_syllabus_path(self.COURSE, "txt").read_bytes(), original_before
+        )
+        self.assertFalse(self.storage.original_syllabus_path(self.COURSE, "pdf").exists())
+        self.assertEqual(self.records.last(self.COURSE)["syllabusStatus"], "indexed")
 
 
 if __name__ == "__main__":

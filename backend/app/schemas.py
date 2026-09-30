@@ -331,6 +331,10 @@ class SyllabusUploadResponse(BaseModel):
     file_size: int = Field(alias="fileSize")
     character_count: int = Field(alias="characterCount")
     chunk_count: int = Field(alias="chunkCount")
+    replaced: bool = Field(
+        default=False,
+        description="true when this upload replaced a syllabus the course already had",
+    )
     starter_seed_generation_status: str | None = Field(
         default=None,
         alias="starterSeedGenerationStatus",
