@@ -1,13 +1,13 @@
 import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useSession } from '../context/SessionContext';
-import { roleForSession } from '../context/session';
+import { isAnonymous, roleForSession } from '../context/session';
 import { DEFAULT_COURSE_ID, isValidCourseId } from '../lib/courseId';
 import {
   adminCourseExamplesPath,
   adminCoursePath,
   professorCourseHomePath,
   professorCoursePath,
-  loginPath,
+  joinPath,
   roleHomePath,
   studentCourseHomePath,
   studentCoursePath,
@@ -26,8 +26,9 @@ import {
 /**
  * `/` — send whoever is signed in to their landing page.
  *
- * Nobody signed in goes to sign-in, which also points students at the join
- * page. A participant goes to the course list, which opens their one course.
+ * A browser with nothing remembered goes to the join page, which also links
+ * staff to sign-in. A student goes to their course list, which opens their
+ * course directly when there is only one.
  */
 export function RoleLanding() {
   const { state, session } = useSession();
@@ -38,8 +39,16 @@ export function RoleLanding() {
       </p>
     );
   }
-  if (!session.user && !session.participant) {
-    return <Navigate to={loginPath()} replace />;
+  // A browser with no staff session and no joined course is a new student:
+  // the class-code page is where they start. Staff sign in from there.
+  if (isAnonymous(session)) {
+    return <Navigate to={joinPath()} replace />;
+  }
+  // A student with one remembered course goes straight back into it; with
+  // several, to the course list. The list itself never redirects, so "My
+  // courses" always reaches "Join another course".
+  if (!session.user && session.participants.length === 1) {
+    return <Navigate to={studentCourseHomePath(session.participants[0].courseId)} replace />;
   }
   return <Navigate to={roleHomePath(roleForSession(session))} replace />;
 }

@@ -10,7 +10,7 @@ load_backend_env()
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.auth.dependencies import (
     authorize_course_access,
@@ -23,6 +23,7 @@ from app.auth.principal import Principal
 from app.config import app_env, is_test_mode
 from app.course_id import assert_valid_course_id
 from app.course_index import prepare_course_rag_index
+from app.grounded_generation import CLASSROOM_NUM_PREDICT
 from app.course_model_resolution import (
     resolve_course_model_version,
     resolve_current_course_model,
@@ -317,10 +318,13 @@ async def generate_fine_tuned(
     # version travels with the request and comes back on the response, and the
     # client refuses a response that names a different course.
     resolved = resolve_current_course_model(safe_course_id)
+    # Classroom profile: the bare question, as the adapter was trained, with
+    # the classroom output cap and no added instruction.
     result = await generate_finetuned_response(
         question,
         course_id=safe_course_id,
         model_version=resolved["version"],
+        max_new_tokens=CLASSROOM_NUM_PREDICT,
     )
     return FineTunedGenerateResponse(
         answer=result["answer"],
@@ -350,6 +354,7 @@ async def generate_rag_response(request: RagGenerateRequest, principal: Principa
         course_id=safe_course_id,
         question=question,
         top_k=request.top_k,
+        concise=True,
     )
 
     return RagGenerateResponse(
@@ -384,6 +389,7 @@ async def generate_fine_tuned_rag(
         course_id=safe_course_id,
         question=question,
         top_k=request.top_k,
+        concise=True,
     )
 
     return FineTunedRagGenerateResponse(
@@ -669,6 +675,62 @@ async def upload_course_syllabus(
         chunkCount=chunk_count,
         replaced=replacing,
         starterSeedGenerationStatus=queue_result.get("status"),
+    )
+
+
+SYLLABUS_MEDIA_TYPES = {"pdf": "application/pdf", "txt": "text/plain; charset=utf-8"}
+
+
+def _syllabus_download_name(course_id: str, syllabus_type: str) -> str:
+    """The name the professor uploaded, when the course row still has it."""
+    try:
+        with translate_db_errors("reading course metadata"):
+            with db_connection() as connection:
+                course = db_courses.get_course(connection, course_id)
+    except HTTPException:
+        course = None
+    name = ((course or {}).get("metadata") or {}).get("syllabusFileName")
+    if isinstance(name, str) and name.strip() and name.lower().endswith(f".{syllabus_type}"):
+        return name.strip()
+    return f"syllabus.{syllabus_type}"
+
+
+@app.api_route("/api/courses/{course_id}/syllabus/file", methods=["GET", "HEAD"])
+def get_course_syllabus_file(
+    course_id: str,
+    download: bool = False,
+    principal: Principal = Depends(require_course_staff),
+) -> FileResponse:
+    """The syllabus file exactly as it was uploaded, for the course's staff.
+
+    Inline by default so a PDF opens in the browser's viewer; `?download=1`
+    asks for a download. HEAD answers the same question without the bytes,
+    which is how the syllabus page learns whether there is a file to offer:
+    courses whose syllabus predates stored originals have only the extracted
+    text, and get a 404 the page explains.
+    """
+    try:
+        safe_course_id = assert_valid_course_id(course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    storage = get_course_artifact_storage()
+    for syllabus_type, media_type in SYLLABUS_MEDIA_TYPES.items():
+        path = storage.original_syllabus_path(safe_course_id, syllabus_type)
+        if path.is_file():
+            return FileResponse(
+                path,
+                media_type=media_type,
+                filename=_syllabus_download_name(safe_course_id, syllabus_type),
+                content_disposition_type="attachment" if download else "inline",
+                headers={
+                    "X-Content-Type-Options": "nosniff",
+                    "Cache-Control": "private, no-store",
+                },
+            )
+    raise HTTPException(
+        status_code=404,
+        detail="The original syllabus file is not stored for this course.",
     )
 
 

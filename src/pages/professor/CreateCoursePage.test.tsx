@@ -59,7 +59,7 @@ function professorSession(...courseIds: string[]): Session {
       role: 'professor',
       courseIds,
     },
-    participant: null,
+    participants: [],
   };
 }
 

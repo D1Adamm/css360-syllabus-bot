@@ -81,7 +81,7 @@ vi.mock('./hooks/useCourseActivity', () => ({
 // What `/api/auth/session` answers: whoever the test signed in as. A guard
 // re-reads it before refusing, and the backend would say the same thing.
 const backendSession = vi.hoisted(() => ({
-  current: { user: null, participant: null } as unknown,
+  current: { user: null, participants: [] } as unknown,
 }));
 
 vi.mock('./lib/authApi', async () => {
@@ -127,8 +127,8 @@ const OTHER = 'other-course';
  * `admin` holds none and needs none.
  */
 const SESSIONS: Record<'anonymous' | 'student' | 'professor' | 'admin', Session> = {
-  anonymous: { user: null, participant: null },
-  student: { user: null, participant: { courseId: COURSE } },
+  anonymous: { user: null, participants: [] },
+  student: { user: null, participants: [{ courseId: COURSE }] },
   professor: {
     user: {
       userId: 'u-prof',
@@ -137,7 +137,7 @@ const SESSIONS: Record<'anonymous' | 'student' | 'professor' | 'admin', Session>
       role: 'professor',
       courseIds: [COURSE],
     },
-    participant: null,
+    participants: [],
   },
   admin: {
     user: {
@@ -147,7 +147,7 @@ const SESSIONS: Record<'anonymous' | 'student' | 'professor' | 'admin', Session>
       role: 'admin',
       courseIds: [],
     },
-    participant: null,
+    participants: [],
   },
 };
 
@@ -205,6 +205,20 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+function courseMetadata(name: string) {
+  return {
+    name,
+    title: 'Course',
+    term: 'Fall 2026',
+    instructorName: '',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    syllabusStatus: 'indexed',
+    syllabusFileName: 'syllabus.pdf',
+    syllabusType: 'pdf',
+    chunkCount: 12,
+  };
+}
+
 async function expectLocation(view: ReturnType<typeof render>, expected: string) {
   await waitFor(() => {
     expect(view.getByTestId('location')).toHaveTextContent(expected);
@@ -213,8 +227,9 @@ async function expectLocation(view: ReturnType<typeof render>, expected: string)
 
 describe('landing', () => {
   it('sends each session to its own home from the root route', async () => {
+    // One remembered course: straight back into it.
     const student = renderAt('/', 'student');
-    await expectLocation(student, '/student');
+    await expectLocation(student, `/student/course/${COURSE}`);
     cleanup();
 
     const professor = renderAt('/', 'professor');
@@ -225,12 +240,85 @@ describe('landing', () => {
     await expectLocation(admin, '/admin');
   });
 
-  it('sends nobody-in-particular to sign in, which points students at the join page', async () => {
-    const view = renderAt('/', 'anonymous');
-    await expectLocation(view, '/login');
-    expect(await view.findByRole('link', { name: /Enter a class code/ })).toHaveAttribute(
+  it('sends a browser with several courses to its course list, never into one of them', async () => {
+    backendSession.current = {
+      user: null,
+      participants: [{ courseId: COURSE }, { courseId: OTHER }],
+    };
+    subscribeToCoursesMock.mockImplementation((onData: (value: unknown[]) => void) => {
+      onData([
+        { courseId: COURSE, metadata: { ...courseMetadata('CSS 360') } },
+        { courseId: OTHER, metadata: { ...courseMetadata('CSS 350') } },
+      ]);
+      return () => {};
+    });
+    const view = render(
+      <MemoryRouter initialEntries={['/']}>
+        <SessionProvider
+          initialSession={{ user: null, participants: [{ courseId: COURSE }, { courseId: OTHER }] }}
+        >
+          <ComparisonRunProvider>
+            <LocationProbe />
+            <AppRoutes />
+          </ComparisonRunProvider>
+        </SessionProvider>
+      </MemoryRouter>,
+    );
+    const list = await view.findByRole('list', { name: 'Your courses' });
+    expect(view.getByTestId('location')).toHaveTextContent(/^\/student$/);
+    expect(within(list).getByText('CSS 360')).toBeInTheDocument();
+    expect(within(list).getByText('CSS 350')).toBeInTheDocument();
+    expect(view.getByRole('link', { name: /Join another course/ })).toHaveAttribute(
       'href',
       '/join',
+    );
+  });
+
+  it('shows a one-course student the list when they ask for it', async () => {
+    subscribeToCoursesMock.mockImplementation((onData: (value: unknown[]) => void) => {
+      onData([{ courseId: COURSE, metadata: { ...courseMetadata('CSS 360') } }]);
+      return () => {};
+    });
+    const view = renderAt('/student', 'student');
+    await view.findByRole('list', { name: 'Your courses' });
+    expect(view.getByTestId('location')).toHaveTextContent(/^\/student$/);
+    expect(view.getByRole('link', { name: /Join another course/ })).toBeInTheDocument();
+  });
+
+  it('sends a new browser to the join page, with a way to staff sign-in', async () => {
+    const view = renderAt('/', 'anonymous');
+    await expectLocation(view, '/join');
+    expect(await view.findByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/login');
+  });
+});
+
+describe('student course pages', () => {
+  it('offer Home, Contribute, Compare and Evaluate, and no syllabus reader', async () => {
+    const view = renderAt(`/student/course/${COURSE}`, 'student');
+    await expectLocation(view, `/student/course/${COURSE}`);
+    const links = await view.findAllByRole('link');
+    const labels = links.map((link) => link.textContent?.trim());
+    for (const label of ['Home', 'Contribute', 'Compare', 'Evaluate']) {
+      expect(labels).toContain(label);
+    }
+    expect(labels).not.toContain('Syllabus');
+    expect(view.queryByText('Read the syllabus')).not.toBeInTheDocument();
+  });
+
+  it('send the old syllabus address to the course home', async () => {
+    const view = renderAt(`/student/course/${COURSE}/syllabus`, 'student');
+    await waitFor(() =>
+      expect(view.getByTestId('location')).toHaveTextContent(
+        new RegExp(`^/student/course/${COURSE}$`),
+      ),
+    );
+    cleanup();
+
+    const legacy = renderAt(`/course/${COURSE}/syllabus`, 'student');
+    await waitFor(() =>
+      expect(legacy.getByTestId('location')).toHaveTextContent(
+        new RegExp(`^/student/course/${COURSE}$`),
+      ),
     );
   });
 });

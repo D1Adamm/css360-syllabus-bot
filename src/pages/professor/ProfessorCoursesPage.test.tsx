@@ -17,7 +17,7 @@ import { ProfessorCoursesPage } from './ProfessorCoursesPage';
 
 const ADMIN_SESSION: Session = {
   user: { userId: 'u-admin', email: 'a@uw.edu', displayName: 'A', role: 'admin', courseIds: [] },
-  participant: null,
+  participants: [],
 };
 
 interface CourseListItem {
@@ -183,7 +183,7 @@ describe('ProfessorCoursesPage', () => {
         role: 'professor',
         courseIds: ['css-430-summer-2026-ibce'],
       },
-      participant: { courseId: 'css-350-spring-2026-abcd' },
+      participants: [{ courseId: 'css-350-spring-2026-abcd' }],
     });
 
     const list = await screen.findByRole('list', { name: 'Your courses' });
@@ -200,7 +200,7 @@ describe('ProfessorCoursesPage', () => {
     // Granted by an administrator after this browser read its session.
     renderCoursePicker({
       user: { userId: 'u-prof', email: 'p@uw.edu', displayName: 'P', role: 'professor', courseIds: [] },
-      participant: null,
+      participants: [],
     });
 
     const list = await screen.findByRole('list', { name: 'Your courses' });

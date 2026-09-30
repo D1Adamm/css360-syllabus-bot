@@ -74,6 +74,47 @@ def grounded_options() -> dict[str, int | float]:
 GROUNDED_OPTIONS: Mapping[str, int | float] = MappingProxyType(grounded_options())
 
 
+# --------------------------------------------------------------------------- #
+# The classroom profile
+# --------------------------------------------------------------------------- #
+#
+# What the student Compare page is answered with: the same four conditions,
+# asked for short answers. Everything above stays the controlled profile the
+# 2026-09-19 benchmark, the model-testing route and the training exports use,
+# so none of them changes meaning. Only the output is constrained here — a
+# shorter cap and one length instruction, identical wherever an instruction
+# already exists. No condition gains or loses any content.
+#
+# Plain Fine-Tuned is the exception: it is asked the bare question, as it was
+# trained, and gets the shorter cap only. See docs/css360-model-evolution.md.
+
+CLASSROOM_PROFILE_NAME = "classroom-concise-v1"
+
+#: The shared length instruction, word for word on every condition that
+#: carries instructions (Base, RAG, Fine-Tuned + RAG).
+CONCISE_ANSWER_INSTRUCTION = (
+    "Answer in 1 to 3 short sentences. Give only the information needed to answer "
+    "the question."
+)
+
+#: Output cap. Three short sentences are well under 100 tokens; the margin keeps
+#: a normal answer from being cut mid-sentence. The instruction, not the cap,
+#: is what shapes the length.
+CLASSROOM_NUM_PREDICT = 128
+
+#: The grounded prompt's last rule, with its length clause replaced by the
+#: shared instruction. The rest of the rule is unchanged.
+CONCISE_LAST_RULE = (
+    f"{CONCISE_ANSWER_INSTRUCTION} Write natural prose addressed to the student. "
+    "Do not mention excerpts, sections, context, retrieval, or AI."
+)
+
+
+def classroom_options() -> dict[str, int | float]:
+    """The controlled decoding recipe with the classroom output cap."""
+    return {**grounded_options(), "num_predict": CLASSROOM_NUM_PREDICT}
+
+
 PREAMBLE = (
     "You are answering a student's question about their course. Answer using "
     "only the syllabus excerpts below."
@@ -147,9 +188,17 @@ def build_grounded_prompt(
     question: str,
     retrieved_chunks: Sequence[Mapping[str, Any]],
     facets: Sequence[str] | None = None,
+    *,
+    concise: bool = False,
 ) -> str:
-    """The grounded prompt: rules, excerpts, optional parts, the question."""
-    rules = "\n".join(f"- {rule}" for rule in RULES)
+    """The grounded prompt: rules, excerpts, optional parts, the question.
+
+    `concise` is the classroom profile: the last rule asks for 1 to 3 short
+    sentences instead of two to five. Training exports and the benchmark never
+    pass it, so their text — and `prompt_template_fingerprint` — is unchanged.
+    """
+    selected = (*RULES[:-1], CONCISE_LAST_RULE) if concise else RULES
+    rules = "\n".join(f"- {rule}" for rule in selected)
     return (
         f"{PREAMBLE}\n\n"
         f"Rules:\n{rules}\n\n"

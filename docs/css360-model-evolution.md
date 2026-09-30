@@ -829,3 +829,39 @@ pipelines and nothing more.
    The served-answer benchmark does not depend on this check, since it scores
    generated text and not loss, but any statement about the two adapters'
    training outcomes does.
+
+## 13. Classroom generation profile, 2026-09-30
+
+From this change on, the **student Compare page** is answered under a named
+profile, `classroom-concise-v1` (`backend/app/grounded_generation.py`). It is
+**not** the configuration the controlled benchmark (`run-20260919T140406Z`) or
+any earlier result was produced under, and classroom answers must not be
+reported as if it were.
+
+| | Controlled profile (benchmark, model testing, training exports) | `classroom-concise-v1` (student Compare page) |
+| --- | --- | --- |
+| Output cap (`num_predict`) | 256 | **128** |
+| Decoding | greedy, repeat penalty 1.05, `num_ctx` 4096, seed 360 | unchanged |
+| Base instruction | "Keep the answer brief and student-friendly." | "Keep the answer student-friendly. Answer in 1 to 3 short sentences. Give only the information needed to answer the question." |
+| RAG / Fine-Tuned + RAG length rule | "Write two to five sentences of natural prose addressed to the student. …" | "Answer in 1 to 3 short sentences. Give only the information needed to answer the question. Write natural prose addressed to the student. …" |
+| Plain Fine-Tuned | bare question, no instruction | bare question, no instruction — **cap only** |
+| Grounded template fingerprint | `grounded-v1`, unchanged | concise variant; the controlled template and its fingerprint are untouched |
+
+What did not change: which model answers each condition, the retrieval, the
+excerpts each grounded condition receives, and the rule that Base receives no
+syllabus content. Only the output is constrained, identically wherever a
+condition already carries instructions.
+
+Plain Fine-Tuned is deliberately given the cap and no instruction: its
+treatment is "the adapter asked the bare question it was trained on", and an
+added instruction would change that input. Its answers may therefore run
+longer than the other three and be cut at 128 tokens more often.
+
+The cap reaches the fine-tuned conditions as `maxNewTokens` on the VM-local
+fine-tuned service's `/generate`. The Tillicum fallback service ignores the
+field and answers with its own 256-token cap while it is the one serving.
+
+The 128-token cap was chosen from the benchmark's evidence (answers under the
+old two-to-five-sentence rule were cut at 160; the longest correct grounded
+answers were under 200). How often classroom answers reach 128 has not been
+measured yet; see `docs/remaining-work.md` §7.

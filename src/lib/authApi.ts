@@ -27,13 +27,30 @@ export interface ParticipantSession {
 
 export interface Session {
   user: UserSession | null;
-  participant: ParticipantSession | null;
+  /** Every course this browser joined with a class code, one entry per course. */
+  participants: ParticipantSession[];
 }
 
-export const ANONYMOUS_SESSION: Session = { user: null, participant: null };
+export const ANONYMOUS_SESSION: Session = { user: null, participants: [] };
 
-export function fetchSession(): Promise<Session> {
-  return getJson<Session>('/auth/session', 'Could not check who is signed in.');
+/** What `/api/auth/session` (and invitation acceptance) returns. */
+interface SessionPayload {
+  user: UserSession | null;
+  participants?: ParticipantSession[] | null;
+  /** The single course a backend from before multi-course access reports. */
+  participant?: ParticipantSession | null;
+}
+
+function toSession(payload: SessionPayload): Session {
+  const participants =
+    payload.participants ?? (payload.participant ? [payload.participant] : []);
+  return { user: payload.user ?? null, participants };
+}
+
+export async function fetchSession(): Promise<Session> {
+  return toSession(
+    await getJson<SessionPayload>('/auth/session', 'Could not check who is signed in.'),
+  );
 }
 
 export function login(email: string, password: string): Promise<void> {
@@ -90,14 +107,16 @@ export interface AcceptInvitationBody {
   password: string;
 }
 
-export function acceptInvitation(
+export async function acceptInvitation(
   token: string,
   body: AcceptInvitationBody,
 ): Promise<Session> {
-  return postJson<Session>(
-    `/auth/invitations/${encodeURIComponent(token)}/accept`,
-    body,
-    'The invitation could not be accepted.',
+  return toSession(
+    await postJson<SessionPayload>(
+      `/auth/invitations/${encodeURIComponent(token)}/accept`,
+      body,
+      'The invitation could not be accepted.',
+    ),
   );
 }
 

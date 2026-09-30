@@ -85,6 +85,7 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     # ---- syllabus, seeds, training (main.py) ----
     ("POST", f"{_C}/syllabus"): REQUIRE_COURSE_STAFF,
     ("GET", f"{_C}/syllabus/text"): REQUIRE_COURSE_ACCESS,
+    ("GET", f"{_C}/syllabus/file"): REQUIRE_COURSE_STAFF,
     ("GET", f"{_C}/chunks"): REQUIRE_ADMIN,
     ("GET", f"{_C}/seeds"): REQUIRE_COURSE_ACCESS,
     ("POST", f"{_C}/seeds/{{seed_id}}/review"): REQUIRE_COURSE_STAFF,

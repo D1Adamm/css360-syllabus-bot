@@ -122,7 +122,9 @@ class GenerateFromPromptTests(unittest.IsolatedAsyncioTestCase):
 
         current.assert_called_once_with(COURSE)
         explicit.assert_not_called()
-        client.assert_awaited_once_with("PROMPT", course_id=COURSE, model_version="v2")
+        client.assert_awaited_once_with(
+            "PROMPT", course_id=COURSE, model_version="v2", max_new_tokens=None
+        )
         self.assertEqual(result["responseType"], "fineTunedRag")
         self.assertEqual(result["modelVersion"], "v2")
         self.assertTrue(result["adapterLoaded"])
@@ -178,7 +180,9 @@ class PublicWrapperTests(unittest.IsolatedAsyncioTestCase):
 
         with patch("app.grounded_rag.generate_grounded_answer", new=AsyncMock(return_value={"ok": 1})) as shared:
             await generate_course_rag_answer(course_id=COURSE, question="Q?", top_k=6)
-        shared.assert_awaited_once_with(COURSE, "Q?", top_k=6, storage=None, target=BASE_TARGET)
+        shared.assert_awaited_once_with(
+            COURSE, "Q?", top_k=6, storage=None, target=BASE_TARGET, concise=False
+        )
 
     async def test_the_fine_tuned_wrapper_is_the_shared_path_with_the_course_target(self) -> None:
         from app.finetuned_rag import generate_course_finetuned_rag_answer

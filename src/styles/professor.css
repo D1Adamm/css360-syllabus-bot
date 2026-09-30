@@ -870,20 +870,6 @@
   color: var(--ink-400);
 }
 
-.invite__preview-qr {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  width: 5rem;
-  height: 5rem;
-  border: 1px dashed var(--line-300);
-  border-radius: var(--radius-md);
-  font-size: var(--text-2xs);
-  color: var(--ink-400);
-}
-
 .invite__preview-note {
   margin: 0;
   flex-basis: 100%;
@@ -976,4 +962,79 @@
   font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
   color: var(--ink-700);
+}
+
+/* ======================== Syllabus management ======================== */
+
+.syllabus-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: var(--border-hairline);
+  border-radius: var(--radius-lg);
+  background-color: var(--surface);
+}
+
+.syllabus-card__file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.syllabus-card__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--purple-700);
+}
+
+.syllabus-card__text {
+  min-width: 0;
+}
+
+.syllabus-card__name {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--ink-900);
+  overflow-wrap: anywhere;
+}
+
+.syllabus-card__meta {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+}
+
+.syllabus-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.syllabus-extracted__region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* Bounded: however long the syllabus, it scrolls inside this box and the page
+   stays the length of its controls. */
+.syllabus-extracted__text {
+  max-height: min(60vh, 32rem);
+  margin: 0;
+  padding: var(--space-4);
+  overflow: auto;
+  border: var(--border-hairline);
+  border-radius: var(--radius-md);
+  background-color: var(--canvas-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--ink-700);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

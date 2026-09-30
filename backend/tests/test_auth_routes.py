@@ -25,7 +25,7 @@ from app.auth.dependencies import current_principal
 from app.auth.passwords import hash_password
 from app.auth.principal import Participant, Principal, StaffUser
 from app.auth.settings import CSRF_HEADER_VALUE, PARTICIPANT_COOKIE_NAME, STAFF_COOKIE_NAME
-from app.auth.tokens import generate_token
+from app.auth.tokens import generate_token, hash_token
 from app.auth_routes import (
     CODE_INVALID_DETAIL,
     INVITATION_INVALID_DETAIL,
@@ -72,9 +72,19 @@ def professor_principal(*course_ids: str, session_id: str = "sess-1") -> Princip
     )
 
 
-def participant_principal(course_id: str, session_id: str = "sess-p") -> Principal:
+def participant_principal(
+    course_id: str,
+    session_id: str = "sess-p",
+    participant_id: str = "part-1",
+    token_hash: str | None = None,
+) -> Principal:
     return Principal(
-        participant=Participant(participant_id="part-1", course_id=course_id, session_id=session_id)
+        participant=Participant(
+            participant_id=participant_id,
+            course_id=course_id,
+            session_id=session_id,
+            token_hash=token_hash,
+        )
     )
 
 
@@ -216,33 +226,56 @@ class LogoutAndSessionTests(AuthRouteTestCase):
     def test_anonymous_session_is_null_null(self) -> None:
         response = self.client.get("/api/auth/session")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"user": None, "participant": None})
+        self.assertEqual(
+            response.json(), {"user": None, "participants": [], "participant": None}
+        )
 
     def test_session_describes_both_principals_without_the_participant_id(self) -> None:
         self.act_as(
             Principal(
                 user=professor_principal(COURSE, OTHER_COURSE).user,
-                participant=participant_principal(COURSE).participant,
+                participant=participant_principal(COURSE).participants[0],
             )
         )
         body = self.client.get("/api/auth/session").json()
         self.assertEqual(body["user"]["email"], "prof@uw.edu")
         self.assertEqual(body["user"]["role"], "professor")
         self.assertEqual(body["user"]["courseIds"], sorted([COURSE, OTHER_COURSE]))
+        self.assertEqual(body["participants"], [{"courseId": COURSE}])
         self.assertEqual(body["participant"], {"courseId": COURSE})
+        self.assertNotIn("part-1", str(body))
+
+    def test_session_lists_every_course_this_browser_joined(self) -> None:
+        self.act_as(
+            Principal(
+                participants=(
+                    participant_principal(COURSE).participants[0],
+                    participant_principal(OTHER_COURSE, participant_id="part-2").participants[0],
+                )
+            )
+        )
+        body = self.client.get("/api/auth/session").json()
+        self.assertIsNone(body["user"])
+        self.assertEqual(
+            body["participants"], [{"courseId": COURSE}, {"courseId": OTHER_COURSE}]
+        )
+        self.assertNotIn("part-", str(body))
 
     def test_logout_revokes_every_session_and_clears_both_cookies(self) -> None:
         revoke = self.patch("app.db_sessions.revoke_session", return_value=True)
         self.act_as(
             Principal(
                 user=professor_principal(COURSE, session_id="s-staff").user,
-                participant=participant_principal(COURSE, session_id="s-part").participant,
+                participants=(
+                    participant_principal(COURSE, session_id="s-part").participants[0],
+                    participant_principal(OTHER_COURSE, session_id="s-part-2").participants[0],
+                ),
             )
         )
         response = self.client.post("/api/auth/logout", headers=CSRF)
         self.assertEqual(response.status_code, 204)
         revoked = sorted(call.args[1] for call in revoke.call_args_list)
-        self.assertEqual(revoked, ["s-part", "s-staff"])
+        self.assertEqual(revoked, ["s-part", "s-part-2", "s-staff"])
         cleared = " ".join(response.headers.get_list("set-cookie")).lower()
         self.assertIn(f"{STAFF_COOKIE_NAME.lower()}=", cleared)
         self.assertIn(f"{PARTICIPANT_COOKIE_NAME.lower()}=", cleared)
@@ -266,10 +299,18 @@ class JoinTests(AuthRouteTestCase):
         self.touch = self.patch("app.db_participants.touch_participant", return_value=None)
         self.revoke = self.patch("app.db_sessions.revoke_session", return_value=True)
 
-    def join(self, code: str = "7k4p9x", headers: dict[str, str] | None = None):
+    def join(
+        self,
+        code: str = "7k4p9x",
+        headers: dict[str, str] | None = None,
+        participant_cookie: str | None = None,
+    ):
         # Each call is a fresh browser: a cookie a previous join set must not be
-        # presented again, or the (unpatched) session lookup would run.
+        # presented again, or the (unpatched) session lookup would run. A test
+        # that means to present one says so.
         self.client.cookies.clear()
+        if participant_cookie is not None:
+            self.client.cookies.set(PARTICIPANT_COOKIE_NAME, participant_cookie)
         return self.client.post(
             "/api/auth/join",
             json={"code": code},
@@ -352,14 +393,60 @@ class JoinTests(AuthRouteTestCase):
             any(h.startswith(PARTICIPANT_COOKIE_NAME) for h in response.headers.get_list("set-cookie"))
         )
 
-    def test_joining_another_course_replaces_the_participant_session(self) -> None:
-        self.act_as(participant_principal(OTHER_COURSE, session_id="old-session"))
-        response = self.join()
+    def _participant_cookie(self, response: Any) -> str:
+        for header in response.headers.get_list("set-cookie"):
+            if header.startswith(f"{PARTICIPANT_COOKIE_NAME}="):
+                return header.split(";", 1)[0].split("=", 1)[1].strip('"')
+        self.fail("no participant cookie was set")
+
+    def test_joining_another_course_keeps_the_first_one(self) -> None:
+        first_token = generate_token()
+        self.act_as(
+            participant_principal(
+                OTHER_COURSE, session_id="old-session", token_hash=hash_token(first_token)
+            )
+        )
+        response = self.join(participant_cookie=first_token)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json()["alreadyJoined"])
         self.create_participant.assert_called_once()
-        self.revoke.assert_called_once()
-        self.assertEqual(self.revoke.call_args.args[1], "old-session")
+        # The first course's session is not retired, and its token stays in the
+        # cookie beside the new course's.
+        self.revoke.assert_not_called()
+        tokens = self._participant_cookie(response).split(".")
+        self.assertEqual(len(tokens), 2)
+        self.assertEqual(tokens[0], first_token)
+        self.assertNotEqual(tokens[1], first_token)
+
+    def test_a_dead_token_is_dropped_when_the_cookie_is_rewritten(self) -> None:
+        live, dead = generate_token(), generate_token()
+        self.act_as(participant_principal(OTHER_COURSE, token_hash=hash_token(live)))
+        tokens = self._participant_cookie(self.join(participant_cookie=f"{dead}.{live}")).split(".")
+        self.assertEqual(tokens[0], live)
+        self.assertNotIn(dead, tokens)
+        self.assertEqual(len(tokens), 2)
+
+    def test_a_browser_holding_the_maximum_cannot_join_another(self) -> None:
+        from app.auth.dependencies import MAX_JOINED_COURSES
+
+        tokens = [generate_token() for _ in range(MAX_JOINED_COURSES)]
+        self.act_as(
+            Principal(
+                participants=tuple(
+                    Participant(
+                        participant_id=f"p-{i}",
+                        course_id=f"css-{i}-fall-2026-abcd",
+                        session_id=f"s-{i}",
+                        token_hash=hash_token(token),
+                    )
+                    for i, token in enumerate(tokens)
+                )
+            )
+        )
+        response = self.join(participant_cookie=".".join(tokens))
+        self.assertEqual(response.status_code, 409)
+        self.create_participant.assert_not_called()
+        self.consume.assert_not_called()
 
     def test_the_csrf_header_is_required(self) -> None:
         self.assertEqual(self.join(headers={}).status_code, 403)

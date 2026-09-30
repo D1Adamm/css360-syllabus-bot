@@ -39,7 +39,7 @@ import { AdminPeoplePage } from './AdminPeoplePage';
 
 const ADMIN_SESSION = {
   user: { userId: 'u-admin', email: 'admin@uw.edu', displayName: 'Admin', role: 'admin' as const, courseIds: [] },
-  participant: null,
+  participants: [],
 };
 
 const PROF = {

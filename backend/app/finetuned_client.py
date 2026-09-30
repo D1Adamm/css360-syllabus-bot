@@ -352,6 +352,7 @@ async def generate_finetuned_response(
     *,
     course_id: str,
     model_version: str | None = None,
+    max_new_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Call POST {FINETUNED_SERVICE_URL}/generate and return a validated result.
 
@@ -384,6 +385,10 @@ async def generate_finetuned_response(
     body: dict[str, Any] = {"question": trimmed, "courseId": safe_course_id}
     if model_version:
         body["modelVersion"] = model_version
+    if max_new_tokens is not None:
+        # The classroom output cap. The VM-local service honours it; a service
+        # that predates the field ignores it and keeps its own default.
+        body["maxNewTokens"] = int(max_new_tokens)
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:

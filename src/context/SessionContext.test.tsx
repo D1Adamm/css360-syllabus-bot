@@ -22,7 +22,7 @@ const PROFESSOR = {
     role: 'professor' as const,
     courseIds: ['css-360-winter-2026-a7rp'],
   },
-  participant: null,
+  participants: [],
 };
 
 function Probe() {
@@ -31,7 +31,7 @@ function Probe() {
     <div>
       <span data-testid="status">{state.status}</span>
       <span data-testid="who">
-        {session.user ? session.user.email : session.participant ? 'participant' : 'nobody'}
+        {session.user ? session.user.email : session.participants.length > 0 ? 'participant' : 'nobody'}
       </span>
       <button type="button" onClick={() => void signOut()}>
         Sign out
@@ -86,7 +86,7 @@ describe('SessionProvider', () => {
   });
 
   it('re-checks the session when any request is refused with 401', async () => {
-    fetchSessionMock.mockResolvedValue({ user: null, participant: null });
+    fetchSessionMock.mockResolvedValue({ user: null, participants: [] });
     render(
       <SessionProvider initialSession={PROFESSOR}>
         <Probe />

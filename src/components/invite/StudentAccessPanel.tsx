@@ -58,8 +58,8 @@ export interface StudentAccessPanelProps {
  * Classroom access for one course.
  *
  * What an instructor puts on the board: the join page and a six-character
- * code. The direct link and the QR code are conveniences for Canvas and for
- * phones; the code is the primary thing because the class is on laptops.
+ * code. The direct link is a convenience for Canvas or Discord; the code is
+ * the primary thing because the class is on laptops.
  *
  * Every action goes through the backend, which decides whether this staff
  * member may manage this course's codes. The panel is embedded on the
@@ -70,8 +70,6 @@ export function StudentAccessPanel({ courseId, courseName }: StudentAccessPanelP
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState<'link' | 'code' | 'page' | null>(null);
-  const [qr, setQr] = useState<{ code: string; dataUrl: string } | null>(null);
-  const [qrError, setQrError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<'revoke' | 'replace' | null>(null);
 
   const load = useCallback(async () => {
@@ -103,7 +101,6 @@ export function StudentAccessPanel({ courseId, courseName }: StudentAccessPanelP
     setActionError(null);
     try {
       await action();
-      setQr(null);
       await load();
     } catch (caught) {
       setActionError(caught instanceof Error ? caught.message : 'That did not work.');
@@ -120,27 +117,13 @@ export function StudentAccessPanel({ courseId, courseName }: StudentAccessPanelP
     }
   }
 
-  async function showQr() {
-    if (!active || !link) {
-      return;
-    }
-    setQrError(null);
-    try {
-      const { toDataURL } = await import('qrcode');
-      const dataUrl = await toDataURL(link, { width: 240, margin: 1 });
-      setQr({ code: active.code, dataUrl });
-    } catch {
-      setQrError('The QR code could not be drawn. The link and the code still work.');
-    }
-  }
-
   const heading = `${formatCourseCode(courseName) || 'Course'} student access`;
 
   return (
     <section className="ui-stack ui-stack--snug access" aria-label={heading}>
       <SectionHeader
         title="Student access"
-        description="Students open the join page on their laptop and enter the class code. No account, no name, no email."
+        description="Students open the join page and enter this code once. Their browser remembers the course after that, so no account, name or email is needed."
         divider
       />
 
@@ -174,7 +157,7 @@ export function StudentAccessPanel({ courseId, courseName }: StudentAccessPanelP
         <EmptyState
           illustration="contribute"
           title="No class code yet"
-          description="Create one and put it on the board. Every student who enters it gets their own anonymous identity in this course."
+          description="Create one and put it on the board. Students enter it once; their browser remembers the course."
           action={
             <Button
               variant="primary"
@@ -225,9 +208,6 @@ export function StudentAccessPanel({ courseId, courseName }: StudentAccessPanelP
             >
               {copied === 'code' ? 'Copied' : 'Copy code'}
             </Button>
-            <Button size="sm" variant="secondary" iconLeft="link" onClick={() => void showQr()}>
-              Show QR
-            </Button>
             <Button
               size="sm"
               variant="secondary"
@@ -247,16 +227,6 @@ export function StudentAccessPanel({ courseId, courseName }: StudentAccessPanelP
               Revoke
             </Button>
           </div>
-
-          {qrError && <p className="ui-text-xs ui-text-muted">{qrError}</p>}
-          {qr && qr.code === active.code && (
-            <figure className="access__qr">
-              <img src={qr.dataUrl} alt={`QR code for ${link}`} width={240} height={240} />
-              <figcaption className="ui-text-xs ui-text-muted">
-                Scanning opens the join page with the code filled in.
-              </figcaption>
-            </figure>
-          )}
 
           <p className="access__meta ui-text-xs ui-text-muted">
             {active.label ? `${active.label} · ` : ''}
@@ -292,8 +262,8 @@ export function StudentAccessPanel({ courseId, courseName }: StudentAccessPanelP
       )}
 
       <p className="ui-text-xs ui-text-muted">
-        Revoking a code stops new students from joining with it. Students who
-        already joined keep their access and their anonymous identity.
+        Revoking stops new students joining with this code. Students who already
+        joined keep their access.
       </p>
 
       <ConfirmDialog

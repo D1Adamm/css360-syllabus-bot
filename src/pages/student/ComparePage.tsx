@@ -6,10 +6,7 @@ import { LinkButton } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { useCourseId } from '../../context/CourseContext';
-import {
-  useComparisonRunStore,
-  type ComparisonRun,
-} from '../../context/ComparisonRunContext';
+import { useComparisonRunStore } from '../../context/ComparisonRunContext';
 import { useComparisonRun } from '../../hooks/useComparisonRun';
 import { useQuestionSuggestions } from '../../hooks/useQuestionSuggestions';
 import { studentCoursePath } from '../../lib/roleRoutes';
@@ -21,23 +18,16 @@ import { studentCoursePath } from '../../lib/roleRoutes';
  * requests, the suggested questions, and the stored run. `CourseRoute` keys on
  * that id, so switching courses remounts this page rather than carrying one
  * course's answers into another.
+ *
+ * The comparison is not this page's: it lives in `ComparisonRunProvider`, so
+ * leaving for Contribute or Home while answers generate loses nothing, and
+ * coming back shows the same question with whatever has arrived.
  */
 export function ComparePage() {
   const courseId = useCourseId();
-  const { saveRun, getRun } = useComparisonRunStore();
+  const { getRun } = useComparisonRunStore();
   const suggestions = useQuestionSuggestions(courseId);
-
-  const handleComplete = useCallback(
-    (run: ComparisonRun) => {
-      saveRun(run);
-    },
-    [saveRun],
-  );
-
-  const { states, activeQuestion, isRunning, run } = useComparisonRun(
-    courseId,
-    handleComplete,
-  );
+  const { states, activeQuestion, isRunning, run } = useComparisonRun(courseId);
 
   // A run stored earlier this session means Evaluate has something to show
   // even before a new question is asked.
@@ -49,7 +39,7 @@ export function ComparePage() {
       // Suggestions now come from this course's own examples, which have no
       // predefined-comparison id, so every run is recorded against its question
       // text. Results aggregation already falls back to that wording.
-      void run(question, null);
+      run(question, null);
     },
     [run],
   );

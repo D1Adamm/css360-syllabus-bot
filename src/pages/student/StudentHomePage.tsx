@@ -120,13 +120,6 @@ export function StudentHomePage() {
         >
           Contribute a question
         </LinkButton>
-        <LinkButton
-          to={studentCoursePath(courseId, 'syllabus')}
-          variant="tertiary"
-          iconLeft="syllabus"
-        >
-          Read the syllabus
-        </LinkButton>
       </section>
     </div>
   );

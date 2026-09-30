@@ -237,13 +237,24 @@ def build_generation_options(
     }
 
 
-def build_chat_request(question: str, *, ollama_model: str) -> Dict[str, Any]:
-    """One user turn, no system prompt — what `apply_chat_template` was given."""
+def build_chat_request(
+    question: str, *, ollama_model: str, max_new_tokens: Optional[int] = None
+) -> Dict[str, Any]:
+    """One user turn, no system prompt — what `apply_chat_template` was given.
+
+    `max_new_tokens` lowers the output cap for one request (the backend's
+    classroom profile); nothing else about the request changes.
+    """
+    options = (
+        build_generation_options()
+        if max_new_tokens is None
+        else build_generation_options(max_new_tokens=max_new_tokens)
+    )
     payload: Dict[str, Any] = {
         "model": ollama_model,
         "messages": [{"role": "user", "content": question}],
         "stream": False,
-        "options": build_generation_options(),
+        "options": options,
     }
     keep_alive = resolve_keep_alive()
     if keep_alive is not None:
@@ -368,7 +379,9 @@ async def fetch_available_models() -> List[str]:
 _generation_lock = asyncio.Lock()
 
 
-async def generate_with_ollama(question: str, *, ollama_model: str) -> Dict[str, Any]:
+async def generate_with_ollama(
+    question: str, *, ollama_model: str, max_new_tokens: Optional[int] = None
+) -> Dict[str, Any]:
     """Ask Ollama for one answer. Errors map onto the Tillicum service's codes.
 
     503 for an Ollama that is down, slow, or failing, so the backend reports it
@@ -379,7 +392,9 @@ async def generate_with_ollama(question: str, *, ollama_model: str) -> Dict[str,
     """
     base_url = resolve_ollama_base_url()
     timeout = resolve_ollama_timeout_seconds()
-    payload = build_chat_request(question, ollama_model=ollama_model)
+    payload = build_chat_request(
+        question, ollama_model=ollama_model, max_new_tokens=max_new_tokens
+    )
 
     async with _generation_lock:
         started = time.perf_counter()
@@ -456,6 +471,13 @@ class GenerateRequest(BaseModel):
         default=None,
         alias="modelVersion",
         description="The registered version to use, e.g. v2. Omit for the highest mapped.",
+    )
+    max_new_tokens: Optional[int] = Field(
+        default=None,
+        alias="maxNewTokens",
+        ge=1,
+        le=DEFAULT_MAX_NEW_TOKENS,
+        description="A lower output cap for this request. Omit for the default.",
     )
 
     model_config = {"populate_by_name": True}
@@ -589,7 +611,9 @@ async def generate(body: GenerateRequest) -> GenerateResponse:
         # what is missing is a mapping, which an operator adds.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    result = await generate_with_ollama(question, ollama_model=resolved["ollamaModel"])
+    result = await generate_with_ollama(
+        question, ollama_model=resolved["ollamaModel"], max_new_tokens=body.max_new_tokens
+    )
 
     return GenerateResponse(
         answer=result["answer"],

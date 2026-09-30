@@ -368,6 +368,73 @@ class ProfessorCourseFlowTests(unittest.TestCase):
                 response = self.client.request(method, path, json={}, headers=CSRF)
                 self.assertEqual(response.status_code, 403, response.text)
 
+    # ---- the original file ----
+
+    def _file(self, download: bool = False) -> Any:
+        suffix = "?download=1" if download else ""
+        return self.client.get(f"/api/courses/{NEW_COURSE}/syllabus/file{suffix}")
+
+    def test_course_staff_view_and_download_the_original_file(self) -> None:
+        self.acting_as = PROFESSOR
+        self.assertEqual(self._create().status_code, 201)
+        self.assertEqual(self._upload().status_code, 201)
+
+        viewed = self._file()
+        self.assertEqual(viewed.status_code, 200)
+        self.assertEqual(viewed.content, SYLLABUS_TEXT.encode())
+        self.assertTrue(viewed.headers["content-type"].startswith("text/plain"))
+        self.assertTrue(viewed.headers["content-disposition"].startswith("inline"))
+        self.assertIn("syllabus.txt", viewed.headers["content-disposition"])
+        self.assertEqual(viewed.headers["x-content-type-options"], "nosniff")
+        self.assertIn("no-store", viewed.headers["cache-control"])
+
+        probed = self.client.head(f"/api/courses/{NEW_COURSE}/syllabus/file")
+        self.assertEqual(probed.status_code, 200)
+        self.assertEqual(probed.content, b"")
+
+        downloaded = self._file(download=True)
+        self.assertEqual(downloaded.status_code, 200)
+        self.assertTrue(downloaded.headers["content-disposition"].startswith("attachment"))
+
+        self.acting_as = ADMIN
+        self.assertEqual(self._file().status_code, 200)
+
+    def test_nobody_else_gets_the_original_file(self) -> None:
+        self.acting_as = PROFESSOR
+        self.assertEqual(self._create().status_code, 201)
+        self.assertEqual(self._upload().status_code, 201)
+
+        self.acting_as = OTHER_PROFESSOR
+        self.assertEqual(self._file().status_code, 403)
+        self.assertEqual(
+            self.client.head(f"/api/courses/{NEW_COURSE}/syllabus/file").status_code, 403
+        )
+        self.acting_as = Principal(
+            participant=Participant(participant_id="p-1", course_id=NEW_COURSE, session_id="s")
+        )
+        self.assertEqual(self._file().status_code, 401)
+        self.acting_as = ANONYMOUS
+        self.assertEqual(self._file().status_code, 401)
+
+    def test_a_course_without_a_stored_original_is_a_404(self) -> None:
+        self.acting_as = PROFESSOR
+        self.assertEqual(self._create().status_code, 201)
+        self.assertEqual(self._file().status_code, 404)
+        self.assertEqual(
+            self.client.head(f"/api/courses/{NEW_COURSE}/syllabus/file").status_code, 404
+        )
+
+    def test_a_failed_replacement_keeps_serving_the_previous_file(self) -> None:
+        self.acting_as = PROFESSOR
+        self.assertEqual(self._create().status_code, 201)
+        self.assertEqual(self._upload().status_code, 201)
+        with patch(
+            "app.course_index.get_embedding",
+            new=AsyncMock(side_effect=HTTPException(status_code=503, detail="Embeddings unavailable.")),
+        ):
+            self.assertEqual(self._upload("A replacement that never lands. " * 8).status_code, 503)
+        self.assertEqual(self._file().content, SYLLABUS_TEXT.encode())
+
     def test_an_administrator_creates_a_course_without_a_membership(self) -> None:
         self.acting_as = ADMIN
         self.assertEqual(self._create().status_code, 201)

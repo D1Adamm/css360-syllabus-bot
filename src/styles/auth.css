@@ -157,20 +157,6 @@
   gap: var(--space-2);
 }
 
-.access__qr {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-
-.access__qr img {
-  border: 1px solid var(--line-200);
-  border-radius: var(--radius-md);
-  background: white;
-}
-
 .access__meta {
   margin: 0;
 }

@@ -79,7 +79,7 @@ header token from the cluster:
 
 | Caller | Identity | Where it lives | Reaches |
 | --- | --- | --- | --- |
-| Student | An anonymous **participant**: a random UUID bound to one course, created when a classroom code is redeemed. No name, email or NetID exists to store | `sml_participant` cookie → `auth_sessions` → `participants` | The student pages and APIs of that one course |
+| Student | An anonymous **participant** per course: a random UUID bound to one course, created when a classroom code is redeemed. No name, email or NetID exists to store | `sml_participant` cookie (one session token per joined course, dot-separated, up to 20) → `auth_sessions` → `participants` | The student pages and APIs of the courses this browser joined |
 | Professor | A `users` row with global role `professor`, plus `course_memberships` for each course they instruct | `sml_staff` cookie → `auth_sessions` → `users` | Course-scoped staff routes for member courses only |
 | Administrator | A `users` row with global role `admin`. No memberships needed | same cookie | Every course, `/api/admin`, the training queue's browser side |
 | Tillicum runner | `TRAINING_WORKER_TOKEN` header | `backend/.env`, `.env.local` | `/api/training-queue` and nothing else |
@@ -89,6 +89,12 @@ someone is; `course_memberships` says which courses a professor may touch. A
 professor with no memberships sees no courses. A professor never gains a course
 by editing a URL, a body or an id: the guard compares the course in the *path*
 against the membership table on every request.
+
+**One browser, several courses.** Joining a course adds its session token to the
+participant cookie beside the others; nothing is replaced. Each course keeps its
+own participant, so research data stays attributed per course and a student in
+two courses is still two unrelated participants. A cookie from before this
+held a single token, which is read as a list of one.
 
 **Two cookies, on purpose.** A professor can open their own course's class code
 in the same browser, walk the student flow as an anonymous participant, and

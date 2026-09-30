@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import type { ApproachState } from '../../hooks/useComparisonRun';
+import type { ApproachState } from '../../context/comparisonRunner';
 import { Icon } from '../ui/Icon';
 
 export interface ApproachCardProps {

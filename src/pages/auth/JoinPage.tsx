@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
 import { FormField } from '../../components/ui/FormField';
@@ -7,22 +7,24 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { useSession } from '../../context/SessionContext';
 import { ApiError } from '../../lib/httpClient';
 import { joinCourse } from '../../lib/authApi';
-import { studentCourseHomePath } from '../../lib/roleRoutes';
+import { loginPath, roleHomePath, studentCourseHomePath } from '../../lib/roleRoutes';
 
 /**
  * The student way in.
  *
  * Type the six-character code from the board, press Join, and land in the
  * course. A link that already carries the code (`/join/7K4P9X`, for Canvas)
- * submits itself. No name, no email, no account: what the backend creates is
- * an anonymous participant for this browser.
+ * submits itself. No name, no email, no account: the browser remembers every
+ * course it joins, so a returning student is taken straight back in and a
+ * second course is simply another code.
  *
  * The code is shown upper-case as it is typed, because that is how it is
  * written on the board and how the backend normalises it anyway.
  */
 export function JoinPage() {
   const { code: codeFromLink } = useParams<{ code?: string }>();
-  const { refresh } = useSession();
+  const { session, refresh } = useSession();
+  const remembered = session.participants.length;
   const navigate = useNavigate();
   const [code, setCode] = useState(codeFromLink ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -72,9 +74,16 @@ export function JoinPage() {
   return (
     <div className="auth-page">
       <PageHeader
-        title="Join your course"
-        description="Enter the class code your instructor shared. No account or sign-in is needed."
+        title={remembered > 0 ? 'Join another course' : 'Join your course'}
+        description="Enter your class code to get started. This browser will remember your course."
       />
+
+      {remembered > 0 && (
+        <Callout tone="info">
+          This browser already remembers {remembered === 1 ? 'a course' : `${remembered} courses`}.{' '}
+          <Link to={roleHomePath('student')}>Go to your courses</Link>
+        </Callout>
+      )}
 
       <form className="auth-card" onSubmit={handleSubmit} noValidate>
         {error && (
@@ -107,10 +116,16 @@ export function JoinPage() {
           </Button>
         </div>
         <p className="ui-text-xs ui-text-muted">
-          Your name is never asked for and never stored. This browser is given an
-          anonymous identity for the course; clearing your cookies starts a new one.
+          No account, name or email. On another browser or device, just enter the
+          code again.
         </p>
       </form>
+
+      {!session.user && (
+        <p className="ui-text-sm ui-text-muted">
+          Instructor or administrator? <Link to={loginPath()}>Staff sign-in</Link>
+        </p>
+      )}
     </div>
   );
 }

@@ -18,7 +18,7 @@ import { LoginPage } from './LoginPage';
 
 const PROFESSOR: Session = {
   user: { userId: 'u', email: 'prof@uw.edu', displayName: 'Prof', role: 'professor', courseIds: [] },
-  participant: null,
+  participants: [],
 };
 
 function Probe() {
@@ -26,7 +26,7 @@ function Probe() {
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-function renderLogin(session: Session = { user: null, participant: null }, state?: unknown) {
+function renderLogin(session: Session = { user: null, participants: [] }, state?: unknown) {
   return render(
     <MemoryRouter initialEntries={[{ pathname: '/login', state }]}>
       <SessionProvider initialSession={session}>

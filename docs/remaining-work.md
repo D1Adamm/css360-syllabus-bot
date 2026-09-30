@@ -96,6 +96,47 @@ rather than through the queue.
 
 ---
 
+## 7. Serving and concurrency (findings 2026-09-30, redesign deferred)
+
+A production test ("When is the class") returned a RAG answer after a long
+wait while Base, Fine-Tuned and Fine-Tuned + RAG showed "temporarily
+unavailable". The redesign was deliberately deferred until after the classroom
+deployment; these are the findings from the code, not yet confirmed by logs.
+
+- **All four conditions share one Ollama on one 8-core CPU, behind two locks
+  that do not know about each other.** The backend lock
+  (`ollama_coordination.py`) serialises Base, RAG and automatic starter
+  generation (qwen3:8b, up to 3072 tokens, 300 s per call). The fine-tuned
+  service (`training/inference_service/ollama_service.py`) has its own lock and
+  calls the same Ollama. Embeddings take no lock.
+- **The browser schedules each student's four requests** (Base then RAG in
+  sequence, both fine-tuned requests alongside), and nothing coordinates across
+  students.
+- **Timeouts are inconsistent.** Base/RAG allow 120 s from *after* the backend
+  lock is acquired, so waiting for the lock is unbounded (only Nginx ends it).
+  Fine-Tuned/Fine-Tuned + RAG allow 120 s *including* the wait behind the
+  service's lock. Embeddings allow 60 s. Every failure reaches the student as
+  the same "temporarily unavailable".
+- **A disconnect cancels nothing**: the handlers return plain JSON, so an
+  abandoned request keeps its lock and its CPU.
+- **Latency was only ever measured for the fine-tuned conditions in
+  isolation**; the mix the Compare page produces has not been measured.
+
+Leading hypotheses, strongest first: a starter-generation job holding the lock
+and the CPU (it starts automatically after a course's first syllabus upload);
+cross-model CPU contention on 8 cores; model eviction/reload under memory
+pressure; a fine-tuned configuration fault. To confirm, compare the Ollama
+journal (`sudo journalctl -u ollama --since … --until …`) with the backend and
+fine-tuned service status codes for the moment of the failure.
+
+The proposed follow-up — one priority scheduler across all generation,
+separate queue-wait and generation timeouts, backpressure, `keep_alive` on the
+backend's calls, a backend comparison job so refresh recovery works, and
+per-condition timing logs without question text — is described in the
+2026-09-30 plan; measure N=1 versus N=2 concurrency with a classroom load probe
+before choosing. Also open: how often `classroom-concise-v1` answers reach the
+128-token cap (`docs/css360-model-evolution.md` §13).
+
 ## Known issues
 
 None recorded. (The professor overview's hardcoded model status, listed here

@@ -30,7 +30,6 @@ import { ContributePage } from './pages/student/ContributePage';
 import { EvaluatePage } from './pages/student/EvaluatePage';
 import { StudentCoursesPage } from './pages/student/StudentCoursesPage';
 import { StudentHomePage } from './pages/student/StudentHomePage';
-import { StudentSyllabusPage } from './pages/student/StudentSyllabusPage';
 
 import { CourseOverviewPage } from './pages/professor/CourseOverviewPage';
 import { CreateCoursePage } from './pages/professor/CreateCoursePage';
@@ -95,10 +94,12 @@ export function AppRoutes() {
           }
         >
           <Route index element={<StudentHomePage />} />
-          <Route path="syllabus" element={<StudentSyllabusPage />} />
           <Route path="contribute" element={<ContributePage />} />
           <Route path="compare" element={<ComparePage />} />
           <Route path="evaluate" element={<EvaluatePage />} />
+          {/* Students no longer read the syllabus here; old links land on the
+              course home. */}
+          <Route path="syllabus" element={<LegacyCourseRedirect student="home" />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
 
@@ -243,11 +244,7 @@ export function AppRoutes() {
         <Route
           path="/course/:courseId/syllabus"
           element={
-            <LegacyCourseRedirect
-              student="syllabus"
-              professor="syllabus"
-              admin="course"
-            />
+            <LegacyCourseRedirect student="home" professor="syllabus" admin="course" />
           }
         />
         <Route
@@ -282,7 +279,7 @@ export function AppRoutes() {
         <Route
           path="/syllabus"
           element={
-            <LegacyFlatRedirect student="syllabus" professor="syllabus" admin="course" />
+            <LegacyFlatRedirect student="home" professor="syllabus" admin="course" />
           }
         />
         <Route path="/seeds" element={<LegacyFlatRedirect student="contribute" />} />

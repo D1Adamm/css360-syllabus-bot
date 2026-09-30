@@ -322,8 +322,10 @@ class ParticipantRouteUnchangedTests(PreviewTestCase):
         self.patch("app.auth.dependencies.db_connection", new=_idle_connection)
         self.patch("app.auth.dependencies._utc_now", return_value=NOW)
         self.patch(
-            "app.db_sessions.find_participant_session",
-            side_effect=lambda conn, token_hash: row if token_hash == hash_token(token) else None,
+            "app.db_sessions.find_participant_sessions",
+            side_effect=lambda conn, hashes: [
+                {**row, "token_hash": h} for h in hashes if h == hash_token(token)
+            ],
         )
         self.patch("app.db_sessions.touch_session", return_value=None)
         self.patch("app.db_participants.touch_participant", return_value=None)

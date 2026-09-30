@@ -110,6 +110,18 @@ class CourseScopingTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/db/courses").status_code, 200)
         self.assertEqual(self.scope_requested(), {COURSE_B})
 
+    def test_a_browser_in_two_courses_asks_for_both(self) -> None:
+        self.act_as(
+            Principal(
+                participants=(
+                    Participant(participant_id="p1", course_id=COURSE_A),
+                    Participant(participant_id="p2", course_id=COURSE_B),
+                )
+            )
+        )
+        self.assertEqual(self.client.get("/api/db/courses").status_code, 200)
+        self.assertEqual(self.scope_requested(), {COURSE_A, COURSE_B})
+
     def test_a_professor_who_also_joined_a_course_sees_both(self) -> None:
         self.act_as(
             Principal(
