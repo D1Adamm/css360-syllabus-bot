@@ -21,6 +21,7 @@ feature is off, and a bearer token rather than any session once it is on.
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -238,8 +239,13 @@ class AuthorizationMatrixTests(unittest.TestCase):
                 side_effect=HTTPException(status_code=503, detail="stub")
             ),
             "app.main.get_course_artifact_storage": MagicMock(
-                return_value=MagicMock(load_index=MagicMock(return_value=None),
-                                       load_extracted_text=MagicMock(return_value=None))
+                return_value=MagicMock(
+                    load_index=MagicMock(return_value=None),
+                    load_extracted_text=MagicMock(return_value=None),
+                    original_syllabus_path=MagicMock(
+                        return_value=Path("/nonexistent/course/original.pdf")
+                    ),
+                )
             ),
             "app.main.prepare_training_split": MagicMock(
                 side_effect=HTTPException(status_code=503, detail="stub")

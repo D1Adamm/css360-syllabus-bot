@@ -189,6 +189,8 @@ async def generate_course_rag_answer(
     question: str,
     top_k: int = DEFAULT_TOP_K,
     storage: CourseArtifactStorage | None = None,
+    *,
+    concise: bool = False,
 ) -> dict[str, Any]:
     """RAG: the shared grounded path answered by the base model.
 
@@ -199,5 +201,5 @@ async def generate_course_rag_answer(
     from app.grounded_rag import BASE_TARGET, generate_grounded_answer
 
     return await generate_grounded_answer(
-        course_id, question, top_k=top_k, storage=storage, target=BASE_TARGET
+        course_id, question, top_k=top_k, storage=storage, target=BASE_TARGET, concise=concise
     )

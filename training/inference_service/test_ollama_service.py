@@ -427,6 +427,35 @@ class GenerateEndpointTests(unittest.TestCase):
         self.assertEqual(sent["json"]["options"]["num_predict"], 256)
         self.assertEqual(sent["json"]["options"]["repeat_penalty"], 1.05)
 
+    def test_a_lower_output_cap_applies_to_that_request_only(self) -> None:
+        """The backend's classroom profile asks for 128; the message is untouched."""
+        fake = FakeOllama()
+        capped = self._generate(
+            fake, {"courseId": CSS360, "question": QUESTION, "maxNewTokens": 128}
+        )
+        self.assertEqual(capped.status_code, 200)
+        default = self._generate(fake, {"courseId": CSS360, "question": QUESTION})
+        self.assertEqual(default.status_code, 200)
+
+        first, second = fake.chat_requests
+        self.assertEqual(first["json"]["options"]["num_predict"], 128)
+        self.assertEqual(second["json"]["options"]["num_predict"], 256)
+        self.assertEqual(first["json"]["messages"], [{"role": "user", "content": QUESTION}])
+        self.assertEqual(
+            {k: v for k, v in first["json"]["options"].items() if k != "num_predict"},
+            {k: v for k, v in second["json"]["options"].items() if k != "num_predict"},
+        )
+
+    def test_the_output_cap_cannot_be_raised_or_zeroed(self) -> None:
+        fake = FakeOllama()
+        for value in (0, 257, -1):
+            with self.subTest(value=value):
+                response = self._generate(
+                    fake, {"courseId": CSS360, "question": QUESTION, "maxNewTokens": value}
+                )
+                self.assertEqual(response.status_code, 422)
+        self.assertEqual(fake.chat_requests, [])
+
     def test_the_answer_is_stripped_like_the_gpu_service_decoded_it(self) -> None:
         fake = FakeOllama(answer="\n  Fridays at 5pm.  \n")
         body = self._generate(fake, {"courseId": CSS360, "question": QUESTION}).json()

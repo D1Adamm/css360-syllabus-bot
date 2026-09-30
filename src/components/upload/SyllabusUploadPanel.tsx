@@ -15,6 +15,8 @@ export interface SyllabusUploadPanelProps {
   /** The last upload into a course with no syllabus could not be processed. */
   lastUploadFailed: boolean;
   onUploaded: (result: SyllabusUploadResponse) => void;
+  /** Fold the panel away again. Omitted when there is nothing to fall back to. */
+  onClose?: () => void;
 }
 
 /**
@@ -29,6 +31,7 @@ export function SyllabusUploadPanel({
   hasSyllabus,
   lastUploadFailed,
   onUploaded,
+  onClose,
 }: SyllabusUploadPanelProps) {
   const errorId = useId();
   const [file, setFile] = useState<File | null>(null);
@@ -106,7 +109,7 @@ export function SyllabusUploadPanel({
           errorId={errorId}
         />
 
-        <div>
+        <div className="ui-row">
           <Button
             type="submit"
             variant="primary"
@@ -115,6 +118,11 @@ export function SyllabusUploadPanel({
           >
             {hasSyllabus ? 'Replace syllabus' : 'Upload syllabus'}
           </Button>
+          {onClose && (
+            <Button type="button" variant="tertiary" onClick={onClose} disabled={busy}>
+              {done ? 'Done' : 'Cancel'}
+            </Button>
+          )}
         </div>
       </form>
     </Surface>

@@ -6,7 +6,6 @@ import '@testing-library/jest-dom/vitest';
 const listMock = vi.hoisted(() => vi.fn());
 const createMock = vi.hoisted(() => vi.fn());
 const revokeMock = vi.hoisted(() => vi.fn());
-const toDataURLMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../lib/inviteApi', async () => {
   const actual = await vi.importActual<typeof import('../../lib/inviteApi')>('../../lib/inviteApi');
@@ -17,8 +16,6 @@ vi.mock('../../lib/inviteApi', async () => {
     revokeStudentInvite: revokeMock,
   };
 });
-
-vi.mock('qrcode', () => ({ toDataURL: toDataURLMock }));
 
 import { StudentAccessPanel } from './StudentAccessPanel';
 import type { StudentInvite } from '../../lib/inviteApi';
@@ -43,8 +40,6 @@ beforeEach(() => {
   listMock.mockReset();
   createMock.mockReset();
   revokeMock.mockReset();
-  toDataURLMock.mockReset();
-  toDataURLMock.mockResolvedValue('data:image/png;base64,QR');
   Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
 });
 
@@ -88,18 +83,24 @@ describe('StudentAccessPanel', () => {
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('7K4P9X'));
   });
 
-  it('draws a QR code for the direct link on request', async () => {
+  it('offers the link, the code, a new code and revoke — and no QR code', async () => {
     listMock.mockResolvedValue({ courseId: COURSE, count: 1, invites: [invite()] });
     render(<StudentAccessPanel courseId={COURSE} />);
     await screen.findByText('7K4P9X');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Show QR' }));
-    const image = await screen.findByRole('img', { name: /QR code for/ });
-    expect(image).toHaveAttribute('src', 'data:image/png;base64,QR');
-    expect(toDataURLMock).toHaveBeenCalledWith(
-      `${window.location.origin}/join/7K4P9X`,
-      expect.objectContaining({ width: 240 }),
+    const actions = screen.getAllByRole('button').map((button) => button.textContent?.trim());
+    expect(actions).toEqual(
+      expect.arrayContaining(['Copy link', 'Copy code', 'New code', 'Revoke']),
     );
+    expect(screen.queryByRole('button', { name: /QR/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByText(`${window.location.origin}/join/7K4P9X`)).toBeInTheDocument();
+    expect(
+      screen.getByText(/enter this code once\. Their browser remembers the course/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Revoking stops new students joining with this code\. Students who already joined keep their access\./),
+    ).toBeInTheDocument();
   });
 
   it('revokes only after confirmation', async () => {

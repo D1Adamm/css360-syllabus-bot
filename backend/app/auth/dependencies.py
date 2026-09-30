@@ -118,48 +118,93 @@ def _load_staff(conn: Any, token: str, now: datetime) -> StaffUser | None:
     )
 
 
-def _load_participant(conn: Any, token: str, now: datetime) -> Participant | None:
-    if not is_plausible_token(token):
-        return None
-    row = db_sessions.find_participant_session(conn, hash_token(token))
-    if row is None or row.get("revoked_at") is not None:
-        return None
+#: The most courses one browser can hold. The participant cookie carries one
+#: 43-character token per course, so twenty stay far below cookie size limits.
+MAX_JOINED_COURSES = 20
 
-    expires_at = _aware(row.get("expires_at"))
-    last_seen_at = _aware(row.get("last_seen_at"))
-    if expires_at is None or expires_at <= now:
-        return None
+#: Separates the per-course tokens in the participant cookie. Tokens are
+#: URL-safe base64, which never contains a dot.
+PARTICIPANT_TOKEN_SEPARATOR = "."
 
-    session_id = str(row["session_id"])
-    participant_id = str(row["participant_id"])
-    if last_seen_at is None or now - last_seen_at >= TOUCH_INTERVAL:
-        db_sessions.touch_session(conn, session_id, now)
-        db_participants.touch_participant(conn, participant_id, now)
 
-    return Participant(
-        participant_id=participant_id,
-        course_id=row["course_id"],
-        session_id=session_id,
-    )
+def participant_cookie_tokens(value: str | None) -> list[str]:
+    """The distinct, well-formed tokens in a participant cookie, in order.
+
+    A cookie from before multi-course access holds a single token, which is
+    simply a list of one. Anything malformed is dropped rather than looked up.
+    """
+    if not value:
+        return []
+    tokens: list[str] = []
+    for part in value.split(PARTICIPANT_TOKEN_SEPARATOR):
+        if is_plausible_token(part) and part not in tokens:
+            tokens.append(part)
+        if len(tokens) >= MAX_JOINED_COURSES:
+            break
+    return tokens
+
+
+def participant_cookie_value(tokens: list[str]) -> str:
+    return PARTICIPANT_TOKEN_SEPARATOR.join(tokens)
+
+
+def _load_participants(conn: Any, tokens: list[str], now: datetime) -> list[Participant]:
+    if not tokens:
+        return []
+    rows = db_sessions.find_participant_sessions(conn, [hash_token(token) for token in tokens])
+    participants: dict[str, Participant] = {}
+    for row in rows:
+        if row.get("revoked_at") is not None:
+            continue
+        expires_at = _aware(row.get("expires_at"))
+        last_seen_at = _aware(row.get("last_seen_at"))
+        if expires_at is None or expires_at <= now:
+            continue
+
+        session_id = str(row["session_id"])
+        participant_id = str(row["participant_id"])
+        course_id = row["course_id"]
+        if course_id in participants:
+            continue  # one participant per course; a duplicate is never expected
+        if last_seen_at is None or now - last_seen_at >= TOUCH_INTERVAL:
+            db_sessions.touch_session(conn, session_id, now)
+            db_participants.touch_participant(conn, participant_id, now)
+
+        participants[course_id] = Participant(
+            participant_id=participant_id,
+            course_id=course_id,
+            session_id=session_id,
+            token_hash=row["token_hash"],
+        )
+    return sorted(participants.values(), key=lambda participant: participant.course_id)
 
 
 def resolve_principal(request: Request) -> Principal:
     """Who the cookies say is asking. Anonymous when they say nobody."""
     staff_token = request.cookies.get(STAFF_COOKIE_NAME)
-    participant_token = request.cookies.get(PARTICIPANT_COOKIE_NAME)
-    if not staff_token and not participant_token:
+    participant_tokens = participant_cookie_tokens(request.cookies.get(PARTICIPANT_COOKIE_NAME))
+    if not staff_token and not participant_tokens:
         return ANONYMOUS
 
     now = _utc_now()
     with translate_db_errors("checking the session"):
         with db_connection() as conn:
             user = _load_staff(conn, staff_token, now) if staff_token else None
-            participant = (
-                _load_participant(conn, participant_token, now)
-                if participant_token
-                else None
-            )
-    return Principal(user=user, participant=participant)
+            participants = _load_participants(conn, participant_tokens, now)
+    return Principal(user=user, participants=tuple(participants))
+
+
+def live_participant_tokens(request: Request, principal: Principal) -> list[str]:
+    """The cookie tokens that resolved to a live participant session.
+
+    Used when the cookie is rewritten, so expired or revoked tokens fall out.
+    """
+    live_hashes = {participant.token_hash for participant in principal.participants}
+    return [
+        token
+        for token in participant_cookie_tokens(request.cookies.get(PARTICIPANT_COOKIE_NAME))
+        if hash_token(token) in live_hashes
+    ]
 
 
 # --------------------------------------------------------------------------- #

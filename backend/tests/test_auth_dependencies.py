@@ -62,7 +62,8 @@ def _access(course_id: str, principal: Principal = Depends(deps.require_course_a
 def _participant(
     course_id: str, principal: Principal = Depends(deps.require_participant)
 ) -> dict:
-    return {"participantId": principal.participant.participant_id if principal.participant else None}
+    participant = principal.participant_for(course_id)
+    return {"participantId": participant.participant_id if participant else None}
 
 
 @app.post("/courses/{course_id}/write")
@@ -136,8 +137,12 @@ class GuardTestCase(unittest.TestCase):
                 side_effect=lambda conn, token_hash: self.staff_rows.get(token_hash),
             ),
             patch(
-                "app.db_sessions.find_participant_session",
-                side_effect=lambda conn, token_hash: self.participant_rows.get(token_hash),
+                "app.db_sessions.find_participant_sessions",
+                side_effect=lambda conn, hashes: [
+                    {**self.participant_rows[h], "token_hash": h}
+                    for h in hashes
+                    if self.participant_rows.get(h)
+                ],
             ),
             patch(
                 "app.db_memberships.list_course_ids_for_user",
@@ -253,6 +258,62 @@ class ParticipantTests(GuardTestCase):
         self.assertEqual(self.client.get(f"/courses/{COURSE_A}/participant").status_code, 200)
         self.assertEqual(self.client.get(f"/courses/{COURSE_B}/staff").status_code, 200)
         self.assertEqual(self.client.get(f"/courses/{COURSE_A}/staff").status_code, 403)
+
+
+class MultiCourseParticipantTests(GuardTestCase):
+    """One browser, several courses: one participant per course, never mixed."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.token_a = generate_token()
+        self.token_b = generate_token()
+        self.participant_rows[hash_token(self.token_a)] = _participant_row(COURSE_A)
+        self.participant_rows[hash_token(self.token_b)] = {
+            **_participant_row(COURSE_B),
+            "session_id": "sess-part-b",
+            "participant_id": "part-2",
+        }
+
+    def present(self, value: str) -> None:
+        self.client.cookies.set(PARTICIPANT_COOKIE_NAME, value)
+
+    def test_each_course_resolves_its_own_participant(self) -> None:
+        self.present(f"{self.token_a}.{self.token_b}")
+        self.assertEqual(
+            self.client.get(f"/courses/{COURSE_A}/participant").json(), {"participantId": "part-1"}
+        )
+        self.assertEqual(
+            self.client.get(f"/courses/{COURSE_B}/participant").json(), {"participantId": "part-2"}
+        )
+        self.assertEqual(self.client.get(f"/courses/{COURSE_B}/access").status_code, 200)
+
+    def test_a_course_not_joined_is_still_refused(self) -> None:
+        self.present(self.token_a)
+        self.assertEqual(self.client.get(f"/courses/{COURSE_B}/participant").status_code, 403)
+
+    def test_malformed_parts_are_ignored_not_fatal(self) -> None:
+        self.present(f"not a token.{self.token_b}..")
+        self.assertEqual(self.client.get(f"/courses/{COURSE_A}/access").status_code, 403)
+        self.assertEqual(
+            self.client.get(f"/courses/{COURSE_B}/participant").json(), {"participantId": "part-2"}
+        )
+
+    def test_an_expired_course_session_drops_only_that_course(self) -> None:
+        self.participant_rows[hash_token(self.token_a)] = _participant_row(
+            COURSE_A, expires_in=timedelta(seconds=-1)
+        )
+        self.present(f"{self.token_a}.{self.token_b}")
+        self.assertEqual(self.client.get(f"/courses/{COURSE_A}/access").status_code, 403)
+        self.assertEqual(self.client.get(f"/courses/{COURSE_B}/access").status_code, 200)
+
+    def test_cookie_parsing_caps_and_dedupes(self) -> None:
+        tokens = [generate_token() for _ in range(deps.MAX_JOINED_COURSES + 5)]
+        parsed = deps.participant_cookie_tokens(".".join([tokens[0], *tokens]))
+        self.assertEqual(len(parsed), deps.MAX_JOINED_COURSES)
+        self.assertEqual(parsed[0], tokens[0])
+        self.assertEqual(len(set(parsed)), len(parsed))
+        self.assertEqual(deps.participant_cookie_tokens(None), [])
+        self.assertEqual(deps.participant_cookie_tokens(tokens[0]), [tokens[0]])
 
 
 class SessionLifecycleTests(GuardTestCase):

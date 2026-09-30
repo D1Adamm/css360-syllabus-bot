@@ -37,11 +37,14 @@ a browser that is not allowed somewhere.
 
 **Students** never have accounts. An instructor puts the join page
 (`aiswe.uwb.edu/join`) and a six-character **class code** on the board; a
-student enters the code and this browser becomes an anonymous *participant* in
-that one course. No name, email or NetID is asked for or stored — research data
-references a random participant id and nothing else. Students read the
-syllabus, contribute example questions, compare four answers, and rate them.
-They see no infrastructure and no other student's ratings.
+student enters the code once and this browser becomes an anonymous
+*participant* in that course. The browser remembers every course it joins, so a
+returning student goes straight back in, and a second course is simply another
+code. No name, email or NetID is asked for or stored — research data references
+a random participant id per course and nothing else. Students contribute
+example questions, compare four answers, and rate them; they receive the
+syllabus itself from their instructor, not here. They see no infrastructure and
+no other student's ratings.
 
 **Professors** sign in with an email address and password. Accounts are created
 only through single-use invitation links from an administrator, which also
@@ -152,9 +155,9 @@ query strings; see `src/app/LegacyRedirects.tsx`.
 /invite/:token                           accept a professor/admin/reset invitation
 /forbidden                               signed in, but not here
 
-/student                                 course list (a participant's one course)
+/                                        a new browser → /join; one remembered course → that course
+/student                                 the courses this browser joined, and "Join another course"
 /student/course/:courseId                home
-/student/course/:courseId/syllabus       read the syllabus
 /student/course/:courseId/contribute     add an example question
 /student/course/:courseId/compare        ask and compare four answers
 /student/course/:courseId/evaluate       rate the answers just generated
@@ -162,11 +165,11 @@ query strings; see `src/app/LegacyRedirects.tsx`.
 /professor/courses                       course list
 /professor/courses/new                   create a course
 /professor/course/:courseId              overview
-/professor/course/:courseId/syllabus     syllabus
+/professor/course/:courseId/syllabus     current syllabus: view/download the original, replace, extracted text
 /professor/course/:courseId/examples     review queue
 /professor/course/:courseId/model        course model status, request a model
 /professor/course/:courseId/results      aggregate results
-/professor/course/:courseId/invite       class code: create, copy, QR, revoke, replace
+/professor/course/:courseId/invite       class code: create, copy, revoke, replace
 
 /admin                                   service health
 /admin/courses                           technical course list
@@ -368,7 +371,8 @@ closed if a test tries to reach any of them — see
 
 - **A student's identity is this browser.** Clearing cookies or switching
   devices starts a new anonymous participant; there is no recovery, by design,
-  because nothing identifying is stored to recover with.
+  because nothing identifying is stored to recover with. A browser remembers up
+  to 20 courses.
 - **Password reset is administrator-issued.** There is no mail path, so a
   forgotten professor password means asking an administrator for a one-time
   reset link.
@@ -394,7 +398,7 @@ What is genuinely unfinished, and what is deliberately out of scope:
 - **The application stores no student identity.** A student is a random
   participant id bound to one course, created when a class code is entered; it
   never collects a name, email, NetID or account, and a student in two courses
-  is two unrelated participants. This is a statement about the application
+  is two unrelated participants — even in one browser, which simply holds both. This is a statement about the application
   database only — it is not a claim about Nginx access logs, systemd journals,
   or anything else the host records.
 - **Professors and administrators are stored normally** (email, display name,

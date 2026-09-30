@@ -10,7 +10,11 @@ from fastapi import HTTPException
 
 from app.ollama_coordination import ollama_generation_slot
 from app.upstream_errors import log_upstream_failure
-from app.grounded_generation import GROUNDED_TIMEOUT_SECONDS, grounded_options
+from app.grounded_generation import (
+    CONCISE_ANSWER_INSTRUCTION,
+    GROUNDED_TIMEOUT_SECONDS,
+    classroom_options,
+)
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
@@ -348,7 +352,8 @@ BASE_MODEL_SYSTEM_PROMPT = (
     "- You may add general, non-course-specific information about how courses often work, "
     "but you must clearly label it as general information that may not match this course.\n"
     "- Never present general information as this course's actual policy.\n"
-    "- Keep the answer brief and student-friendly.\n"
+    "- Keep the answer student-friendly. "
+    f"{CONCISE_ANSWER_INSTRUCTION}\n"
 )
 
 
@@ -369,14 +374,15 @@ def build_base_model_prompt(question: str) -> str:
 async def generate_base_model_response(question: str) -> dict[str, str]:
     """The ungrounded condition: its own instruction wrapper, no retrieval.
 
-    Decoded with the shared grounded options through the same `/api/chat`
-    call the grounded conditions use, so the secondary comparison, Base
-    against plain Fine-Tuned, differs in the prompt wrapper and the weights
-    and not in sampling. The prompt itself is unchanged.
+    Decoded with the classroom options (the shared grounded recipe with the
+    classroom output cap) through the same `/api/chat` call the grounded
+    conditions use, so the secondary comparison, Base against plain
+    Fine-Tuned, differs in the prompt wrapper and the weights and not in
+    sampling or length cap. Base only ever answers the classroom Compare page.
     """
     result = await generate_ollama_chat(
         build_base_model_prompt(question),
-        options=grounded_options(),
+        options=classroom_options(),
         timeout=GROUNDED_TIMEOUT_SECONDS,
         action="base model",
     )

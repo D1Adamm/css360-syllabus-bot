@@ -1,10 +1,11 @@
 """Who is asking.
 
-A request can carry a staff session (a professor or administrator), a
-participant session (an anonymous student bound to one course), both, or
-neither. `Principal` holds whatever was found and answers the only questions
-the routes ask: is this an administrator, may they act on this course as
-staff, may they read this course at all, and which participant are they in it.
+A request can carry a staff session (a professor or administrator), the
+participant sessions of the courses this browser joined (one anonymous
+participant per course), both, or neither. `Principal` holds whatever was
+found and answers the only questions the routes ask: is this an
+administrator, may they act on this course as staff, may they read this
+course at all, and which participant are they in it.
 
 Every answer here comes from rows the server wrote — `users.role`,
 `course_memberships`, `participants.course_id` — never from anything the
@@ -41,16 +42,37 @@ class Participant:
     participant_id: str
     course_id: str
     session_id: str | None = None
+    #: SHA-256 of the cookie token that resolved this participant. Lets the join
+    #: route rebuild the cookie from the tokens that are still live; it is the
+    #: stored hash, never the token.
+    token_hash: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class Principal:
-    user: StaffUser | None = None
-    participant: Participant | None = None
+    """Staff session, the browser's course participants, both, or neither.
+
+    A browser holds one participant per course it joined — each its own
+    pseudonymous research identity, never merged across courses. `participant`
+    is accepted as a one-course convenience.
+    """
+
+    user: StaffUser | None
+    participants: tuple[Participant, ...]
+
+    def __init__(
+        self,
+        user: StaffUser | None = None,
+        participant: Participant | None = None,
+        participants: tuple[Participant, ...] = (),
+    ) -> None:
+        combined = tuple(participants) + ((participant,) if participant is not None else ())
+        object.__setattr__(self, "user", user)
+        object.__setattr__(self, "participants", combined)
 
     @property
     def is_anonymous(self) -> bool:
-        return self.user is None and self.participant is None
+        return self.user is None and not self.participants
 
     @property
     def is_staff(self) -> bool:
@@ -74,9 +96,14 @@ class Principal:
 
     def participant_for(self, course_id: str) -> Participant | None:
         """The participant identity this request holds in `course_id`, if any."""
-        if self.participant is not None and self.participant.course_id == course_id:
-            return self.participant
+        for participant in self.participants:
+            if participant.course_id == course_id:
+                return participant
         return None
+
+    def participant_course_ids(self) -> frozenset[str]:
+        """Every course this browser joined with a class code."""
+        return frozenset(participant.course_id for participant in self.participants)
 
     def can_access_course(self, course_id: str) -> bool:
         """Read a course: its staff, or a participant who joined it."""

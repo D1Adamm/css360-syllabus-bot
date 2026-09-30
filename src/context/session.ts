@@ -20,7 +20,7 @@ export type SessionState =
   | { status: 'unavailable'; message: string };
 
 export function isAnonymous(session: Session): boolean {
-  return session.user === null && session.participant === null;
+  return session.user === null && session.participants.length === 0;
 }
 
 export function isStaff(session: Session): boolean {
@@ -50,8 +50,13 @@ export function canStaffCourse(session: Session, courseId: string): boolean {
   return session.user.role === 'admin' || session.user.courseIds.includes(courseId);
 }
 
+/** The courses this browser joined with a class code. */
+export function joinedCourseIds(session: Session): string[] {
+  return session.participants.map((participant) => participant.courseId);
+}
+
 export function isParticipantOf(session: Session, courseId: string): boolean {
-  return session.participant?.courseId === courseId;
+  return session.participants.some((participant) => participant.courseId === courseId);
 }
 
 /** Open a course's student pages: its staff, or the participant who joined it. */

@@ -37,7 +37,14 @@ from app import (
 from app.auth import rate_limit
 from app.auth.codes import normalize_code
 from app.auth.cookies import clear_session_cookie, set_session_cookie
-from app.auth.dependencies import current_principal, require_csrf, require_user
+from app.auth.dependencies import (
+    MAX_JOINED_COURSES,
+    current_principal,
+    live_participant_tokens,
+    participant_cookie_value,
+    require_csrf,
+    require_user,
+)
 from app.auth.passwords import (
     hash_password,
     needs_rehash,
@@ -64,6 +71,10 @@ INVITATION_INVALID_DETAIL = (
     "This invitation link is not valid. Ask the administrator who sent it for a new one."
 )
 TOO_MANY_ATTEMPTS_DETAIL = "Too many attempts. Wait a little and try again."
+TOO_MANY_COURSES_DETAIL = (
+    "This browser has joined the most courses it can remember. Ask your "
+    "instructor for help."
+)
 EMAIL_TAKEN_DETAIL = (
     "An account with that email address already exists. Sign in instead, or ask "
     "an administrator for a password reset link."
@@ -132,6 +143,10 @@ class ParticipantSession(AuthModel):
 
 class SessionResponse(AuthModel):
     user: UserSession | None = None
+    #: Every course this browser joined with a class code.
+    participants: list[ParticipantSession] = Field(default_factory=list)
+    #: The first of `participants`. Kept only so a browser still running the
+    #: frontend published before multi-course access keeps working.
     participant: ParticipantSession | None = None
 
 
@@ -179,10 +194,15 @@ def session_response(principal: Principal) -> SessionResponse:
             role=principal.user.role,
             courseIds=sorted(principal.user.course_ids),
         )
-    participant = None
-    if principal.participant is not None:
-        participant = ParticipantSession(courseId=principal.participant.course_id)
-    return SessionResponse(user=user, participant=participant)
+    participants = [
+        ParticipantSession(courseId=participant.course_id)
+        for participant in principal.participants
+    ]
+    return SessionResponse(
+        user=user,
+        participants=participants,
+        participant=participants[0] if participants else None,
+    )
 
 
 def _staff_principal(conn: Any, user_id: str, session_id: str) -> Principal:
@@ -266,14 +286,14 @@ def logout(principal: Principal = Depends(current_principal)) -> Response:
     """End every session this browser holds and clear both cookies.
 
     Sign out means nothing is left behind on this machine — the staff session
-    and, if the professor had joined their own course, the participant one.
+    and the participant session of every course this browser joined.
     """
     now = _utc_now()
     sessions = [
         session_id
         for session_id in (
             principal.user.session_id if principal.user else None,
-            principal.participant.session_id if principal.participant else None,
+            *(participant.session_id for participant in principal.participants),
         )
         if session_id
     ]
@@ -308,11 +328,15 @@ def join_course(
     request: Request,
     principal: Principal = Depends(current_principal),
 ) -> Response:
-    """Redeem a classroom code: a new anonymous participant, a new session.
+    """Redeem a classroom code: a new anonymous participant for that course.
 
-    Re-entering the code for a course this browser already joined keeps the
-    existing participant rather than minting another, so a class that
-    re-clicks the link every week does not become a class of hundreds.
+    A browser remembers every course it joined: the new course's session token
+    is added to the participant cookie beside the others, never in place of
+    them. Each course keeps its own participant, so research data stays
+    attributed per course. Re-entering the code for a course this browser
+    already joined keeps the existing participant rather than minting another,
+    so a class that re-clicks the link every week does not become a class of
+    hundreds.
     """
     address = rate_limit.client_address(request)
     _throttle(rate_limit.JOIN_CODE_PER_CLIENT, address)
@@ -327,6 +351,7 @@ def join_course(
     if code is None:
         raise failed()
     now = _utc_now()
+    held_tokens = live_participant_tokens(request, principal)
 
     def work(conn: Any) -> dict[str, Any] | None:
         invitation = db_invitations.find_by_code(conn, code, now=now)
@@ -335,11 +360,13 @@ def join_course(
         course_id = invitation["courseId"]
         course_name = invitation.get("courseName")
 
-        if principal.participant_for(course_id) is not None:
-            db_participants.touch_participant(
-                conn, principal.participant.participant_id, now  # type: ignore[union-attr]
-            )
+        existing = principal.participant_for(course_id)
+        if existing is not None:
+            db_participants.touch_participant(conn, existing.participant_id, now)
             return {"courseId": course_id, "courseName": course_name, "token": None}
+
+        if len(held_tokens) >= MAX_JOINED_COURSES:
+            raise HTTPException(status_code=409, detail=TOO_MANY_COURSES_DETAIL)
 
         if db_invitations.consume(conn, invitation["invitationId"], now=now) is None:
             return None
@@ -355,10 +382,6 @@ def join_course(
             now=now,
             participant_id=participant["participantId"],
         )
-        # A replaced participant session (the browser joined another course)
-        # is retired so it cannot be presented again.
-        if principal.participant is not None and principal.participant.session_id:
-            db_sessions.revoke_session(conn, principal.participant.session_id, now)
         return {"courseId": course_id, "courseName": course_name, "token": token}
 
     result = _run("joining a course", work)
@@ -377,7 +400,10 @@ def join_course(
     )
     if result["token"] is not None:
         set_session_cookie(
-            response, PARTICIPANT_COOKIE_NAME, result["token"], participant_session_lifetime()
+            response,
+            PARTICIPANT_COOKIE_NAME,
+            participant_cookie_value([*held_tokens, result["token"]]),
+            participant_session_lifetime(),
         )
     return response
 

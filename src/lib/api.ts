@@ -72,7 +72,7 @@ export {
   CSRF_HEADER_VALUE,
 } from './httpClient';
 
-import { getJson, postJson, requestJson } from './httpClient';
+import { getApiBaseUrl, getJson, postJson, requestJson } from './httpClient';
 
 export async function generateBaseModel(
   courseId: string,
@@ -150,6 +150,41 @@ export async function fetchCourseSyllabusText(
     'The backend could not load the syllabus text for this course.',
     'The service could not be reached.',
   );
+}
+
+/**
+ * The URL of the course's original syllabus file (course staff only). A plain
+ * link: the browser opens a PDF in its own viewer, and `download` asks for a
+ * download instead. Cookies travel with it because it is same-origin.
+ */
+export function courseSyllabusFileUrl(courseId: string, download = false): string | null {
+  const base = getApiBaseUrl();
+  if (!base) {
+    return null;
+  }
+  const path = `${base}/courses/${encodeURIComponent(courseId)}/syllabus/file`;
+  return download ? `${path}?download=1` : path;
+}
+
+/**
+ * Whether the original file is stored: `true` or `false`, or `null` when that
+ * could not be determined. A HEAD request, so no file is transferred. Courses
+ * from before originals were kept have only the extracted text.
+ */
+export async function hasCourseSyllabusFile(courseId: string): Promise<boolean | null> {
+  const url = courseSyllabusFileUrl(courseId);
+  if (!url) {
+    return null;
+  }
+  try {
+    const response = await fetch(url, { method: 'HEAD', credentials: 'include' });
+    if (response.ok) {
+      return true;
+    }
+    return response.status === 404 ? false : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function uploadCourseSyllabus(

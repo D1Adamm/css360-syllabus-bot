@@ -32,8 +32,10 @@ from app.course_model_resolution import (
 from app.course_rag import retrieve_course_syllabus_chunks
 from app.finetuned_client import generate_finetuned_response
 from app.grounded_generation import (
+    CLASSROOM_NUM_PREDICT,
     GROUNDED_TIMEOUT_SECONDS,
     build_grounded_prompt,
+    classroom_options,
     grounded_options,
 )
 from app.ollama import generate_ollama_chat
@@ -99,8 +101,13 @@ async def retrieve_and_prompt(
     question: str,
     top_k: int = DEFAULT_TOP_K,
     storage: CourseArtifactStorage | None = None,
+    *,
+    concise: bool = False,
 ) -> dict[str, Any]:
-    """The half that does not depend on the model: chunks, facets, prompt."""
+    """The half that does not depend on the model: chunks, facets, prompt.
+
+    `concise` renders the classroom profile's prompt (see `grounded_generation`).
+    """
     safe_course_id = _validate_course_id(course_id)
     trimmed = " ".join(question.split())
     if not trimmed:
@@ -127,7 +134,7 @@ async def retrieve_and_prompt(
         "question": trimmed,
         "facets": facets,
         "chunks": retrieved_chunks,
-        "prompt": build_grounded_prompt(trimmed, retrieved_chunks, facets),
+        "prompt": build_grounded_prompt(trimmed, retrieved_chunks, facets, concise=concise),
         "sources": _sources(retrieved_chunks),
         "retrievedChunks": _retrieved(retrieved_chunks),
     }
@@ -138,8 +145,11 @@ async def generate_from_prompt(
     *,
     course_id: str,
     target: GenerationTarget,
+    concise: bool = False,
 ) -> dict[str, Any]:
     """Answer one already-built prompt with one target. Same call shape either way.
+
+    `concise` applies the classroom output cap on either target.
 
     The base target is the backend's Ollama through `/api/chat`, one user
     message, the shared options. The fine-tuned target is the fine-tuned
@@ -150,7 +160,7 @@ async def generate_from_prompt(
     if target.kind == "base":
         generation = await generate_ollama_chat(
             prompt,
-            options=grounded_options(),
+            options=classroom_options() if concise else grounded_options(),
             timeout=GROUNDED_TIMEOUT_SECONDS,
         )
         return {
@@ -177,6 +187,7 @@ async def generate_from_prompt(
         prompt,
         course_id=course_id,
         model_version=resolved["version"],
+        max_new_tokens=CLASSROOM_NUM_PREDICT if concise else None,
     )
     return {
         "answer": generation["answer"],
@@ -195,11 +206,17 @@ async def generate_grounded_answer(
     storage: CourseArtifactStorage | None = None,
     *,
     target: GenerationTarget,
+    concise: bool = False,
 ) -> dict[str, Any]:
-    """Retrieve, prompt, generate: the whole grounded path for one target."""
-    prepared = await retrieve_and_prompt(course_id, question, top_k=top_k, storage=storage)
+    """Retrieve, prompt, generate: the whole grounded path for one target.
+
+    `concise` is the classroom profile: the short-answer rule and output cap.
+    """
+    prepared = await retrieve_and_prompt(
+        course_id, question, top_k=top_k, storage=storage, concise=concise
+    )
     generation = await generate_from_prompt(
-        prepared["prompt"], course_id=prepared["courseId"], target=target
+        prepared["prompt"], course_id=prepared["courseId"], target=target, concise=concise
     )
     return {
         "courseId": prepared["courseId"],

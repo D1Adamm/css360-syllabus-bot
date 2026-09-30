@@ -62,6 +62,7 @@ async def generate_course_finetuned_rag_answer(
     storage: CourseArtifactStorage | None = None,
     *,
     model_version: str | None = None,
+    concise: bool = False,
 ) -> dict[str, Any]:
     """Fine-Tuned + RAG: the shared grounded path answered by the course adapter.
 
@@ -75,4 +76,5 @@ async def generate_course_finetuned_rag_answer(
         top_k=top_k,
         storage=storage,
         target=fine_tuned_target(model_version),
+        concise=concise,
     )

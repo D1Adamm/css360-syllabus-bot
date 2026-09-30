@@ -106,6 +106,27 @@ def find_participant_session(conn: Any, token_hash: str) -> dict[str, Any] | Non
         return cursor.fetchone()
 
 
+def find_participant_sessions(conn: Any, token_hashes: list[str]) -> list[dict[str, Any]]:
+    """Every participant session among `token_hashes`, in one query.
+
+    A browser that joined several courses presents one token per course.
+    """
+    if not token_hashes:
+        return []
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT s.session_id, s.token_hash, s.expires_at, s.last_seen_at, s.revoked_at,
+                   p.participant_id, p.course_id
+            FROM auth_sessions s
+            JOIN participants p ON p.participant_id = s.participant_id
+            WHERE s.token_hash = ANY(%s::text[]) AND s.principal_kind = 'participant'
+            """,
+            (list(token_hashes),),
+        )
+        return list(cursor.fetchall())
+
+
 def touch_session(conn: Any, session_id: str, now: datetime | None = None) -> None:
     with conn.cursor() as cursor:
         cursor.execute(

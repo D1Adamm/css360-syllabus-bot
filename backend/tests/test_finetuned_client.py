@@ -286,8 +286,12 @@ class FineTunedEndpointTests(unittest.TestCase):
             os.environ["FINETUNED_SERVICE_URL"] = self._env_backup
 
     def test_generate_endpoint_success(self) -> None:
-        async def fake_generate(question: str, *, course_id: str, model_version=None) -> dict:
+        async def fake_generate(
+            question: str, *, course_id: str, model_version=None, max_new_tokens=None
+        ) -> dict:
+            # The bare question, as the adapter was trained, with the classroom cap.
             self.assertEqual(question, "What is the late policy?")
+            self.assertEqual(max_new_tokens, 128)
             self.assertEqual(course_id, COURSE)
             # The version the route resolved from the registry travels with the
             # request; the cluster is never asked to pick one.

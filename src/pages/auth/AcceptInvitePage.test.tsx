@@ -27,7 +27,7 @@ function Probe() {
 function renderInvite() {
   return render(
     <MemoryRouter initialEntries={[`/invite/${TOKEN}`]}>
-      <SessionProvider initialSession={{ user: null, participant: null }}>
+      <SessionProvider initialSession={{ user: null, participants: [] }}>
         <Probe />
         <Routes>
           <Route path="/invite/:token" element={<AcceptInvitePage />} />
@@ -77,7 +77,7 @@ describe('AcceptInvitePage', () => {
   it('creates the account, signs in, and lands on the role home', async () => {
     acceptMock.mockResolvedValue({
       user: { userId: 'u', email: 'prof@uw.edu', displayName: 'Prof Example', role: 'professor', courseIds: [COURSE] },
-      participant: null,
+      participants: [],
     });
     renderInvite();
     await screen.findByText(/instructor account for CSS 360/);
@@ -120,7 +120,7 @@ describe('AcceptInvitePage', () => {
     previewMock.mockResolvedValue({ kind: 'reset', courses: [], targetEmail: 'prof@uw.edu' });
     acceptMock.mockResolvedValue({
       user: { userId: 'u', email: 'prof@uw.edu', displayName: 'Prof', role: 'admin', courseIds: [] },
-      participant: null,
+      participants: [],
     });
     renderInvite();
     expect(await screen.findByText(/For the account prof@uw.edu/)).toBeInTheDocument();

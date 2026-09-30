@@ -84,9 +84,9 @@ const SESSIONS: Record<'admin' | 'student' | 'professor', Session> = {
       role: 'admin',
       courseIds: [],
     },
-    participant: null,
+    participants: [],
   },
-  student: { user: null, participant: { courseId: COURSE } },
+  student: { user: null, participants: [{ courseId: COURSE }] },
   professor: {
     user: {
       userId: 'u-prof',
@@ -95,7 +95,7 @@ const SESSIONS: Record<'admin' | 'student' | 'professor', Session> = {
       role: 'professor',
       courseIds: [COURSE],
     },
-    participant: null,
+    participants: [],
   },
 };
 

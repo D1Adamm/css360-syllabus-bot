@@ -23,10 +23,12 @@ function Probe() {
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-function renderAt(path: string) {
+function renderAt(path: string, joined: string[] = []) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <SessionProvider initialSession={{ user: null, participant: null }}>
+      <SessionProvider
+        initialSession={{ user: null, participants: joined.map((courseId) => ({ courseId })) }}
+      >
         <Probe />
         <Routes>
           <Route path="/join" element={<JoinPage />} />
@@ -41,7 +43,7 @@ function renderAt(path: string) {
 beforeEach(() => {
   joinCourseMock.mockReset();
   fetchSessionMock.mockReset();
-  fetchSessionMock.mockResolvedValue({ user: null, participant: { courseId: COURSE } });
+  fetchSessionMock.mockResolvedValue({ user: null, participants: [{ courseId: COURSE }] });
 });
 
 afterEach(() => {
@@ -49,6 +51,26 @@ afterEach(() => {
 });
 
 describe('JoinPage', () => {
+  it('explains that the browser remembers the course, and links staff to sign-in', () => {
+    renderAt('/join');
+    expect(
+      screen.getByText('Enter your class code to get started. This browser will remember your course.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Staff sign-in' })).toHaveAttribute('href', '/login');
+    // No implementation vocabulary in front of students.
+    expect(document.body.textContent).not.toMatch(/cookie|participant|anonymous identity|session/i);
+  });
+
+  it('a browser that already joined is told so and can join another course', () => {
+    renderAt('/join', ['css-350-spring-2026-n3h9', 'css-430-fall-2026-k7q2']);
+    expect(screen.getByRole('heading', { name: 'Join another course' })).toBeInTheDocument();
+    expect(screen.getByText(/already remembers 2 courses/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to your courses' })).toHaveAttribute(
+      'href',
+      '/student',
+    );
+  });
+
   it('asks for a class code and nothing personal', () => {
     renderAt('/join');
     expect(screen.getByLabelText(/Class code/)).toBeInTheDocument();

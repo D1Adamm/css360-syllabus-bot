@@ -67,12 +67,6 @@ export function primaryNavItems(role: Role, courseId: string | null): NavItem[] 
 
 /** Compact secondary navigation shown inside a course. */
 export function courseNavItems(role: Role, courseId: string): NavItem[] {
-  if (role === 'student') {
-    return [
-      { to: studentCoursePath(courseId, 'syllabus'), label: 'Syllabus', icon: 'syllabus' },
-    ];
-  }
-
   if (role === 'professor') {
     return [
       // Exact match: the overview path is a prefix of every other course page.

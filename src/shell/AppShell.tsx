@@ -75,7 +75,7 @@ export function AppShell() {
                   Sign out
                 </Button>
               </div>
-            ) : session.participant ? (
+            ) : session.participants.length > 0 ? (
               <span className="shell-identity__role">Student</span>
             ) : (
               <Link to={loginPath()} className="shell-identity__link">

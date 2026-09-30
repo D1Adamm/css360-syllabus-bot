@@ -146,7 +146,8 @@ def _mark_mine(seeds: list[dict[str, Any]], participant_id: str) -> list[dict[st
 @router.get("/courses", response_model=CourseListResponse)
 def list_courses(principal: Principal = Depends(current_principal)) -> CourseListResponse:
     """The courses this principal may open: all for an administrator, the
-    memberships for a professor, the one joined course for a participant."""
+    memberships for a professor, every course this browser joined as a
+    participant."""
     if principal.is_anonymous:
         raise HTTPException(status_code=401, detail=JOIN_DETAIL)
     scope = principal.staff_course_ids()
@@ -154,9 +155,7 @@ def list_courses(principal: Principal = Depends(current_principal)) -> CourseLis
     if scope is None:
         visible = None
     else:
-        visible = set(scope)
-        if principal.participant is not None:
-            visible.add(principal.participant.course_id)
+        visible = set(scope) | principal.participant_course_ids()
     courses = _run(
         "listing courses", lambda connection: db_courses.list_courses(connection, visible)
     )

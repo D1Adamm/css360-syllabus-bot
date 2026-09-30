@@ -378,5 +378,60 @@ class AttributionRepositoryTests(unittest.TestCase):
         self.assertIn("GROUP BY origin", counts_conn.statements[0][0])
 
 
+
+OTHER_COURSE = "css-350-spring-2026-n3h9"
+
+
+class MultiCourseAttributionTests(AttributionRouteTestCase):
+    """A browser in two courses holds two participants; each write carries its own."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.act_as(
+            Principal(
+                participants=(
+                    Participant(participant_id="p-360", course_id=COURSE, session_id="s1"),
+                    Participant(participant_id="p-350", course_id=OTHER_COURSE, session_id="s2"),
+                )
+            )
+        )
+
+    def _rate(self, course_id: str) -> Any:
+        return self.client.post(
+            f"/api/db/courses/{course_id}/evaluations",
+            json={"comparisonId": "c", "mostAccurate": "rag", "preferredModel": "rag"},
+            headers=CSRF,
+        )
+
+    def _contribute(self, course_id: str) -> Any:
+        return self.client.post(
+            f"/api/db/courses/{course_id}/seeds",
+            json={"instruction": "Q?", "response": "A."},
+            headers=CSRF,
+        )
+
+    def test_evaluations_are_attributed_to_the_course_participant(self) -> None:
+        self.assertEqual(self._rate(OTHER_COURSE).status_code, 201)
+        self.assertEqual(self.create_evaluation.call_args.kwargs["participant_id"], "p-350")
+        self.assertEqual(self.create_evaluation.call_args.args[1], OTHER_COURSE)
+        self.assertEqual(self._rate(COURSE).status_code, 201)
+        self.assertEqual(self.create_evaluation.call_args.kwargs["participant_id"], "p-360")
+
+    def test_contributions_are_attributed_to_the_course_participant(self) -> None:
+        self.create_seed.return_value = seed(id="n1", origin="user", participantId="p-360")
+        self.assertEqual(self._contribute(COURSE).status_code, 201)
+        self.assertEqual(self.create_seed.call_args.kwargs["participant_id"], "p-360")
+        self.create_seed.return_value = seed(id="n2", origin="user", participantId="p-350")
+        self.assertEqual(self._contribute(OTHER_COURSE).status_code, 201)
+        self.assertEqual(self.create_seed.call_args.kwargs["participant_id"], "p-350")
+
+    def test_own_ratings_are_listed_per_course(self) -> None:
+        self.client.get(f"/api/db/courses/{OTHER_COURSE}/evaluations")
+        self.assertEqual(self.list_evaluations.call_args.kwargs["participant_id"], "p-350")
+
+    def test_a_course_not_joined_is_refused(self) -> None:
+        self.assertEqual(self._rate("css-430-fall-2026-zzzz").status_code, 403)
+
+
 if __name__ == "__main__":
     unittest.main()

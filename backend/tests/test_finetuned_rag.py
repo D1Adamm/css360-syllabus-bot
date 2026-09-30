@@ -402,7 +402,11 @@ class FineTunedRagEndpointTests(unittest.TestCase):
         self.course_id = "css-430-summer-2026-ibce"
 
     def test_endpoint_success_returns_sources(self) -> None:
-        async def fake_generate(*, course_id: str, question: str, top_k: int = 3):
+        async def fake_generate(
+            *, course_id: str, question: str, top_k: int = 3, concise: bool = False
+        ):
+            # The classroom route asks for the concise profile.
+            self.assertTrue(concise)
             self.assertEqual(course_id, self.course_id)
             self.assertEqual(question, "What is the late policy?")
             return {
@@ -583,7 +587,9 @@ class ExplicitVersionFineTunedRagTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_grounded_prompt_is_identical_either_way(self) -> None:
         prompts: list[str] = []
 
-        async def capture(prompt: str, *, course_id: str, model_version: str | None = None):
+        async def capture(
+            prompt: str, *, course_id: str, model_version: str | None = None, max_new_tokens=None
+        ):
             prompts.append(prompt)
             return self._client(model_version or "v2").return_value
 

@@ -124,6 +124,14 @@ Expect `{"status":"ok","service":"syllabus-model-lab-backend"}`.
 A user unit, not a system one — so it is managed without root, and it needs
 lingering enabled for the account if it is to survive logout.
 
+When a pull changes `training/inference_service/`, restart the VM-local
+fine-tuned service too — it runs from the checkout and only reads its code at
+start:
+
+```bash
+./scripts/aiswe_finetuned.sh restart
+```
+
 ### First deployment of authentication
 
 The first deployment that carries migration 002 turns on sign-in for every

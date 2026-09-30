@@ -10,7 +10,6 @@ import { isValidCourseId } from './courseId';
  */
 
 export const STUDENT_COURSE_SEGMENTS = [
-  'syllabus',
   'contribute',
   'compare',
   'evaluate',

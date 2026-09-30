@@ -185,11 +185,22 @@ class ModelTestingTestCase(unittest.TestCase):
 
         self.patch("app.course_model_resolution.db_connection", new=fake_connection)
 
-        async def fine_tuned(question: str, *, course_id: str, model_version: str | None = None):
+        async def fine_tuned(
+            question: str,
+            *,
+            course_id: str,
+            model_version: str | None = None,
+            max_new_tokens: int | None = None,
+        ):
             return fine_tuned_result(model_version)
 
         async def fine_tuned_rag(
-            *, course_id: str, question: str, top_k: int = 4, model_version: str | None = None
+            *,
+            course_id: str,
+            question: str,
+            top_k: int = 4,
+            model_version: str | None = None,
+            concise: bool = False,
         ):
             return fine_tuned_rag_result(model_version)
 

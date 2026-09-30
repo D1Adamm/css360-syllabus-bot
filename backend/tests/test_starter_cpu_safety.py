@@ -271,10 +271,11 @@ class StarterNumPredictPayloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(sent["think"], False)
         self.assertEqual(sent["format"], "json")
 
-    async def test_base_model_payload_uses_the_shared_grounded_options(self) -> None:
-        """Base is decoded like every other condition (greedy, fixed window and
-        cap) through `/api/chat`; the starter-only knobs never reach it."""
-        from app.grounded_generation import GROUNDED_OPTIONS
+    async def test_base_model_payload_uses_the_classroom_options(self) -> None:
+        """Base is decoded like every other condition (greedy, fixed window,
+        the classroom cap) through `/api/chat`; the starter-only knobs never
+        reach it."""
+        from app.grounded_generation import classroom_options
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -294,7 +295,8 @@ class StarterNumPredictPayloadTests(unittest.IsolatedAsyncioTestCase):
         url = mock_client.post.await_args.args[0]
         sent = mock_client.post.await_args.kwargs["json"]
         self.assertTrue(url.endswith("/api/chat"))
-        self.assertEqual(sent["options"], dict(GROUNDED_OPTIONS))
+        self.assertEqual(sent["options"], classroom_options())
+        self.assertEqual(sent["options"]["num_predict"], 128)
         self.assertEqual([m["role"] for m in sent["messages"]], ["user"])
         self.assertNotIn("think", sent)
         self.assertNotIn("format", sent)

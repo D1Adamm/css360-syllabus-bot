@@ -1,34 +1,22 @@
-import { Navigate } from 'react-router-dom';
 import { CourseRow } from '../../components/course/CourseRow';
 import { LinkButton } from '../../components/ui/Button';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { useSession } from '../../context/SessionContext';
 import { useCourses } from '../../hooks/useCourses';
 import { toUserMessage } from '../../lib/errorMessages';
 import { joinPath, studentCourseHomePath } from '../../lib/roleRoutes';
 
 /**
- * Course selection for students.
+ * The courses this browser remembers, and the way to join another.
  *
- * The backend lists only what this browser may open: the one course a
- * participant joined, or every course a member of staff walking through the
- * student flow may reach. A participant with exactly one course is sent
- * straight into it; a list of one is not a choice.
+ * The backend lists only what this browser may open: every course it joined
+ * with a class code, or every course a member of staff walking through the
+ * student flow may reach. Returning to `/` with a single course skips this page
+ * (see `RoleLanding`); arriving here on purpose always shows the list.
  */
 export function StudentCoursesPage() {
   const { state, retry } = useCourses();
-  const { session } = useSession();
-
-  if (
-    state.status === 'ready' &&
-    state.courses.length === 1 &&
-    session.participant &&
-    !session.user
-  ) {
-    return <Navigate to={studentCourseHomePath(state.courses[0].courseId)} replace />;
-  }
 
   return (
     <div className="ui-stack ui-stack--loose">
@@ -36,8 +24,8 @@ export function StudentCoursesPage() {
         title="Your courses"
         description="Open a course to contribute questions, compare answers, and evaluate responses."
         actions={
-          <LinkButton to={joinPath()} variant="secondary">
-            Enter a class code
+          <LinkButton to={joinPath()} variant="secondary" iconLeft="add">
+            Join another course
           </LinkButton>
         }
       />
@@ -71,7 +59,7 @@ export function StudentCoursesPage() {
       )}
 
       {state.status === 'ready' && state.courses.length > 0 && (
-        <ul className="course-rows" aria-label="Available courses">
+        <ul className="course-rows" aria-label="Your courses">
           {state.courses.map(({ courseId, metadata }) => (
             <CourseRow
               key={courseId}
