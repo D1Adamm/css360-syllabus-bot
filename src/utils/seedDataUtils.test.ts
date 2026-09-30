@@ -138,7 +138,7 @@ describe('normalizeSeedExample', () => {
 
     expect(seed).not.toBeNull();
     expect(seed?.origin).toBe('prototype');
-    expect(getSeedOriginLabel(seed!.origin)).toBe('Prototype generated');
+    expect(getSeedOriginLabel(seed!.origin)).toBe('Staff-authored');
   });
 
   it('rejects malformed records', () => {

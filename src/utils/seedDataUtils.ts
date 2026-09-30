@@ -86,7 +86,7 @@ export function getSeedOriginLabel(origin: SeedOrigin): string {
       return 'AI-generated starter seed';
     case 'prototype':
     default:
-      return 'Prototype generated';
+      return 'Staff-authored';
   }
 }
 
