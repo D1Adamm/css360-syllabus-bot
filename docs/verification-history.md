@@ -154,6 +154,10 @@ outside the legacy `css-360-…` form.
   checks, including direct generation and, through the backend, Fine-Tuned,
   Fine-Tuned + RAG, Base and RAG.
 - A browser Compare smoke test succeeded.
+- After explicit activation was deployed, both `v1` versions were activated
+  from Admin → Models (each checked against the VM's `/health` first) and
+  re-verified at **25 of 25**. The `current_version` fallback was removed only
+  after that.
 - Installing them surfaced two installer bugs, fixed before the install
   completed: the GGUF filename re-derived a legacy short course label and
   refused the new ids even with `--tag` (merge `74a4711`), and the converter's

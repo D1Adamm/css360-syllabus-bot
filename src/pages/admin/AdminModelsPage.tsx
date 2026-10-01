@@ -64,13 +64,13 @@ function deploymentTone(version: CourseModelVersion) {
 /**
  * The version a course's fine-tuned answers use: the activated one.
  *
- * Mirrors the backend's rule — the highest `online` version. When none is
- * online the backend currently falls back to `currentVersion`; that fallback
- * is shown as such rather than presented as an activation.
+ * Mirrors the backend's rule — the highest `online` version that is `ready`.
+ * With none, the course has no Fine-Tuned answers at all; the newest
+ * registered version is never used in its place.
  */
 function activeVersion(registry: CourseModelRegistry): string | null {
   const online = Object.values(registry.versions)
-    .filter((version) => version.deployment === 'online')
+    .filter((version) => version.deployment === 'online' && version.status === 'ready')
     .map((version) => version.version)
     .sort((left, right) => Number(left.slice(1)) - Number(right.slice(1)));
   return online.length > 0 ? online[online.length - 1]! : null;
@@ -280,15 +280,8 @@ export function AdminModelsPage() {
                         </>
                       ) : (
                         <>
-                          No activated version. Until one is activated, students are
-                          answered by the newest registered version
-                          {registry.currentVersion ? (
-                            <>
-                              {' '}
-                              (<code>{registry.currentVersion}</code>)
-                            </>
-                          ) : null}
-                          .
+                          No activated version: Fine-Tuned and Fine-Tuned + RAG are
+                          unavailable for this course until one is activated.
                         </>
                       )}
                     </p>
@@ -451,8 +444,9 @@ export function AdminModelsPage() {
 
       <Callout tone="info" title="Registered is not active">
         A successful training run registers its version automatically, as{' '}
-        <code>ready</code> and not active; students keep the active version.
-        To switch them, install and map the new version on the VM (
+        <code>ready</code> and not active; students keep the active version,
+        and a course with no active version has no Fine-Tuned answers. To
+        switch them, install and map the new version on the VM (
         <code>scripts/install_finetuned_adapter.py</code>, then{' '}
         <code>scripts/aiswe_finetuned.sh set-mapping</code> and restart), then
         press <strong>Activate</strong> above. Activation asks the fine-tuned

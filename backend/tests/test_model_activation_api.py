@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app.course_model_resolution import resolve_current_course_model
+from app.course_model_resolution import NoReadyCourseModel, resolve_current_course_model
 from app.main import app
 
 CSS360D = "css360d-fall-2026-q0ne"
@@ -130,13 +130,17 @@ class ActivationTestCase(unittest.TestCase):
         resolved = resolve_current_course_model(course_id)
         return resolved["version"], resolved["resolvedFrom"]
 
+    def _assert_not_served(self, course_id: str) -> None:
+        with self.assertRaises(NoReadyCourseModel):
+            resolve_current_course_model(course_id)
+
 
 class ActivateMappedVersionTests(ActivationTestCase):
     def test_a_mapped_and_available_version_is_activated(self) -> None:
-        """CSS 360D's real first step: v1 serving through the fallback, made explicit."""
+        """A registered v1 serves nothing until it is activated, then serves."""
         self._seed(CSS360D, "v1", _version("v1"))
         self.health = _health(**{CSS360D: ["v1"]})
-        self.assertEqual(self._served(CSS360D), ("v1", "current"))
+        self._assert_not_served(CSS360D)
 
         response = self._activate(CSS360D, "v1")
 
@@ -364,15 +368,25 @@ class RegistrationDoesNotMoveTrafficTests(ActivationTestCase):
         self.assertNotIn("v2", self.registries[CSS360D]["versions"])
         self.assertEqual(self._served(CSS360D), ("v1", "published"))
 
-    def test_the_current_version_fallback_is_preserved_for_now(self) -> None:
-        """Rollout step 6: an un-activated course still answers from current_version.
+    def test_an_unactivated_course_is_not_served_from_its_current_version(self) -> None:
+        """The fallback is gone: a ready current version that nobody activated serves nothing.
 
-        Deliberately kept until CSS 360D and CSS 360E have been activated; the
-        fallback is removed in a later change, which will flip this test.
+        Removed after CSS 360D v1 and CSS 360E v1 were explicitly activated in
+        production and re-verified.
         """
         self._seed(CSS360E, "v1", _version("v1"))
 
-        self.assertEqual(self._served(CSS360E), ("v1", "current"))
+        self._assert_not_served(CSS360E)
+
+    def test_registering_v2_on_an_unactivated_course_does_not_start_serving_it(self) -> None:
+        """The case the fallback got wrong: v2 would have been requested before the VM had it."""
+        self._seed(CSS360E, "v1", _version("v1"))
+
+        response = self._register(CSS360E, {**self.BODY, "artifactRef": f"qlora-runs/{CSS360E}/run-2-full/adapter"})
+
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(self.registries[CSS360E]["currentVersion"], "v2")
+        self._assert_not_served(CSS360E)
 
 
 if __name__ == "__main__":

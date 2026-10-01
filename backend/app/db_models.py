@@ -274,9 +274,8 @@ def mark_version_published(
     """Record that one version is the one published for this course.
 
     Two writes, one transaction, in this order: demote every other version of
-    the course, then promote this one. A reader that arrives between them sees
-    no online version and falls back to `current_version`, which is the
-    behaviour of a course that has never published — degraded, not wrong. The
+    the course, then promote this one. A reader that could see between them
+    would find no online version and refuse — degraded, not wrong. The
     opposite order would briefly show two online versions, and "which one is
     served?" would have two answers.
 

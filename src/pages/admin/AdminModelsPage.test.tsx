@@ -191,7 +191,7 @@ describe('AdminModelsPage registry', () => {
 });
 
 describe('AdminModelsPage activation', () => {
-  /** CSS 360D as deployed: v1 registered offline, served through the fallback. */
+  /** A course whose first version has registered offline and is not active yet. */
   const FALLBACK_REGISTRY: CourseModelRegistry = {
     currentVersion: 'v1',
     versions: { v1: { ...V1, deployment: 'offline' } },
@@ -201,7 +201,7 @@ describe('AdminModelsPage activation', () => {
     return screen.findByRole('list', { name: `Model versions for ${CSS350}` });
   }
 
-  it('says when no version is activated and the newest one answers by fallback', async () => {
+  it('says a course with no activated version has no fine-tuned answers', async () => {
     fetchCourseModel.mockResolvedValue(FALLBACK_REGISTRY);
     fetchFineTunedHealth.mockResolvedValue({
       ...HEALTH,
@@ -210,7 +210,10 @@ describe('AdminModelsPage activation', () => {
 
     renderPage();
 
-    expect(await screen.findByText(/No activated version/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/No activated version: Fine-Tuned and Fine-Tuned \+ RAG are unavailable/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/newest registered version/)).toBeNull();
     const versions = await versionsList();
     expect(versions).toHaveTextContent('VM: servable');
     expect(

@@ -119,8 +119,8 @@ export function describeCourseModel({
    * Ready. Availability is a separate question, and the recorded deployment is
    * only trusted when a live check has not contradicted it.
    *
-   * What `online` records is that this version has been published to the
-   * research cluster and is the one fine-tuned answers come from. It does not
+   * What `online` records is that this version has been activated (published)
+   * and is the one fine-tuned answers come from. It does not
    * record that a GPU session happens to be up at this second — the backend
    * cannot know that from the registry alone, and a `serviceReachable` check is
    * what narrows it when a caller has one. So the wording below says which
@@ -151,7 +151,7 @@ export function describeCourseModel({
       availability,
       title: 'Your course model is ready, but not published yet',
       detail:
-        'It has been trained from your approved examples and is saved. It has not been published to the research cluster yet, so the assistant is not answering with it.',
+        'It has been trained from your approved examples and is saved. It has not been published yet, so the Fine-Tuned answers do not use it.',
       tone: 'warning',
     };
   }

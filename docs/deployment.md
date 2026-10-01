@@ -383,11 +383,9 @@ written) unless it lists that exact course and version, so the wrong order
 fails safely. Rollback is the same button on the earlier version, which must
 still be mapped. Each activation is recorded in the audit trail.
 
-Until every served course has an activated version, a course with none is
-served its newest registered version, so for such a course a new version is
-requested as soon as training registers it. Activate the version a course
-already serves to close that gap
-([remaining-work.md](remaining-work.md#known-issues)).
+A course with no activated version has no fine-tuned answers: there is no
+fallback to the newest registered version. A course's first trained version
+therefore serves nothing until it is installed, mapped and activated.
 
 Tillicum's `training/promote_qlora_adapter.sh` still records a publication as
 the legacy path ([tillicum-operations.md](tillicum-operations.md#per-course-serving));

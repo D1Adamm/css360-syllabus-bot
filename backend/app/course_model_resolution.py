@@ -7,10 +7,10 @@ in the system. With two courses trained, that is not a gap in reporting — it i
 CSS 350 being answered by CSS 360's adapter with no way to tell.
 
 PostgreSQL is the system of record for what a course's model is, so the
-resolution happens here: `course_models.current_version` names the version, the
-version row says whether it is `ready`, and the resolved version travels with the
-request to the cluster. The cluster then serves that version, and the response
-says which one it used.
+resolution happens here: the activated version (`deployment = online`, and
+`ready`) names the version, and the resolved version travels with the request
+to the fine-tuned service. The service then serves that version, and the
+response says which one it used.
 
 Ready and published are different questions, and inference asks the second
 -----------------------------------------------------------------------
@@ -32,10 +32,16 @@ operator had published — refused with a 409. Every fine-tuned answer for that
 course failed, including the ones `v1` had been serving correctly a moment
 earlier. Training a new version took the old one offline.
 
-So resolution prefers the published version, and falls back to `current_version`
-only when this course has never had a publication reported. The fallback is what
-keeps a course that predates publication reporting working exactly as it did;
-once anything has been published for a course, the answer is exact.
+So resolution reads the published version and nothing else. It used to fall
+back to `current_version` for a course that had never had a publication
+reported; that fallback was the last way a finished training run could move
+production traffic on its own (a course with nothing published would start
+asking for the newly registered version before the VM had it). It was removed
+once every served course had an explicitly activated version. A course with no
+active version now gets the ordinary "not available yet" refusal, and a version
+becomes active only through activation (Admin → Models), which first checks
+that the fine-tuned service can serve it — or Tillicum's legacy publication
+report.
 
 Testing a version that is not the course's
 ------------------------------------------
@@ -132,16 +138,13 @@ def _unavailable(course_id: str, diagnostic: str) -> NoReadyCourseModel:
 def select_servable_version(registry: dict[str, Any]) -> tuple[str | None, str]:
     """Which version a request should be answered from, and why that one.
 
-    The published version wins. It is the only one the cluster can actually
-    load, and a newer registered version that has not been copied there yet is
-    an artifact, not an answer.
+    Only an explicitly activated version: `deployment = online` and
+    `status = ready`. A newer registered version that has not been activated
+    is an artifact, not an answer, however recent — `current_version` is what a
+    professor is shown and is never consulted here.
 
-    `current_version` is the fallback, for exactly one situation: a course that
-    has never had a publication reported. That is every course before this
-    reporting existed, and the fallback is what keeps them answering the way
-    they always did. It is not a general safety net — once a course has
-    published anything, the published version is the answer, including when a
-    newer version has since been registered.
+    `(None, "none")` when nothing qualifies; the caller turns that into the
+    "not available yet" refusal rather than guessing.
 
     Returned with its source so a caller can say which rule applied. Pure, so
     the lifecycle is testable without a database.
@@ -151,17 +154,15 @@ def select_servable_version(registry: dict[str, Any]) -> tuple[str | None, str]:
     published = [
         version
         for version, record in versions.items()
-        if isinstance(record, dict) and record.get("deployment") == "online"
+        if isinstance(record, dict)
+        and record.get("deployment") == "online"
+        and record.get("status") == "ready"
     ]
     if published:
         # Deterministic when more than one row claims to be online, which
         # `mark_version_published` prevents but an older write may not have.
         published.sort(key=_version_sort_key)
         return published[-1], "published"
-
-    current_version = registry.get("currentVersion")
-    if isinstance(current_version, str) and current_version:
-        return current_version, "current"
 
     return None, "none"
 
@@ -204,10 +205,30 @@ def resolve_current_course_model(course_id: str) -> dict[str, Any]:
     resolved_version, source = select_servable_version(registry)
 
     if resolved_version is None:
+        unready = sorted(
+            (
+                (key, record.get("status"))
+                for key, record in versions.items()
+                if isinstance(record, dict)
+                and record.get("deployment") == "online"
+                and record.get("status") != "ready"
+            ),
+            key=lambda item: _version_sort_key(item[0]),
+        )
+        if unready:
+            key, status = unready[-1]
+            raise _unavailable(
+                safe_course_id,
+                f'Course "{safe_course_id}" has no ready activated model version: '
+                f'activated version "{key}" is "{status}". Activate a ready '
+                "version in Admin → Models.",
+            )
         raise _unavailable(
             safe_course_id,
-            f'Course "{safe_course_id}" has no model version to answer with. '
-            "Register one, or publish an existing one to the cluster.",
+            f'Course "{safe_course_id}" has no activated model version (newest '
+            f'registered: "{registry.get("currentVersion") or "none"}"). Install '
+            "and map a ready version on the VM, then activate it in Admin → "
+            "Models.",
         )
 
     version_record = versions.get(resolved_version)
