@@ -134,6 +134,17 @@ def _existing_file(raw: str, what: str) -> Path:
     return resolved
 
 
+def _existing_interpreter(raw: str | Path, what: str) -> Path:
+    """Validate like `_existing_file`, but return the path as given, made absolute.
+
+    A venv's `bin/python` is a symlink to the system interpreter, and Python
+    finds its venv from the path it was started by. Running the resolved
+    target (`/usr/bin/python3.12`) silently drops the venv's packages.
+    """
+    _existing_file(str(raw), what)
+    return Path(os.path.abspath(os.path.expanduser(str(raw))))
+
+
 def inspect_adapter(adapter_dir: Path) -> dict[str, Any]:
     """Read `adapter_config.json` and find the weight file; refuse anything partial."""
     config_path = adapter_dir / "adapter_config.json"
@@ -222,7 +233,7 @@ def find_converter_python(explicit: str | None, converter: Path | None = None) -
     were installed into; then `$CPU_TRAINING_VENV`, then the defaults.
     """
     if explicit:
-        return str(_existing_file(explicit, "Converter interpreter"))
+        return str(_existing_interpreter(explicit, "Converter interpreter"))
     candidates: list[Path] = []
     if converter is not None:
         candidates.append(converter.parent / ".venv" / "bin" / "python")
@@ -232,7 +243,7 @@ def find_converter_python(explicit: str | None, converter: Path | None = None) -
     candidates += [Path(os.path.expanduser(d)) / "bin" / "python" for d in DEFAULT_CONVERTER_VENVS]
     for candidate in candidates:
         if candidate.is_file():
-            return str(candidate.resolve())
+            return str(_existing_interpreter(candidate, "Converter interpreter"))
     return sys.executable
 
 
