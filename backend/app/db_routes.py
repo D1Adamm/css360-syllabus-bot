@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
+from starlette.concurrency import run_in_threadpool
 
 from app import db_admin_actions, db_courses, db_evaluations, db_memberships
 from app import db_model_requests, db_models
@@ -40,7 +41,9 @@ from app.auth.dependencies import (
 from app.auth.principal import Principal
 from app.student_visibility import contribution_payload, seeds_for_participant
 from app.course_id import assert_valid_course_id
+from app.course_model_resolution import assert_valid_model_version
 from app.db import db_connection, translate_db_errors
+from app.finetuned_client import check_finetuned_service_health
 from app.db_schemas import (
     CourseActivityResponse,
     CourseCreateRequest,
@@ -54,6 +57,7 @@ from app.db_schemas import (
     EvaluationRecordModel,
     ModelRegistryResponse,
     ModelRequestCreateRequest,
+    ModelVersionActivationResponse,
     ModelRequestRecord,
     ModelRequestUpdateRequest,
     SeedCreateRequest,
@@ -690,6 +694,149 @@ def get_course_model(course_id: str, principal: Principal = Depends(require_cour
     # Stored provenance keeps the cluster's exact run directories; the browser
     # does not get them. See `provenance_privacy`.
     return ModelRegistryResponse(**provenance_privacy.public_model_registry(registry))
+
+
+def _require_ready_version(registry: dict[str, Any] | None, course_id: str, version: str) -> None:
+    """Refuse a version this course cannot serve, before or after the VM is asked."""
+    record = ((registry or {}).get("versions") or {}).get(version)
+    if not isinstance(record, dict):
+        raise HTTPException(
+            status_code=404,
+            detail=f'Course "{course_id}" has no registered model version "{version}".',
+        )
+    if record.get("status") != "ready":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f'Version "{version}" is "{record.get("status")}", not ready. '
+                "Only a ready version can be activated."
+            ),
+        )
+
+
+def _servable_versions(health: dict[str, Any], course_id: str) -> list[str]:
+    """The versions the fine-tuned service says it can answer this course with."""
+    for entry in health.get("courses") or []:
+        if isinstance(entry, dict) and entry.get("courseId") == course_id:
+            versions = entry.get("versions")
+            return [v for v in versions if isinstance(v, str)] if isinstance(versions, list) else []
+    return []
+
+
+@router.post(
+    "/courses/{course_id}/model-versions/{version}/activate",
+    response_model=ModelVersionActivationResponse,
+)
+async def activate_course_model_version(
+    course_id: str,
+    version: str,
+    principal: Principal = Depends(require_admin),
+) -> ModelVersionActivationResponse:
+    """Make one registered version the one this course's fine-tuned answers use.
+
+    The explicit step between "training registered a version" and "students
+    get it". Inference resolves the published version, so this writes exactly
+    what Tillicum's `promote_qlora_adapter.sh` writes — `mark_version_published`
+    — but only after the fine-tuned service itself says it can answer this
+    course at this version. On the VM that means the version is mapped in
+    `FINETUNED_OLLAMA_MODELS` and Ollama has the model. A registered version
+    that has not been installed and mapped is refused with 409 and nothing is
+    written, so activation can never point production at a version the
+    service would refuse. If the service cannot be asked, nothing is written
+    either: an unverifiable activation is not one.
+
+    Rollback is the same call for an older version, under the same check.
+    Activating the version that is already active is a no-op reported as
+    `unchanged`. Every change is written to `admin_actions`.
+
+    Registration never does this. A finished training run lands `offline`, and
+    ordinary registration refuses `deployment=online`.
+    """
+    safe_course_id = _safe_course_id(course_id)
+    try:
+        safe_version = assert_valid_model_version(version)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    actor = principal.user
+    assert actor is not None  # require_admin
+
+    def read_registry(connection: Any) -> dict[str, Any] | None:
+        return db_models.get_model_registry(connection, safe_course_id)
+
+    # Checked first so a typo or an unready version is refused without
+    # depending on the service being up.
+    registry = await run_in_threadpool(_run, "reading the model registry", read_registry)
+    _require_ready_version(registry, safe_course_id, safe_version)
+
+    try:
+        health = await check_finetuned_service_health()
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Could not confirm that the fine-tuned service can serve "
+                f"{safe_course_id} {safe_version}, so nothing was activated. "
+                f"{exc.detail}"
+            ),
+        ) from exc
+
+    servable = _servable_versions(health, safe_course_id)
+    if safe_version not in servable:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"The fine-tuned service cannot serve {safe_course_id} "
+                f"{safe_version}: it is not mapped, or its Ollama model is "
+                "missing. Install and map it on the VM "
+                "(scripts/install_finetuned_adapter.py, then "
+                "scripts/aiswe_finetuned.sh set-mapping and restart), then "
+                "activate it. Servable now: "
+                f"{', '.join(servable) if servable else 'none'}."
+            ),
+        )
+
+    def activate(connection: Any) -> tuple[dict[str, Any], str | None, bool]:
+        # Re-read inside the write's transaction: the registry may have moved
+        # while the service was being asked.
+        current = db_models.get_model_registry(connection, safe_course_id)
+        _require_ready_version(current, safe_course_id, safe_version)
+        versions = (current or {}).get("versions") or {}
+        already = versions[safe_version].get("deployment") == "online"
+        previous = next(
+            (
+                key
+                for key, record in versions.items()
+                if key != safe_version
+                and isinstance(record, dict)
+                and record.get("deployment") == "online"
+            ),
+            None,
+        )
+        if already and previous is None:
+            return current, None, True
+        updated = db_models.mark_version_published(connection, safe_course_id, safe_version)
+        db_admin_actions.record_action(
+            connection,
+            actor_user_id=actor.user_id,
+            actor_role=actor.role,
+            action="model.activate",
+            target_kind="model_version",
+            target_id=f"{safe_course_id}@{safe_version}",
+            course_id=safe_course_id,
+            detail={"version": safe_version, "previousVersion": previous},
+        )
+        return updated or current, previous, False
+
+    updated, previous, unchanged = await run_in_threadpool(
+        _run, "activating a model version", activate
+    )
+    return ModelVersionActivationResponse(
+        courseId=safe_course_id,
+        version=safe_version,
+        previousVersion=previous,
+        unchanged=unchanged,
+        model=ModelRegistryResponse(**provenance_privacy.public_model_registry(updated)),
+    )
 
 
 # --------------------------------------------------------------------------- #

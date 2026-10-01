@@ -123,6 +123,7 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     ("DELETE", f"{_DB}/evaluations"): REQUIRE_ADMIN,
     ("DELETE", f"{_DB}/evaluations/{{evaluation_id}}"): REQUIRE_ADMIN,
     ("GET", f"{_DB}/model"): REQUIRE_COURSE_STAFF,
+    ("POST", f"{_DB}/model-versions/{{version}}/activate"): REQUIRE_ADMIN,
     ("GET", f"{_DB}/model-request"): REQUIRE_COURSE_STAFF,
     ("POST", f"{_DB}/model-request"): REQUIRE_COURSE_STAFF,
     ("PATCH", f"{_DB}/model-request"): REQUIRE_ADMIN,

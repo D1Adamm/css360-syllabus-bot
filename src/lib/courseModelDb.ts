@@ -169,3 +169,38 @@ export function subscribeToCourseModel(
     onError,
   });
 }
+
+export interface CourseModelActivation {
+  version: string;
+  previousVersion: string | null;
+  unchanged: boolean;
+  registry: CourseModelRegistry;
+}
+
+/**
+ * Activates one version for a course: the explicit step after it has been
+ * installed and mapped on the VM. The backend checks the fine-tuned service
+ * before writing anything; its refusal arrives as an `ApiError` whose message
+ * says why.
+ */
+export async function activateCourseModelVersion(
+  courseId: string,
+  version: string,
+): Promise<CourseModelActivation> {
+  assertValidCourseId(courseId);
+  if (!/^v[0-9]+$/.test(version)) {
+    throw new Error(`Invalid model version "${version}".`);
+  }
+
+  const response = await dbApi.activateModelVersion(courseId, version);
+  const registry = parseCourseModelRegistry(response.model);
+  if (!registry) {
+    throw new Error('The backend returned an unreadable model registry.');
+  }
+  return {
+    version: response.version,
+    previousVersion: response.previousVersion ?? null,
+    unchanged: Boolean(response.unchanged),
+    registry,
+  };
+}

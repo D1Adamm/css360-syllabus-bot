@@ -203,11 +203,12 @@ completion callback idempotent instead of a source of `v2`, `v3`, …
 - `status = 'ready'` means a usable adapter exists somewhere.
 - `deployment = 'online'` means the version has been published: chosen to
   serve. **This is what inference resolves.** A newly registered version is
-  `ready` and `offline` until an operator publishes it deliberately — today
-  with `promote_qlora_adapter.sh` on Tillicum, which also copies the adapter
-  into the GPU fallback's serving tree. On the VM the version must also be
-  installed and mapped (`FINETUNED_OLLAMA_MODELS`), which lives outside the
-  database.
+  `ready` and `offline` until an administrator activates it (Admin → Models),
+  which first confirms the fine-tuned service can serve it — installed and
+  mapped (`FINETUNED_OLLAMA_MODELS`, outside the database). Registration
+  refuses `online`. Tillicum's `promote_qlora_adapter.sh` can also set it, as
+  the legacy path. Every activation is recorded in `admin_actions` as
+  `model.activate`.
 - Whether the Tillicum fallback is running *right now* is `serving_sessions`,
   not this column.
 

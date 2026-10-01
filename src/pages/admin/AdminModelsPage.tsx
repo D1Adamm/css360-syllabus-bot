@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Button } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SectionHeader } from '../../components/ui/SectionHeader';
@@ -9,6 +11,7 @@ import { useCourses } from '../../hooks/useCourses';
 import { fetchFineTunedHealth, type FineTunedHealth } from '../../lib/adminApi';
 import { formatCourseHeading } from '../../lib/courseLabels';
 import {
+  activateCourseModelVersion,
   fetchCourseModel,
   getCurrentVersion,
   sortVersionsNewestFirst,
@@ -58,9 +61,52 @@ function deploymentTone(version: CourseModelVersion) {
   }
 }
 
+/**
+ * The version a course's fine-tuned answers use: the activated one.
+ *
+ * Mirrors the backend's rule — the highest `online` version. When none is
+ * online the backend currently falls back to `currentVersion`; that fallback
+ * is shown as such rather than presented as an activation.
+ */
+function activeVersion(registry: CourseModelRegistry): string | null {
+  const online = Object.values(registry.versions)
+    .filter((version) => version.deployment === 'online')
+    .map((version) => version.version)
+    .sort((left, right) => Number(left.slice(1)) - Number(right.slice(1)));
+  return online.length > 0 ? online[online.length - 1]! : null;
+}
+
+/**
+ * The versions the fine-tuned service says it can serve for a course, or null
+ * when its health is not known. A hint only: the backend asks the service
+ * again before activating anything.
+ */
+function servableVersions(
+  health: FineTunedHealth | null,
+  courseId: string,
+): string[] | null {
+  if (!health) {
+    return null;
+  }
+  const entry = (health.courses ?? []).find((course) => course.courseId === courseId);
+  return entry?.versions ?? [];
+}
+
+interface PendingActivation {
+  courseId: string;
+  name: string;
+  version: string;
+  previous: string | null;
+}
+
 export function AdminModelsPage() {
   const { state: courses } = useCourses();
   const [rows, setRows] = useState<CourseRegistryRow[] | null>(null);
+  const [pending, setPending] = useState<PendingActivation | null>(null);
+  const [activating, setActivating] = useState<string | null>(null);
+  const [messages, setMessages] = useState<
+    Record<string, { text: string; error: boolean }>
+  >({});
 
   const [health, setHealth] = useState<FineTunedHealth | null>(null);
   const [healthFailed, setHealthFailed] = useState(false);
@@ -123,6 +169,50 @@ export function AdminModelsPage() {
     };
   }, [courses]);
 
+  /**
+   * Activates after confirmation. The backend checks the fine-tuned service
+   * first and writes nothing on refusal; its explanation is shown as is.
+   */
+  async function activate(target: PendingActivation) {
+    setPending(null);
+    setActivating(target.courseId);
+    setMessages((current) => {
+      const next = { ...current };
+      delete next[target.courseId];
+      return next;
+    });
+
+    try {
+      const result = await activateCourseModelVersion(target.courseId, target.version);
+      setRows((current) =>
+        (current ?? []).map((row) =>
+          row.courseId === target.courseId ? { ...row, registry: result.registry } : row,
+        ),
+      );
+      setMessages((current) => ({
+        ...current,
+        [target.courseId]: {
+          text: result.unchanged
+            ? `${result.version} was already active.`
+            : `${result.version} is now active${
+                result.previousVersion ? `, replacing ${result.previousVersion}` : ''
+              }.`,
+          error: false,
+        },
+      }));
+    } catch (error) {
+      setMessages((current) => ({
+        ...current,
+        [target.courseId]: {
+          text: error instanceof Error ? error.message : 'Activation failed.',
+          error: true,
+        },
+      }));
+    } finally {
+      setActivating(null);
+    }
+  }
+
   const registered = rows?.filter((row) => row.registry) ?? [];
   const unregistered = rows?.filter((row) => !row.registry && !row.failed) ?? [];
 
@@ -156,6 +246,9 @@ export function AdminModelsPage() {
               const registry = row.registry!;
               const current = getCurrentVersion(registry);
               const history = sortVersionsNewestFirst(registry.versions);
+              const active = activeVersion(registry);
+              const servable = servableVersions(health, row.courseId);
+              const message = messages[row.courseId];
 
               return (
                 <li key={row.courseId} className="admin-row admin-row--stacked">
@@ -179,22 +272,90 @@ export function AdminModelsPage() {
                       </p>
                     )}
 
-                    {history.length > 1 && (
-                      <details className="admin-probe">
-                        <summary>Version history ({history.length})</summary>
-                        <ul className="admin-chunks">
-                          {history.map((version) => (
-                            <li key={version.version}>
-                              <code>{version.version}</code> · {version.status} ·{' '}
-                              {version.trainingExampleCount} train examples ·{' '}
-                              {new Date(version.createdAt).toLocaleDateString()}
-                              {version.version === registry.currentVersion
-                                ? ' · current'
-                                : ''}
-                            </li>
-                          ))}
-                        </ul>
-                      </details>
+                    <p className="ui-text-xs ui-text-muted">
+                      {active ? (
+                        <>
+                          Active <code>{active}</code>: students&apos; Fine-Tuned answers
+                          use this version.
+                        </>
+                      ) : (
+                        <>
+                          No activated version. Until one is activated, students are
+                          answered by the newest registered version
+                          {registry.currentVersion ? (
+                            <>
+                              {' '}
+                              (<code>{registry.currentVersion}</code>)
+                            </>
+                          ) : null}
+                          .
+                        </>
+                      )}
+                    </p>
+
+                    <ul
+                      className="admin-chunks"
+                      aria-label={`Model versions for ${row.courseId}`}
+                    >
+                      {history.map((version) => {
+                        const isActive = version.version === active;
+                        const onVm = servable === null
+                          ? 'VM: unknown'
+                          : servable.includes(version.version)
+                            ? 'VM: servable'
+                            : 'VM: not mapped';
+                        const canActivate = version.status === 'ready' && !isActive;
+                        const blocked =
+                          servable !== null && !servable.includes(version.version);
+                        return (
+                          <li key={version.version}>
+                            <code>{version.version}</code> · {version.status} ·{' '}
+                            {isActive ? 'active' : 'not active'} · {onVm} ·{' '}
+                            {version.trainingExampleCount} train examples ·{' '}
+                            {new Date(version.createdAt).toLocaleDateString()}
+                            {version.version === registry.currentVersion
+                              ? ' · newest'
+                              : ''}
+                            {canActivate && (
+                              <>
+                                {' '}
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    setPending({
+                                      courseId: row.courseId,
+                                      name: row.name,
+                                      version: version.version,
+                                      previous: active,
+                                    })
+                                  }
+                                  loading={activating === row.courseId}
+                                  loadingLabel="Activating…"
+                                  disabled={activating !== null || blocked}
+                                  aria-label={`Activate ${version.version} for ${row.courseId}`}
+                                  title={
+                                    blocked
+                                      ? 'The fine-tuned service cannot serve this version. Install and map it on the VM first.'
+                                      : 'Make this the version students are answered by.'
+                                  }
+                                >
+                                  Activate
+                                </Button>
+                              </>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    {message && (
+                      <p
+                        className={`ui-text-xs ${message.error ? 'admin-row__error' : 'ui-text-muted'}`}
+                        role={message.error ? 'alert' : 'status'}
+                      >
+                        {message.text}
+                      </p>
                     )}
                   </div>
 
@@ -288,19 +449,47 @@ export function AdminModelsPage() {
         )}
       </section>
 
-      <Callout tone="info" title="Registered is not published">
+      <Callout tone="info" title="Registered is not active">
         A successful training run registers its version automatically, as{' '}
-        <code>ready</code> and <code>not published</code>. Publishing it is a
-        separate, deliberate step —{' '}
-        <code>training/promote_qlora_adapter.sh</code> on Tillicum, which records
-        the publication here — and until then inference keeps answering from the
-        previously published version. Install and map the new version on the VM
-        (<code>scripts/install_finetuned_adapter.py</code>,{' '}
-        <code>scripts/aiswe_finetuned.sh set-mapping</code>) before publishing
-        it, or its fine-tuned answers fail.{' '}
+        <code>ready</code> and not active; students keep the active version.
+        To switch them, install and map the new version on the VM (
+        <code>scripts/install_finetuned_adapter.py</code>, then{' '}
+        <code>scripts/aiswe_finetuned.sh set-mapping</code> and restart), then
+        press <strong>Activate</strong> above. Activation asks the fine-tuned
+        service first and refuses a version it cannot serve. To roll back,
+        activate the earlier version. Tillicum&apos;s{' '}
+        <code>training/promote_qlora_adapter.sh</code> still records a
+        publication too, as the legacy path.{' '}
         <code>scripts/register_course_model.py</code> remains as a recovery tool
         for an artifact that was produced but never reported.
       </Callout>
+
+      <ConfirmDialog
+        open={pending !== null}
+        title={pending ? `Activate ${pending.version} for ${pending.name}?` : 'Activate'}
+        description={
+          pending
+            ? `Students' Fine-Tuned and Fine-Tuned + RAG answers for this course ` +
+              `switch to ${pending.version} immediately` +
+              (pending.previous ? `, replacing ${pending.previous}` : '') +
+              '. The fine-tuned service is checked first, and nothing changes if ' +
+              'it cannot serve this version.' +
+              (pending.previous
+                ? ` To roll back, activate ${pending.previous} again.`
+                : '')
+            : undefined
+        }
+        confirmLabel="Activate"
+        cancelLabel="Cancel"
+        tone="default"
+        busy={activating !== null}
+        onConfirm={() => {
+          if (pending) {
+            void activate(pending);
+          }
+        }}
+        onCancel={() => setPending(null)}
+      />
     </div>
   );
 }

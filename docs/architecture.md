@@ -282,18 +282,25 @@ A successful training run registers a new version and moves `current_version` to
 it. It does **not** change what answers questions: serving it is a deliberate
 operator action. On the VM that is two steps, in this order — install and map
 the version (`scripts/install_finetuned_adapter.py`, then
-`scripts/aiswe_finetuned.sh set-mapping`), then record its publication. Today
-the publication is recorded by `training/promote_qlora_adapter.sh` on Tillicum,
-which also copies the adapter into the GPU fallback's serving tree and reports
-back only after that copy has landed and been validated; only then does
-inference switch. Publishing a version the VM does not map makes that course's
-fine-tuned answers fail until it is mapped.
+`scripts/aiswe_finetuned.sh set-mapping`), then **Activate** it in Admin →
+Models (`POST /api/db/courses/{id}/model-versions/{v}/activate`, administrators
+only). Activation asks the fine-tuned service's `/health` whether it can serve
+that exact course and version, and writes nothing unless it can; only then is
+the version published and inference switches. Rollback is activating the older
+version, under the same check. Registration can never do this: a training run
+lands `offline`, and the registration route refuses `deployment=online`.
 
-Resolution therefore prefers the published version, falling back to
-`current_version` only for a course that has never had a publication reported —
-which keeps courses from before publication reporting answering exactly as they
-did. The flip side: for such a course, registering a new version moves
-fine-tuned requests to it immediately.
+Tillicum's `training/promote_qlora_adapter.sh` still records a publication too —
+the legacy path, unchanged and not checked against the VM — after copying the
+adapter into the GPU fallback's serving tree.
+
+Resolution prefers the published version, and for now still falls back to
+`current_version` for a course that has never had a publication recorded, so
+courses served that way before activation existed keep answering. For such a
+course, registering a new version moves fine-tuned requests to it immediately;
+activating the version it serves closes that gap. The fallback is to be removed
+once every served course has an activated version
+([remaining-work.md](remaining-work.md#known-issues)).
 
 Answering a question involves none of the publication machinery: the backend
 reads the published version from PostgreSQL and asks the VM-local service, with
@@ -314,7 +321,7 @@ Slurm trains
 the job reports its own completion      → succeeded, model version registered
                                         → model_requests: ready
 operator installs + maps it on the VM   → Ollama model, FINETUNED_OLLAMA_MODELS entry
-operator publishes deliberately         → deployment: online; inference switches
+admin activates it (Admin → Models)     → service checked; deployment: online; inference switches
 ```
 
 Properties that matter:

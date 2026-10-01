@@ -11,9 +11,9 @@ endpoints and nothing else.
 
 Everything after the login is meant to be one command.
 
-What Tillicum is for now: **queued QLoRA training**, **recording a
-publication** (which version a course serves), and an **emergency inference
-fallback**. Answering a student's question does not touch it — fine-tuned
+What Tillicum is for now: **queued QLoRA training**, a **legacy publication
+report** (activation in Admin → Models is the normal way to choose which
+version a course serves), and an **emergency inference fallback**. Answering a student's question does not touch it — fine-tuned
 inference runs on the UWB VM
 ([deployment.md](deployment.md#fine-tuned-inference-on-the-vm)). Moving training
 off Tillicum as well is future work
@@ -172,12 +172,13 @@ the GPU fallback's serving tree:
 <SERVING_ROOT>/<courseId>/current.json         which version is current
 ```
 
-**On the VM first.** Install and map the version
-(`scripts/install_finetuned_adapter.py`, `scripts/aiswe_finetuned.sh
-set-mapping`, `restart`; see
-[deployment.md](deployment.md#installing-a-completed-adapter)) *before*
-publishing it. Publishing a version the VM does not map makes that course's
-fine-tuned answers fail until it is mapped.
+**Normally, activate instead.** Choosing which version students get is done
+on the VM side: install and map it, then **Activate** it in Admin → Models,
+which checks the fine-tuned service first (see
+[deployment.md](deployment.md#making-a-new-version-the-one-students-get)).
+Publishing from here is the legacy path. It is not checked against the VM, so
+install and map the version first; publishing a version the VM does not map
+makes that course's fine-tuned answers fail until it is mapped.
 
 Publishing an adapter for a course:
 
@@ -507,8 +508,8 @@ Concrete evidence from the production run that first exercised all of this is in
 ### Stage A — serve a model the course already has
 
 If a course already has a registered version, per-course serving can be proven
-against it without spending another GPU allocation. Serving is on the UWB VM;
-Tillicum is involved only to record the publication.
+against it without spending another GPU allocation. Serving is on the UWB VM,
+and so is the activation.
 
 On the UWB VM, install and map the version (see
 [deployment.md](deployment.md#installing-a-completed-adapter)), then:
@@ -517,11 +518,8 @@ On the UWB VM, install and map the version (see
 ./scripts/aiswe_finetuned.sh restart && ./scripts/aiswe_finetuned.sh check
 ```
 
-On Tillicum, publish it:
-
-```bash
-./training/promote_qlora_adapter.sh --course <courseId> --version <version> --run-id <runId> /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<run>-full/adapter
-```
+Then **Activate** it in Admin → Models. (The legacy alternative is publishing
+it from Tillicum with `promote_qlora_adapter.sh`.)
 
 Back on the VM, check every condition for that course through the backend as
 an administrator. The direct and backend generations must echo the course and
@@ -544,10 +542,10 @@ so the classroom-path checks go through the verifier above rather than bare
 
 ### Stage B — the automated training lifecycle
 
-Only after Stage A works, and only once the course's published version is
-recorded as `deployment: online` — Admin → Models shows it as published. If it
-does not, re-run the Stage A publish command — it is idempotent — so inference
-has a published version to hold on to while the new one trains.
+Only after Stage A works, and only once the course has an activated version —
+Admin → Models shows "Active vN". If it shows "No activated version", activate
+the version the course already serves first, so inference has an explicit
+version to hold on to while the new one trains.
 
 1. Admin → Training: **Prepare training data**, then **Queue training** (or
    **Train new version** for a course that has already finished a run).
@@ -568,11 +566,7 @@ has a version. Nothing overwrites an existing version.
 `ready` / `offline`. Check it with the verifier from Stage A: the backend
 generations still name the published version even though the registry's
 current version has moved. Then install and map the new version on the VM
-(keeping the old mapping), restart, and publish it deliberately:
-
-```bash
-./training/promote_qlora_adapter.sh --course <courseId> --version <newVersion> --run-id <newRunId> /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<new-run>-full/adapter
-```
+(keeping the old mapping), restart, and **Activate** it in Admin → Models.
 
 Re-run the verifier. It now names the new version, and the old one remains
 registered and `ready` with `deployment: offline`.
