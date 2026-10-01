@@ -8,6 +8,14 @@
         --course css-350-spring-2026-n3h9 --version v1 \\
         --adapter ~/model_artifacts/css350-v1/adapter [--smoke] [--dry-run]
 
+    # a newer course id has no derivable tag, and the VM converts offline from
+    # the locally cached base model rather than from a Hugging Face model id:
+    backend/.venv/bin/python scripts/install_finetuned_adapter.py \\
+        --course css360d-fall-2026-q0ne --version v1 --tag css360d-v1 \\
+        --adapter <adapter-dir> \\
+        --base-model-path ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct/snapshots/<snapshot> \\
+        --smoke --dry-run
+
     # a GGUF converted elsewhere (e.g. on Tillicum) skips the conversion:
     backend/.venv/bin/python scripts/install_finetuned_adapter.py \\
         --course css-350-spring-2026-n3h9 --version v1 --gguf ~/model_artifacts/css350-v1/css350-v1-lora.gguf
@@ -539,14 +547,14 @@ def build_parser() -> argparse.ArgumentParser:
     source = parser.add_argument_group("source (one of)")
     source.add_argument("--adapter", help="trained PEFT adapter directory (adapter_config.json + weights)")
     source.add_argument("--gguf", help="an already-converted LoRA GGUF; skips conversion")
-    parser.add_argument("--tag", help=f"Ollama model name (default: <course>-ft-<version>, e.g. css350-ft-v1)")
+    parser.add_argument("--tag", help="Ollama model name (default, legacy course ids only: <course>-ft-<version>, e.g. css350-ft-v1; newer ids such as css360d-fall-2026-q0ne must pass it, e.g. css360d-v1)")
     parser.add_argument("--artifacts-root", default=DEFAULT_ARTIFACTS_ROOT, help=f"where GGUF, Modelfile and record go (default {DEFAULT_ARTIFACTS_ROOT}/<course>/<version>/)")
     conv = parser.add_argument_group("conversion")
     conv.add_argument("--converter", help=f"path to llama.cpp's {CONVERTER_NAME}")
     conv.add_argument("--llama-cpp-dir", help=f"llama.cpp checkout containing {CONVERTER_NAME} (also $LLAMA_CPP_DIR; default ~/model_artifacts/llama.cpp, then ~/llama.cpp)")
     conv.add_argument("--converter-python", help="interpreter with gguf/torch/safetensors (default: the checkout's .venv, then $CPU_TRAINING_VENV, then this one)")
-    conv.add_argument("--base-model-path", help="local Hugging Face directory of the base model for the converter (--base)")
-    conv.add_argument("--base-model-id", default=DEFAULT_BASE_MODEL_ID, help=f"Hugging Face id the adapter was trained on (default {DEFAULT_BASE_MODEL_ID})")
+    conv.add_argument("--base-model-path", help="local Hugging Face snapshot directory of the base model, passed to the converter as --base; use this on the VM so conversion needs no Hugging Face access")
+    conv.add_argument("--base-model-id", default=DEFAULT_BASE_MODEL_ID, help=f"Hugging Face id the adapter was trained on (default {DEFAULT_BASE_MODEL_ID}); without --base-model-path it is passed to the converter, which then contacts Hugging Face")
     conv.add_argument("--outtype", default="f16", choices=("f16", "f32", "bf16", "q8_0", "auto"), help="GGUF tensor type (default f16)")
     ollama = parser.add_argument_group("ollama")
     ollama.add_argument("--ollama-base", default=DEFAULT_OLLAMA_BASE, help=f"Modelfile FROM line (default {DEFAULT_OLLAMA_BASE})")

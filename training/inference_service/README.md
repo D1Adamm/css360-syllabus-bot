@@ -270,7 +270,7 @@ prompt to the same remote fine-tuned service as Fine-Tuned.
 The Slurm compute hostname is **not** stable. Helper scripts discover it from
 `squeue` and pass it into the VM tunnel command. Do not hardcode nodes like `g001`.
 
-## Quick start (admin)
+## Quick start (admin, Tillicum fallback)
 
 ### 1) Tillicum — start or reuse the GPU job
 
@@ -334,13 +334,14 @@ On Tillicum (stops GPU billing for this job):
 ./training/stop_finetuned_service.sh
 ```
 
-Closing the tunnel disables Fine-Tuned and Fine-Tuned + RAG on the website, but
-leaves Base and RAG unaffected. Cancelling the Slurm job stops the GPU allocation.
+While the fallback is in use, closing the tunnel disables Fine-Tuned and
+Fine-Tuned + RAG on the website until `./scripts/aiswe_finetuned.sh start`
+returns them to VM-local serving; Base and RAG are unaffected. Cancelling the Slurm job stops the GPU allocation.
 Use `hyakusage` on Tillicum to inspect GPU usage / cost / credits.
 
-## Important limitations
+## Important limitations (Tillicum fallback)
 
-- **Duo is still manual** for establishing the SSH tunnel. Helpers never store UW passwords or automate interactive auth. This is the one remaining manual step in the serving path, and it is manual because opening the tunnel authenticates to UW.
+- **Duo is still manual** for establishing the SSH tunnel. Helpers never store UW passwords or automate interactive auth. This applies only to the fallback: the normal VM-local serving path has no manual step.
 - A session has a **bounded wall time**, and the bound comes from the QOS rather than from preference. Under the default `debug` QOS that is 1 hour. Asking for longer is refused before submission, because Slurm would otherwise accept the job and leave it `PENDING` forever with `QOSMaxWallDurationPerJobLimit` — which looks like a busy cluster rather than a request that can never be satisfied. For a longer sitting, submit under a QOS that permits it: `SERVICE_QOS=normal ./training/start_finetuned_service.sh --hours 3`. This is intentional workshop/research infrastructure, not permanent production GPU hosting.
 - A course with no published adapter gets a clear 409, not another course's answer.
 - The website does **not** submit GPU jobs automatically.

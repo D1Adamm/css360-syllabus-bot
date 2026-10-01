@@ -8,8 +8,12 @@ Training is per course throughout. Every job, output directory, adapter, and
 registered version is keyed by `courseId`; nothing here is specific to any one
 course.
 
-This is the **canonical** training workflow. Inference deployment is separate
-(see `training/inference_service/README.md`). The full operational reference is
+This is the **canonical** training workflow, and Tillicum is where it runs
+today — not where it is meant to stay: moving training off Tillicum is future
+work ([remaining-work.md](../docs/remaining-work.md#6-fine-tuned-inference-without-tillicum)).
+Inference is separate and already runs on the UWB VM (see
+[docs/deployment.md](../docs/deployment.md#fine-tuned-inference-on-the-vm)
+and `training/inference_service/README.md`). The full operational reference is
 [docs/tillicum-operations.md](../docs/tillicum-operations.md).
 
 Exports are **gitignored**, and no longer need to be synced by hand: the queue
@@ -75,7 +79,7 @@ Automation writes versioned outputs under:
 /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<runId>-{smoke|full}/
 ```
 
-including `adapter/`. This does **not** overwrite the live inference adapter.
+including `adapter/`. This does **not** overwrite any published adapter.
 
 ### B2) Tillicum — the training queue
 
@@ -139,8 +143,11 @@ export TRAINING_WORKER_TOKEN=…   # same value as the backend's
 
 Registering a model and serving it are separate decisions. A finished run
 registers a version automatically with `status = ready` and
-`deployment = offline`; publishing its adapter so a serving session can load it
-is this step, and it is deliberate.
+`deployment = offline`. Publishing is this step, and it is deliberate: it
+records the version as the one the course serves (`deployment = online`) and
+copies the adapter into the GPU fallback's serving tree. Install and map the
+version on the VM first (section D); publishing a version the VM does not map
+makes that course's fine-tuned answers fail until it is mapped.
 
 ```bash
 ./training/promote_qlora_adapter.sh \
@@ -160,14 +167,17 @@ works when `--course` is omitted, but the per-course service does not read it:
 that path has no course in it, so publishing one course used to replace whatever
 every other course was being served with.
 
-Publication does **not** start or restart inference.
+Publication does **not** start or restart anything; the next fine-tuned
+request simply asks for the newly published version.
 
 ### D) Serving (separate, and on the VM)
 
 Production inference runs on the UWB VM, not on Tillicum: convert the adapter
 and build its Ollama model with `scripts/install_finetuned_adapter.py`, map it
 with `scripts/aiswe_finetuned.sh set-mapping`, restart the `aiswe-finetuned`
-unit. See [docs/deployment.md](../docs/deployment.md#fine-tuned-inference-on-the-vm).
+unit. On the VM pass `--base-model-path` (the local Hugging Face snapshot) and,
+for course ids outside the legacy `css-360-…` form, `--tag`. See
+[docs/deployment.md](../docs/deployment.md#installing-a-completed-adapter).
 
 The Tillicum GPU service is the emergency fallback only:
 
@@ -235,7 +245,7 @@ Raw `sbatch training/train.slurm` / `sbatch training/smoke.slurm` without it fai
 immediately (before training). They also refuse any path under the live tree
 `.../training_outputs/css-360-qlora/`.
 
-Only `./training/promote_qlora_adapter.sh` writes the live inference adapter.
+Only `./training/promote_qlora_adapter.sh` writes a published adapter.
 
 Compare (read-only evaluation against an adapter) may still be submitted as:
 

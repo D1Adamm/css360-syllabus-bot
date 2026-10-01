@@ -29,9 +29,10 @@ FastAPI (uvicorn, 127.0.0.1:8001)
   │                             (llama3.2:3b + that course's adapter)
   │
   └──► Tillicum
-        ├─ fine-tuned inference   fallback: the same :9001 as the local end of
-        │                         an SSH tunnel → compute node :8001 → GPU
-        └─ training queue         cluster → outbound HTTPS → /api/training-queue
+        ├─ training queue,        cluster → outbound HTTPS → /api/training-queue
+        │  publication reports
+        └─ fine-tuned inference   emergency fallback only: the same :9001 as the
+                                  local end of an SSH tunnel → compute node → GPU
 ```
 
 Two boundaries do the structural work:
@@ -257,7 +258,10 @@ tunnel script refuses while the unit is active, and the unit refuses while the
 tunnel owns the port.
 
 The fine-tuned paths share the VM's Ollama process with Base and RAG, so on a
-CPU host they queue behind one another rather than overlapping.
+CPU host they queue behind one another rather than overlapping — behind two
+locks (the backend's and the fine-tuned service's) that do not coordinate. That
+is the open concurrency issue in
+[remaining-work.md](remaining-work.md#7-serving-and-concurrency-findings-2026-09-30-redesign-deferred).
 
 ---
 
@@ -269,23 +273,32 @@ real outage, so they are kept apart deliberately.
 | Fact | Where it lives | Means |
 | --- | --- | --- |
 | **Registered / ready** | `course_model_versions.status = 'ready'` | A usable adapter exists somewhere |
-| **Published** | `course_model_versions.deployment = 'online'` | The adapter is in the cluster's serving tree — **this is what inference resolves** |
-| **Actively served** | `serving_sessions` | A GPU session is running right now |
+| **Published** | `course_model_versions.deployment = 'online'` | The version chosen to serve — **this is what inference resolves** |
+| **Servable on the VM** | `FINETUNED_OLLAMA_MODELS` in `~/.config/aiswe/finetuned.env`, and the Ollama model it names | The VM-local service can answer that course and version. Checked by its `/health` and by `verify_finetuned_production.py` |
+| **Fallback session** | `serving_sessions` | The Tillicum GPU fallback is running right now. Normally none; the VM-local service records nothing here |
 | **Newest** | `course_models.current_version` | The most recent registered version — what a professor is shown |
 
 A successful training run registers a new version and moves `current_version` to
-it. It does **not** change what answers questions, because the adapter is not on
-the cluster until somebody publishes it. Publishing is a deliberate operator
-action that reports itself back to the backend after the copy has landed and been
-validated; only then does inference switch.
+it. It does **not** change what answers questions: serving it is a deliberate
+operator action. On the VM that is two steps, in this order — install and map
+the version (`scripts/install_finetuned_adapter.py`, then
+`scripts/aiswe_finetuned.sh set-mapping`), then record its publication. Today
+the publication is recorded by `training/promote_qlora_adapter.sh` on Tillicum,
+which also copies the adapter into the GPU fallback's serving tree and reports
+back only after that copy has landed and been validated; only then does
+inference switch. Publishing a version the VM does not map makes that course's
+fine-tuned answers fail until it is mapped.
 
 Resolution therefore prefers the published version, falling back to
 `current_version` only for a course that has never had a publication reported —
 which keeps courses from before publication reporting answering exactly as they
-did.
+did. The flip side: for such a course, registering a new version moves
+fine-tuned requests to it immediately.
 
-A GPU session ending does not unpublish anything. The adapter is still on the
-filesystem and the next session loads it.
+Answering a question involves none of the publication machinery: the backend
+reads the published version from PostgreSQL and asks the VM-local service, with
+no Tillicum allocation, serving tree, session or tunnel. A fallback session
+ending does not unpublish anything either.
 
 ---
 
@@ -300,6 +313,7 @@ operator runs one command on Tillicum   claimed → dataset downloaded and verif
 Slurm trains
 the job reports its own completion      → succeeded, model version registered
                                         → model_requests: ready
+operator installs + maps it on the VM   → Ollama model, FINETUNED_OLLAMA_MODELS entry
 operator publishes deliberately         → deployment: online; inference switches
 ```
 
@@ -333,7 +347,9 @@ Properties that matter:
 | Embedding indexes | VM local disk | `backend/data/indexes/{courseId}.json`. Retrieval reads the file; `courses.chunk_count` mirrors its size and is rewritten by `reindex_course.py` |
 | Prepared training datasets | VM local disk | `data/exports/{courseId}/`, fetched by the cluster |
 | Adapters and training runs | Tillicum GPFS | The registry records references, never absolute paths |
-| Published adapters | Tillicum GPFS | `serving/{courseId}/{version}/adapter` |
+| Published adapters (fallback serving tree) | Tillicum GPFS | `serving/{courseId}/{version}/adapter`, read only by the GPU fallback |
+| Served fine-tuned models | VM | Ollama models (e.g. `css360d-v1:latest`), built from `~/model_artifacts/{courseId}/{version}/` (GGUF, `Modelfile`, `install-record.json`) |
+| Course → Ollama model mapping | VM | `FINETUNED_OLLAMA_MODELS` in `~/.config/aiswe/finetuned.env`, read by `aiswe-finetuned` at start |
 | Run id ↔ job id ↔ output dir, undelivered reports | Tillicum GPFS | `training/state/`, machine-local |
 
 Artifact references stored in the database are deliberately **relative**. An

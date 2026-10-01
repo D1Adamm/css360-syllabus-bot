@@ -6,10 +6,11 @@ Everything here is run by hand. There is no CI, no automated deploy, and nothing
 in this repository triggers a deployment.
 
 Values below reflect the deployed setup as it is represented in this repository —
-the systemd unit name and backend port come from
-`scripts/start_finetuned_tunnel.sh`, the Nginx document root and the SELinux
-relabel from the publish step that has been used against the VM. Anything not
-represented anywhere in the repository is not documented here.
+the backend's systemd unit name and port come from `scripts/aiswe_finetuned.sh`
+and `scripts/start_finetuned_tunnel.sh`, the fine-tuned unit from
+`training/inference_service/aiswe-finetuned.service`, the Nginx document root
+and the SELinux relabel from the publish step that has been used against the
+VM. Anything not represented anywhere in the repository is not documented here.
 
 ---
 
@@ -281,19 +282,43 @@ version's `artifact_ref` names. One command validates the adapter, converts it
 to GGUF, builds the versioned Ollama model, verifies the tag exists, and prints
 the mapping entry. It never registers, publishes or promotes anything.
 
+The base model must come from the VM's local Hugging Face snapshot. With only
+`--base-model-id` (the default) the installer hands that id to llama.cpp's
+converter, which then tries to reach Hugging Face — even when the model is
+fully cached — and the conversion fails on the VM. Pass the snapshot directory
+with `--base-model-path` instead; the installer does not search the cache for
+you, because picking a snapshot (several revisions, a partial download, a
+non-default `HF_HOME`) is a decision an operator should see:
+
 ```bash
-backend/.venv/bin/python scripts/install_finetuned_adapter.py --course <courseId> --version <vN> --adapter <adapter-dir> --smoke --dry-run
+BASE_SNAPSHOT=~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct/snapshots/$(cat ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct/refs/main)
 ```
+```bash
+ls "$BASE_SNAPSHOT"/config.json
+```
+```bash
+backend/.venv/bin/python scripts/install_finetuned_adapter.py --course <courseId> --version <vN> --tag <tag> --adapter <adapter-dir> --base-model-path "$BASE_SNAPSHOT" --smoke --dry-run
+```
+
+**`--tag`** is the Ollama model name, and Ollama names are shared by every
+course. For a legacy course id (`css-360-winter-2026-a7rp`) it defaults to
+`css360-ft-<vN>`. A newer id (`css360d-fall-2026-q0ne`) has no derivable short
+name and must pass one — production uses `css360d-v1` and `css360e-v1`. Choose
+a tag unique to the course and version: `--replace` rebuilds whatever model
+already has that name, whichever course it serves.
 
 Drop `--dry-run` to run it. Conversion uses llama.cpp's
 `convert_lora_to_gguf.py` from the checkout at `~/model_artifacts/llama.cpp`
-(or `--llama-cpp-dir`) under that checkout's own `.venv`, which holds `gguf`,
-`torch` and `safetensors`; the base model resolves from the Hugging Face cache. If the VM
-cannot convert, convert on Tillicum and pass the result with `--gguf <file>`;
-the GGUF and the Ollama model always end up on the VM. An existing GGUF or tag
-for the same course and version is refused without `--replace`. Artifacts land
-under `~/model_artifacts/<courseId>/<vN>/` with an `install-record.json`
-(hashes, converter flags, Ollama digest).
+(or `--llama-cpp-dir`) under that checkout's own `.venv/bin/python`, which holds
+`gguf`, `torch`, `transformers` and `safetensors`. The installer runs that
+interpreter by its venv path rather than the system Python it links to, so the
+venv's packages are used; `--converter-python` overrides it. The dry run prints
+the conversion command, and its first word should be that `.venv/bin/python`.
+If the VM cannot convert, convert on Tillicum and pass the result with
+`--gguf <file>`; the GGUF and the Ollama model always end up on the VM. An
+existing GGUF or tag for the same course and version is refused without
+`--replace`. Artifacts land under `~/model_artifacts/<courseId>/<vN>/` with an
+`install-record.json` (hashes, converter flags, Ollama digest).
 
 ### Updating the mapping
 
@@ -317,12 +342,20 @@ unit's preflight refuses to start on a malformed mapping.
 AISWE_VERIFY_PASSWORD='<admin password>' backend/.venv/bin/python scripts/verify_finetuned_production.py --admin-email <admin email>
 ```
 
+Without `--course` it checks CSS 350 and CSS 360. Name other courses
+explicitly, once per course:
+
+```bash
+AISWE_VERIFY_PASSWORD='<admin password>' backend/.venv/bin/python scripts/verify_finetuned_production.py --admin-email <admin email> --course <courseId> --course <otherCourseId>
+```
+
 One PASS/FAIL/SKIP line per check, exit 1 on any FAIL: the unit is enabled and
 active, a python process (not `ssh`) owns port 9001, Ollama has every mapped
 model, `/health` reports `status=ok` and `adapterLoaded=true` with every
 mapped course and version, direct `/generate` answers for each mapped course
 with the right course and version, and, through the backend as an
-administrator, Fine-Tuned, Fine-Tuned + RAG, Base and RAG for both courses.
+administrator, Fine-Tuned, Fine-Tuned + RAG, Base and RAG for each course
+checked.
 Without credentials the backend checks are SKIP, never PASS; the password is
 read from the environment (or a prompt), never stored, and the session is
 logged out. No answer text is printed. This is the check to run after a
@@ -340,11 +373,23 @@ then two requests each at concurrency 1 and 2. Concurrency 4 needs
 process and the service serialises generations, so concurrency measures
 queueing; the second student waits for the first.
 
+### Making a new version the one students get
+
+Installing and mapping a version makes it *servable*; the backend still sends
+the course's *published* version. Install and map first, restart, then record
+the publication — today with `training/promote_qlora_adapter.sh` on Tillicum
+(see [tillicum-operations.md](tillicum-operations.md#per-course-serving)). In
+the other order, the backend asks the VM for a version it does not map and
+that course's fine-tuned answers fail until it is mapped. A course that has
+never had a publication recorded is served its newest registered version
+instead, so for such a course a new version starts being requested as soon as
+training registers it.
+
 ### Tillicum fallback, and back again
 
 The Tillicum GPU service is kept for emergencies and claims the same local
-port through an SSH tunnel, so the two never run together. Switching is
-explicit in both directions:
+port through an SSH tunnel, so the two never run together. Normal operation
+needs neither. Switching is explicit in both directions:
 
 ```bash
 ./scripts/aiswe_finetuned.sh stop && ./scripts/start_finetuned_tunnel.sh --from-backend    # to the fallback (Duo prompt)
@@ -430,11 +475,11 @@ git -C ~/css360-syllabus-bot checkout <previous-commit> && npm ci && npm run bui
 then republish and restart as above.
 
 **Model versions do not roll back with code.** They are data. To return a course
-to an earlier adapter, publish that version again on Tillicum — publication is
-idempotent and moves the previously published version to `offline` — and make
-sure the VM maps that version (`./scripts/aiswe_finetuned.sh set-mapping`),
-since the backend sends the published version and the VM refuses one it does
-not map:
+to an earlier adapter, first make sure the VM still maps that version
+(`./scripts/aiswe_finetuned.sh set-mapping`, then `restart`), since the backend
+sends the published version and the VM refuses one it does not map; then
+publish that version again on Tillicum — publication is idempotent and moves
+the previously published version to `offline`:
 
 ```bash
 ./training/promote_qlora_adapter.sh --course <courseId> --version <previousVersion> /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<run>-full/adapter

@@ -5,8 +5,14 @@ the production run that first exercised all of it.
 
 This is a **historical record**, not a runbook. It names specific courses, runs,
 Slurm jobs, and nodes because that is what makes it evidence. For instructions
-to follow, use [tillicum-operations.md](tillicum-operations.md), which is written
-with placeholders.
+to follow, use [deployment.md](deployment.md) and
+[tillicum-operations.md](tillicum-operations.md), which are written with
+placeholders.
+
+The serving observations before "VM-local fine-tuned serving" were made on the
+Tillicum GPU service, which is now only the emergency fallback. The VM path
+enforces the same properties (an unmapped course is a 409; version resolution
+is the backend's and did not change), but they were not re-observed separately.
 
 The value of keeping it: the next person to change any of this should know which
 properties were observed against real hardware rather than merely designed and
@@ -130,6 +136,31 @@ hand-written one (checkout `265a64d` plus the installer fix that followed).
   involved at any point. `journalctl --user` reports no journal on this VM,
   so the unit's preflight lines are not readable after the fact;
   `aiswe_finetuned.sh logs` falls back to the system journal's view.
+
+## CSS 360D and CSS 360E on the VM
+
+Recorded 2026-10-01. The first Fall 2026 courses, and the first with course ids
+outside the legacy `css-360-…` form.
+
+| Course | Course id | Version | Ollama model |
+| --- | --- | --- | --- |
+| CSS 360D | `css360d-fall-2026-q0ne` | `v1` | `css360d-v1:latest` |
+| CSS 360E | `css360e-autumn-2026-c08m` | `v1` | `css360e-v1:latest` |
+
+- Both are served on `aiswe` by the VM-local `aiswe-finetuned` unit on
+  `127.0.0.1:9001`. No Tillicum inference tunnel was open; Tillicum was used
+  for the QLoRA training runs only.
+- Both courses passed `scripts/verify_finetuned_production.py` with **25 of 25**
+  checks, including direct generation and, through the backend, Fine-Tuned,
+  Fine-Tuned + RAG, Base and RAG.
+- A browser Compare smoke test succeeded.
+- Installing them surfaced two installer bugs, fixed before the install
+  completed: the GGUF filename re-derived a legacy short course label and
+  refused the new ids even with `--tag` (merge `74a4711`), and the converter's
+  venv interpreter was resolved to `/usr/bin/python3.12`, losing the venv's
+  `transformers` (merge `6dadd09`). The conversion also needed
+  `--base-model-path` to the locally cached base snapshot; with only
+  `--base-model-id`, the converter tried to reach Hugging Face.
 
 ## What was not run
 

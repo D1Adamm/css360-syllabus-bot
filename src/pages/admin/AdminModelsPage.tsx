@@ -290,10 +290,14 @@ export function AdminModelsPage() {
 
       <Callout tone="info" title="Registered is not published">
         A successful training run registers its version automatically, as{' '}
-        <code>ready</code> and <code>not published</code>. Publishing it to the
-        cluster is a separate, deliberate step —{' '}
-        <code>training/promote_qlora_adapter.sh</code> — and until then inference
-        keeps answering from the previously published version.{' '}
+        <code>ready</code> and <code>not published</code>. Publishing it is a
+        separate, deliberate step —{' '}
+        <code>training/promote_qlora_adapter.sh</code> on Tillicum, which records
+        the publication here — and until then inference keeps answering from the
+        previously published version. Install and map the new version on the VM
+        (<code>scripts/install_finetuned_adapter.py</code>,{' '}
+        <code>scripts/aiswe_finetuned.sh set-mapping</code>) before publishing
+        it, or its fine-tuned answers fail.{' '}
         <code>scripts/register_course_model.py</code> remains as a recovery tool
         for an artifact that was produced but never reported.
       </Callout>

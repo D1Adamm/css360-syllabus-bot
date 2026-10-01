@@ -190,21 +190,27 @@ function flatten(courses: CourseRuns[]): JobRow[] {
   );
 }
 
+/*
+ * Only the Tillicum GPU fallback records a serving session. Fine-Tuned answers
+ * normally come from the VM-local `aiswe-finetuned` unit, which records none,
+ * so "no session" is the healthy resting state and must not read as "nothing
+ * is serving fine-tuned answers".
+ */
 function ServingSessionBanner({ session }: { session: ServingSession | null }) {
   if (!session || !session.live) {
     return (
-      <Callout tone="info" title="No fine-tuned service is running">
-        Ready models exist independently of whether anything is serving them.
-        Start a session on Tillicum with{' '}
-        <code>./training/start_finetuned_service.sh</code>, then open the tunnel
-        on the VM with <code>./scripts/start_finetuned_tunnel.sh --from-backend</code>.
+      <Callout tone="info" title="No Tillicum fallback session">
+        Fine-Tuned answers are served on the VM by the{' '}
+        <code>aiswe-finetuned</code> unit, which this banner does not track —
+        check it with <code>./scripts/aiswe_finetuned.sh check</code>. The
+        Tillicum GPU service is an emergency fallback and is normally off.
       </Callout>
     );
   }
 
   const courses = session.courses ?? [];
   return (
-    <Callout tone="success" title="A fine-tuned service is running">
+    <Callout tone="success" title="A Tillicum fallback session is running">
       <p>
         Session <code>{session.sessionId}</code> (Slurm job{' '}
         <code>{session.jobId}</code>) started {formatTime(session.startedAt)} and

@@ -23,7 +23,7 @@ const COURSE_TABLES: { table: string; holds: string }[] = [
   { table: 'course_models / course_model_versions', holds: 'The per-course model registry' },
   { table: 'model_requests', holds: 'The professor-facing "I want a model" lifecycle' },
   { table: 'training_runs', holds: 'The queue the cluster claims work from, and what each run reported' },
-  { table: 'serving_sessions', holds: 'Whether a GPU is serving fine-tuned inference, and until when' },
+  { table: 'serving_sessions', holds: 'Whether the Tillicum GPU fallback is serving fine-tuned inference, and until when' },
 ];
 
 const IDENTITY_TABLES: { table: string; holds: string }[] = [
@@ -220,17 +220,18 @@ export function AdminSystemPage() {
             All four comparison paths are implemented. Base and RAG depend on
             the local model runtime; Fine-Tuned availability depends on the
             configured inference service, which may or may not be running at any
-            given moment — see Overview for its live state. Base and RAG share
-            one CPU-bound process and are therefore issued sequentially; the two
-            fine-tuned paths run against the separate service and overlap with
-            them.
+            given moment — see Overview for its live state. Base and RAG are
+            issued sequentially; the two fine-tuned requests are issued
+            alongside them, to the VM-local fine-tuned service, which asks the
+            same Ollama — so on this CPU host all four contend for one process.
           </p>
           <p>
             Model requests, the training queue, job status, automatic
-            registration, and publication are implemented. Training and
-            fine-tuned inference execute on Tillicum, which this application
-            reaches through an authenticated queue API rather than by running
-            anything itself.
+            registration, and publication are implemented. Fine-tuned
+            inference runs on this VM through Ollama; Tillicum is used for
+            queued QLoRA training (and as an emergency inference fallback),
+            which this application reaches through an authenticated queue API
+            rather than by running anything itself.
           </p>
         </div>
       </section>

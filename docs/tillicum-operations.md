@@ -11,6 +11,14 @@ endpoints and nothing else.
 
 Everything after the login is meant to be one command.
 
+What Tillicum is for now: **queued QLoRA training**, **recording a
+publication** (which version a course serves), and an **emergency inference
+fallback**. Answering a student's question does not touch it — fine-tuned
+inference runs on the UWB VM
+([deployment.md](deployment.md#fine-tuned-inference-on-the-vm)). Moving training
+off Tillicum as well is future work
+([remaining-work.md](remaining-work.md#6-fine-tuned-inference-without-tillicum)).
+
 ---
 
 ## Training: the normal flow
@@ -154,12 +162,22 @@ reboot.
 
 ## Per-course serving
 
-Training is per course, so serving is too.
+Training is per course, so publication is too. Publishing does two things: it
+records in PostgreSQL which version a course serves (`deployment = online`),
+which is what the VM-local service is asked for, and it copies the adapter into
+the GPU fallback's serving tree:
 
 ```text
 <SERVING_ROOT>/<courseId>/<version>/adapter/   the PEFT adapter
 <SERVING_ROOT>/<courseId>/current.json         which version is current
 ```
+
+**On the VM first.** Install and map the version
+(`scripts/install_finetuned_adapter.py`, `scripts/aiswe_finetuned.sh
+set-mapping`, `restart`; see
+[deployment.md](deployment.md#installing-a-completed-adapter)) *before*
+publishing it. Publishing a version the VM does not map makes that course's
+fine-tuned answers fail until it is mapped.
 
 Publishing an adapter for a course:
 
@@ -178,13 +196,12 @@ replacing it in place would make the record describe something else.
 | Fact | Where | Meaning |
 | --- | --- | --- |
 | `status = ready` | `course_model_versions` | A usable adapter exists somewhere. |
-| `deployment = online` | `course_model_versions` | This version is in the cluster's serving tree. **Inference resolves this one.** |
+| `deployment = online` | `course_model_versions` | This version has been published. **Inference resolves this one** — the backend asks the VM-local service for it (or the fallback, which loads it from the serving tree). |
 | `current_version` | `course_models` | The newest registered version — what a professor is shown. |
-| `current.json` | `<SERVING_ROOT>/<courseId>/` | The cluster's own record of the same publication, used when a request arrives without a version. |
+| `current.json` | `<SERVING_ROOT>/<courseId>/` | The cluster's own record of the same publication, used by the GPU fallback when a request arrives without a version. |
 
 Training a new version makes it `ready` and moves `current_version`. It does not
-move what answers questions, because the cluster does not have the new adapter
-until somebody puts it there. Publishing is what changes the answer, and
+move what answers questions: publishing is what changes the answer, and
 `promote_qlora_adapter.sh` reports it to the backend **after** the copy has
 landed and been validated.
 
@@ -194,18 +211,21 @@ for that course failed until `v2` was published.
 
 A course that has never had a publication reported falls back to
 `current_version`, which is how every course from before this reporting keeps
-answering exactly as it did.
+answering exactly as it did — and why, for such a course, a newly registered
+version is requested at once and must be installed and mapped on the VM promptly.
 
-The service loads the base model once and attaches one adapter per course on top
-of it, choosing per request. A LoRA adapter here is ~47 MB against a ~2.5 GB
+The rest of this section describes the **GPU fallback** service. It loads the
+base model once and attaches one adapter per course on top of it, choosing per
+request. A LoRA adapter here is ~47 MB against a ~2.5 GB
 4-bit base, so a second course costs a rounding error of GPU memory rather than
 a second allocation. `MAX_LOADED_ADAPTERS` (default 4) bounds how many stay
 resident.
 
 **Adapter format.** Training writes `adapter_config.json` and
 `adapter_model.safetensors` via PEFT's `save_pretrained`. That is exactly what
-`PeftModel.load_adapter` reads. There is no conversion step, and none is needed
-— no GGUF, no merged checkpoint.
+the fallback's `PeftModel.load_adapter` reads, with no conversion. The VM path
+is different: `scripts/install_finetuned_adapter.py` converts the same adapter
+to a LoRA GGUF for Ollama.
 
 **Course isolation** is enforced in four places:
 
@@ -354,7 +374,7 @@ Dry run by default. It will only ever propose:
 
 It will never propose, whatever else is true:
 
-- anything under `serving/` — the published adapters inference loads
+- anything under `serving/` — the published adapters the GPU fallback loads
 - any `adapter/` directory, or `adapter-backups/`
 - a run a published `current.json` says a served adapter came from
 - a run the cluster still owes the application a report for
@@ -487,68 +507,47 @@ Concrete evidence from the production run that first exercised all of this is in
 ### Stage A — serve a model the course already has
 
 If a course already has a registered version, per-course serving can be proven
-against it without spending another GPU allocation.
+against it without spending another GPU allocation. Serving is on the UWB VM;
+Tillicum is involved only to record the publication.
 
-On Tillicum, publish the existing version:
+On the UWB VM, install and map the version (see
+[deployment.md](deployment.md#installing-a-completed-adapter)), then:
+
+```bash
+./scripts/aiswe_finetuned.sh restart && ./scripts/aiswe_finetuned.sh check
+```
+
+On Tillicum, publish it:
 
 ```bash
 ./training/promote_qlora_adapter.sh --course <courseId> --version <version> --run-id <runId> /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<run>-full/adapter
 ```
-```bash
-./training/start_finetuned_service.sh
-```
-```bash
-./training/status_finetuned_service.sh
-```
 
-On the UWB VM:
+Back on the VM, check every condition for that course through the backend as
+an administrator. The direct and backend generations must echo the course and
+the version you published:
 
 ```bash
-./scripts/start_finetuned_tunnel.sh --from-backend
-```
-```bash
-curl -s http://127.0.0.1:8001/api/fine-tuned/health
+AISWE_VERIFY_PASSWORD='<admin password>' backend/.venv/bin/python scripts/verify_finetuned_production.py --admin-email <admin email> --course <courseId>
 ```
 
-Ask that course a fine-tuned question and check which model answered:
+Then prove isolation — a course the VM does not map must be refused, not
+quietly answered by another course's model:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate -H 'Content-Type: application/json' -d '{"courseId":"<courseId>","question":"When does the course meet?"}'
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:9001/generate -H 'Content-Type: application/json' -d '{"courseId":"<unmapped-courseId>","modelVersion":"v1","question":"When does the course meet?"}'
 ```
 
-Expect the response to echo `"courseId": "<courseId>"` and the version you
-published.
-
-Then prove isolation — a course with **no** published adapter must not quietly
-receive another course's:
-
-```bash
-curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate -H 'Content-Type: application/json' -d '{"courseId":"<other-courseId>","question":"When does the course meet?"}'
-```
-
-Expect a **409** naming that course. Not an answer, and not the first course's
-adapter.
-
-Stop when finished:
-
-```bash
-./scripts/stop_finetuned_tunnel.sh
-```
-```bash
-./training/stop_finetuned_service.sh
-```
+Expect **409**. (The backend's own generation routes need a signed-in session,
+so the classroom-path checks go through the verifier above rather than bare
+`curl`.)
 
 ### Stage B — the automated training lifecycle
 
 Only after Stage A works, and only once the course's published version is
-recorded as `deployment: online`:
-
-```bash
-curl -s http://127.0.0.1:8001/api/db/courses/<courseId>/model
-```
-
-If it still says `offline`, re-run the Stage A publish command — it is idempotent
-— so inference has a published version to hold on to while the new one trains.
+recorded as `deployment: online` — Admin → Models shows it as published. If it
+does not, re-run the Stage A publish command — it is idempotent — so inference
+has a published version to hold on to while the new one trains.
 
 1. Admin → Training: **Prepare training data**, then **Queue training** (or
    **Train new version** for a course that has already finished a run).
@@ -566,20 +565,16 @@ If it still says `offline`, re-run the Stage A publish command — it is idempot
 has a version. Nothing overwrites an existing version.
 
 **And the previously published version keeps serving** while the new one is
-`ready` / `offline`. Check it:
-
-```bash
-curl -sS -X POST http://127.0.0.1:8001/api/fine-tuned/generate -H 'Content-Type: application/json' -d '{"courseId":"<courseId>","question":"When does the course meet?"}'
-```
-
-It still names the published version even though the registry's current version
-has moved. Then publish the new one deliberately:
+`ready` / `offline`. Check it with the verifier from Stage A: the backend
+generations still name the published version even though the registry's
+current version has moved. Then install and map the new version on the VM
+(keeping the old mapping), restart, and publish it deliberately:
 
 ```bash
 ./training/promote_qlora_adapter.sh --course <courseId> --version <newVersion> --run-id <newRunId> /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<new-run>-full/adapter
 ```
 
-Re-run the same question. It now names the new version, and the old one remains
+Re-run the verifier. It now names the new version, and the old one remains
 registered and `ready` with `deployment: offline`.
 
 Neither `sync_training_data_to_tillicum.sh` nor `register_course_model.py` is run
