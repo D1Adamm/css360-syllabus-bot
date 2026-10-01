@@ -22,6 +22,7 @@ import '@testing-library/jest-dom/vitest';
 const exportApprovedCourseSeeds = vi.fn();
 const getApprovedExportStatus = vi.fn();
 const prepareTrainingSplit = vi.fn();
+const listCourseSeeds = vi.fn();
 
 vi.mock('../../lib/api', () => ({
   ApiError: class ApiError extends Error {
@@ -33,14 +34,7 @@ vi.mock('../../lib/api', () => ({
     }
   },
   // Approved counts now come from the examples themselves, not the export.
-  listCourseSeeds: vi.fn().mockResolvedValue({
-    courseId: 'css-360-winter-2026-a7rp',
-    count: 2,
-    seeds: [
-      { id: 'a', question: 'q1', answer: 'a1', reviewStatus: 'approved' },
-      { id: 'b', question: 'q2', answer: 'a2', reviewStatus: 'generated' },
-    ],
-  }),
+  listCourseSeeds: (...args: unknown[]) => listCourseSeeds(...args),
   exportApprovedCourseSeeds: (...args: unknown[]) => exportApprovedCourseSeeds(...args),
   getApprovedExportStatus: (...args: unknown[]) => getApprovedExportStatus(...args),
   prepareTrainingSplit: (...args: unknown[]) => prepareTrainingSplit(...args),
@@ -53,9 +47,29 @@ const queueNewVersionForRequest = vi.fn();
 const retryTrainingForRequest = vi.fn();
 const fetchCourseTrainingRuns = vi.fn();
 
-vi.mock('../../lib/courseModelRequestDb', () => ({
-  fetchCourseModelRequest: (...args: unknown[]) => fetchCourseModelRequest(...args),
-}));
+const createCourseModelRequest = vi.fn();
+const fetchCourseModel = vi.fn();
+
+vi.mock('../../lib/courseModelRequestDb', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/courseModelRequestDb')>(
+    '../../lib/courseModelRequestDb',
+  );
+  return {
+    ...actual,
+    fetchCourseModelRequest: (...args: unknown[]) => fetchCourseModelRequest(...args),
+    createCourseModelRequest: (...args: unknown[]) => createCourseModelRequest(...args),
+  };
+});
+
+vi.mock('../../lib/courseModelDb', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/courseModelDb')>(
+    '../../lib/courseModelDb',
+  );
+  return {
+    ...actual,
+    fetchCourseModel: (...args: unknown[]) => fetchCourseModel(...args),
+  };
+});
 
 vi.mock('../../lib/queueTraining', async () => {
   const actual = await vi.importActual<typeof import('../../lib/queueTraining')>(
@@ -97,6 +111,7 @@ vi.mock('../../lib/coursesDb', () => ({
   subscribeToCourses: (...args: unknown[]) => subscribeToCoursesMock(...args),
 }));
 
+import { DuplicateModelRequestError } from '../../lib/courseModelRequestDb';
 import { InsufficientApprovedExamplesError } from '../../lib/prepareTrainingData';
 import { DuplicateTrainingRunError } from '../../lib/trainingRunDb';
 import type { TrainingRun } from '../../types';
@@ -306,6 +321,15 @@ describe('AdminTrainingPage', () => {
       summary: { trainExamples: 48, validationExamples: 6, totalExamples: 54 },
     });
 
+    listCourseSeeds.mockResolvedValue({
+      courseId: COURSE_ID,
+      count: 2,
+      seeds: [
+        { id: 'a', question: 'q1', answer: 'a1', reviewStatus: 'approved' },
+        { id: 'b', question: 'q2', answer: 'a2', reviewStatus: 'generated' },
+      ],
+    });
+    fetchCourseModel.mockResolvedValue(null);
     fetchCourseModelRequest.mockResolvedValue(null);
     fetchCourseTrainingRuns.mockResolvedValue([]);
     queueTrainingForRequest.mockResolvedValue({ run: QUEUED_RUN });
@@ -1176,6 +1200,163 @@ describe('AdminTrainingPage', () => {
       await screen.findAllByText(new RegExp(READY_SUCCEEDED_RUN.runId));
 
       expect(screen.queryByRole('button', { name: /Train new version/i })).toBeNull();
+    });
+  });
+
+  /*
+   * CSS 360D and CSS 360E in production: 75 approved examples, no registered
+   * model, and no model_requests row. Nothing on this page could create one,
+   * so these courses never appeared under Model requests.
+   */
+  describe('requesting a first model', () => {
+    function approvedSeeds(count: number) {
+      return {
+        courseId: COURSE_ID,
+        count,
+        seeds: Array.from({ length: count }, (_, index) => ({
+          id: `s${index}`,
+          question: `q${index}`,
+          answer: `a${index}`,
+          reviewStatus: 'approved',
+        })),
+      };
+    }
+
+    const CREATED_REQUEST = {
+      courseId: COURSE_ID,
+      status: 'requested' as const,
+      requestedAt: '2026-09-30T10:00:00.000Z',
+      updatedAt: '2026-09-30T10:00:00.000Z',
+      approvedExampleCount: 75,
+    };
+
+    beforeEach(() => {
+      listCourseSeeds.mockResolvedValue(approvedSeeds(75));
+      createCourseModelRequest.mockResolvedValue(CREATED_REQUEST);
+    });
+
+    it('offers Request model for an eligible course with no model and no request', async () => {
+      renderPage();
+
+      const candidates = await screen.findByRole('list', {
+        name: 'Courses without a model request',
+      });
+      expect(within(candidates).getByText(new RegExp(COURSE_ID))).toBeInTheDocument();
+      expect(within(candidates).getByText(/75 approved examples/)).toBeInTheDocument();
+      expect(
+        within(candidates).getByRole('button', { name: 'Request model' }),
+      ).toBeInTheDocument();
+    });
+
+    it('does not offer it below the approved-example threshold', async () => {
+      listCourseSeeds.mockResolvedValue(approvedSeeds(29));
+
+      renderPage();
+      await screen.findByText('No model requests');
+      await waitFor(() => expect(listCourseSeeds).toHaveBeenCalled());
+
+      expect(screen.queryByRole('button', { name: 'Request model' })).toBeNull();
+    });
+
+    it('does not offer it for a course with a registered model', async () => {
+      fetchCourseModel.mockResolvedValue({
+        currentVersion: 'v1',
+        versions: {
+          v1: {
+            version: 'v1',
+            baseModel: 'meta-llama/Llama-3.2-3B-Instruct',
+            trainingExampleCount: 67,
+            status: 'ready',
+            deployment: 'online',
+            artifactRef: 'adapters/v1',
+            createdAt: '2026-09-01T00:00:00.000Z',
+          },
+        },
+      });
+
+      renderPage();
+      await screen.findByText('No model requests');
+      await waitFor(() => expect(fetchCourseModel).toHaveBeenCalledWith(COURSE_ID));
+
+      expect(screen.queryByRole('button', { name: 'Request model' })).toBeNull();
+    });
+
+    it('does not offer it when the model registry cannot be read', async () => {
+      fetchCourseModel.mockRejectedValue(new Error('registry down'));
+
+      renderPage();
+      await screen.findByText('No model requests');
+      await waitFor(() => expect(fetchCourseModel).toHaveBeenCalled());
+
+      expect(screen.queryByRole('button', { name: 'Request model' })).toBeNull();
+    });
+
+    it('does not offer it when the request record cannot be read', async () => {
+      fetchCourseModelRequest.mockRejectedValue(new Error('db down'));
+
+      renderPage();
+      await screen.findByText('No model requests');
+
+      expect(screen.queryByRole('button', { name: 'Request model' })).toBeNull();
+      expect(createCourseModelRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not offer it for a course that already has a request', async () => {
+      fetchCourseModelRequest.mockResolvedValue(CREATED_REQUEST);
+
+      renderPage();
+      await screen.findByRole('list', { name: 'Model requests' });
+
+      expect(screen.queryByRole('button', { name: 'Request model' })).toBeNull();
+      expect(screen.queryByRole('list', { name: 'Courses without a model request' })).toBeNull();
+    });
+
+    it('creates the request through the existing client and moves the course into Model requests', async () => {
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'Request model' }));
+
+      // From here on the backend has the row.
+      fetchCourseModelRequest.mockResolvedValue(CREATED_REQUEST);
+
+      await waitFor(() => {
+        expect(createCourseModelRequest).toHaveBeenCalledWith(COURSE_ID, 75);
+      });
+
+      const requests = await screen.findByRole('list', { name: 'Model requests' });
+      expect(within(requests).getByText('requested')).toBeInTheDocument();
+      expect(
+        within(requests).getByRole('button', { name: 'Prepare training data' }),
+      ).toBeInTheDocument();
+      expect(
+        within(requests).getByText(/Requested a model from 75 approved examples/),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Request model' })).toBeNull();
+      expect(createCourseModelRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces a refused duplicate and re-reads the request that won', async () => {
+      createCourseModelRequest.mockRejectedValue(new DuplicateModelRequestError());
+
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'Request model' }));
+      fetchCourseModelRequest.mockResolvedValue(CREATED_REQUEST);
+
+      const requests = await screen.findByRole('list', { name: 'Model requests' });
+      expect(
+        within(requests).getByText('A request for this course is already in progress.'),
+      ).toBeInTheDocument();
+    });
+
+    it('surfaces any other failure and keeps the offer', async () => {
+      createCourseModelRequest.mockRejectedValue(new Error('Backend unreachable.'));
+
+      renderPage();
+      fireEvent.click(await screen.findByRole('button', { name: 'Request model' }));
+
+      expect(await screen.findByText('Backend unreachable.')).toBeInTheDocument();
+      expect(
+        await screen.findByRole('button', { name: 'Request model' }),
+      ).toBeInTheDocument();
     });
   });
 });
