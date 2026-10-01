@@ -10,7 +10,14 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { TrainingJobs } from '../../components/admin/TrainingJobs';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
-import { fetchCourseModelRequest } from '../../lib/courseModelRequestDb';
+import { fetchCourseModel, getCurrentVersion } from '../../lib/courseModelDb';
+import {
+  createCourseModelRequest,
+  DuplicateModelRequestError,
+  fetchCourseModelRequest,
+} from '../../lib/courseModelRequestDb';
+import { countExamples } from '../../lib/exampleCounts';
+import { canRequestCourseModel } from '../../lib/modelStatus';
 import {
   canQueueNewVersion,
   canQueueTraining,
@@ -31,6 +38,7 @@ import {
   ApiError,
   exportApprovedCourseSeeds,
   getApprovedExportStatus,
+  listCourseSeeds,
   prepareTrainingSplit,
 } from '../../lib/api';
 
@@ -213,6 +221,47 @@ interface RequestRow {
   runs: TrainingRun[];
 }
 
+/**
+ * A course with no request row that could be given one.
+ *
+ * Only courses that pass the Professor Model page's own offer rule end up
+ * here, so the admin can never request something the professor could not.
+ */
+interface RequestCandidate {
+  courseId: string;
+  name: string;
+  approved: number;
+}
+
+/**
+ * Whether a course with no request row should be offered a first request.
+ *
+ * Reads the registry and the approved count, then defers to
+ * `canRequestCourseModel` — the same rule the Professor Model page uses. Any
+ * read failure means no offer: a course whose model or examples could not be
+ * checked must not get a button that might duplicate work already done.
+ */
+async function readRequestCandidate(
+  courseId: string,
+  name: string,
+): Promise<RequestCandidate | null> {
+  try {
+    const [registry, seeds] = await Promise.all([
+      fetchCourseModel(courseId),
+      listCourseSeeds(courseId),
+    ]);
+    const approved = countExamples(seeds.seeds || []).approved;
+    const offer = canRequestCourseModel({
+      version: registry ? getCurrentVersion(registry) : null,
+      request: null,
+      approved,
+    });
+    return offer ? { courseId, name, approved } : null;
+  } catch {
+    return null;
+  }
+}
+
 function requestTone(status: CourseModelRequest['status']) {
   switch (status) {
     case 'requested':
@@ -277,6 +326,8 @@ function runTone(state: TrainingRun['state']) {
 function OutstandingRequests() {
   const { state: courses } = useCourses();
   const [rows, setRows] = useState<RequestRow[] | null>(null);
+  const [candidates, setCandidates] = useState<RequestCandidate[]>([]);
+  const [requesting, setRequesting] = useState<string | null>(null);
   const [preparing, setPreparing] = useState<string | null>(null);
   const [queueing, setQueueing] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
@@ -313,28 +364,35 @@ function OutstandingRequests() {
 
     void Promise.all(
       courses.courses.map(async ({ courseId, metadata }) => {
+        const name = formatCourseHeading(metadata.name, metadata.title);
+        let request: CourseModelRequest | null;
         try {
-          const request = await fetchCourseModelRequest(courseId);
-          if (!request) {
-            return null;
-          }
-          // A course's queue is read separately from its request: the two are
-          // different records on purpose, and a queue that cannot be read must
-          // not hide the request.
-          const runs = await fetchCourseTrainingRuns(courseId).catch(() => []);
-          return {
-            courseId,
-            name: formatCourseHeading(metadata.name, metadata.title),
-            request,
-            runs,
-          };
+          request = await fetchCourseModelRequest(courseId);
         } catch {
-          return null;
+          // Unreadable is not "none": no row, and no offer to create one.
+          return { row: null, candidate: null };
         }
+        if (!request) {
+          return { row: null, candidate: await readRequestCandidate(courseId, name) };
+        }
+        // A course's queue is read separately from its request: the two are
+        // different records on purpose, and a queue that cannot be read must
+        // not hide the request.
+        const runs = await fetchCourseTrainingRuns(courseId).catch(() => []);
+        return { row: { courseId, name, request, runs }, candidate: null };
       }),
     ).then((result) => {
       if (!cancelled) {
-        setRows(result.filter((row): row is RequestRow => row !== null));
+        setRows(
+          result
+            .map(({ row }) => row)
+            .filter((row): row is RequestRow => row !== null),
+        );
+        setCandidates(
+          result
+            .map(({ candidate }) => candidate)
+            .filter((candidate): candidate is RequestCandidate => candidate !== null),
+        );
       }
     });
 
@@ -342,6 +400,43 @@ function OutstandingRequests() {
       cancelled = true;
     };
   }, [courses, reload]);
+
+  /**
+   * Creates the first model request for a course, on the admin's behalf.
+   *
+   * The same POST the Professor Model page makes, through the same client. The
+   * backend still refuses a second active request with a 409, so a professor
+   * and an admin clicking at once produce exactly one row. Afterwards the
+   * page re-reads, and the course moves into Model requests, where the normal
+   * prepare-and-queue controls take over.
+   */
+  async function requestModel(candidate: RequestCandidate) {
+    setRequesting(candidate.courseId);
+    setMessages((current) => ({ ...current, [candidate.courseId]: '' }));
+
+    try {
+      await createCourseModelRequest(candidate.courseId, candidate.approved);
+      setMessages((current) => ({
+        ...current,
+        [candidate.courseId]:
+          `Requested a model from ${candidate.approved} approved examples. ` +
+          'Prepare the training data next.',
+      }));
+    } catch (error) {
+      setMessages((current) => ({
+        ...current,
+        [candidate.courseId]:
+          error instanceof DuplicateModelRequestError
+            ? 'A request for this course is already in progress.'
+            : error instanceof Error
+              ? error.message
+              : 'Requesting a model failed.',
+      }));
+    } finally {
+      setRequesting(null);
+      setReload((current) => current + 1);
+    }
+  }
 
   /*
    * Runs the existing export + split endpoints for one course and records the
@@ -490,7 +585,7 @@ function OutstandingRequests() {
     <section className="ui-stack ui-stack--snug">
       <SectionHeader
         title="Model requests"
-        description="Submitted by professors. Prepare the data, then queue a training run."
+        description="Submitted by professors, or requested here for an eligible course. Prepare the data, then queue a training run."
         divider
       />
 
@@ -685,6 +780,50 @@ function OutstandingRequests() {
                     Retry training
                   </Button>
                 )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Courses that have never been asked for a model but qualify for one.
+          Usually a professor requests from their Model page; this is the same
+          request for a course an administrator is setting up. */}
+      {candidates.length > 0 && (
+        <ul className="admin-rows" aria-label="Courses without a model request">
+          {candidates.map((candidate) => (
+            <li key={candidate.courseId} className="admin-row admin-row--stacked">
+              <div className="admin-row__main">
+                <p className="admin-row__label">{candidate.name}</p>
+                <p className="admin-row__value">
+                  <code>{candidate.courseId}</code>
+                </p>
+                <p className="ui-text-xs ui-text-muted">
+                  {candidate.approved} approved examples · no model · no request
+                </p>
+                {messages[candidate.courseId] && (
+                  <p className="ui-text-xs ui-text-muted" role="status">
+                    {messages[candidate.courseId]}
+                  </p>
+                )}
+              </div>
+              <div className="admin-row__actions">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => void requestModel(candidate)}
+                  loading={requesting === candidate.courseId}
+                  loadingLabel="Requesting…"
+                  disabled={
+                    requesting !== null ||
+                    preparing !== null ||
+                    queueing !== null ||
+                    retrying !== null
+                  }
+                  title="Create this course's model request, as its professor would from the Model page."
+                >
+                  Request model
+                </Button>
               </div>
             </li>
           ))}
