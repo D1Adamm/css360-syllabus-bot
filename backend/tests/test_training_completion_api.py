@@ -647,6 +647,20 @@ class CompletionDoesNotMoveTrafficTests(CompletionTestCase):
         }
         self.assertEqual(select_servable_version(registry_after), ("v1", "published"))
 
+    def test_a_completion_on_a_course_with_nothing_active_serves_nothing(self) -> None:
+        """The first run for a course registers v1 offline; no traffic reaches it yet."""
+        response = self._post(_success_payload())
+
+        self.assertEqual(response.status_code, 200, response.text)
+        v1 = self.registered[0]
+        self.assertEqual(v1["deployment"], "offline")
+        registry_after = {
+            "courseId": COURSE,
+            "currentVersion": response.json()["currentVersion"],
+            "versions": {v1["version"]: v1},
+        }
+        self.assertEqual(select_servable_version(registry_after), (None, "none"))
+
 
 if __name__ == "__main__":
     unittest.main()

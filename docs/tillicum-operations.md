@@ -210,10 +210,8 @@ Without that split, training a new version took the old one offline: the backend
 started asking for `v2`, the cluster only had `v1`, and every fine-tuned request
 for that course failed until `v2` was published.
 
-A course that has never had a publication reported falls back to
-`current_version`, which is how every course from before this reporting keeps
-answering exactly as it did — and why, for such a course, a newly registered
-version is requested at once and must be installed and mapped on the VM promptly.
+A course with no published (activated) version has no fine-tuned answers;
+there is no fallback to `current_version`.
 
 The rest of this section describes the **GPU fallback** service. It loads the
 base model once and attaches one adapter per course on top of it, choosing per
@@ -543,9 +541,9 @@ so the classroom-path checks go through the verifier above rather than bare
 ### Stage B — the automated training lifecycle
 
 Only after Stage A works, and only once the course has an activated version —
-Admin → Models shows "Active vN". If it shows "No activated version", activate
-the version the course already serves first, so inference has an explicit
-version to hold on to while the new one trains.
+Admin → Models shows "Active vN". If it shows "No activated version", the
+course has no fine-tuned answers yet; activate the version it should serve
+first, so students are answered while the new one trains.
 
 1. Admin → Training: **Prepare training data**, then **Queue training** (or
    **Train new version** for a course that has already finished a run).

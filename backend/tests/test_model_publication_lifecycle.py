@@ -18,11 +18,12 @@ Training a new version took the old one offline. That is what these test.
 The two facts, kept apart
 -------------------------
     status = ready      a usable adapter exists somewhere
-    deployment = online this version is in the cluster's serving tree
+    deployment = online this version has been activated (published)
 
-Only the second can answer a question, so only the second is resolved from.
-`current_version` remains the fallback for a course that has never published,
-which is every course from before publication was reported at all.
+Only an activated, ready version can answer a question. `current_version` used
+to be a fallback for a course that had never published; it was removed once
+every served course had an explicitly activated version, so a finished
+training run can no longer move production traffic on its own.
 """
 
 from __future__ import annotations
@@ -92,16 +93,22 @@ class SelectServableVersionTests(unittest.TestCase):
 
         self.assertEqual(select_servable_version(registry), ("v1", "published"))
 
-    def test_current_version_answers_when_nothing_has_been_published(self) -> None:
-        """The fallback, and the reason it exists.
-
-        Every course from before publication reporting is in this state. They
-        must keep answering exactly as they did — a rule that refused them all
-        would be a worse outage than the one being fixed.
-        """
+    def test_nothing_is_resolved_when_nothing_has_been_activated(self) -> None:
+        """The removed fallback. A ready, current v1 is not active by being newest."""
         registry = _registry("v1", [_version("v1")])
 
-        self.assertEqual(select_servable_version(registry), ("v1", "current"))
+        self.assertEqual(select_servable_version(registry), (None, "none"))
+
+    def test_a_newly_registered_v2_on_an_unactivated_course_resolves_nothing(self) -> None:
+        """Exactly what the fallback used to get wrong: v2 would have been asked for."""
+        registry = _registry("v2", [_version("v1"), _version("v2")])
+
+        self.assertEqual(select_servable_version(registry), (None, "none"))
+
+    def test_an_activated_version_that_is_not_ready_is_not_selected(self) -> None:
+        registry = _registry("v1", [_version("v1", status="failed", deployment="online")])
+
+        self.assertEqual(select_servable_version(registry), (None, "none"))
 
     def test_publishing_the_newer_version_moves_the_answer(self) -> None:
         registry = _registry(
@@ -114,13 +121,8 @@ class SelectServableVersionTests(unittest.TestCase):
 
         self.assertEqual(select_servable_version(registry), ("v2", "published"))
 
-    def test_the_fallback_does_not_apply_once_anything_is_published(self) -> None:
-        """Not a general safety net.
-
-        A course with a published v1 and a newer current v2 resolves v1 — the
-        fallback must not quietly reintroduce the bug by preferring the newer
-        version whenever it looks more current.
-        """
+    def test_a_newer_current_version_never_outranks_the_published_one(self) -> None:
+        """A published v1 and a newer current v2 resolve v1, never the newer one."""
         registry = _registry(
             "v2",
             [
@@ -132,7 +134,7 @@ class SelectServableVersionTests(unittest.TestCase):
         version, source = select_servable_version(registry)
 
         self.assertEqual(version, "v1")
-        self.assertNotEqual(source, "current")
+        self.assertEqual(source, "published")
 
     def test_two_online_rows_resolve_deterministically(self) -> None:
         """`mark_version_published` prevents this; an older write may not have."""
@@ -232,6 +234,12 @@ class TheRetrainLifecycleTests(ResolutionTestCase):
         self.assertEqual(registry["versions"]["v1"]["status"], "ready")
         self.assertEqual(registry["versions"]["v1"]["deployment"], "offline")
 
+        # 8. Rollback: activating v1 again moves the answer back.
+        self._publish(registry, "v1")
+        resolved = resolve_current_course_model(CSS350)
+        self.assertEqual(resolved["version"], "v1")
+        self.assertEqual(resolved["currentVersion"], "v2")
+
     def test_registering_v2_alone_never_changes_what_answers(self) -> None:
         """Isolated from the sequence above, because it is the regression."""
         self.registries[CSS350] = self._publish(
@@ -266,6 +274,17 @@ class TheRetrainLifecycleTests(ResolutionTestCase):
 
         with self.assertRaises(NoReadyCourseModel):
             resolve_current_course_model(CSS350)
+
+    def test_a_first_version_is_not_served_until_it_is_activated(self) -> None:
+        """A brand-new course's first training run registers v1 offline: no answer yet."""
+        self.registries[CSS350] = _registry("v1", [_version("v1")])
+
+        with self.assertRaises(NoReadyCourseModel) as caught:
+            resolve_current_course_model(CSS350)
+        self.assertIn("no activated model version", caught.exception.diagnostic)
+
+        self._publish(self.registries[CSS350], "v1")
+        self.assertEqual(resolve_current_course_model(CSS350)["version"], "v1")
 
     def test_a_course_with_no_registry_is_refused(self) -> None:
         with self.assertRaises(NoReadyCourseModel) as caught:

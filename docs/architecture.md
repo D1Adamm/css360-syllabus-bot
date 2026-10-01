@@ -294,13 +294,13 @@ Tillicum's `training/promote_qlora_adapter.sh` still records a publication too �
 the legacy path, unchanged and not checked against the VM — after copying the
 adapter into the GPU fallback's serving tree.
 
-Resolution prefers the published version, and for now still falls back to
-`current_version` for a course that has never had a publication recorded, so
-courses served that way before activation existed keep answering. For such a
-course, registering a new version moves fine-tuned requests to it immediately;
-activating the version it serves closes that gap. The fallback is to be removed
-once every served course has an activated version
-([remaining-work.md](remaining-work.md#known-issues)).
+Resolution reads only the activated version: `deployment = online` and
+`ready`. `current_version` is never consulted, so registering a version — from
+a training run or by hand — cannot move a single request. A course with no
+activated version has no Fine-Tuned or Fine-Tuned + RAG answers; students get
+the ordinary "not available yet" response. (Until CSS 360D and CSS 360E were
+explicitly activated, resolution fell back to `current_version` for a course
+with nothing published; that fallback has been removed.)
 
 Answering a question involves none of the publication machinery: the backend
 reads the published version from PostgreSQL and asks the VM-local service, with

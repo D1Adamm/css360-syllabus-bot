@@ -7,7 +7,10 @@ and "which model answered this?" had no answer anywhere in the system. With CSS
 being answered by the other's adapter with nothing able to detect it.
 
 PostgreSQL is the system of record for what a course's model is, so resolution
-happens here and the version travels with the request to the cluster.
+happens here and the version travels with the request to the fine-tuned
+service. Only an explicitly activated version (`deployment = online`, `ready`)
+is ever resolved; `current_version` is what a professor is shown and never
+decides what answers.
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ def _registry(
     current: str = "v1",
     versions: dict[str, dict[str, Any]] | None = None,
     course_id: str = COURSE,
+    deployment: str = "online",
 ) -> dict[str, Any]:
     return {
         "courseId": course_id,
@@ -47,7 +51,7 @@ def _registry(
                 "version": "v1",
                 "baseModel": "meta-llama/Llama-3.2-3B-Instruct",
                 "status": "ready",
-                "deployment": "offline",
+                "deployment": deployment,
                 "artifactRef": "qlora-runs/css-350-spring-2026-n3h9/x-full/adapter",
                 "trainingExampleCount": 37,
                 "createdAt": "2026-08-27T07:00:00+00:00",
@@ -79,7 +83,7 @@ class ResolutionTestCase(unittest.TestCase):
 
 
 class ResolutionTests(ResolutionTestCase):
-    def test_a_ready_course_resolves_its_current_version(self) -> None:
+    def test_an_activated_ready_version_resolves(self) -> None:
         with self.registry(_registry()):
             resolved = resolve_current_course_model(COURSE)
 
@@ -95,7 +99,7 @@ class ResolutionTests(ResolutionTestCase):
         self.assertEqual(caught.exception.status_code, 409)
         self.assertIn("no fine-tuned model yet", caught.exception.diagnostic)
 
-    def test_a_course_whose_current_version_is_not_ready_is_refused(self) -> None:
+    def test_an_activated_version_that_is_not_ready_is_refused(self) -> None:
         """`ready` is the only status that may answer a student's question.
 
         A `training` or `failed` version is not a usable artifact, and falling
@@ -111,28 +115,26 @@ class ResolutionTests(ResolutionTestCase):
 
         self.assertIn("training", caught.exception.diagnostic)
 
-    def test_a_dangling_current_version_is_refused(self) -> None:
-        with self.registry(_registry(current="v9")):
+    def test_a_current_version_that_was_never_activated_resolves_nothing(self) -> None:
+        """The removed fallback: newest registered is not the same as active.
+
+        A ready `v1` that nobody activated is not served, and the refusal names
+        the newest registered version so an operator knows what to activate.
+        """
+        with self.registry(_registry(deployment="offline")):
             with self.assertRaises(NoReadyCourseModel) as caught:
                 resolve_current_course_model(COURSE)
 
-        self.assertIn("v9", caught.exception.diagnostic)
+        self.assertIn("no activated model version", caught.exception.diagnostic)
+        self.assertIn('"v1"', caught.exception.diagnostic)
 
-    def test_deployment_status_does_not_gate_resolution(self) -> None:
-        """`ready` and `deployed` stay distinct concepts, in both directions.
-
-        A model that nothing is currently serving is still the model this course
-        would be answered by; whether a GPU is up is discovered at the
-        connection, which is a truthful error rather than a stale one.
-        """
-        registry = _registry()
-        registry["versions"]["v1"]["deployment"] = "offline"
-
-        with self.registry(registry):
+    def test_a_dangling_current_version_is_irrelevant(self) -> None:
+        """`current_version` is never consulted, so a dangling one changes nothing."""
+        with self.registry(_registry(current="v9")):
             resolved = resolve_current_course_model(COURSE)
 
         self.assertEqual(resolved["version"], "v1")
-        self.assertEqual(resolved["deployment"], "offline")
+        self.assertEqual(resolved["deployment"], "online")
 
     def test_each_course_resolves_only_its_own_registry(self) -> None:
         """CSS 350 must never resolve to CSS 360's version, and vice versa."""
@@ -150,7 +152,7 @@ class ResolutionTests(ResolutionTestCase):
                         "version": "v4",
                         "baseModel": "meta-llama/Llama-3.2-3B-Instruct",
                         "status": "ready",
-                        "deployment": "offline",
+                        "deployment": "online",
                         "artifactRef": "qlora-runs/css-360/y-full/adapter",
                         "trainingExampleCount": 54,
                         "createdAt": "2026-08-27T07:00:00+00:00",
@@ -194,12 +196,12 @@ class StudentFacingRefusalTests(ResolutionTestCase):
     OPERATOR_WORDS = ("train", "register", "publish", "re-point", "version")
 
     def _refusals(self) -> list[NoReadyCourseModel]:
-        dangling = _registry(current="v9")
+        not_activated = _registry(current="v9", deployment="offline")
         not_ready = _registry()
         not_ready["versions"]["v1"]["status"] = "training"
         empty = _registry(current="", versions={})
         caught: list[NoReadyCourseModel] = []
-        for registry in (None, dangling, not_ready, empty):
+        for registry in (None, not_activated, not_ready, empty):
             with self.registry(registry):
                 with self.assertRaises(NoReadyCourseModel) as raised:
                     resolve_current_course_model(COURSE)
@@ -218,19 +220,20 @@ class StudentFacingRefusalTests(ResolutionTestCase):
         self.assertNotIn(COURSE, PUBLIC_UNAVAILABLE_DETAIL)
 
     def test_the_specific_reason_is_kept_for_operators(self) -> None:
-        no_registry, dangling, not_ready, empty = self._refusals()
+        no_registry, not_activated, not_ready, empty = self._refusals()
 
         self.assertIn("no fine-tuned model yet", no_registry.diagnostic)
-        self.assertIn("v9", dangling.diagnostic)
+        self.assertIn("no activated model version", not_activated.diagnostic)
+        self.assertIn("v9", not_activated.diagnostic)
         self.assertIn("training", not_ready.diagnostic)
-        self.assertIn("no model version", empty.diagnostic)
+        self.assertIn("no activated model version", empty.diagnostic)
         # None of which reached the body.
-        for refusal in (no_registry, dangling, not_ready, empty):
+        for refusal in (no_registry, not_activated, not_ready, empty):
             self.assertNotIn("v9", refusal.detail)
             self.assertNotIn("training", refusal.detail)
 
     def test_the_reason_is_logged_with_the_course(self) -> None:
-        with self.registry(_registry(current="v9")):
+        with self.registry(_registry(current="v9", deployment="offline")):
             with self.assertLogs("app.course_model_resolution", level="WARNING") as logs:
                 with self.assertRaises(NoReadyCourseModel):
                     resolve_current_course_model(COURSE)
