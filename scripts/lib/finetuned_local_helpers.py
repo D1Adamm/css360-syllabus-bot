@@ -294,15 +294,21 @@ def validate_env_text(text: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
+def _legacy_short_label(safe_course_id: str) -> str | None:
+    """`css-360-winter-2026-a7rp` → `css360`; None for ids not in that form."""
+    match = COURSE_SHORT_RE.match(safe_course_id)
+    return match.group(1) + match.group(2) if match else None
+
+
 def short_course_label(course_id: str) -> str:
     """`css-360-winter-2026-a7rp` → `css360`, the prefix every served tag uses."""
     safe = validate_course_id(course_id)
-    match = COURSE_SHORT_RE.match(safe)
-    if not match:
+    label = _legacy_short_label(safe)
+    if label is None:
         raise CourseAdapterError(
             f"Cannot derive a short label from course id {safe!r}; pass --tag explicitly."
         )
-    return match.group(1) + match.group(2)
+    return label
 
 
 def default_ollama_tag(course_id: str, version: str) -> str:
@@ -311,7 +317,16 @@ def default_ollama_tag(course_id: str, version: str) -> str:
 
 
 def gguf_filename(course_id: str, version: str) -> str:
-    return f"{short_course_label(course_id)}-{validate_model_version(version)}-lora.gguf"
+    """`css360-v2-lora.gguf` for legacy ids; the full course id for any other.
+
+    Never requires a short label: the file already sits under
+    `<artifacts>/<course>/<version>/`, so its name only has to be valid, and a
+    course whose tag was passed with `--tag` (e.g. `css360d-fall-2026-q0ne`)
+    must not be refused here for a label nothing else needs.
+    """
+    safe = validate_course_id(course_id)
+    stem = _legacy_short_label(safe) or safe
+    return f"{stem}-{validate_model_version(version)}-lora.gguf"
 
 
 # --------------------------------------------------------------------------- #
