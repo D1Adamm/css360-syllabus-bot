@@ -162,6 +162,7 @@ async def generate_from_prompt(
             prompt,
             options=classroom_options() if concise else grounded_options(),
             timeout=GROUNDED_TIMEOUT_SECONDS,
+            condition="rag",
         )
         return {
             "answer": generation["answer"],
@@ -188,6 +189,7 @@ async def generate_from_prompt(
         course_id=course_id,
         model_version=resolved["version"],
         max_new_tokens=CLASSROOM_NUM_PREDICT if concise else None,
+        condition="fineTunedRag",
     )
     return {
         "answer": generation["answer"],

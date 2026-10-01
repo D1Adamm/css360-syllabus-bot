@@ -8,7 +8,7 @@ from app.config import load_backend_env
 
 load_backend_env()
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -44,6 +44,7 @@ from app.finetuned_client import (
     generate_finetuned_response,
 )
 from app.finetuned_rag import generate_course_finetuned_rag_answer
+from app.generation_queue import bind_request, get_generation_queue
 from app.grounded_rag import (
     BASE_TARGET,
     fine_tuned_target,
@@ -258,8 +259,10 @@ def health() -> dict[str, str]:
 @app.post("/base-model/generate", response_model=BaseModelGenerateResponse)
 async def generate_base_model(
     request: BaseModelGenerateRequest,
+    http_request: Request,
     principal: Principal = Depends(current_principal),
 ) -> BaseModelGenerateResponse:
+    bind_request(http_request)
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=422, detail="Question must not be empty.")
@@ -297,12 +300,24 @@ async def fine_tuned_health(principal: Principal = Depends(require_admin)) -> Fi
     )
 
 
+@app.get("/api/admin/generation-queue")
+def generation_queue_status(principal: Principal = Depends(require_admin)) -> dict[str, Any]:
+    """The generation queue right now: limits, active, waiting, refusals so far.
+
+    Counts only, nothing about any request. For an administrator watching a
+    class and for `scripts/classroom_load_test.py`, which samples it.
+    """
+    return get_generation_queue().snapshot()
+
+
 @app.post("/api/fine-tuned/generate", response_model=FineTunedGenerateResponse)
 @app.post("/fine-tuned/generate", response_model=FineTunedGenerateResponse)
 async def generate_fine_tuned(
     request: FineTunedGenerateRequest,
+    http_request: Request,
     principal: Principal = Depends(current_principal),
 ) -> FineTunedGenerateResponse:
+    bind_request(http_request)
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=422, detail="Question must not be empty.")
@@ -339,7 +354,12 @@ async def generate_fine_tuned(
 
 @app.post("/api/rag/generate", response_model=RagGenerateResponse)
 @app.post("/rag/generate", response_model=RagGenerateResponse)
-async def generate_rag_response(request: RagGenerateRequest, principal: Principal = Depends(current_principal)) -> RagGenerateResponse:
+async def generate_rag_response(
+    request: RagGenerateRequest,
+    http_request: Request,
+    principal: Principal = Depends(current_principal),
+) -> RagGenerateResponse:
+    bind_request(http_request)
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=422, detail="Question must not be empty.")
@@ -373,8 +393,10 @@ async def generate_rag_response(request: RagGenerateRequest, principal: Principa
 @app.post("/fine-tuned-rag/generate", response_model=FineTunedRagGenerateResponse)
 async def generate_fine_tuned_rag(
     request: FineTunedRagGenerateRequest,
+    http_request: Request,
     principal: Principal = Depends(current_principal),
 ) -> FineTunedRagGenerateResponse:
+    bind_request(http_request)
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=422, detail="Question must not be empty.")

@@ -142,6 +142,22 @@ def resolve_keep_alive() -> Optional[str]:
     return raw or None
 
 
+def resolve_max_concurrency() -> int:
+    """How many generations this service sends Ollama at once (default 1).
+
+    The backend's generation queue is what bounds classroom load; this is the
+    service's own ceiling beneath it. Raise it only together with
+    `OLLAMA_NUM_PARALLEL` on the Ollama that serves the fine-tuned models, and
+    only after measuring (`scripts/classroom_load_test.py`).
+    """
+    raw = (os.environ.get("FINETUNED_MAX_CONCURRENCY") or "").strip()
+    try:
+        value = int(raw) if raw else 1
+    except ValueError:
+        return 1
+    return value if value >= 1 else 1
+
+
 def resolve_base_model() -> str:
     return (os.environ.get("FINETUNED_BASE_MODEL") or DEFAULT_BASE_MODEL).strip()
 
@@ -372,11 +388,60 @@ async def fetch_available_models() -> List[str]:
     return available_model_names(payload)
 
 
-#: One generation at a time. Not for correctness — the model name carries the
-#: course, so there is no selection step to interleave — but because this is a
-#: CPU host that the backend's own Base and RAG calls already share, and the
-#: backend serializes those for the same reason (`ollama_coordination`).
-_generation_lock = asyncio.Lock()
+#: Generations in flight to Ollama, one by default. Not for correctness — the
+#: model name carries the course, so there is no selection step to interleave —
+#: but because this is a CPU host. Created on first use, inside the running
+#: event loop.
+_generation_semaphore: Optional[asyncio.Semaphore] = None
+
+
+def _semaphore() -> asyncio.Semaphore:
+    global _generation_semaphore
+    if _generation_semaphore is None:
+        _generation_semaphore = asyncio.Semaphore(resolve_max_concurrency())
+    return _generation_semaphore
+
+
+#: Ollama reports nanoseconds; the backend logs milliseconds under these names.
+_TIMING_FIELDS = (
+    ("load_duration", "load_ms"),
+    ("prompt_eval_duration", "prompt_eval_ms"),
+    ("eval_duration", "eval_ms"),
+    ("total_duration", "ollama_total_ms"),
+)
+_COUNT_FIELDS = (("prompt_eval_count", "prompt_tokens"), ("eval_count", "output_tokens"))
+
+
+def extract_timings(data: Any) -> Dict[str, int]:
+    """Ollama's own durations and token counts for one call.
+
+    `load_ms` is what shows a model (re)load: near zero when the runner was
+    resident, seconds when Ollama had to load it for this request.
+    """
+    if not isinstance(data, dict):
+        return {}
+    timings: Dict[str, int] = {}
+    for source, target in _TIMING_FIELDS:
+        value = data.get(source)
+        if isinstance(value, (int, float)) and value >= 0:
+            timings[target] = int(value / 1_000_000)
+    for source, target in _COUNT_FIELDS:
+        value = data.get(source)
+        if isinstance(value, int) and value >= 0:
+            timings[target] = value
+    return timings
+
+
+def log_generation(model: str, outcome: str, *, wait: float, elapsed: float, timings: Dict[str, int], reason: str = "") -> None:
+    """One line per generation, no question or answer text."""
+    fields = " ".join(f"{key}={value}" for key, value in timings.items())
+    print(
+        f"generation model={model} outcome={outcome}"
+        + (f" reason={reason}" if reason else "")
+        + f" lock_wait_ms={int(wait * 1000)} elapsed_ms={int(elapsed * 1000)}"
+        + (f" {fields}" if fields else ""),
+        flush=True,
+    )
 
 
 async def generate_with_ollama(
@@ -396,12 +461,15 @@ async def generate_with_ollama(
         question, ollama_model=ollama_model, max_new_tokens=max_new_tokens
     )
 
-    async with _generation_lock:
+    queued = time.perf_counter()
+    async with _semaphore():
         started = time.perf_counter()
+        wait = started - queued
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(f"{base_url}/api/chat", json=payload)
         except httpx.TimeoutException as exc:
+            log_generation(ollama_model, "error", wait=wait, elapsed=time.perf_counter() - started, timings={}, reason="ollama_timeout")
             raise HTTPException(
                 status_code=503,
                 detail=(
@@ -410,6 +478,7 @@ async def generate_with_ollama(
                 ),
             ) from exc
         except httpx.RequestError as exc:
+            log_generation(ollama_model, "error", wait=wait, elapsed=time.perf_counter() - started, timings={}, reason="ollama_unavailable")
             raise HTTPException(
                 status_code=503,
                 detail=(
@@ -418,6 +487,9 @@ async def generate_with_ollama(
                 ),
             ) from exc
         elapsed = time.perf_counter() - started
+
+    if response.status_code >= 400:
+        log_generation(ollama_model, "error", wait=wait, elapsed=elapsed, timings={}, reason=f"ollama_http_{response.status_code}")
 
     if response.status_code == 404:
         raise HTTPException(
@@ -445,11 +517,15 @@ async def generate_with_ollama(
         )
 
     try:
-        answer = extract_chat_answer(response.json())
+        data = response.json()
+        answer = extract_chat_answer(data)
     except ValueError as exc:
+        log_generation(ollama_model, "error", wait=wait, elapsed=elapsed, timings={}, reason="malformed_response")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    return {"answer": answer, "generationSeconds": elapsed}
+    timings = extract_timings(data)
+    log_generation(ollama_model, "ok", wait=wait, elapsed=elapsed, timings=timings)
+    return {"answer": answer, "generationSeconds": elapsed, "timings": timings}
 
 
 # --------------------------------------------------------------------------- #
@@ -490,6 +566,9 @@ class GenerateResponse(BaseModel):
     modelVersion: str
     adapterLoaded: bool
     generationSeconds: float
+    #: Ollama's durations (ms) and token counts for this call, for the
+    #: backend's per-generation log. Optional: absent from older builds.
+    timings: Optional[Dict[str, int]] = None
 
 
 class CourseSummary(BaseModel):
@@ -622,6 +701,7 @@ async def generate(body: GenerateRequest) -> GenerateResponse:
         modelVersion=resolved["version"],
         adapterLoaded=True,
         generationSeconds=result["generationSeconds"],
+        timings=result.get("timings") or None,
     )
 
 

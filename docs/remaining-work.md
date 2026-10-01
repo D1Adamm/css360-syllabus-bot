@@ -110,52 +110,40 @@ version should be served (install and map it on the VM, then activate it).
 
 ---
 
-## 7. Serving and concurrency (findings 2026-09-30, redesign deferred)
+## 7. Serving and concurrency (root cause found and fixed 2026-10-01)
 
-A production test ("When is the class") returned a RAG answer after a long
-wait while Base, Fine-Tuned and Fine-Tuned + RAG showed "temporarily
-unavailable". The redesign was deliberately deferred until after the classroom
-deployment; these are the findings from the code, not yet confirmed by logs.
+The in-class failures of 2026-09-30 and 2026-10-01 have one main cause. A
+course model is `FROM llama3.2:3b` + `ADAPTER`, so it shares the base model's
+weights file, and one Ollama keeps at most one runner per weights file. With
+Base/RAG and the fine-tuned conditions each behind their own lock against the
+same Ollama, nearly every request swapped the model. Unbounded waits then
+turned that into late 503s. The full account, the fix (a second Ollama for the
+course models, and one bounded queue for all generation), the deployment
+steps and the load test are in [classroom-capacity.md](classroom-capacity.md).
 
-- **All four conditions share one Ollama on one 8-core CPU, behind two locks
-  that do not know about each other.** The backend lock
-  (`ollama_coordination.py`) serialises Base, RAG and automatic starter
-  generation (qwen3:8b, up to 3072 tokens, 300 s per call). The fine-tuned
-  service (`training/inference_service/ollama_service.py`) has its own lock and
-  calls the same Ollama. Embeddings take no lock.
-- **The browser schedules each student's four requests** (Base then RAG in
-  sequence, both fine-tuned requests alongside), and nothing coordinates across
-  students.
-- **Timeouts are inconsistent.** Base/RAG allow 120 s from *after* the backend
-  lock is acquired, so waiting for the lock is unbounded (only Nginx ends it).
-  Fine-Tuned/Fine-Tuned + RAG allow 120 s *including* the wait behind the
-  service's lock. Embeddings allow 60 s. Every failure reaches the student as
-  the same "temporarily unavailable".
-- **A disconnect cancels nothing**: the handlers return plain JSON, so an
-  abandoned request keeps its lock and its CPU.
-- **Latency was only ever measured for the fine-tuned conditions in
-  isolation**; the mix the Compare page produces has not been measured.
+Still open:
 
-Leading hypotheses, strongest first: a starter-generation job holding the lock
-and the CPU (it starts automatically after a course's first syllabus upload);
-cross-model CPU contention on 8 cores; model eviction/reload under memory
-pressure; a fine-tuned configuration fault. To confirm, compare the Ollama
-journal (`sudo journalctl -u ollama --since … --until …`) with the backend and
-fine-tuned service status codes for the moment of the failure.
-
-The proposed follow-up — one priority scheduler across all generation,
-separate queue-wait and generation timeouts, backpressure, `keep_alive` on the
-backend's calls, a backend comparison job so refresh recovery works, and
-per-condition timing logs without question text — is described in the
-2026-09-30 plan; measure N=1 versus N=2 concurrency with a classroom load probe
-before choosing. Also open: how often `classroom-concise-v1` answers reach the
-128-token cap (`docs/css360-model-evolution.md` §13).
+- **Measure the VM** with `scripts/classroom_load_test.py` after deploying,
+  then decide `num_thread` 4 vs 8 and whether `GENERATION_MAX_CONCURRENCY=2`
+  with `OLLAMA_NUM_PARALLEL=2` helps. Defaults stay at one generation at a
+  time until measured.
+- **Raw capacity.** 8 vCPUs cannot finish thirty simultaneous four-condition
+  comparisons within a few minutes. The queue makes the limit orderly and
+  visible, but it does not remove it.
+- **Two courses in class at once** share the second Ollama, so their models
+  swap with each other in the same way. One more server per concurrently
+  taught course would fix that if it ever happens.
+- **A running starter call** holds the generation slot until it finishes.
+  Classroom requests go first at every hand-off, but not mid-call.
+- **Refresh recovery** for a comparison in progress, and how often
+  `classroom-concise-v1` answers reach the 128-token cap
+  (`docs/css360-model-evolution.md` §13).
 
 ## Known issues
 
-- **Compare can answer "temporarily unavailable" under load** — §7. Seen in
-  production (findings dated 2026-09-30); the root cause is not yet confirmed
-  and the redesign is deferred.
+- **Compare under classroom load** — §7. Root cause found and fixed in code
+  2026-10-01; the second Ollama and the VM load test are deployment steps
+  ([classroom-capacity.md](classroom-capacity.md)).
 - **The adapter installer needs two explicit flags for newer courses**, by
   design: `--tag` for course ids outside the legacy `css-360-…` form (a
   derived tag could collide across terms), and, on the VM,

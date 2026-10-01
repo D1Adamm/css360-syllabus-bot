@@ -25,11 +25,13 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any, Mapping
 
 import httpx
 from fastapi import HTTPException
 
+from app.generation_queue import clean_timings, generation_slot, log_generation
 from app.upstream_errors import log_upstream_failure
 
 DEFAULT_FINETUNED_TIMEOUT_SECONDS = 120.0
@@ -353,6 +355,7 @@ async def generate_finetuned_response(
     course_id: str,
     model_version: str | None = None,
     max_new_tokens: int | None = None,
+    condition: str = "fineTuned",
 ) -> dict[str, Any]:
     """Call POST {FINETUNED_SERVICE_URL}/generate and return a validated result.
 
@@ -365,6 +368,10 @@ async def generate_finetuned_response(
     or the one an administrator named for a model test. Sending it makes the
     two sides checkable against each other — the response reports the version
     actually used, and a mismatch is refused rather than silent.
+
+    The call takes an interactive turn in the backend's generation queue
+    (`condition` names it in the log), so the fine-tuned conditions and Base/RAG
+    share one bound on concurrent work instead of one each.
 
     Never falls back to simulated text. Failures raise HTTPException.
     """
@@ -390,6 +397,61 @@ async def generate_finetuned_response(
         # that predates the field ignores it and keeps its own default.
         body["maxNewTokens"] = int(max_new_tokens)
 
+    async with generation_slot(condition, priority="interactive") as slot:
+        started = time.perf_counter()
+        try:
+            validated = await _post_generate(
+                base_url,
+                body,
+                timeout=timeout,
+                safe_course_id=safe_course_id,
+                model_version=model_version,
+            )
+        except HTTPException as exc:
+            log_generation(
+                slot,
+                model=f"{safe_course_id}@{model_version or '?'}",
+                outcome="error",
+                reason=_failure_reason(exc),
+                elapsed_seconds=time.perf_counter() - started,
+            )
+            raise
+        log_generation(
+            slot,
+            model=validated["model"],
+            outcome="ok",
+            elapsed_seconds=time.perf_counter() - started,
+            timings=validated["timings"],
+        )
+    return {
+        "answer": validated["answer"],
+        "model": validated["model"],
+        "adapter_loaded": validated["adapter_loaded"],
+        "course_id": validated["course_id"],
+        "model_version": validated["model_version"],
+        "generation_seconds": validated["generation_seconds"],
+        "response_type": "fineTuned",
+    }
+
+
+def _failure_reason(exc: HTTPException) -> str:
+    detail = str(exc.detail).lower()
+    if "timed out" in detail:
+        return "service_timeout"
+    if "unavailable" in detail:
+        return "service_unavailable"
+    return f"http_{exc.status_code}"
+
+
+async def _post_generate(
+    base_url: str,
+    body: dict[str, Any],
+    *,
+    timeout: float,
+    safe_course_id: str,
+    model_version: str | None,
+) -> dict[str, Any]:
+    """The `/generate` call, its error mapping and the response checks."""
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(f"{base_url}/generate", json=body)
@@ -478,12 +540,7 @@ async def generate_finetuned_response(
         expected_course_id=safe_course_id,
         expected_model_version=model_version or None,
     )
-    return {
-        "answer": validated["answer"],
-        "model": validated["model"],
-        "adapter_loaded": validated["adapter_loaded"],
-        "course_id": validated["course_id"],
-        "model_version": validated["model_version"],
-        "generation_seconds": validated["generation_seconds"],
-        "response_type": "fineTuned",
-    }
+    # Ollama's own durations as the service measured them (load, prompt
+    # evaluation, decoding). Optional: an older service sends none.
+    validated["timings"] = clean_timings(data.get("timings"))
+    return validated

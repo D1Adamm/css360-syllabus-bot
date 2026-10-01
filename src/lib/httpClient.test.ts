@@ -174,3 +174,50 @@ describe('httpClient', () => {
     });
   });
 });
+
+describe('httpClient structured refusals', () => {
+  it('carries the code and message of an object detail, such as the generation queue busy reply', async () => {
+    const { postJson } = await import('./httpClient');
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({
+        detail: {
+          code: 'generation_busy',
+          reason: 'queue_full',
+          message: 'Many people are asking at the same moment. Please try again in a minute.',
+          retryAfterSeconds: 60,
+        },
+      }),
+    });
+
+    await expect(postJson('/rag/generate', {}, 'fallback')).rejects.toMatchObject({
+      status: 503,
+      code: 'generation_busy',
+      message: 'Many people are asking at the same moment. Please try again in a minute.',
+    });
+  });
+
+  it('keeps the fallback and no code for a plain-text detail', async () => {
+    const { postJson } = await import('./httpClient');
+    fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({ detail: 'down' }) });
+
+    const error = await postJson('/rag/generate', {}, 'fallback').catch((e: unknown) => e);
+    expect(error).toMatchObject({ status: 503, message: 'down' });
+    expect((error as { code?: string }).code).toBeUndefined();
+  });
+
+  it('sends extra headers alongside the CSRF header', async () => {
+    const { requestJson } = await import('./httpClient');
+    await requestJson('/rag/generate', {
+      method: 'POST',
+      json: {},
+      fallbackErrorMessage: 'failed',
+      headers: { 'X-Comparison-Id': 'run-1' },
+    });
+    expect(headersOf(requestInit(0))).toMatchObject({
+      'X-Comparison-Id': 'run-1',
+      'X-Requested-With': 'SyllabusModelLab',
+    });
+  });
+});

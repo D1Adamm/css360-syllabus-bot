@@ -11,9 +11,9 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.ollama import generate_base_model_response, generate_ollama_completion
+from app.generation_queue import get_generation_queue
 from app.ollama_coordination import (
     end_starter_job,
-    get_ollama_generation_lock,
     get_starter_job_status,
     ollama_generation_slot,
     starter_job_slot,
@@ -281,7 +281,7 @@ class OllamaGenerationLockTests(CoordinationResetMixin, unittest.IsolatedAsyncio
         await starter_holding.wait()
         await asyncio.sleep(0.01)
         self.assertEqual(order, ["starter_acquired", "base_waiting"])
-        self.assertTrue(get_ollama_generation_lock().locked())
+        self.assertEqual(get_generation_queue().active, 1)
 
         release_starter.set()
         await asyncio.gather(starter_task, base_task)

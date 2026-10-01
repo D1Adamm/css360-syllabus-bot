@@ -610,5 +610,43 @@ class BindingTests(unittest.TestCase):
         self.assertEqual(kwargs["port"], 9001)
 
 
+class CapacityReportingTests(unittest.TestCase):
+    """What the backend's per-generation log line is built from."""
+
+    def test_generate_reports_ollamas_own_timings(self) -> None:
+        fake = FakeOllama(
+            chat_payload={
+                "model": CSS360_MODEL,
+                "message": {"role": "assistant", "content": ANSWER},
+                "load_duration": 4_200_000_000,
+                "prompt_eval_count": 1650,
+                "prompt_eval_duration": 21_000_000_000,
+                "eval_count": 60,
+                "eval_duration": 6_000_000_000,
+                "total_duration": 31_300_000_000,
+            }
+        )
+        with _env(DEFAULT_MAP), mock.patch.object(ollama_service.httpx, "AsyncClient", fake):
+            body = _client().post(
+                "/generate", json={"courseId": CSS360, "modelVersion": "v2", "question": QUESTION}
+            ).json()
+        self.assertEqual(
+            body["timings"],
+            {
+                "load_ms": 4200,
+                "prompt_eval_ms": 21000,
+                "eval_ms": 6000,
+                "ollama_total_ms": 31300,
+                "prompt_tokens": 1650,
+                "output_tokens": 60,
+            },
+        )
+
+    def test_max_concurrency_defaults_to_one_and_ignores_nonsense(self) -> None:
+        for raw, expected in (("", 1), ("2", 2), ("0", 1), ("-3", 1), ("many", 1)):
+            with self.subTest(raw=raw), mock.patch.dict(os.environ, {"FINETUNED_MAX_CONCURRENCY": raw}):
+                self.assertEqual(ollama_service.resolve_max_concurrency(), expected)
+
+
 if __name__ == "__main__":
     unittest.main()

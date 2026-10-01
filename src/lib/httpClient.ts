@@ -16,11 +16,20 @@
 
 export class ApiError extends Error {
   status?: number;
+  /**
+   * The backend's machine-readable reason, when its `detail` is an object
+   * with a `code` (for example `generation_busy`). Absent for plain-text
+   * details, which are most of them.
+   */
+  code?: string;
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    if (code !== undefined) {
+      this.code = code;
+    }
   }
 }
 
@@ -101,22 +110,37 @@ export interface RequestOptions {
    * holds the socket open cannot leave a control spinning forever.
    */
   timeoutMs?: number;
+  /** Extra request headers, e.g. the comparison id on the generate calls. */
+  headers?: Record<string, string>;
 }
 
 export function timeoutMessage(timeoutMs: number): string {
   return `No response after ${Math.round(timeoutMs / 1000)} seconds. The request was stopped.`;
 }
 
-async function readDetail(response: Response, fallback: string): Promise<string> {
+async function readDetail(
+  response: Response,
+  fallback: string,
+): Promise<{ message: string; code?: string }> {
   try {
     const errorBody = (await response.json()) as { detail?: unknown };
-    if (typeof errorBody.detail === 'string' && errorBody.detail.trim() !== '') {
-      return errorBody.detail;
+    const { detail } = errorBody;
+    if (typeof detail === 'string' && detail.trim() !== '') {
+      return { message: detail };
+    }
+    // A structured refusal: `{code, message}`, e.g. the generation queue's
+    // "busy". The message is written for the person who asked.
+    if (detail && typeof detail === 'object') {
+      const { code, message } = detail as { code?: unknown; message?: unknown };
+      return {
+        message: typeof message === 'string' && message.trim() !== '' ? message : fallback,
+        ...(typeof code === 'string' ? { code } : {}),
+      };
     }
   } catch {
     // Keep the fallback when the error body is not JSON.
   }
-  return fallback;
+  return { message: fallback };
 }
 
 /**
@@ -137,7 +161,7 @@ export async function requestJson<T>(path: string, options: RequestOptions): Pro
   }
 
   const method: HttpMethod = options.method ?? 'GET';
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...options.headers };
 
   if (!SAFE_METHODS.has(method)) {
     headers[CSRF_HEADER_NAME] = CSRF_HEADER_VALUE;
@@ -183,7 +207,7 @@ export async function requestJson<T>(path: string, options: RequestOptions): Pro
     if (response.status === 401) {
       notifyUnauthorized();
     }
-    throw new ApiError(detail, response.status);
+    throw new ApiError(detail.message, response.status, detail.code);
   }
 
   if (response.status === 204) {

@@ -588,7 +588,12 @@ class ExplicitVersionFineTunedRagTests(unittest.IsolatedAsyncioTestCase):
         prompts: list[str] = []
 
         async def capture(
-            prompt: str, *, course_id: str, model_version: str | None = None, max_new_tokens=None
+            prompt: str,
+            *,
+            course_id: str,
+            model_version: str | None = None,
+            max_new_tokens=None,
+            condition: str = "fineTuned",
         ):
             prompts.append(prompt)
             return self._client(model_version or "v2").return_value

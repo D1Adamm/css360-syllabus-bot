@@ -23,6 +23,8 @@ import type { ComparisonRunResponse } from './comparisonRun';
  *   - The two fine-tuned requests overlap with that chain.
  *   - A failure in one request never cancels another; RAG still runs when
  *     Base fails, and every answer is reported the moment it arrives.
+ *   - All four carry one comparison id, so the backend's generation queue
+ *     finishes this comparison before ones that began after it.
  */
 
 export type ApproachState =
@@ -92,20 +94,23 @@ export async function runFourConditions(
     }
   };
 
+  const comparisonId = generateRunId();
   const base = () =>
-    settle('base', async () => ({ answer: (await generateBaseModel(courseId, question)).answer }));
+    settle('base', async () => ({
+      answer: (await generateBaseModel(courseId, question, comparisonId)).answer,
+    }));
   const rag = () =>
     settle('rag', async () => {
-      const result = await generateRag(courseId, question);
+      const result = await generateRag(courseId, question, undefined, comparisonId);
       return { answer: result.answer, sources: formatRagSourceLabels(result.sources) };
     });
   const fineTuned = () =>
     settle('fineTuned', async () => ({
-      answer: (await generateFineTuned(courseId, question)).answer,
+      answer: (await generateFineTuned(courseId, question, comparisonId)).answer,
     }));
   const fineTunedRag = () =>
     settle('fineTunedRag', async () => {
-      const result = await generateFineTunedRag(courseId, question);
+      const result = await generateFineTunedRag(courseId, question, undefined, comparisonId);
       return { answer: result.answer, sources: formatRagSourceLabels(result.sources) };
     });
 

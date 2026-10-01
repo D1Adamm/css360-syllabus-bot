@@ -156,6 +156,12 @@ const UNAVAILABLE: Record<ErrorContext, CopyEntry> = {
   },
 };
 
+/** `app.generation_queue.BUSY_CODE`. */
+export const GENERATION_BUSY_CODE = 'generation_busy';
+
+export const GENERATION_BUSY_MESSAGE =
+  'Many people are asking at the same moment and this answer could not start in time. Please try again in a minute.';
+
 export interface ToUserMessageOptions {
   audience: Role;
   context: ErrorContext;
@@ -177,6 +183,13 @@ export function toUserMessage(
   }
 
   const fallback = audience === 'professor' ? copy.professor : copy.student;
+
+  // The generation queue's capacity refusal. A 503, but not an outage: the
+  // backend is up and saying "too many at once", in words meant for the
+  // person who asked, so they know waiting a minute is the fix.
+  if (error instanceof ApiError && error.code === GENERATION_BUSY_CODE) {
+    return { title: 'Busy right now', message: GENERATION_BUSY_MESSAGE };
+  }
 
   // A 4xx usually carries a message written for the person doing the action.
   // Anything else is an infrastructure problem they cannot act on.

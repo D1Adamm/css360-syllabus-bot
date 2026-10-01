@@ -99,7 +99,8 @@ Environment (the unit reads these from `~/.config/aiswe/finetuned.env`):
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `FINETUNED_OLLAMA_MODELS` | empty | The course → model mapping above |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | The VM's Ollama |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | The Ollama serving the course models. In production the separate fine-tuned Ollama on `:11435` (`ollama-finetuned.service`), so a course model and the base model are never swapped in one server; see [classroom-capacity.md](../../docs/classroom-capacity.md) |
+| `FINETUNED_MAX_CONCURRENCY` | `1` | Generations sent to Ollama at once. The backend's generation queue is the real bound |
 | `INFERENCE_PORT` | `9001` | Loopback port; must match the backend's `FINETUNED_SERVICE_URL` |
 | `FINETUNED_OLLAMA_TIMEOUT_SECONDS` | `120` | Per-generation Ollama timeout |
 | `FINETUNED_NUM_CTX` | `4096` | Context window. Ollama truncates a longer prompt from the front, which for Fine-Tuned + RAG would drop the grounding rules first |

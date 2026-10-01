@@ -33,7 +33,15 @@ ENV_FILE="${AISWE_FINETUNED_ENV:-${ENV_DIR}/finetuned.env}"
 ENV_EXAMPLE="${REPO_ROOT}/scripts/finetuned.env.example"
 BACKEND_ENV="${REPO_ROOT}/backend/.env"
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:8001}"
-OLLAMA_URL="${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
+# The Ollama the service talks to: the shell's OLLAMA_BASE_URL, else the env
+# file's (the unit's own setting, e.g. the separate fine-tuned Ollama on
+# :11435), else the default instance.
+# Read the way systemd's EnvironmentFile does: optional `export `, surrounding
+# whitespace, a trailing CR and one pair of matching quotes are not part of it.
+ENV_FILE_OLLAMA_URL="$( [[ -f "${ENV_FILE}" ]] && tr -d '\r' < "${ENV_FILE}" \
+  | sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?OLLAMA_BASE_URL[[:space:]]*=[[:space:]]*//p' \
+  | tail -n 1 | sed -E -e 's/[[:space:]]+$//' -e 's/^"(.*)"$/\1/' -e "s/^'(.*)'\$/\1/" || true )"
+OLLAMA_URL="${OLLAMA_BASE_URL:-${ENV_FILE_OLLAMA_URL:-http://127.0.0.1:11434}}"
 SERVICE_URL="http://127.0.0.1:${PORT}"
 OLLAMA_WAIT_SECONDS="${OLLAMA_WAIT_SECONDS:-90}"
 HEALTH_WAIT_SECONDS="${HEALTH_WAIT_SECONDS:-30}"

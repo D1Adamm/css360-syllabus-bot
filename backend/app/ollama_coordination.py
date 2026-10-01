@@ -2,8 +2,11 @@
 
 Two complementary guards:
 
-1. ``ollama_generation_lock`` — one local ``/api/generate`` call at a time
-   (Base Model, RAG, and starter completions). Embeddings are not covered.
+1. ``ollama_generation_slot`` — a turn in the process-wide generation queue
+   (``app.generation_queue``), which bounds every generation this backend
+   asks for: Base, RAG, the fine-tuned service's calls, and starter
+   completions, which queue behind classroom requests. Embeddings are not
+   covered.
 2. Global starter-job slot — only one starter seed job (automatic, manual, or
    top-up) may run on this CPU VM at a time.
 """
@@ -17,9 +20,14 @@ from typing import Any, AsyncIterator, Literal
 
 from fastapi import HTTPException
 
-StarterOperation = Literal["automatic", "manual", "top_up"]
+from app.generation_queue import (
+    Priority,
+    SlotInfo,
+    generation_slot,
+    reset_generation_queue_for_tests,
+)
 
-_ollama_generation_lock = asyncio.Lock()
+StarterOperation = Literal["automatic", "manual", "top_up"]
 
 _starter_state_lock = asyncio.Lock()
 _starter_job_active = False
@@ -32,16 +40,20 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def get_ollama_generation_lock() -> asyncio.Lock:
-    """Return the shared lock used around local Ollama generation calls."""
-    return _ollama_generation_lock
-
-
 @asynccontextmanager
-async def ollama_generation_slot() -> AsyncIterator[None]:
-    """Serialize Base / RAG / starter local generation against one Ollama model."""
-    async with _ollama_generation_lock:
-        yield
+async def ollama_generation_slot(
+    label: str = "starter",
+    *,
+    priority: Priority = "background",
+) -> AsyncIterator[SlotInfo]:
+    """A turn in the shared generation queue for one local Ollama generation.
+
+    Defaults are the starter pipeline's: background work that waits behind
+    every classroom request. Classroom calls pass their condition and
+    `priority="interactive"`.
+    """
+    async with generation_slot(label, priority=priority) as info:
+        yield info
 
 
 def starter_generation_in_progress_detail(
@@ -152,8 +164,8 @@ def reset_ollama_coordination_for_tests() -> None:
     _starter_job_operation = None
     _starter_job_started_at = None
 
-    # Recreate locks so tests never leave them held across cases.
-    # Safe only when no tasks are awaiting the old locks (test teardown).
-    global _ollama_generation_lock, _starter_state_lock
-    _ollama_generation_lock = asyncio.Lock()
+    # Recreate the lock and the queue so tests never leave them held across
+    # cases. Safe only when no tasks are awaiting them (test teardown).
+    global _starter_state_lock
     _starter_state_lock = asyncio.Lock()
+    reset_generation_queue_for_tests()

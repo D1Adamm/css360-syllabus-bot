@@ -23,7 +23,7 @@ VM. Anything not represented anywhere in the repository is not documented here.
 | Reverse proxy | Nginx forwards `location /api/` to the backend |
 | Database | PostgreSQL on the VM, DSN in `backend/.env` |
 | Generation | Ollama on the VM |
-| Fine-tuned inference | `training/inference_service/ollama_service.py` on `127.0.0.1:9001`, systemd **user** unit `aiswe-finetuned`, against the same Ollama |
+| Fine-tuned inference | `training/inference_service/ollama_service.py` on `127.0.0.1:9001`, systemd **user** unit `aiswe-finetuned`, against a second Ollama on `127.0.0.1:11435` (system unit `ollama-finetuned`; see [classroom-capacity.md](classroom-capacity.md)) |
 | Repository | `~/css360-syllabus-bot` on the VM, `/gpfs/projects/simswe/$USER/css360-syllabus-bot` on Tillicum |
 
 **Nginx forwards only `/api/`.** This is why `VITE_API_BASE_URL` carries the
@@ -366,6 +366,11 @@ A small latency probe, for the classroom question rather than for load:
 ```bash
 AISWE_VERIFY_PASSWORD='<admin password>' backend/.venv/bin/python scripts/finetuned_latency_probe.py --admin-email <admin email> --out latency.json
 ```
+
+For load (many students at once, all four conditions), use
+`scripts/classroom_load_test.py` instead; see
+[classroom-capacity.md](classroom-capacity.md), which also covers the second
+Ollama server the course models are served from.
 
 Defaults: both courses, both fine-tuned modes, one first request per cell,
 then two requests each at concurrency 1 and 2. Concurrency 4 needs

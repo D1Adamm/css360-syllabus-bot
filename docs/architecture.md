@@ -167,8 +167,11 @@ POST /api/rag/generate            → retrieve from backend/data/indexes/{course
 ```
 
 Both hit the same CPU-bound Ollama process, so the Compare page issues them
-**sequentially**. Running them concurrently makes both slower and can time out;
-the ordering is covered by tests.
+**sequentially**; the ordering is covered by tests. Every generation (these
+two, both fine-tuned conditions and starter jobs) also takes a turn in the
+backend's one bounded queue (`app/generation_queue.py`), so a class cannot
+start more work than the CPU can do; see
+[classroom-capacity.md](classroom-capacity.md).
 
 Retrieval is course-local: the index is built from that course's uploaded
 syllabus at upload time and lives beside it on disk.
@@ -257,11 +260,13 @@ backend cannot tell the two apart — and the two must not run at once: the
 tunnel script refuses while the unit is active, and the unit refuses while the
 tunnel owns the port.
 
-The fine-tuned paths share the VM's Ollama process with Base and RAG, so on a
-CPU host they queue behind one another rather than overlapping — behind two
-locks (the backend's and the fine-tuned service's) that do not coordinate. That
-is the open concurrency issue in
-[remaining-work.md](remaining-work.md#7-serving-and-concurrency-findings-2026-09-30-redesign-deferred).
+The course models are served by a second Ollama server on `127.0.0.1:11435`
+(system unit `ollama-finetuned`, same model store). A course model is
+`FROM llama3.2:3b` + `ADAPTER`, so it shares the base model's weights file, and
+one Ollama keeps only one runner per weights file: on one server, Base and a
+course model would unload each other on nearly every request. The backend's
+generation queue bounds both servers together. See
+[classroom-capacity.md](classroom-capacity.md).
 
 ---
 

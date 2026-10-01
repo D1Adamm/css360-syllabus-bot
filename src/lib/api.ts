@@ -74,27 +74,54 @@ export {
 
 import { getApiBaseUrl, getJson, postJson, requestJson } from './httpClient';
 
+/**
+ * Sent with each of one comparison's four requests. The backend's generation
+ * queue serves a comparison's requests in the order the comparison began, so
+ * a student who asked first gets all four answers first.
+ */
+export const COMPARISON_HEADER_NAME = 'X-Comparison-Id';
+
+function generate<T>(
+  path: string,
+  json: unknown,
+  fallbackErrorMessage: string,
+  unreachableMessage: string,
+  comparisonId?: string,
+): Promise<T> {
+  return requestJson<T>(path, {
+    method: 'POST',
+    json,
+    fallbackErrorMessage,
+    unreachableMessage,
+    ...(comparisonId ? { headers: { [COMPARISON_HEADER_NAME]: comparisonId } } : {}),
+  });
+}
+
 export async function generateBaseModel(
   courseId: string,
   question: string,
+  comparisonId?: string,
 ): Promise<BaseModelGenerateResponse> {
-  return postJson<BaseModelGenerateResponse>(
+  return generate<BaseModelGenerateResponse>(
     '/base-model/generate',
     { courseId, question },
     'The backend could not generate a Base response.',
     'The service could not be reached.',
+    comparisonId,
   );
 }
 
 export async function generateFineTuned(
   courseId: string,
   question: string,
+  comparisonId?: string,
 ): Promise<FineTunedGenerateResponse> {
-  return postJson<FineTunedGenerateResponse>(
+  return generate<FineTunedGenerateResponse>(
     '/fine-tuned/generate',
     { courseId, question },
     'The backend could not generate a Fine-Tuned response.',
     'The fine-tuned model service could not be reached.',
+    comparisonId,
   );
 }
 
@@ -102,12 +129,14 @@ export async function generateFineTunedRag(
   courseId: string,
   question: string,
   topK = 4,
+  comparisonId?: string,
 ): Promise<FineTunedRagGenerateResponse> {
-  return postJson<FineTunedRagGenerateResponse>(
+  return generate<FineTunedRagGenerateResponse>(
     '/fine-tuned-rag/generate',
     { courseId, question, topK },
     'The backend could not generate a Fine-Tuned + RAG response.',
     'The fine-tuned model service could not be reached.',
+    comparisonId,
   );
 }
 
@@ -115,12 +144,14 @@ export async function generateRag(
   courseId: string,
   question: string,
   topK = 4,
+  comparisonId?: string,
 ): Promise<RagGenerateResponse> {
-  return postJson<RagGenerateResponse>(
+  return generate<RagGenerateResponse>(
     '/rag/generate',
     { courseId, question, topK },
     'The backend could not generate a RAG response.',
     'The service could not be reached.',
+    comparisonId,
   );
 }
 

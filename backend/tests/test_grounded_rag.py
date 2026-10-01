@@ -104,7 +104,10 @@ class GenerateFromPromptTests(unittest.IsolatedAsyncioTestCase):
             result = await generate_from_prompt("PROMPT", course_id=COURSE, target=BASE_TARGET)
 
         chat.assert_awaited_once_with(
-            "PROMPT", options=dict(GROUNDED_OPTIONS), timeout=GROUNDED_TIMEOUT_SECONDS
+            "PROMPT",
+            options=dict(GROUNDED_OPTIONS),
+            timeout=GROUNDED_TIMEOUT_SECONDS,
+            condition="rag",
         )
         self.assertEqual(result["answer"], "Base answer.")
         self.assertEqual(result["model"], "llama3.2:3b")
@@ -123,7 +126,11 @@ class GenerateFromPromptTests(unittest.IsolatedAsyncioTestCase):
         current.assert_called_once_with(COURSE)
         explicit.assert_not_called()
         client.assert_awaited_once_with(
-            "PROMPT", course_id=COURSE, model_version="v2", max_new_tokens=None
+            "PROMPT",
+            course_id=COURSE,
+            model_version="v2",
+            max_new_tokens=None,
+            condition="fineTunedRag",
         )
         self.assertEqual(result["responseType"], "fineTunedRag")
         self.assertEqual(result["modelVersion"], "v2")

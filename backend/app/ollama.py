@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import httpx
 from fastapi import HTTPException
 
+from app.generation_queue import log_generation, ollama_timings
 from app.ollama_coordination import ollama_generation_slot
 from app.upstream_errors import log_upstream_failure
 from app.grounded_generation import (
@@ -23,6 +24,11 @@ OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 DEFAULT_STARTER_OLLAMA_TIMEOUT_SECONDS = 300.0
 DEFAULT_STARTER_OLLAMA_RETRY_DELAY_SECONDS = 1.5
 DEFAULT_EMBED_MODEL = os.getenv("STARTER_EMBED_MODEL", "nomic-embed-text")
+#: How long Ollama keeps the base and embedding models resident after a
+#: classroom request. Ollama's own default is five minutes, after which the next
+#: student pays the load again; the fine-tuned service sends its own setting
+#: (`FINETUNED_KEEP_ALIVE`). Empty means "send nothing": Ollama's default.
+DEFAULT_BASE_MODEL_KEEP_ALIVE = "30m"
 
 # Fact extraction asks for a JSON array of facts, each carrying a verbatim
 # evidence quote, over a batch of up to DEFAULT_BATCH_CHAR_BUDGET characters of
@@ -35,6 +41,12 @@ DEFAULT_STARTER_GENERATION_NUM_PREDICT = 384
 DEFAULT_STARTER_VALIDATION_NUM_PREDICT = 256
 
 logger = logging.getLogger(__name__)
+
+
+def get_base_model_keep_alive() -> str | None:
+    raw = os.getenv("BASE_MODEL_KEEP_ALIVE")
+    value = DEFAULT_BASE_MODEL_KEEP_ALIVE if raw is None else raw.strip()
+    return value or None
 
 
 def get_starter_ollama_timeout_seconds() -> float:
@@ -385,6 +397,7 @@ async def generate_base_model_response(question: str) -> dict[str, str]:
         options=classroom_options(),
         timeout=GROUNDED_TIMEOUT_SECONDS,
         action="base model",
+        condition="base",
     )
     return {
         **result,
@@ -399,6 +412,7 @@ async def generate_ollama_chat(
     options: Mapping[str, Any] | None = None,
     timeout: float | None = None,
     action: str = "grounded",
+    condition: str = "rag",
 ) -> dict[str, str]:
     """One user message through Ollama's `/api/chat`, with explicit options.
 
@@ -412,8 +426,9 @@ async def generate_ollama_chat(
     (`grounded_generation.grounded_options`). Nothing about the prompt text is
     changed here; the caller built it.
 
-    Shares the generation slot with `generate_ollama_completion`: both talk to
-    the one CPU-bound Ollama.
+    Takes an interactive turn in the shared generation queue (`condition`
+    names it in the log: "base", "rag"), ahead of starter work and bounded in
+    how long it waits. `keep_alive` keeps the model resident between students.
     """
     selected_model = model or OLLAMA_MODEL
     request_timeout = OLLAMA_TIMEOUT_SECONDS if timeout is None else float(timeout)
@@ -424,64 +439,109 @@ async def generate_ollama_chat(
     }
     if options:
         payload["options"] = dict(options)
+    keep_alive = get_base_model_keep_alive()
+    if keep_alive is not None:
+        payload["keep_alive"] = keep_alive
 
-    async with ollama_generation_slot():
+    async with ollama_generation_slot(condition, priority="interactive") as slot:
+        started = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=request_timeout) as client:
-                response = await client.post(
-                    f"{OLLAMA_BASE_URL}/api/chat",
-                    json=payload,
-                )
-        except httpx.TimeoutException as exc:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Ollama request timed out. Ensure Ollama is running and responsive."
-                ),
-            ) from exc
-        except httpx.RequestError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail="Ollama is unavailable. Start Ollama locally and try again.",
-            ) from exc
-
-        if response.status_code >= 500:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Ollama returned a server error. Ensure the model is available "
-                    "locally."
-                ),
+            result = await _post_ollama_chat(payload, request_timeout, action=action)
+        except Exception as exc:
+            log_generation(
+                slot,
+                model=selected_model,
+                outcome="error",
+                reason=_failure_reason(exc),
+                elapsed_seconds=time.perf_counter() - started,
             )
-
-        if response.status_code >= 400:
-            log_upstream_failure(
-                logger,
-                f"{action} generation",
-                url=f"{OLLAMA_BASE_URL}/api/chat",
-                status_code=response.status_code,
-                body=response.text,
-            )
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    f"Ollama rejected the {action} request "
-                    f"(HTTP {response.status_code}). See the backend log for "
-                    "the service's own response."
-                ),
-            )
-
-        data = response.json()
-        message = data.get("message") if isinstance(data, dict) else None
-        content = message.get("content") if isinstance(message, dict) else None
-        answer = content.strip() if isinstance(content, str) else ""
-        if not answer:
-            raise HTTPException(
-                status_code=502,
-                detail="Ollama returned an empty response.",
-            )
+            raise
+        answer, data = result
+        log_generation(
+            slot,
+            model=selected_model,
+            outcome="ok",
+            elapsed_seconds=time.perf_counter() - started,
+            timings=ollama_timings(data),
+        )
 
     return {"answer": answer, "model": selected_model}
+
+
+def _failure_reason(exc: BaseException) -> str:
+    """A one-word cause for the log: what an operator greps for."""
+    if isinstance(exc, HTTPException):
+        detail = str(exc.detail).lower()
+        if "timed out" in detail:
+            return "ollama_timeout"
+        if "unavailable" in detail:
+            return "ollama_unavailable"
+        if "empty response" in detail:
+            return "empty_answer"
+        return f"http_{exc.status_code}"
+    return exc.__class__.__name__
+
+
+async def _post_ollama_chat(
+    payload: dict[str, object], request_timeout: float, *, action: str
+) -> tuple[str, Any]:
+    """The `/api/chat` call and its error mapping; returns (answer, raw body)."""
+    try:
+        async with httpx.AsyncClient(timeout=request_timeout) as client:
+            response = await client.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json=payload,
+            )
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Ollama request timed out. Ensure Ollama is running and responsive."
+            ),
+        ) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Ollama is unavailable. Start Ollama locally and try again.",
+        ) from exc
+
+    if response.status_code >= 500:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Ollama returned a server error. Ensure the model is available "
+                "locally."
+            ),
+        )
+
+    if response.status_code >= 400:
+        log_upstream_failure(
+            logger,
+            f"{action} generation",
+            url=f"{OLLAMA_BASE_URL}/api/chat",
+            status_code=response.status_code,
+            body=response.text,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Ollama rejected the {action} request "
+                f"(HTTP {response.status_code}). See the backend log for "
+                "the service's own response."
+            ),
+        )
+
+    data = response.json()
+    message = data.get("message") if isinstance(data, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    answer = content.strip() if isinstance(content, str) else ""
+    if not answer:
+        raise HTTPException(
+            status_code=502,
+            detail="Ollama returned an empty response.",
+        )
+
+    return answer, data
 
 
 async def embed_ollama_texts(
@@ -495,10 +555,13 @@ async def embed_ollama_texts(
     if not cleaned_texts:
         return {"embeddings": [], "model": selected_model}
 
-    payload = {
+    payload: dict[str, object] = {
         "model": selected_model,
         "input": cleaned_texts,
     }
+    keep_alive = get_base_model_keep_alive()
+    if keep_alive is not None:
+        payload["keep_alive"] = keep_alive
 
     try:
         async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
