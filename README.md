@@ -24,9 +24,12 @@ Internally `base`, `rag`, `fineTuned`, and `fineTunedRag`. What everyone sees:
 
 All four are real. Nothing is simulated.
 
-Base and RAG share one CPU-bound local model process, so they are issued
-**sequentially**; the two fine-tuned paths use a separate GPU service and
-overlap with them. That ordering is load-bearing and covered by tests.
+The browser issues Base and RAG **sequentially** and the two fine-tuned
+requests alongside them. On the VM all four end up in the same CPU-bound Ollama
+process — the fine-tuned service is a separate process, not separate hardware —
+so they contend rather than truly overlap. The ordering is covered by tests;
+the contention is an open issue
+([remaining work §7](docs/remaining-work.md#7-serving-and-concurrency-findings-2026-09-30-redesign-deferred)).
 
 ---
 
@@ -92,8 +95,10 @@ course artifacts on local disk, and the fine-tuned inference service: each
 course's trained adapter runs on the VM's CPU as an Ollama model, so all four
 approaches answer without anything outside the VM.
 
-**On Tillicum:** QLoRA fine-tuning, which needs a GPU the VM does not have, and
-the GPU inference service, kept as a fallback.
+**On Tillicum:** queued QLoRA fine-tuning, which needs a GPU the VM does not
+have, and the GPU inference service, kept only as an emergency fallback. Moving
+training off Tillicum too is future work, not the intended end state; see
+[remaining-work.md](docs/remaining-work.md#6-fine-tuned-inference-without-tillicum).
 
 **Why Tillicum needs a person.** Reaching Tillicum from the VM authenticates to
 UW, and UW two-factor is deliberately not automated, stored, or worked around.
@@ -121,7 +126,7 @@ connection.
 | `course_models` / `course_model_versions` | The per-course model registry |
 | `model_requests` | The professor-facing "I want a model" lifecycle |
 | `training_runs` | The queue the cluster claims work from, and what each run reported |
-| `serving_sessions` | Whether a GPU is serving fine-tuned inference, and until when |
+| `serving_sessions` | Whether the Tillicum GPU fallback is serving fine-tuned inference, and until when. The VM-local service records none |
 | `users` / `course_memberships` | Professor and admin accounts, and which courses a professor instructs |
 | `invitations` | Reusable class codes and single-use professor/admin/reset links (tokens stored hashed) |
 | `participants` / `auth_sessions` | Anonymous student identities, and the sessions behind both kinds of cookie |
@@ -351,6 +356,9 @@ closed if a test tries to reach any of them — see
 ├── evaluation/               # Research benchmarks: question sets, runners, committed results
 ├── scripts/
 │   ├── lib/                  # Shared stdlib-only helpers for cluster scripts
+│   ├── aiswe_finetuned.sh             # VM-local fine-tuned unit: install, check, set-mapping, restart
+│   ├── install_finetuned_adapter.py   # adapter → GGUF → versioned Ollama model on the VM
+│   ├── verify_finetuned_production.py # end-to-end production check
 │   ├── register_course_model.py       # manual registration (recovery only)
 │   ├── report_model_published.py      # publication reporting
 │   └── *_finetuned_tunnel.sh          # UWB VM side of the Tillicum inference tunnel (fallback)
@@ -419,8 +427,8 @@ What is genuinely unfinished, and what is deliberately out of scope:
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | How a request flows, and how courses stay isolated |
 | [docs/data-model.md](docs/data-model.md) | Every table and API record, field by field |
-| [docs/tillicum-operations.md](docs/tillicum-operations.md) | Operator runbook: training, serving, retries, secrets |
-| [docs/deployment.md](docs/deployment.md) | Deploying to the UWB VM |
+| [docs/tillicum-operations.md](docs/tillicum-operations.md) | Operator runbook: training, publication, retries, secrets, the inference fallback |
+| [docs/deployment.md](docs/deployment.md) | Deploying to the UWB VM, including installing and serving fine-tuned models |
 | [docs/remaining-work.md](docs/remaining-work.md) | What is actually unfinished |
 | [docs/verification-history.md](docs/verification-history.md) | What has been proven against production |
 | [backend/README.md](backend/README.md) | Backend setup and API groups |

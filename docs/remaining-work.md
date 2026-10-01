@@ -60,8 +60,9 @@ Worth having before results are published:
   uploaded syllabi, indexes, and training artifacts accumulate indefinitely.
 - **No redaction.** A student can type personal information into a contributed
   question or an evaluation comment, and it is stored verbatim.
-- **No structured application logging or alerting.** A failed starter-seed job or
-  an expired serving session is discoverable by looking, not by being told.
+- **No structured application logging or alerting.** A failed starter-seed job,
+  a stopped `aiswe-finetuned` unit, or an expired fallback serving session is
+  discoverable by looking, not by being told.
 - **Course deletion does not touch the filesystem artifacts or the cluster.**
 
 `training/cleanup_training_outputs.sh` covers cluster disk only, is dry-run by
@@ -76,7 +77,7 @@ first thing to hit if this grows.
 
 ## 6. Fine-tuned inference without Tillicum
 
-Done. Fine-Tuned and Fine-Tuned + RAG are served on the UWB VM by the
+**Inference: done.** Fine-Tuned and Fine-Tuned + RAG are served on the UWB VM by the
 `aiswe-finetuned` user unit (`training/inference_service/ollama_service.py`
 against the VM's own Ollama, on `127.0.0.1:9001`, the same contract the GPU
 service answers). It is installed, mapped, verified and switched to and from
@@ -85,14 +86,27 @@ the Tillicum fallback with tracked tooling (`scripts/aiswe_finetuned.sh`,
 `scripts/finetuned_latency_probe.py`); see
 [deployment.md](deployment.md#fine-tuned-inference-on-the-vm). Ordinary
 student use needs no Tillicum allocation, SSH tunnel, Duo prompt, laptop,
-`caffeinate` or open terminal. The Tillicum GPU service remains the emergency
-fallback and the reference implementation; the training queue still submits
-to Tillicum, which is where training belongs.
+`caffeinate` or open terminal. Every served course runs this way: CSS 350,
+CSS 360, and the Fall courses CSS 360D and CSS 360E
+([verification-history.md](verification-history.md#css-360d-and-css-360e-on-the-vm)).
+The Tillicum GPU service remains only as the emergency fallback and reference
+implementation.
 
-Still by hand, deliberately: deciding that a trained version should be served
-(publication in PostgreSQL, then one `set-mapping` on the VM). Still open: the
-CPU training path (`train_qlora.py --cpu`) is launched and registered by hand
-rather than through the queue.
+**Training: Tillicum is still in the loop, and that is not the end state.**
+Removing Tillicum from training is future architecture work, after the Fall
+classroom evaluation. What still depends on it today:
+
+- **Queued QLoRA training** runs on Tillicum GPUs (`run_training_queue.sh`,
+  started by a person after a Duo login). The CPU path (`train_qlora.py --cpu`)
+  exists but is launched and registered by hand rather than through the queue.
+- **Recording a publication.** The `deployment = online` fact that decides
+  which version a course serves is written by `promote_qlora_adapter.sh` on
+  Tillicum (via `report_model_published.py`), alongside its copy into the GPU
+  fallback's serving tree. There is no VM-side publication step yet.
+
+Still by hand, deliberately, wherever training runs: deciding that a trained
+version should be served (install and map it on the VM, then record its
+publication).
 
 ---
 
@@ -139,8 +153,24 @@ before choosing. Also open: how often `classroom-concise-v1` answers reach the
 
 ## Known issues
 
-None recorded. (The professor overview's hardcoded model status, listed here
-earlier, was fixed: the page reads the registry and request records now.)
+- **Compare can answer "temporarily unavailable" under load** — §7. Seen in
+  production (findings dated 2026-09-30); the root cause is not yet confirmed
+  and the redesign is deferred.
+- **A course with no publication recorded follows `current_version`.**
+  Resolution falls back to the newest registered version for a course that has
+  never had a publication reported (see
+  [architecture.md](architecture.md#registered-published-served)). For such a
+  course, a training run that registers `v2` moves fine-tuned requests to `v2`
+  at once, and the VM refuses a version it does not map until it is installed
+  and mapped. Before retraining a course, check Admin → Models: if no version
+  is marked published, install and map the new version as soon as it
+  registers, or record a publication of the version that should keep serving.
+- **The adapter installer needs two explicit flags for newer courses**, by
+  design: `--tag` for course ids outside the legacy `css-360-…` form (a
+  derived tag could collide across terms), and, on the VM,
+  `--base-model-path <local snapshot>`, because `--base-model-id` alone makes
+  the converter contact Hugging Face. See
+  [deployment.md](deployment.md#installing-a-completed-adapter).
 
 ---
 

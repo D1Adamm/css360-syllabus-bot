@@ -201,10 +201,15 @@ completion callback idempotent instead of a source of `v2`, `v3`, …
 **`status` versus `deployment`** — different questions, never merged:
 
 - `status = 'ready'` means a usable adapter exists somewhere.
-- `deployment = 'online'` means the adapter is in the cluster's serving tree.
-  **This is what inference resolves.** A newly registered version is `ready` and
-  `offline` until an operator publishes it deliberately.
-- Whether a GPU is running *right now* is `serving_sessions`, not this column.
+- `deployment = 'online'` means the version has been published: chosen to
+  serve. **This is what inference resolves.** A newly registered version is
+  `ready` and `offline` until an operator publishes it deliberately — today
+  with `promote_qlora_adapter.sh` on Tillicum, which also copies the adapter
+  into the GPU fallback's serving tree. On the VM the version must also be
+  installed and mapped (`FINETUNED_OLLAMA_MODELS`), which lives outside the
+  database.
+- Whether the Tillicum fallback is running *right now* is `serving_sessions`,
+  not this column.
 
 `training_example_count` is the number of examples actually passed into
 training. For a course with 42 approved examples split 37/5, it is 37; the
@@ -292,7 +297,10 @@ Operator-facing, never queried by field.
 
 ## `serving_sessions`
 
-Whether a GPU is serving fine-tuned inference, and until when.
+Whether the **Tillicum GPU fallback** is serving fine-tuned inference, and until
+when. Written only by the fallback's start/stop scripts; the VM-local
+`aiswe-finetuned` service records nothing here, so no live row is the normal
+state and says nothing about whether fine-tuned answers work.
 
 | Column | Type | Notes |
 | --- | --- | --- |
@@ -421,8 +429,10 @@ Not in the database, and not reproducible from it.
 | `backend/data/indexes/{courseId}.facts.json` | UWB VM | Extracted-fact cache |
 | `data/exports/{courseId}/` | UWB VM | `train.jsonl`, `validation.jsonl`, `manifest.json` |
 | `training_outputs/qlora-runs/{courseId}/{run}-{mode}/` | Tillicum | One training run |
-| `training_outputs/serving/{courseId}/{version}/adapter/` | Tillicum | A published adapter |
+| `training_outputs/serving/{courseId}/{version}/adapter/` | Tillicum | A published adapter, as the GPU fallback loads it |
 | `training/state/` | Tillicum | Run↔job↔output mapping, undelivered reports |
+| `~/model_artifacts/{courseId}/{version}/` | UWB VM | The served model's GGUF, `Modelfile` and `install-record.json` (hashes, converter flags, Ollama digest) |
+| `~/.config/aiswe/finetuned.env` | UWB VM | `FINETUNED_OLLAMA_MODELS`: which Ollama model answers each course and version |
 
 `manifest.json` carries SHA-256 checksums of `train.jsonl` and
 `validation.jsonl`. The cluster verifies each transferred file against them

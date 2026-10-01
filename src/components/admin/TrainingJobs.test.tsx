@@ -356,16 +356,20 @@ describe('training jobs', () => {
 });
 
 describe('serving session banner', () => {
-  it('says nothing is serving when no session is recorded', async () => {
+  it('says no fallback session is running when none is recorded', async () => {
     /*
-     * The resting state, and the one that keeps `ready` and `deployed` distinct:
-     * a trained model exists whether or not a GPU is running.
+     * The resting state. Only the Tillicum fallback records a session; the
+     * VM-local unit serving production records none, so this must not claim
+     * that nothing is serving fine-tuned answers.
      */
     render(<TrainingJobs />);
 
     expect(
-      await screen.findByText('No fine-tuned service is running'),
+      await screen.findByText('No Tillicum fallback session'),
     ).toBeInTheDocument();
+    expect(screen.getByText(/aiswe-finetuned/)).toBeInTheDocument();
+    expect(screen.queryByText(/No fine-tuned service is running/)).toBeNull();
+    expect(screen.queryByText(/start_finetuned_tunnel/)).toBeNull();
   });
 
   it('shows a live session with its expiry and what it serves', async () => {
@@ -382,7 +386,7 @@ describe('serving session banner', () => {
     render(<TrainingJobs />);
 
     expect(
-      await screen.findByText('A fine-tuned service is running'),
+      await screen.findByText('A Tillicum fallback session is running'),
     ).toBeInTheDocument();
     expect(screen.getByText(/serve-264790/)).toBeInTheDocument();
     expect(screen.getByText(new RegExp(`${CSS350} \\(v1\\)`))).toBeInTheDocument();
@@ -399,7 +403,7 @@ describe('serving session banner', () => {
     render(<TrainingJobs />);
 
     expect(
-      await screen.findByText('No fine-tuned service is running'),
+      await screen.findByText('No Tillicum fallback session'),
     ).toBeInTheDocument();
   });
 
