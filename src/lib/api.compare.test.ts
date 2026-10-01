@@ -135,3 +135,36 @@ describe('compare live API client courseId', () => {
     });
   });
 });
+
+describe('compare requests carry the comparison id', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('sends X-Comparison-Id on all four conditions when given, and not otherwise', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'http://127.0.0.1:8001');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ answer: 'a', model: 'm', sources: [], retrievedChunks: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await generateBaseModel('css-430-summer-2026-ibce', 'Q?', 'run-1');
+    await generateRag('css-430-summer-2026-ibce', 'Q?', 4, 'run-1');
+    await generateFineTuned('css-430-summer-2026-ibce', 'Q?', 'run-1');
+    await generateFineTunedRag('css-430-summer-2026-ibce', 'Q?', 4, 'run-1');
+    await generateBaseModel('css-430-summer-2026-ibce', 'Q?');
+
+    const headers = fetchMock.mock.calls.map(
+      ([, init]) => (init as RequestInit).headers as Record<string, string>,
+    );
+    expect(headers.slice(0, 4).map((h) => h['X-Comparison-Id'])).toEqual([
+      'run-1',
+      'run-1',
+      'run-1',
+      'run-1',
+    ]);
+    expect(headers[4]['X-Comparison-Id']).toBeUndefined();
+  });
+});

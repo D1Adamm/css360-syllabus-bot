@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from app.upstream_errors import log_upstream_failure
 from app.grounded_generation import build_grounded_prompt
+from app.ollama import get_base_model_keep_alive
 
 logger = logging.getLogger(__name__)
 
@@ -471,10 +472,15 @@ def _ensure_data_directory() -> None:
 
 
 async def get_embedding(text: str) -> list[float]:
-    payload = {
+    payload: dict[str, Any] = {
         "model": OLLAMA_EMBEDDING_MODEL,
         "prompt": text,
     }
+    # Every RAG and Fine-Tuned + RAG request embeds the question first; keep
+    # the embedding model resident between students like the base model.
+    keep_alive = get_base_model_keep_alive()
+    if keep_alive is not None:
+        payload["keep_alive"] = keep_alive
 
     try:
         async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT_SECONDS) as client:

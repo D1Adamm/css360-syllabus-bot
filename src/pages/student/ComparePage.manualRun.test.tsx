@@ -52,6 +52,8 @@ const generateRagMock = vi.mocked(generateRag);
 const FIRST_QUESTION = SUGGESTED[0];
 const SECOND_QUESTION = SUGGESTED[1];
 const COURSE_ID = 'css-430-summer-2026-ibce';
+/** Every request of one comparison carries its comparison id (see comparisonRunner). */
+const COMPARISON_ID = expect.stringMatching(/^run-/);
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -218,10 +220,10 @@ describe('ComparePage manual comparison runs', () => {
       expect(generateFineTunedRagMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, SECOND_QUESTION);
-    expect(generateRagMock).toHaveBeenCalledWith(COURSE_ID, SECOND_QUESTION);
-    expect(generateFineTunedMock).toHaveBeenCalledWith(COURSE_ID, SECOND_QUESTION);
-    expect(generateFineTunedRagMock).toHaveBeenCalledWith(COURSE_ID, SECOND_QUESTION);
+    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, SECOND_QUESTION, COMPARISON_ID);
+    expect(generateRagMock).toHaveBeenCalledWith(COURSE_ID, SECOND_QUESTION, undefined, COMPARISON_ID);
+    expect(generateFineTunedMock).toHaveBeenCalledWith(COURSE_ID, SECOND_QUESTION, COMPARISON_ID);
+    expect(generateFineTunedRagMock).toHaveBeenCalledWith(COURSE_ID, SECOND_QUESTION, undefined, COMPARISON_ID);
     expect(getActiveQuestionStatus()).toHaveTextContent(SECOND_QUESTION);
   });
 
@@ -235,10 +237,10 @@ describe('ComparePage manual comparison runs', () => {
       expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, customQuestion);
-    expect(generateRagMock).toHaveBeenCalledWith(COURSE_ID, customQuestion);
-    expect(generateFineTunedMock).toHaveBeenCalledWith(COURSE_ID, customQuestion);
-    expect(generateFineTunedRagMock).toHaveBeenCalledWith(COURSE_ID, customQuestion);
+    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, customQuestion, COMPARISON_ID);
+    expect(generateRagMock).toHaveBeenCalledWith(COURSE_ID, customQuestion, undefined, COMPARISON_ID);
+    expect(generateFineTunedMock).toHaveBeenCalledWith(COURSE_ID, customQuestion, COMPARISON_ID);
+    expect(generateFineTunedRagMock).toHaveBeenCalledWith(COURSE_ID, customQuestion, undefined, COMPARISON_ID);
     expect(getActiveQuestionStatus()).toHaveTextContent(customQuestion);
   });
 
@@ -293,7 +295,7 @@ describe('ComparePage manual comparison runs', () => {
     fireEvent.click(runButton);
 
     expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
-    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, FIRST_QUESTION);
+    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, FIRST_QUESTION, COMPARISON_ID);
     expect(getActiveQuestionStatus()).toHaveTextContent(FIRST_QUESTION);
   });
 
@@ -319,7 +321,7 @@ describe('ComparePage manual comparison runs', () => {
     fireEvent.click(askButton());
 
     expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
-    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, FIRST_QUESTION);
+    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, FIRST_QUESTION, COMPARISON_ID);
   });
 
   it('blocks an example submission while a typed comparison is running', async () => {
@@ -341,7 +343,7 @@ describe('ComparePage manual comparison runs', () => {
     fireEvent.click(exampleChip(SECOND_QUESTION));
 
     expect(generateBaseModelMock).toHaveBeenCalledTimes(1);
-    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, customQuestion);
+    expect(generateBaseModelMock).toHaveBeenCalledWith(COURSE_ID, customQuestion, COMPARISON_ID);
     expect(getActiveQuestionStatus()).toHaveTextContent(customQuestion);
   });
 
@@ -618,8 +620,8 @@ describe('ComparePage manual comparison runs', () => {
     });
     expect(screen.queryByText('First base answer')).not.toBeInTheDocument();
     expect(screen.queryByText('First rag answer')).not.toBeInTheDocument();
-    expect(generateBaseModelMock).toHaveBeenLastCalledWith(COURSE_ID, SECOND_QUESTION);
-    expect(generateRagMock).toHaveBeenLastCalledWith(COURSE_ID, SECOND_QUESTION);
+    expect(generateBaseModelMock).toHaveBeenLastCalledWith(COURSE_ID, SECOND_QUESTION, COMPARISON_ID);
+    expect(generateRagMock).toHaveBeenLastCalledWith(COURSE_ID, SECOND_QUESTION, undefined, COMPARISON_ID);
   });
 
   it('hands the settled run to Evaluate, including the failed approach', async () => {

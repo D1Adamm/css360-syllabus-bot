@@ -146,8 +146,8 @@ class BackendSession:
     def get(self, path: str, *, timeout: float | None = None) -> HttpResult:
         return self.transport.request("GET", self.base_url + path, headers=self._headers(csrf=False), timeout=timeout or self.timeout)
 
-    def post(self, path: str, body: dict[str, Any], *, timeout: float | None = None) -> HttpResult:
-        return self.transport.request("POST", self.base_url + path, body=body, headers=self._headers(csrf=True), timeout=timeout or self.timeout)
+    def post(self, path: str, body: dict[str, Any], *, timeout: float | None = None, headers: dict[str, str] | None = None) -> HttpResult:
+        return self.transport.request("POST", self.base_url + path, body=body, headers={**self._headers(csrf=True), **(headers or {})}, timeout=timeout or self.timeout)
 
     def login(self, email: str, password: str) -> HttpResult:
         result = self.transport.request(
@@ -196,8 +196,19 @@ def resolve_admin_credentials(email_arg: str | None, *, env: dict[str, str] | No
 # --------------------------------------------------------------------------- #
 
 
-def generate(session: BackendSession, mode: str, course_id: str, *, question: str = PROBE_QUESTION, timeout: float | None = None) -> HttpResult:
-    return session.post(MODE_ROUTES[mode], {"courseId": course_id, "question": question}, timeout=timeout)
+def generate(
+    session: BackendSession,
+    mode: str,
+    course_id: str,
+    *,
+    question: str = PROBE_QUESTION,
+    timeout: float | None = None,
+    comparison_id: str | None = None,
+) -> HttpResult:
+    """One classroom-route request. `comparison_id` is the Compare page's
+    `X-Comparison-Id`, which the backend's generation queue orders by."""
+    headers = {"X-Comparison-Id": comparison_id} if comparison_id else None
+    return session.post(MODE_ROUTES[mode], {"courseId": course_id, "question": question}, timeout=timeout, headers=headers)
 
 
 def judge_generation(result: HttpResult, *, course_id: str, mode: str, allowed_versions: Iterable[str] | None = None) -> tuple[bool, str]:

@@ -25,11 +25,11 @@ Internally `base`, `rag`, `fineTuned`, and `fineTunedRag`. What everyone sees:
 All four are real. Nothing is simulated.
 
 The browser issues Base and RAG **sequentially** and the two fine-tuned
-requests alongside them. On the VM all four end up in the same CPU-bound Ollama
-process — the fine-tuned service is a separate process, not separate hardware —
-so they contend rather than truly overlap. The ordering is covered by tests;
-the contention is an open issue
-([remaining work §7](docs/remaining-work.md#7-serving-and-concurrency-findings-2026-09-30-redesign-deferred)).
+requests alongside them. On the VM all four share one CPU, so the backend runs
+them through one bounded queue, and the course models are served from a second
+Ollama server so they do not unload the base model. The ordering is covered by
+tests; capacity, the queue and the load test are in
+[classroom-capacity.md](docs/classroom-capacity.md).
 
 ---
 

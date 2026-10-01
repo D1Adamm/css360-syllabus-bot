@@ -116,6 +116,15 @@ describe('toUserMessage', () => {
     expect(result.technical).toContain('Ollama refused the connection');
   });
 
+  it('tells a student plainly that the models are busy, rather than "unavailable"', () => {
+    const busy = new ApiError('anything', 503, 'generation_busy');
+    for (const audience of ['student', 'professor'] as const) {
+      const result = toUserMessage(busy, { audience, context: 'model-response' });
+      expect(result.title).toBe('Busy right now');
+      expect(result.message).toMatch(/try again in a minute/i);
+    }
+  });
+
   it('describes a non-Error value without throwing', () => {
     const result = toUserMessage('something odd', {
       audience: 'admin',
