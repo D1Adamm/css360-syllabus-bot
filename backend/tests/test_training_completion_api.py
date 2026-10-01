@@ -27,6 +27,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.course_model_resolution import select_servable_version
 from app.main import app
 
 COURSE = "css-350-spring-2026-n3h9"
@@ -608,6 +609,43 @@ class ValidationTests(CompletionTestCase):
             json=_success_payload(),
         )
         self.assertEqual(response.status_code, 401)
+
+
+class CompletionDoesNotMoveTrafficTests(CompletionTestCase):
+    """A finished run for v2 must not change which version students reach.
+
+    The course has an activated v1, and the VM maps only v1. The callback
+    registers v2 and moves `current_version` to it (what a professor is shown),
+    but writes it `offline`, so resolution keeps answering from v1 until an
+    administrator activates v2 after installing it on the VM.
+    """
+
+    def test_a_completion_for_v2_leaves_the_active_v1_serving(self) -> None:
+        active_v1 = {
+            "version": "v1",
+            "baseModel": "meta-llama/Llama-3.2-3B-Instruct",
+            "trainingExampleCount": 37,
+            "status": "ready",
+            "deployment": "online",
+            "artifactRef": f"qlora-runs/{COURSE}/run-1-full/adapter",
+            "createdAt": "2026-08-27T06:00:00+00:00",
+        }
+        self.existing_versions = [active_v1]
+
+        response = self._post(_success_payload())
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["version"], "v2")
+        self.assertEqual(response.json()["currentVersion"], "v2")
+        v2 = self.registered[0]
+        self.assertEqual(v2["deployment"], "offline")
+
+        registry_after = {
+            "courseId": COURSE,
+            "currentVersion": "v2",
+            "versions": {"v1": active_v1, "v2": v2},
+        }
+        self.assertEqual(select_servable_version(registry_after), ("v1", "published"))
 
 
 if __name__ == "__main__":

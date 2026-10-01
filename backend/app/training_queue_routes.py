@@ -1292,6 +1292,20 @@ def register_model_version(
             status_code=422,
             detail=f"deployment must be one of {sorted(DEPLOYMENT_STATUSES)}.",
         )
+    # Registration records that an artifact exists; it never decides what
+    # students are answered by. `online` written here would skip both the
+    # check that the VM can serve the version and the demotion of the version
+    # that was serving — the newest registered row would simply win. A version
+    # becomes active through Admin → Models → Activate (or, as the legacy
+    # fallback, Tillicum's publication report), never through registration.
+    if request.deployment == "online":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Registration cannot publish a version. Register it offline, "
+                "install and map it on the VM, then activate it from Admin → Models."
+            ),
+        )
 
     artifact_ref = _validate_artifact_ref(request.artifact_ref)
     if request.version is not None and not VERSION_PATTERN.match(request.version):

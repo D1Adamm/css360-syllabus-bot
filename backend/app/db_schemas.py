@@ -322,6 +322,17 @@ class ModelRegistryResponse(DbRecord):
     versions: dict[str, ModelVersionRecord]
 
 
+class ModelVersionActivationResponse(DbRecord):
+    """An administrator made one version the one a course serves."""
+
+    course_id: str = Field(alias="courseId")
+    version: str
+    previous_version: str | None = Field(default=None, alias="previousVersion")
+    #: True when the version was already the active one; nothing changed.
+    unchanged: bool
+    model: ModelRegistryResponse
+
+
 # --------------------------------------------------------------------------- #
 # Model requests
 # --------------------------------------------------------------------------- #

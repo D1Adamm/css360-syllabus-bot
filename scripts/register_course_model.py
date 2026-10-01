@@ -18,8 +18,10 @@ Two facts are stored separately and must stay that way:
 
   status      training/artifact state. Durable. A promoted adapter stays
               ``ready`` whether or not anything is serving it.
-  deployment  whether that model is currently being served. Changes when a
-              service starts or stops; says nothing about existence.
+  deployment  whether that version is the one the course serves. Registration
+              only ever records ``offline`` (or ``unknown``); a version becomes
+              ``online`` when an administrator activates it from Admin → Models,
+              after the VM can serve it. The backend refuses ``online`` here.
 
 The artifact reference is stored relative (``css-360-qlora/adapter``) rather
 than as the absolute promote-script destination, which embeds a cluster home
@@ -65,7 +67,9 @@ from training_queue import (  # noqa: E402  (path set above)
 VERSION_PATTERN = re.compile(r"^v(\d+)$")
 
 MODEL_STATUSES = ("ready", "training", "failed")
-DEPLOYMENT_STATUSES = ("online", "offline", "unknown")
+#: `online` is deliberately absent: the backend refuses it on registration, and
+#: activation (Admin → Models) is the only way a version starts serving.
+DEPLOYMENT_STATUSES = ("offline", "unknown")
 
 
 def parse_args() -> argparse.Namespace:

@@ -376,14 +376,22 @@ queueing; the second student waits for the first.
 ### Making a new version the one students get
 
 Installing and mapping a version makes it *servable*; the backend still sends
-the course's *published* version. Install and map first, restart, then record
-the publication — today with `training/promote_qlora_adapter.sh` on Tillicum
-(see [tillicum-operations.md](tillicum-operations.md#per-course-serving)). In
-the other order, the backend asks the VM for a version it does not map and
-that course's fine-tuned answers fail until it is mapped. A course that has
-never had a publication recorded is served its newest registered version
-instead, so for such a course a new version starts being requested as soon as
-training registers it.
+the course's *active* (published) version. Install and map first, restart,
+then in **Admin → Models** press **Activate** on that version and confirm.
+Activation asks the fine-tuned service's `/health` first and refuses (nothing
+written) unless it lists that exact course and version, so the wrong order
+fails safely. Rollback is the same button on the earlier version, which must
+still be mapped. Each activation is recorded in the audit trail.
+
+Until every served course has an activated version, a course with none is
+served its newest registered version, so for such a course a new version is
+requested as soon as training registers it. Activate the version a course
+already serves to close that gap
+([remaining-work.md](remaining-work.md#known-issues)).
+
+Tillicum's `training/promote_qlora_adapter.sh` still records a publication as
+the legacy path ([tillicum-operations.md](tillicum-operations.md#per-course-serving));
+it does not check the VM.
 
 ### Tillicum fallback, and back again
 
@@ -475,11 +483,11 @@ git -C ~/css360-syllabus-bot checkout <previous-commit> && npm ci && npm run bui
 then republish and restart as above.
 
 **Model versions do not roll back with code.** They are data. To return a course
-to an earlier adapter, first make sure the VM still maps that version
-(`./scripts/aiswe_finetuned.sh set-mapping`, then `restart`), since the backend
-sends the published version and the VM refuses one it does not map; then
-publish that version again on Tillicum — publication is idempotent and moves
-the previously published version to `offline`:
+to an earlier adapter, make sure the VM still maps that version
+(`./scripts/aiswe_finetuned.sh set-mapping`, then `restart`), then press
+**Activate** on it in Admin → Models; the previously active version moves to
+`offline`. The legacy alternative is publishing it again on Tillicum
+(idempotent, not checked against the VM):
 
 ```bash
 ./training/promote_qlora_adapter.sh --course <courseId> --version <previousVersion> /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<run>-full/adapter

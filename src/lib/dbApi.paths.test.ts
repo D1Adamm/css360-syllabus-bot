@@ -153,6 +153,11 @@ describe('every dbApi endpoint, composed against the deployed base', () => {
         `/api/db/courses/${COURSE}/model`,
       ],
       [
+        'activateModelVersion',
+        (api) => api.activateModelVersion(COURSE, 'v2'),
+        `/api/db/courses/${COURSE}/model-versions/v2/activate`,
+      ],
+      [
         'getModelRequest',
         (api) => api.getModelRequest(COURSE),
         `/api/db/courses/${COURSE}/model-request`,

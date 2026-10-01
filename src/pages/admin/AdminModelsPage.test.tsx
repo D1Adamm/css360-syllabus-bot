@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -23,6 +23,7 @@ import '@testing-library/jest-dom/vitest';
 
 const fetchFineTunedHealth = vi.fn();
 const fetchCourseModel = vi.fn();
+const activateCourseModelVersion = vi.fn();
 
 vi.mock('../../lib/adminApi', () => ({
   fetchFineTunedHealth: () => fetchFineTunedHealth(),
@@ -35,6 +36,8 @@ vi.mock('../../lib/courseModelDb', async () => {
   return {
     ...actual,
     fetchCourseModel: (...args: unknown[]) => fetchCourseModel(...args),
+    activateCourseModelVersion: (...args: unknown[]) =>
+      activateCourseModelVersion(...args),
   };
 });
 
@@ -112,6 +115,7 @@ afterEach(cleanup);
 beforeEach(() => {
   fetchFineTunedHealth.mockReset();
   fetchCourseModel.mockReset();
+  activateCourseModelVersion.mockReset();
   fetchFineTunedHealth.mockResolvedValue(HEALTH);
   fetchCourseModel.mockResolvedValue(REGISTRY);
 });
@@ -183,5 +187,157 @@ describe('AdminModelsPage registry', () => {
 
     expect(await screen.findByText('No course models registered')).toBeInTheDocument();
     expect(screen.getByText(new RegExp(`No model registered for: ${CSS350}`))).toBeInTheDocument();
+  });
+});
+
+describe('AdminModelsPage activation', () => {
+  /** CSS 360D as deployed: v1 registered offline, served through the fallback. */
+  const FALLBACK_REGISTRY: CourseModelRegistry = {
+    currentVersion: 'v1',
+    versions: { v1: { ...V1, deployment: 'offline' } },
+  };
+
+  function versionsList() {
+    return screen.findByRole('list', { name: `Model versions for ${CSS350}` });
+  }
+
+  it('says when no version is activated and the newest one answers by fallback', async () => {
+    fetchCourseModel.mockResolvedValue(FALLBACK_REGISTRY);
+    fetchFineTunedHealth.mockResolvedValue({
+      ...HEALTH,
+      courses: [{ courseId: CSS350, versions: ['v1'], currentVersion: 'v1' }],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/No activated version/)).toBeInTheDocument();
+    const versions = await versionsList();
+    expect(versions).toHaveTextContent('VM: servable');
+    expect(
+      within(versions).getByRole('button', { name: `Activate v1 for ${CSS350}` }),
+    ).toBeEnabled();
+  });
+
+  it('activates after confirmation and shows the new state', async () => {
+    fetchCourseModel.mockResolvedValue(FALLBACK_REGISTRY);
+    fetchFineTunedHealth.mockResolvedValue({
+      ...HEALTH,
+      courses: [{ courseId: CSS350, versions: ['v1'], currentVersion: 'v1' }],
+    });
+    const activated: CourseModelRegistry = {
+      currentVersion: 'v1',
+      versions: { v1: { ...V1, deployment: 'online' } },
+    };
+    activateCourseModelVersion.mockImplementation(async () => {
+      // The backend's registry has moved; any later read sees it.
+      fetchCourseModel.mockResolvedValue(activated);
+      return { version: 'v1', previousVersion: null, unchanged: false, registry: activated };
+    });
+
+    renderPage();
+    fireEvent.click(
+      within(await versionsList()).getByRole('button', {
+        name: `Activate v1 for ${CSS350}`,
+      }),
+    );
+
+    // Nothing happens before the confirmation.
+    expect(activateCourseModelVersion).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(/switch to v1 immediately/);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Activate' }));
+
+    await waitFor(() =>
+      expect(activateCourseModelVersion).toHaveBeenCalledWith(CSS350, 'v1'),
+    );
+    expect(await screen.findByText('v1 is now active.')).toBeInTheDocument();
+    expect(
+      screen.getByRole('list', { name: 'Registered course models' }),
+    ).toHaveTextContent("Active v1: students' Fine-Tuned answers use this version.");
+    expect(
+      within(await versionsList()).queryByRole('button', { name: /Activate v1/ }),
+    ).toBeNull();
+  });
+
+  it('does nothing when the confirmation is cancelled', async () => {
+    fetchCourseModel.mockResolvedValue(FALLBACK_REGISTRY);
+
+    renderPage();
+    fireEvent.click(
+      within(await versionsList()).getByRole('button', {
+        name: `Activate v1 for ${CSS350}`,
+      }),
+    );
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }),
+    );
+
+    expect(activateCourseModelVersion).not.toHaveBeenCalled();
+  });
+
+  it('blocks activating a version the fine-tuned service cannot serve', async () => {
+    fetchCourseModel.mockResolvedValue({
+      currentVersion: 'v2',
+      versions: { v1: { ...V1, deployment: 'online' }, v2: { ...V2, deployment: 'offline' } },
+    });
+    fetchFineTunedHealth.mockResolvedValue({
+      ...HEALTH,
+      courses: [{ courseId: CSS350, versions: ['v1'], currentVersion: 'v1' }],
+    });
+
+    renderPage();
+
+    const versions = await versionsList();
+    await waitFor(() => expect(versions).toHaveTextContent('VM: not mapped'));
+    expect(
+      within(versions).getByRole('button', { name: `Activate v2 for ${CSS350}` }),
+    ).toBeDisabled();
+  });
+
+  it("shows the backend's refusal and changes nothing", async () => {
+    fetchCourseModel.mockResolvedValue(FALLBACK_REGISTRY);
+    fetchFineTunedHealth.mockRejectedValue(new Error('unreachable'));
+    activateCourseModelVersion.mockRejectedValue(
+      new Error('Could not confirm that the fine-tuned service can serve it, so nothing was activated.'),
+    );
+
+    renderPage();
+    const versions = await versionsList();
+    await waitFor(() => expect(versions).toHaveTextContent('VM: unknown'));
+    fireEvent.click(
+      within(versions).getByRole('button', { name: `Activate v1 for ${CSS350}` }),
+    );
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Activate' }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/nothing was activated/);
+    expect(screen.getByText(/No activated version/)).toBeInTheDocument();
+  });
+
+  it('offers rollback to an older ready version and names what it replaces', async () => {
+    // The default registry: v2 active, v1 still registered and servable.
+    activateCourseModelVersion.mockResolvedValue({
+      version: 'v1',
+      previousVersion: 'v2',
+      unchanged: false,
+      registry: {
+        currentVersion: 'v2',
+        versions: { v1: { ...V1, deployment: 'online' }, v2: { ...V2, deployment: 'offline' } },
+      },
+    });
+
+    renderPage();
+    const versions = await versionsList();
+    expect(within(versions).queryByRole('button', { name: /Activate v2/ })).toBeNull();
+    fireEvent.click(
+      within(versions).getByRole('button', { name: `Activate v1 for ${CSS350}` }),
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(/replacing v2/);
+    expect(dialog).toHaveTextContent(/activate v2 again/);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Activate' }));
+
+    expect(await screen.findByText('v1 is now active, replacing v2.')).toBeInTheDocument();
   });
 });

@@ -320,6 +320,34 @@ export function getCourseModel(
   );
 }
 
+export interface DbModelVersionActivationResponse {
+  courseId: string;
+  version: string;
+  previousVersion: string | null;
+  /** True when the version was already the active one; nothing changed. */
+  unchanged: boolean;
+  model: DbModelRegistryResponse;
+}
+
+/**
+ * Make one registered version the one a course's fine-tuned answers use.
+ *
+ * Administrators only. The backend refuses (409) unless the fine-tuned service
+ * reports that exact course and version as servable, and (503) when it cannot
+ * be asked — in both cases nothing is written.
+ */
+export function activateModelVersion(
+  courseId: string,
+  version: string,
+): Promise<DbModelVersionActivationResponse> {
+  return send<DbModelVersionActivationResponse>(
+    'POST',
+    `${coursePath(courseId)}/model-versions/${encodeURIComponent(version)}/activate`,
+    undefined,
+    'The backend could not activate that model version.',
+  );
+}
+
 /* ------------------------------------------------------------------------ *
  * Model requests
  * ------------------------------------------------------------------------ */

@@ -388,9 +388,10 @@ closed if a test tries to reach any of them — see
 - **A newly trained adapter reaches the VM by hand, on purpose.** Fine-tuned
   answers on the VM come from Ollama models built from GGUF-converted adapters;
   a new version is not served until someone runs
-  `scripts/install_finetuned_adapter.py` and maps it with
-  `scripts/aiswe_finetuned.sh set-mapping`. Serving a model is a decision, not
-  a side effect of training.
+  `scripts/install_finetuned_adapter.py`, maps it with
+  `scripts/aiswe_finetuned.sh set-mapping`, and activates it in Admin →
+  Models (which refuses a version the VM cannot serve). Serving a model is a
+  decision, not a side effect of training.
 - **Syllabus artifacts and indexes are local disk only**, so the backend is not
   horizontally scalable as written.
 - The archived Firebase snapshot is retained deliberately; nothing deletes it.

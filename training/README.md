@@ -139,15 +139,16 @@ export TRAINING_API_BASE_URL=https://aiswe.uwb.edu
 export TRAINING_WORKER_TOKEN=…   # same value as the backend's
 ```
 
-### C) Explicit publication (optional, intentional)
+### C) Explicit publication (legacy; activation is the normal path)
 
 Registering a model and serving it are separate decisions. A finished run
 registers a version automatically with `status = ready` and
-`deployment = offline`. Publishing is this step, and it is deliberate: it
-records the version as the one the course serves (`deployment = online`) and
-copies the adapter into the GPU fallback's serving tree. Install and map the
-version on the VM first (section D); publishing a version the VM does not map
-makes that course's fine-tuned answers fail until it is mapped.
+`deployment = offline`. The normal way to make it the version students get is
+to install and map it on the VM (section D) and **Activate** it in Admin →
+Models, which checks the VM first. Publishing from Tillicum is the legacy
+alternative: it records the version as the one the course serves
+(`deployment = online`) and copies the adapter into the GPU fallback's serving
+tree, but does not check the VM, so install and map the version first.
 
 ```bash
 ./training/promote_qlora_adapter.sh \

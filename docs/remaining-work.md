@@ -99,14 +99,12 @@ classroom evaluation. What still depends on it today:
 - **Queued QLoRA training** runs on Tillicum GPUs (`run_training_queue.sh`,
   started by a person after a Duo login). The CPU path (`train_qlora.py --cpu`)
   exists but is launched and registered by hand rather than through the queue.
-- **Recording a publication.** The `deployment = online` fact that decides
-  which version a course serves is written by `promote_qlora_adapter.sh` on
-  Tillicum (via `report_model_published.py`), alongside its copy into the GPU
-  fallback's serving tree. There is no VM-side publication step yet.
+Publication no longer needs Tillicum: an administrator activates a version
+from Admin → Models once the VM serves it. `promote_qlora_adapter.sh` still
+records publications too, as the legacy path.
 
 Still by hand, deliberately, wherever training runs: deciding that a trained
-version should be served (install and map it on the VM, then record its
-publication).
+version should be served (install and map it on the VM, then activate it).
 
 ---
 
@@ -156,15 +154,17 @@ before choosing. Also open: how often `classroom-concise-v1` answers reach the
 - **Compare can answer "temporarily unavailable" under load** — §7. Seen in
   production (findings dated 2026-09-30); the root cause is not yet confirmed
   and the redesign is deferred.
-- **A course with no publication recorded follows `current_version`.**
-  Resolution falls back to the newest registered version for a course that has
-  never had a publication reported (see
+- **A course with no activated version still follows `current_version`.**
+  Kept deliberately for the rollout of activation (see
   [architecture.md](architecture.md#registered-published-served)). For such a
   course, a training run that registers `v2` moves fine-tuned requests to `v2`
-  at once, and the VM refuses a version it does not map until it is installed
-  and mapped. Before retraining a course, check Admin → Models: if no version
-  is marked published, install and map the new version as soon as it
-  registers, or record a publication of the version that should keep serving.
+  at once, and the VM refuses a version it does not map. The rollout:
+  1. deploy activation (Admin → Models → **Activate**);
+  2. activate the version each served course already uses — CSS 360D `v1`
+     and CSS 360E `v1`, and any other course Admin → Models shows as
+     "No activated version" — and re-run `verify_finetuned_production.py`;
+  3. only then remove the fallback, so inference requires an activated
+     version and registration alone can never move traffic.
 - **The adapter installer needs two explicit flags for newer courses**, by
   design: `--tag` for course ids outside the legacy `css-360-…` form (a
   derived tag could collide across terms), and, on the VM,
