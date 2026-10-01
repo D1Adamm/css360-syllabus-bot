@@ -348,6 +348,7 @@ closed if a test tries to reach any of them — see
 │   ├── scripts/              # Operational and one-off maintenance scripts
 │   └── tests/
 ├── docs/                     # Architecture, data model, operations, roadmap
+├── evaluation/               # Research benchmarks: question sets, runners, committed results
 ├── scripts/
 │   ├── lib/                  # Shared stdlib-only helpers for cluster scripts
 │   ├── register_course_model.py       # manual registration (recovery only)
