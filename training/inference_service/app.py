@@ -33,6 +33,19 @@ Course isolation, concretely
    exists to prevent, and it would be invisible in the response.
 4. The response echoes the course id and version it actually used, and the
    backend refuses a response whose course does not match what it asked for.
+
+Classroom GPU mode
+------------------
+The same process also answers the Base and RAG conditions (`target: "base"`):
+the base model with every adapter switched off. Every answer, either target,
+is decoded exactly as the VM decodes it: the prompt rendered as Ollama renders
+llama3.2 (`helpers.render_production_prompt`), greedy, the request's output cap
+(the classroom profile's 128), Ollama's stop tokens, a 4096-token context, a
+1.05 repetition penalty over the whole context, seed 360. Each response echoes
+those settings (`decoding`) and the backend refuses one that differs from what
+it would have sent the VM. Weights are the same checkpoint in a different
+quantisation (bitsandbytes NF4 here, GGUF Q4_K_M on the VM), so answers can
+differ in wording; every setting that is a choice matches.
 """
 
 from __future__ import annotations
@@ -43,16 +56,24 @@ import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from helpers import (
     DEFAULT_MAX_NEW_TOKENS,
+    DEFAULT_NUM_CTX,
     DEFAULT_REPETITION_PENALTY,
     DEFAULT_SEED,
+    BOS_TOKEN,
+    END_OF_GENERATION_TOKENS,
+    STOP_TOKENS,
     CourseAdapterError,
+    decoding_summary,
+    render_production_prompt,
+    resolve_max_new_tokens,
+    with_single_bos,
     assert_hf_auth_available,
     list_available_courses,
     resolve_course_adapter,
@@ -67,13 +88,27 @@ from helpers import (
 
 class GenerateRequest(BaseModel):
     question: str = Field(..., description="Student question to answer")
-    course_id: str = Field(
-        ...,
+    course_id: Optional[str] = Field(
+        default=None,
         alias="courseId",
         description=(
-            "Which course's adapter to answer with. Required: there is no "
-            "course-agnostic fine-tuned model."
+            "Which course's adapter to answer with. Required for the course "
+            "target: there is no course-agnostic fine-tuned model."
         ),
+    )
+    target: Literal["course", "base"] = Field(
+        default="course",
+        description=(
+            "`course`: the course's adapter (Fine-Tuned, Fine-Tuned + RAG). "
+            "`base`: the base model with every adapter off (Base, RAG)."
+        ),
+    )
+    max_new_tokens: Optional[int] = Field(
+        default=None,
+        alias="maxNewTokens",
+        ge=1,
+        le=DEFAULT_MAX_NEW_TOKENS,
+        description="Output cap for this answer (the classroom profile sends 128).",
     )
     model_version: Optional[str] = Field(
         default=None,
@@ -90,10 +125,16 @@ class GenerateRequest(BaseModel):
 class GenerateResponse(BaseModel):
     answer: str
     model: str
-    courseId: str
-    modelVersion: str
+    courseId: Optional[str] = None
+    modelVersion: Optional[str] = None
     adapterLoaded: bool
     generationSeconds: float
+    target: str = "course"
+    engine: str = "tillicum-transformers"
+    #: The settings this answer was decoded with (Ollama's vocabulary).
+    decoding: Dict[str, Any]
+    #: Token counts and milliseconds, under the backend's log names.
+    timings: Dict[str, int]
 
 
 class CourseSummary(BaseModel):
@@ -117,6 +158,14 @@ class HealthResponse(BaseModel):
     loadedAdapters: List[str]
     expiresAt: Optional[float] = None
     secondsRemaining: Optional[float] = None
+    #: What classroom GPU mode checks before switching to this service.
+    engine: str = "tillicum-transformers"
+    targets: List[str] = ["course", "base"]
+    decoding: Dict[str, Any] = {}
+    gpuName: Optional[str] = None
+    #: Answers served since start, per target. Lets a switch prove that the
+    #: backend's requests actually reached this GPU.
+    served: Dict[str, int] = {}
 
 
 def assert_cuda_available() -> None:
@@ -156,6 +205,7 @@ class InferenceEngine:
         #: Guards adapter selection *and* generation together. Splitting them
         #: would reintroduce the cross-course bug this lock exists to prevent.
         self._lock = threading.RLock()
+        self.served: Dict[str, int] = {"course": 0, "base": 0}
 
     # -- lifecycle -------------------------------------------------------- #
 
@@ -260,63 +310,114 @@ class InferenceEngine:
 
     # -- generation ------------------------------------------------------- #
 
+    def stop_token_ids(self) -> List[int]:
+        """Ollama's llama3.2 stop tokens plus the tokenizer's end of sequence."""
+        ids: List[int] = []
+        for token in (*STOP_TOKENS, *END_OF_GENERATION_TOKENS):
+            token_id = self.tokenizer.convert_tokens_to_ids(token)
+            if isinstance(token_id, int) and token_id >= 0 and token_id not in ids:
+                ids.append(token_id)
+        eos = self.tokenizer.eos_token_id
+        for token_id in eos if isinstance(eos, list) else [eos]:
+            if isinstance(token_id, int) and token_id not in ids:
+                ids.append(token_id)
+        return ids
+
     def generate(
         self,
         question: str,
         *,
-        course_id: str,
+        target: str = "course",
+        course_id: Optional[str] = None,
         model_version: Optional[str] = None,
-        max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+        max_new_tokens: Optional[int] = None,
         repetition_penalty: float = DEFAULT_REPETITION_PENALTY,
         seed: int = DEFAULT_SEED,
     ) -> Dict[str, Any]:
+        """One answer, decoded the way the VM decodes it.
+
+        `target="course"` answers with the course's adapter; `target="base"`
+        with the base model and every adapter switched off. The prompt is the
+        production rendering, not `apply_chat_template` (see helpers).
+        """
         import torch
 
         if self.model is None or self.tokenizer is None:
             raise RuntimeError("Model is not loaded")
+        if target not in ("course", "base"):
+            raise ValueError(f"Unknown target: {target!r}")
 
         cleaned = validate_question(question)
-        resolved = self.ensure_adapter(course_id, model_version)
+        cap = resolve_max_new_tokens(max_new_tokens)
+        resolved: Optional[Dict[str, Any]] = None
+        if target == "course":
+            if not course_id:
+                raise CourseAdapterError("courseId is required for the course target.")
+            resolved = self.ensure_adapter(course_id, model_version)
 
-        messages = [{"role": "user", "content": cleaned}]
-        prompt = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
+        prompt = render_production_prompt(cleaned)
+        bos_id = self.tokenizer.convert_tokens_to_ids(BOS_TOKEN)
+        token_ids = with_single_bos(
+            self.tokenizer(prompt, add_special_tokens=False)["input_ids"], bos_id
         )
-        inputs = self.tokenizer(prompt, return_tensors="pt")
+        input_ids = torch.tensor([token_ids], dtype=torch.long)
+        # num_ctx, as on the VM: the prompt and the answer share the window.
+        # A prompt too long for it keeps its first token (BOS) and its end.
+        limit = DEFAULT_NUM_CTX - 1
+        if input_ids.shape[-1] > limit:
+            input_ids = torch.cat([input_ids[:, :1], input_ids[:, -(limit - 1):]], dim=-1)
+            print(f"WARNING: prompt truncated to {limit} tokens", flush=True)
+        prompt_length = int(input_ids.shape[-1])
+        cap = min(cap, DEFAULT_NUM_CTX - prompt_length)
 
         generate_kwargs: Dict[str, Any] = {
-            "max_new_tokens": max_new_tokens,
+            "max_new_tokens": cap,
             "do_sample": False,
             "repetition_penalty": repetition_penalty,
+            "eos_token_id": self.stop_token_ids(),
             "pad_token_id": self.tokenizer.pad_token_id or self.tokenizer.eos_token_id,
+            "attention_mask": torch.ones_like(input_ids),
         }
 
         # Selection and generation are one critical section. FastAPI runs sync
         # handlers concurrently in a thread pool, so a second request selecting
         # its own adapter between these two statements would answer this one
-        # with the wrong course's weights.
+        # with the wrong course's weights — or, for a base request, with any.
         with self._lock:
-            self.model.set_adapter(resolved["adapterKey"])
             device = _model_device(self.model)
-            located = {key: value.to(device) for key, value in inputs.items()}
+            located = input_ids.to(device)
+            generate_kwargs["attention_mask"] = generate_kwargs["attention_mask"].to(device)
             torch.manual_seed(seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(seed)
             start = time.perf_counter()
             with torch.inference_mode():
-                output_ids = self.model.generate(**located, **generate_kwargs)
+                if target == "course":
+                    self.model.set_adapter(resolved["adapterKey"])
+                    output_ids = self.model.generate(input_ids=located, **generate_kwargs)
+                elif hasattr(self.model, "disable_adapter"):
+                    with self.model.disable_adapter():
+                        output_ids = self.model.generate(input_ids=located, **generate_kwargs)
+                else:
+                    output_ids = self.model.generate(input_ids=located, **generate_kwargs)
             elapsed = time.perf_counter() - start
+            self.served[target] += 1
 
-        prompt_length = located["input_ids"].shape[-1]
         completion_ids = output_ids[0, prompt_length:]
         answer = self.tokenizer.decode(completion_ids, skip_special_tokens=True).strip()
         return {
             "answer": answer,
-            "courseId": resolved["courseId"],
-            "modelVersion": resolved["version"],
+            "target": target,
+            "courseId": resolved["courseId"] if resolved else course_id,
+            "modelVersion": resolved["version"] if resolved else None,
             "generationSeconds": elapsed,
+            "decoding": decoding_summary(cap),
+            "timings": {
+                "prompt_tokens": prompt_length,
+                "output_tokens": int(completion_ids.shape[-1]),
+                "eval_ms": int(elapsed * 1000),
+                "ollama_total_ms": int(elapsed * 1000),
+            },
         }
 
 
@@ -378,6 +479,9 @@ def health() -> HealthResponse:
         loadedAdapters=ENGINE.loaded_adapter_keys(),
         expiresAt=deadline,
         secondsRemaining=(deadline - time.time()) if deadline is not None else None,
+        decoding=decoding_summary(DEFAULT_MAX_NEW_TOKENS),
+        gpuName=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        served=dict(ENGINE.served),
     )
 
 
@@ -397,14 +501,22 @@ def generate(body: GenerateRequest) -> GenerateResponse:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    if body.target == "course" and not (body.course_id or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="courseId is required: there is no course-agnostic fine-tuned model.",
+        )
+
     if not ENGINE.base_loaded or ENGINE.model is None:
         raise HTTPException(status_code=503, detail="Model is not loaded yet.")
 
     try:
         result = ENGINE.generate(
             question,
+            target=body.target,
             course_id=body.course_id,
             model_version=body.model_version,
+            max_new_tokens=body.max_new_tokens,
         )
     except CourseAdapterError as exc:
         # 409 rather than 500: the service is healthy and the request is well
@@ -414,6 +526,18 @@ def generate(body: GenerateRequest) -> GenerateResponse:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Generation failed: {exc}") from exc
 
+    print(
+        "generation target={0} course={1} version={2} prompt_tokens={3} "
+        "output_tokens={4} elapsed_ms={5}".format(
+            result["target"],
+            result["courseId"] or "-",
+            result["modelVersion"] or "-",
+            result["timings"]["prompt_tokens"],
+            result["timings"]["output_tokens"],
+            result["timings"]["eval_ms"],
+        ),
+        flush=True,
+    )
     return GenerateResponse(
         answer=result["answer"],
         model=ENGINE.model_id,
@@ -421,6 +545,9 @@ def generate(body: GenerateRequest) -> GenerateResponse:
         modelVersion=result["modelVersion"],
         adapterLoaded=True,
         generationSeconds=result["generationSeconds"],
+        target=result["target"],
+        decoding=result["decoding"],
+        timings=result["timings"],
     )
 
 

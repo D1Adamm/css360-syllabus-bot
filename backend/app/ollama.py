@@ -8,7 +8,9 @@ from typing import Any, Mapping
 import httpx
 from fastapi import HTTPException
 
-from app.generation_queue import log_generation, ollama_timings
+from app.generation_mode import current_mode
+from app.generation_queue import clean_timings, log_generation, ollama_timings
+from app.gpu_generation import generate_base_on_gpu
 from app.ollama_coordination import ollama_generation_slot
 from app.upstream_errors import log_upstream_failure
 from app.grounded_generation import (
@@ -429,6 +431,11 @@ async def generate_ollama_chat(
     Takes an interactive turn in the shared generation queue (`condition`
     names it in the log: "base", "rag"), ahead of starter work and bounded in
     how long it waits. `keep_alive` keeps the model resident between students.
+
+    In classroom GPU mode (`generation_mode`), the base model's answer comes
+    from the Tillicum GPU service instead, with the same prompt and options;
+    the service's reported decoding is checked against `options`. Only the
+    default model is routed: a caller naming another model is not a condition.
     """
     selected_model = model or OLLAMA_MODEL
     request_timeout = OLLAMA_TIMEOUT_SECONDS if timeout is None else float(timeout)
@@ -443,10 +450,27 @@ async def generate_ollama_chat(
     if keep_alive is not None:
         payload["keep_alive"] = keep_alive
 
+    mode = current_mode()
+    on_gpu = mode.is_gpu and model is None
+    engine = "gpu" if on_gpu else "vm"
+
     async with ollama_generation_slot(condition, priority="interactive") as slot:
         started = time.perf_counter()
         try:
-            result = await _post_ollama_chat(payload, request_timeout, action=action)
+            if on_gpu:
+                answer, data = await generate_base_on_gpu(
+                    prompt,
+                    gpu_url=mode.gpu_url,
+                    options=options or {},
+                    timeout=request_timeout,
+                    action=action,
+                )
+                answered_by = f"{data.get('model') or 'base'} (Tillicum GPU)"
+                timings = clean_timings(data.get("timings"))
+            else:
+                answer, data = await _post_ollama_chat(payload, request_timeout, action=action)
+                answered_by = selected_model
+                timings = ollama_timings(data)
         except Exception as exc:
             log_generation(
                 slot,
@@ -454,18 +478,19 @@ async def generate_ollama_chat(
                 outcome="error",
                 reason=_failure_reason(exc),
                 elapsed_seconds=time.perf_counter() - started,
+                engine=engine,
             )
             raise
-        answer, data = result
         log_generation(
             slot,
-            model=selected_model,
+            model=answered_by,
             outcome="ok",
             elapsed_seconds=time.perf_counter() - started,
-            timings=ollama_timings(data),
+            timings=timings,
+            engine=engine,
         )
 
-    return {"answer": answer, "model": selected_model}
+    return {"answer": answer, "model": answered_by}
 
 
 def _failure_reason(exc: BaseException) -> str:

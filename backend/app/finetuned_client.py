@@ -31,7 +31,9 @@ from typing import Any, Mapping
 import httpx
 from fastapi import HTTPException
 
+from app.generation_mode import current_mode
 from app.generation_queue import clean_timings, generation_slot, log_generation
+from app.gpu_generation import check_decoding, expected_decoding
 from app.upstream_errors import log_upstream_failure
 
 DEFAULT_FINETUNED_TIMEOUT_SECONDS = 120.0
@@ -373,6 +375,12 @@ async def generate_finetuned_response(
     (`condition` names it in the log), so the fine-tuned conditions and Base/RAG
     share one bound on concurrent work instead of one each.
 
+    In classroom GPU mode (`generation_mode`) the same request goes to the
+    Tillicum GPU service instead of the VM-local one, and the answer is refused
+    unless it reports production decoding settings for this output cap. The
+    health check and model activation keep asking the VM service: what is
+    servable on the VM does not change with the mode.
+
     Never falls back to simulated text. Failures raise HTTPException.
     """
     trimmed = question.strip()
@@ -386,7 +394,8 @@ async def generate_finetuned_response(
             detail="A course id is required to generate a fine-tuned answer.",
         )
 
-    base_url = require_finetuned_service_url()
+    mode = current_mode()
+    base_url = mode.gpu_url if mode.is_gpu else require_finetuned_service_url()
     timeout = get_finetuned_timeout_seconds()
 
     body: dict[str, Any] = {"question": trimmed, "courseId": safe_course_id}
@@ -407,6 +416,10 @@ async def generate_finetuned_response(
                 safe_course_id=safe_course_id,
                 model_version=model_version,
             )
+            if mode.is_gpu:
+                if validated["raw"].get("target", "course") != "course":
+                    raise HTTPException(status_code=502, detail="The GPU service did not answer with the course adapter.")
+                check_decoding(validated["raw"].get("decoding"), expected_decoding(max_new_tokens=max_new_tokens))
         except HTTPException as exc:
             log_generation(
                 slot,
@@ -414,18 +427,25 @@ async def generate_finetuned_response(
                 outcome="error",
                 reason=_failure_reason(exc),
                 elapsed_seconds=time.perf_counter() - started,
+                engine="gpu" if mode.is_gpu else "vm",
             )
             raise
+        answered_by = (
+            f"{validated['model']} + {safe_course_id}@{validated['model_version'] or model_version} (Tillicum GPU)"
+            if mode.is_gpu
+            else validated["model"]
+        )
         log_generation(
             slot,
-            model=validated["model"],
+            model=answered_by,
             outcome="ok",
             elapsed_seconds=time.perf_counter() - started,
             timings=validated["timings"],
+            engine="gpu" if mode.is_gpu else "vm",
         )
     return {
         "answer": validated["answer"],
-        "model": validated["model"],
+        "model": answered_by,
         "adapter_loaded": validated["adapter_loaded"],
         "course_id": validated["course_id"],
         "model_version": validated["model_version"],
@@ -543,4 +563,5 @@ async def _post_generate(
     # Ollama's own durations as the service measured them (load, prompt
     # evaluation, decoding). Optional: an older service sends none.
     validated["timings"] = clean_timings(data.get("timings"))
+    validated["raw"] = data
     return validated
