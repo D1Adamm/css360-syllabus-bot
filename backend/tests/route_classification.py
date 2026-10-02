@@ -79,6 +79,8 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     ("GET", "/api/fine-tuned/health"): REQUIRE_ADMIN,
     # Counts and limits of the shared generation queue; nothing per request.
     ("GET", "/api/admin/generation-queue"): REQUIRE_ADMIN,
+    # Which generation mode (VM or classroom GPU) is in effect, and the routes.
+    ("GET", "/api/admin/generation-mode"): REQUIRE_ADMIN,
     # An administrator's explicit-version generation, for comparing versions.
     # Not an alias of the classroom routes: a student's request carries no
     # version, and this is the only route that reads one.

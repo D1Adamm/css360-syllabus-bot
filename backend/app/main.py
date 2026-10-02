@@ -44,6 +44,7 @@ from app.finetuned_client import (
     generate_finetuned_response,
 )
 from app.finetuned_rag import generate_course_finetuned_rag_answer
+from app.generation_mode import current_mode, describe as describe_generation_mode, on_mode_change
 from app.generation_queue import bind_request, get_generation_queue
 from app.grounded_rag import (
     BASE_TARGET,
@@ -308,6 +309,30 @@ def generation_queue_status(principal: Principal = Depends(require_admin)) -> di
     class and for `scripts/classroom_load_test.py`, which samples it.
     """
     return get_generation_queue().snapshot()
+
+
+# A different engine has a different speed: the queue's wait estimate starts
+# over when the mode changes, rather than refusing GPU requests on CPU timings.
+on_mode_change(lambda _old, _new: get_generation_queue().reset_estimate())
+
+
+@app.get("/api/admin/generation-mode")
+def generation_mode_status(principal: Principal = Depends(require_admin)) -> dict[str, Any]:
+    """Which mode this backend is generating in, and where each condition goes.
+
+    Read from the same file, with the same rules, the generate routes use, so
+    this is what the next request will do. `scripts/classroom_gpu_mode.sh`
+    checks it after every switch.
+    """
+    from app.finetuned_client import get_finetuned_service_url
+    from app.ollama import OLLAMA_BASE_URL, OLLAMA_MODEL
+
+    return describe_generation_mode(
+        current_mode(),
+        ollama_url=OLLAMA_BASE_URL,
+        ollama_model=OLLAMA_MODEL,
+        finetuned_url=get_finetuned_service_url(),
+    )
 
 
 @app.post("/api/fine-tuned/generate", response_model=FineTunedGenerateResponse)

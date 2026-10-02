@@ -42,6 +42,98 @@ DEFAULT_MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"
 DEFAULT_MAX_NEW_TOKENS = 256
 DEFAULT_REPETITION_PENALTY = 1.05
 DEFAULT_SEED = 360
+#: The context window production uses (`GROUNDED_NUM_CTX`, and the VM
+#: service's `num_ctx`). The repetition penalty covers the whole of it, as
+#: Ollama's `repeat_last_n` does on the VM.
+DEFAULT_NUM_CTX = 4096
+
+
+# --------------------------------------------------------------------------- #
+# Production prompt format and stop behaviour (Ollama, llama3.2)
+#
+# The VM answers every condition through Ollama's `/api/chat` with one user
+# message, which Ollama renders with the llama3.2 model's own template. That
+# rendering is reproduced here exactly, so a GPU answer is computed from the
+# same tokens a VM answer is. `apply_chat_template` from Transformers is NOT the
+# same text: it adds a "Today Date: <today>" line to the system block, so the
+# prompt differed from production and even changed from day to day. Checked
+# against Ollama 0.33.2: `/api/generate` with `raw: true` and this string gives
+# the same answer and the same prompt token count as `/api/chat`.
+# --------------------------------------------------------------------------- #
+
+PROMPT_FORMAT = "ollama-llama3.2-chat"
+
+_SYSTEM_BLOCK = (
+    "<|start_header_id|>system<|end_header_id|>\n\n"
+    "Cutting Knowledge Date: December 2023\n\n"
+    "<|eot_id|>"
+)
+
+#: Ollama's llama3.2 stop parameters. Generation also ends at the tokenizer's
+#: end-of-sequence tokens.
+STOP_TOKENS = ("<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>")
+#: Tokens llama.cpp treats as end of generation for Llama 3 on its own,
+#: whatever the stop parameters say.
+END_OF_GENERATION_TOKENS = ("<|eot_id|>", "<|eom_id|>", "<|end_of_text|>")
+BOS_TOKEN = "<|begin_of_text|>"
+
+
+def with_single_bos(token_ids: List[int], bos_id: int) -> List[int]:
+    """Exactly one leading BOS, as llama.cpp tokenises the prompt on the VM.
+
+    Whether a Transformers tokenizer adds BOS depends on how it was built (the
+    Hub tokenizer's post-processor does; one rebuilt from a GGUF did not), so
+    the service does not rely on it either way.
+    """
+    ids = list(token_ids)
+    while ids and ids[0] == bos_id:
+        ids.pop(0)
+    return [bos_id] + ids
+
+
+def render_production_prompt(content: str) -> str:
+    """One user turn, rendered exactly as Ollama renders it for llama3.2.
+
+    No `<|begin_of_text|>`: the tokenizer adds it, as llama.cpp does on the VM.
+    """
+    return (
+        _SYSTEM_BLOCK
+        + "<|start_header_id|>user<|end_header_id|>\n\n"
+        + content
+        + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+    )
+
+
+def resolve_max_new_tokens(requested: Optional[int]) -> int:
+    """The request's output cap, or the default; never above the default."""
+    if requested is None:
+        return DEFAULT_MAX_NEW_TOKENS
+    value = int(requested)
+    if value < 1 or value > DEFAULT_MAX_NEW_TOKENS:
+        raise ValueError(
+            "maxNewTokens must be between 1 and {0}.".format(DEFAULT_MAX_NEW_TOKENS)
+        )
+    return value
+
+
+def decoding_summary(max_new_tokens: int) -> Dict[str, Any]:
+    """The decoding settings of one answer, in Ollama's vocabulary.
+
+    The same keys and values the VM sends Ollama
+    (`grounded_generation.grounded_options` / `classroom_options`), so the
+    backend can compare them with what it would have sent and refuse an answer
+    computed any other way.
+    """
+    return {
+        "num_predict": int(max_new_tokens),
+        "temperature": 0,
+        "repeat_penalty": DEFAULT_REPETITION_PENALTY,
+        "repeat_last_n": DEFAULT_NUM_CTX,
+        "seed": DEFAULT_SEED,
+        "num_ctx": DEFAULT_NUM_CTX,
+        "promptFormat": PROMPT_FORMAT,
+        "stop": list(STOP_TOKENS),
+    }
 
 #: How many course adapters may be resident at once.
 #:

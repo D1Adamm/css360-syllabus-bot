@@ -279,6 +279,10 @@ class GenerationQueue:
             return None
         return (ahead + self._active) / self.max_concurrency * self._service_ewma
 
+    def reset_estimate(self) -> None:
+        """Forget recent service times: a different engine has a different speed."""
+        self._service_ewma = None
+
     def _record_service(self, seconds: float) -> None:
         if self._service_ewma is None:
             self._service_ewma = seconds
@@ -514,6 +518,7 @@ def log_generation(
     elapsed_seconds: float,
     timings: dict[str, int] | None = None,
     reason: str | None = None,
+    engine: str | None = None,
 ) -> None:
     """`generation condition=… model=… outcome=… queue_wait_ms=… load_ms=…`.
 
@@ -522,9 +527,11 @@ def log_generation(
     """
     parts = [
         f"condition={info.label if info else '-'}",
-        f"model={model}",
+        f"model={model.replace(' ', '_')}",
         f"outcome={outcome}",
     ]
+    if engine:
+        parts.append(f"engine={engine}")
     if reason:
         parts.append(f"reason={reason}")
     if info is not None:
