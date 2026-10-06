@@ -430,6 +430,8 @@ What is genuinely unfinished, and what is deliberately out of scope:
 | [docs/data-model.md](docs/data-model.md) | Every table and API record, field by field |
 | [docs/tillicum-operations.md](docs/tillicum-operations.md) | Operator runbook: training, publication, retries, secrets, the inference fallback |
 | [docs/deployment.md](docs/deployment.md) | Deploying to the UWB VM, including installing and serving fine-tuned models |
+| [docs/classroom-gpu-mode.md](docs/classroom-gpu-mode.md) | Classroom GPU mode: serving a class from a Tillicum GPU, and the automatic failback to the VM |
+| [docs/classroom-gpu-runbook.md](docs/classroom-gpu-runbook.md) | The class-day checklist: before, during, after, emergencies |
 | [docs/remaining-work.md](docs/remaining-work.md) | What is actually unfinished |
 | [docs/verification-history.md](docs/verification-history.md) | What has been proven against production |
 | [backend/README.md](backend/README.md) | Backend setup and API groups |

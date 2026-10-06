@@ -90,6 +90,14 @@ the recovery tool for registering an artifact by hand.
 
 ## Inference: the Tillicum fallback
 
+> **Classroom GPU mode is a different thing.** Serving a whole class (all four
+> conditions) from a Tillicum GPU uses the same serving job
+> (`start_finetuned_service.sh`) but its own switch and tunnel
+> (`scripts/classroom_gpu_mode.sh`, `127.0.0.1:9101`), with automatic failback
+> to the VM. See [classroom-gpu-mode.md](classroom-gpu-mode.md) and the
+> [runbook](classroom-gpu-runbook.md). The `start_finetuned_tunnel.sh` step
+> below is for the fine-tuned-only emergency fallback, not for classroom GPU mode.
+
 **This is not the normal path.** Fine-Tuned and Fine-Tuned + RAG are served on
 the UWB VM by the `aiswe-finetuned` user unit through the VM's own Ollama, with
 no Tillicum allocation, tunnel, Duo prompt or open terminal; see
