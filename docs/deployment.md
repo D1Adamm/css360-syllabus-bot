@@ -398,6 +398,12 @@ it does not check the VM.
 
 ### Tillicum fallback, and back again
 
+Classroom GPU mode (all four conditions on a Tillicum GPU for a class, with
+an automatic failback watchdog) is separate from this fallback; see
+[classroom-gpu-mode.md](classroom-gpu-mode.md#15-deploying-from-github-to-aiswe)
+for its deployment steps and [classroom-gpu-runbook.md](classroom-gpu-runbook.md)
+for operating it.
+
 The Tillicum GPU service is kept for emergencies and claims the same local
 port through an SSH tunnel, so the two never run together. Normal operation
 needs neither. Switching is explicit in both directions:
