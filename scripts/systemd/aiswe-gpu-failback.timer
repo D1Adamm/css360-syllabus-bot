@@ -1,0 +1,20 @@
+# Runs aiswe-gpu-failback.service every 15 seconds (at :00, :15, :30, :45).
+# With three consecutive failed checks required, a GPU that disappears is
+# failed back to the VM within about 30-50 seconds; an allocation that reaches
+# its expiresAt is failed back on the first check inside the margin.
+#
+# A calendar timer re-arms whatever the last run did, and systemd never starts
+# a second run while one is still going (a failback warming the VM models).
+#
+# Installed and enabled by ./scripts/gpu_failback_watchdog.sh install.
+[Unit]
+Description=Classroom GPU mode failback watchdog, every 15 seconds
+
+[Timer]
+OnCalendar=*:*:0/15
+# The default accuracy is one minute, which would defeat a 15-second timer.
+AccuracySec=1s
+Unit=aiswe-gpu-failback.service
+
+[Install]
+WantedBy=timers.target

@@ -75,7 +75,9 @@ class SwitchTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.mode_file = Path(self.tmp.name) / "generation-mode.json"
-        self.env = patch.dict(os.environ, {gm.MODE_FILE_ENV: str(self.mode_file)})
+        # The failback watchdog's state, which `status` reads, is kept out of the real one too.
+        self.env = patch.dict(os.environ, {gm.MODE_FILE_ENV: str(self.mode_file),
+                                           script.failback.STATE_DIR_ENV: str(Path(self.tmp.name) / "watchdog")})
         self.env.start()
         gm.reset_for_tests()
 
