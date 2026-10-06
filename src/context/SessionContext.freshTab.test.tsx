@@ -1,11 +1,15 @@
 /** @vitest-environment jsdom */
 /*
- * Investigation: "a second AISWE tab stays on the loading screen forever".
+ * Regression: "a second AISWE tab stays on the loading screen forever".
  *
  * Each test mounts the real application tree (StrictMode, SessionProvider,
  * ComparisonRunProvider, AppRoutes) the way a brand-new browser tab does: no
- * initialSession seam, the real authApi/httpClient, and only `fetch` stubbed 
+ * initialSession seam, the real authApi/httpClient, and only `fetch` stubbed,
  * standing in for the backend plus the HttpOnly cookie the browser would send.
+ *
+ * The stub honours the request's AbortSignal the way a browser's fetch does
+ * (an aborted request rejects, and one still waiting for a connection leaves
+ * the queue). A stub that ignored it could not show the client giving up.
  */
 import { StrictMode } from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -16,6 +20,7 @@ import '@testing-library/jest-dom/vitest';
 import { AppRoutes } from '../App';
 import { ComparisonRunProvider } from './ComparisonRunContext';
 import { SessionProvider } from './SessionContext';
+import { SESSION_CHECK_RETRY_DELAYS_MS, SESSION_CHECK_TIMEOUT_MS } from './session';
 
 const COURSE_ID = 'css-360-winter-2026-a7rp';
 const BASE = 'https://aiswe.uwb.edu/api';
@@ -62,7 +67,30 @@ function json(status: number, body: unknown): Response {
   } as Response;
 }
 
-type Handler = (path: string) => Promise<Response>;
+type Handler = (path: string, signal?: AbortSignal) => Promise<Response>;
+
+/** Everything the client may spend before it must leave the loader. */
+const SESSION_CHECK_BUDGET_MS =
+  SESSION_CHECK_TIMEOUT_MS * (SESSION_CHECK_RETRY_DELAYS_MS.length + 1) +
+  SESSION_CHECK_RETRY_DELAYS_MS.reduce((total, delay) => total + delay, 0);
+
+function abortError(): DOMException {
+  return new DOMException('The operation was aborted.', 'AbortError');
+}
+
+/** A request that gets no answer until the browser gives up on it. */
+function neverAnswered(signal?: AbortSignal): Promise<Response> {
+  return new Promise<Response>((_resolve, reject) => {
+    signal?.addEventListener('abort', () => reject(abortError()), { once: true });
+  });
+}
+
+/** Advance fake time, letting React and every promise settle in between. */
+async function advance(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
 
 /** The backend as the authenticated cookie sees it: a professor is signed in. */
 const signedInBackend: Handler = async (path) => {
@@ -72,9 +100,13 @@ const signedInBackend: Handler = async (path) => {
 };
 
 function installFetch(handler: Handler) {
-  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    return handler(url.startsWith(BASE) ? url.slice(BASE.length) : url);
+    const signal = init?.signal ?? undefined;
+    if (signal?.aborted) {
+      return Promise.reject(abortError());
+    }
+    return handler(url.startsWith(BASE) ? url.slice(BASE.length) : url, signal);
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -198,8 +230,7 @@ describe('fresh tab when /api/auth/session does not answer normally', () => {
     ['500', async () => json(500, { detail: 'boom' })],
     ['503 with non-JSON body', async () => ({ ok: false, status: 503, json: async () => { throw new Error('html'); } }) as unknown as Response],
     ['401', async () => json(401, { detail: 'Sign in to continue.' })],
-    ['network error', async () => { throw new TypeError('Failed to fetch'); }],
-  ])('%s → leaves the loader and lands on sign-in', async (_label, sessionResponse) => {
+  ])('%s → an answer is final: leaves the loader and lands on sign-in', async (_label, sessionResponse) => {
     installFetch((path) => (path === '/auth/session' ? sessionResponse() : signedInBackend(path)));
     openTab('/professor/courses');
     await waitFor(() => expect(screen.getByTestId('pathname')).toHaveTextContent('/login'));
@@ -216,22 +247,67 @@ describe('fresh tab when /api/auth/session does not answer normally', () => {
     await expectProfessorCourses();
   });
 
-  it('REPRODUCTION: a session request that never settles leaves the loader up indefinitely', async () => {
-    installFetch((path) =>
-      path === '/auth/session' ? new Promise<Response>(() => {}) : signedInBackend(path),
+  it('network error → retried, then leaves the loader and lands on sign-in', async () => {
+    vi.useFakeTimers();
+    const fetchMock = installFetch((path) =>
+      path === '/auth/session' ? Promise.reject(new TypeError('Failed to fetch')) : signedInBackend(path),
     );
+    openTab('/professor/courses');
+    await advance(SESSION_CHECK_BUDGET_MS);
+    vi.useRealTimers();
+
+    await waitFor(() => expect(screen.getByTestId('pathname')).toHaveTextContent('/login'));
+    expect(screen.queryByText(CHECKING)).not.toBeInTheDocument();
+    const sessionCalls = fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/auth/session'));
+    expect(sessionCalls).toHaveLength(SESSION_CHECK_RETRY_DELAYS_MS.length + 1);
+  });
+
+  it('a network error once, then an answer → reaches the course list without a detour', async () => {
+    vi.useFakeTimers();
+    let failures = 1;
+    installFetch((path) => {
+      if (path === '/auth/session' && failures > 0) {
+        failures -= 1;
+        return Promise.reject(new TypeError('Failed to fetch'));
+      }
+      return signedInBackend(path);
+    });
+    openTab('/professor/courses');
+    await advance(SESSION_CHECK_RETRY_DELAYS_MS[0]);
+    vi.useRealTimers();
+
+    await expectProfessorCourses();
+  });
+
+  it('a session request that never gets an answer is stopped, and the tab leaves the loader', async () => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    installFetch((path, signal) => {
+      if (path !== '/auth/session') {
+        return signedInBackend(path);
+      }
+      if (signal) {
+        signals.push(signal);
+      }
+      return neverAnswered(signal);
+    });
     openTab('/professor/courses');
     expect(screen.getByText(CHECKING)).toBeInTheDocument();
 
-    // Ten minutes of wall clock: nothing in the client ever gives up.
-    vi.useFakeTimers();
-    await act(async () => {
-      vi.advanceTimersByTime(10 * 60 * 1000);
-    });
+    // Just short of the first timeout: still checking, nothing given up yet.
+    await advance(SESSION_CHECK_TIMEOUT_MS - 1);
+    expect(screen.getByText(CHECKING)).toBeInTheDocument();
+    expect(signals.some((signal) => signal.aborted)).toBe(false);
+
+    await advance(SESSION_CHECK_BUDGET_MS);
     vi.useRealTimers();
 
-    expect(screen.getByText(CHECKING)).toBeInTheDocument();
-    expect(screen.getByTestId('pathname')).toHaveTextContent('/professor/courses');
+    // Every attempt carried a signal and every one was stopped: none is left
+    // occupying a connection the page will need.
+    expect(signals).toHaveLength(SESSION_CHECK_RETRY_DELAYS_MS.length + 1);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    await waitFor(() => expect(screen.getByTestId('pathname')).toHaveTextContent('/login'));
+    expect(screen.queryByText(CHECKING)).not.toBeInTheDocument();
   });
 });
 
@@ -247,17 +323,30 @@ describe('fresh tab when /api/auth/session does not answer normally', () => {
 function createHostPool(limit: number) {
   let active = 0;
   const waiting: Array<() => void> = [];
-  const acquire = () =>
-    new Promise<void>((resolve) => {
+  const acquire = (signal?: AbortSignal) =>
+    new Promise<void>((resolve, reject) => {
       if (active < limit) {
         active += 1;
         resolve();
-      } else {
-        waiting.push(() => {
-          active += 1;
-          resolve();
-        });
+        return;
       }
+      const grant = () => {
+        active += 1;
+        resolve();
+      };
+      waiting.push(grant);
+      // A request stopped while waiting for a connection leaves the queue.
+      signal?.addEventListener(
+        'abort',
+        () => {
+          const index = waiting.indexOf(grant);
+          if (index >= 0) {
+            waiting.splice(index, 1);
+            reject(abortError());
+          }
+        },
+        { once: true },
+      );
     });
   const release = () => {
     active -= 1;
@@ -265,10 +354,10 @@ function createHostPool(limit: number) {
   };
   return {
     through(handler: Handler): Handler {
-      return async (path) => {
-        await acquire();
+      return async (path, signal) => {
+        await acquire(signal);
         try {
-          return await handler(path);
+          return await handler(path, signal);
         } finally {
           release();
         }
@@ -281,31 +370,58 @@ function createHostPool(limit: number) {
 }
 
 describe('two tabs sharing one HTTP/1.1 connection pool', () => {
-  it('REPRODUCTION: tab 1 holding 6 long requests leaves tab 2 on the loader until one finishes', async () => {
-    const pool = createHostPool(6);
-    // Tab 1's in-flight generation requests (Compare: 4 per course, no client
-    // timeout, serialized server-side behind one Ollama lock).
-    const finishTab1: Array<() => void> = [];
-    const tab1Request = pool.through(
-      () => new Promise<Response>((resolve) => finishTab1.push(() => resolve(json(200, {})))),
+  /** Tab 1: a Compare run's long generation requests, holding `count` connections. */
+  function busyFirstTab(pool: ReturnType<typeof createHostPool>, count: number) {
+    const finish: Array<() => void> = [];
+    const request = pool.through(
+      () => new Promise<Response>((resolve) => finish.push(() => resolve(json(200, {})))),
     );
-    for (let i = 0; i < 6; i += 1) {
-      void tab1Request('/rag/generate');
+    for (let i = 0; i < count; i += 1) {
+      void request('/rag/generate');
     }
-    await waitFor(() => expect(finishTab1).toHaveLength(6));
+    return finish;
+  }
 
-    // Tab 2: a fresh tab with a perfectly valid cookie.
+  it('tab 2 waits while tab 1 holds every connection, then signs in once one frees up', async () => {
+    vi.useFakeTimers();
+    const pool = createHostPool(6);
+    const finishTab1 = busyFirstTab(pool, 6);
+    await advance(0);
+    expect(finishTab1).toHaveLength(6);
+
+    installFetch(pool.through(signedInBackend));
+    openTab('/professor/courses');
+    await advance(0);
+    expect(pool.queued).toBe(1);
+    expect(screen.getByText(CHECKING)).toBeInTheDocument();
+
+    // The first check is stopped and leaves the browser's queue.
+    await advance(SESSION_CHECK_TIMEOUT_MS);
+    expect(pool.queued).toBe(0);
+    expect(screen.getByText(CHECKING)).toBeInTheDocument();
+
+    // One of tab 1's generations finishes; the retry gets that connection.
+    await act(async () => finishTab1.shift()!());
+    await advance(SESSION_CHECK_RETRY_DELAYS_MS[0]);
+    vi.useRealTimers();
+
+    await expectProfessorCourses();
+    finishTab1.forEach((finish) => finish());
+  });
+
+  it('tab 2 never waits indefinitely, even if tab 1 never lets a connection go', async () => {
+    vi.useFakeTimers();
+    const pool = createHostPool(6);
+    const finishTab1 = busyFirstTab(pool, 6);
     installFetch(pool.through(signedInBackend));
     openTab('/professor/courses');
 
-    await waitFor(() => expect(pool.queued).toBeGreaterThan(0));
-    await new Promise((r) => setTimeout(r, 50));
-    expect(screen.getByText(CHECKING)).toBeInTheDocument();
+    await advance(SESSION_CHECK_BUDGET_MS);
+    vi.useRealTimers();
 
-    // One of tab 1's requests completes: tab 2's session request gets a socket.
-    act(() => finishTab1.shift()!());
-    await expectProfessorCourses();
-
+    await waitFor(() => expect(screen.queryByText(CHECKING)).not.toBeInTheDocument());
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/login');
+    expect(pool.queued).toBe(0);
     finishTab1.forEach((finish) => finish());
   });
 });

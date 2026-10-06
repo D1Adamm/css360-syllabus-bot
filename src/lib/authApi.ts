@@ -1,4 +1,4 @@
-import { getJson, postJson, sendJson } from './httpClient';
+import { getJson, postJson, requestJson, sendJson } from './httpClient';
 
 /**
  * Sessions: `/api/auth`.
@@ -47,9 +47,19 @@ function toSession(payload: SessionPayload): Session {
   return { user: payload.user ?? null, participants };
 }
 
-export async function fetchSession(): Promise<Session> {
+/**
+ * Who this browser is. `timeoutMs` stops a request that gets no answer: the
+ * session check is quick on the backend, so a long silence means the request
+ * never left the browser (all of the host's connections busy with another
+ * tab's comparisons) or a proxy is holding it, and waiting longer will not help.
+ */
+export async function fetchSession(options: { timeoutMs?: number } = {}): Promise<Session> {
   return toSession(
-    await getJson<SessionPayload>('/auth/session', 'Could not check who is signed in.'),
+    await requestJson<SessionPayload>('/auth/session', {
+      method: 'GET',
+      fallbackErrorMessage: 'Could not check who is signed in.',
+      ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+    }),
   );
 }
 

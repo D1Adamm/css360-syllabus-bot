@@ -19,6 +19,21 @@ export type SessionState =
   /** The session could not be checked. Says nothing about who is signed in. */
   | { status: 'unavailable'; message: string };
 
+/**
+ * How long one session check may go unanswered, and how often to try.
+ *
+ * Without a limit, a check that never settles kept a new tab on "Checking your
+ * session…" for good. That happens when the browser cannot send it: over
+ * HTTP/1.1 a browser opens at most six connections per host, shared by every
+ * tab, and one Compare run in another tab can hold them all for as long as its
+ * generations take. Stopping the request takes it out of the browser's queue;
+ * trying again later gets it a connection once one is free. Only a failure to
+ * get any answer is retried: an answer from the backend, even an error, is
+ * final.
+ */
+export const SESSION_CHECK_TIMEOUT_MS = 10_000;
+export const SESSION_CHECK_RETRY_DELAYS_MS = [1_000, 3_000] as const;
+
 export function isAnonymous(session: Session): boolean {
   return session.user === null && session.participants.length === 0;
 }
