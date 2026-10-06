@@ -108,11 +108,12 @@ export function SessionProvider({
   const signOut = useCallback(async () => {
     try {
       await logout();
-    } finally {
-      // Whatever the backend said, this browser is signed out from the
-      // application's point of view: the cookies were cleared or never worked.
-      setState({ status: 'ready', session: ANONYMOUS_SESSION });
+    } catch {
+      // Not rethrown: a caller navigating to sign-in afterwards must still do so.
     }
+    // Whatever the backend said, this browser is signed out from the
+    // application's point of view: the cookies were cleared or never worked.
+    setState({ status: 'ready', session: ANONYMOUS_SESSION });
   }, []);
 
   const value = useMemo<SessionContextValue>(
