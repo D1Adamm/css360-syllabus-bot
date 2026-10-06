@@ -8,8 +8,8 @@ import {
   useState,
 } from 'react';
 import { ANONYMOUS_SESSION, fetchSession, logout, type Session } from '../lib/authApi';
-import { onUnauthorized } from '../lib/httpClient';
-import type { SessionState } from './session';
+import { ApiError, onUnauthorized } from '../lib/httpClient';
+import { SESSION_CHECK_RETRY_DELAYS_MS, SESSION_CHECK_TIMEOUT_MS, type SessionState } from './session';
 
 export type { Session } from '../lib/authApi';
 export type { SessionState } from './session';
@@ -27,6 +27,24 @@ interface SessionContextValue {
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
+
+function isTransportFailure(error: unknown): boolean {
+  return error instanceof ApiError && error.status === undefined;
+}
+
+async function checkSession(): Promise<Session> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await fetchSession({ timeoutMs: SESSION_CHECK_TIMEOUT_MS });
+    } catch (error) {
+      const delay = SESSION_CHECK_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined || !isTransportFailure(error)) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
 
 /**
  * Who this browser is, as the backend last said.
@@ -57,7 +75,7 @@ export function SessionProvider({
     }
     const task = (async () => {
       try {
-        const session = await fetchSession();
+        const session = await checkSession();
         setState({ status: 'ready', session });
       } catch (error) {
         setState({
@@ -90,11 +108,12 @@ export function SessionProvider({
   const signOut = useCallback(async () => {
     try {
       await logout();
-    } finally {
-      // Whatever the backend said, this browser is signed out from the
-      // application's point of view: the cookies were cleared or never worked.
-      setState({ status: 'ready', session: ANONYMOUS_SESSION });
+    } catch {
+      // Not rethrown: a caller navigating to sign-in afterwards must still do so.
     }
+    // Whatever the backend said, this browser is signed out from the
+    // application's point of view: the cookies were cleared or never worked.
+    setState({ status: 'ready', session: ANONYMOUS_SESSION });
   }, []);
 
   const value = useMemo<SessionContextValue>(
