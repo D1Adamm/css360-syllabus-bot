@@ -1,0 +1,33 @@
+# Classroom GPU mode failback watchdog: ONE check per activation, started every
+# 15 seconds by aiswe-gpu-failback.timer. A systemd *user* unit beside
+# aiswe-backend.
+#
+# In VM mode a run reads one file and exits. In classroom GPU mode it checks
+# the mode file's expiresAt and the GPU service's /health through the tunnel,
+# and switches generation back to the VM when the allocation is over or the
+# GPU has failed three checks in a row. It never starts or cancels a Tillicum
+# job, opens no tunnel and needs no password or Duo. See
+# docs/classroom-gpu-mode.md and scripts/gpu_failback_watchdog.py.
+#
+# Install, update and remove with the helper, which renders @REPO_ROOT@ to the
+# checkout it is run from and never edits this tracked copy:
+#   ./scripts/gpu_failback_watchdog.sh install
+#   ./scripts/gpu_failback_watchdog.sh uninstall
+[Unit]
+Description=Classroom GPU mode failback watchdog (one check)
+
+[Service]
+Type=oneshot
+ExecStart=@REPO_ROOT@/scripts/gpu_failback_watchdog.sh run
+# Optional settings, none required (the leading "-" makes the file optional):
+#   AISWE_GPU_FAILBACK_FAILURES=3            consecutive failed checks before failing back
+#   AISWE_GPU_FAILBACK_EXPIRY_MARGIN=30      seconds before expiresAt to switch
+#   AISWE_GPU_FAILBACK_HEALTH_TIMEOUT=5      seconds to wait for /health
+#   AISWE_GPU_FAILBACK_KEEP_ALIVE=4h         keep_alive for the warmed VM models
+EnvironmentFile=-%h/.config/aiswe/gpu-failback.env
+# A check takes well under a second. A failback also loads three VM models
+# (up to 120 s each if Ollama is struggling), and must not be killed doing it.
+TimeoutStartSec=600
+# Routine "nothing to do" lines stay out of the journal (5760 runs a day);
+# failed checks, failbacks and errors are logged at warning or above.
+LogLevelMax=notice

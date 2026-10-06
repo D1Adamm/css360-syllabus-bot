@@ -91,15 +91,79 @@ it opened.
 - the tunnel;
 - GPU time left and the GPU's counters;
 - where each condition is generated;
-- whether the VM services are ready.
+- whether the VM services are ready;
+- the failback watchdog: whether its timer is running, its last check, and the last automatic failback (when, why, which job and node, whether the VM warm-up worked).
 
 It warns, and exits 1, when GPU mode is on but the GPU is unreachable.
 
 **If the GPU goes away mid-class** (the allocation ends, the tunnel drops),
-generation requests fail with a clear 503 until you run `stop`. There is no
-silent fallback, because that would mix engines inside a class without anyone
-knowing. `start` refuses a session with less than an hour left, and `status`
-warns in the last 15 minutes.
+generation requests fail with a clear 503 until the mode is VM again. With the
+failback watchdog installed (next section) that happens on its own, within
+about a minute, and is logged. Without it, requests fail until you run `stop`.
+`start` refuses a session with less than an hour left, and `status` warns in
+the last 15 minutes.
+
+## Automatic failback (the watchdog)
+
+A Tillicum job once expired while the mode file still said GPU, and every
+question failed until `stop` was run by hand. The watchdog closes that gap. It does one thing: when GPU mode is on and the GPU is gone, it switches
+generation back to the VM.
+
+```bash
+./scripts/gpu_failback_watchdog.sh install      # user units; a check every 15 seconds
+./scripts/gpu_failback_watchdog.sh status
+./scripts/gpu_failback_watchdog.sh run --dry-run   # one check now; says what it would do, writes nothing
+./scripts/gpu_failback_watchdog.sh uninstall
+```
+
+**When it acts.** Only when the mode file says GPU mode. Then, either:
+- **`expired`**: the mode file's `expiresAt` is past, or within 30 seconds (so the switch happens just before Slurm kills the job, not one check after). The same if the GPU service itself reports that little time left. Acted on at once.
+- **`gpu_unreachable`** / **`gpu_unhealthy`**: `/health` through the tunnel gives no answer, or answers in a state the backend could not use (still loading, another build's decoding, the course no longer published), on **three checks in a row**. One failed check changes nothing, and a healthy check starts the count again. The count belongs to one activation of GPU mode and is never carried to the next.
+
+**What it does, in this order.**
+1. Replaces the mode file with VM mode: one atomic write. New requests generate on the VM from that moment.
+2. Logs the failback.
+3. Loads the VM's base, embedding and course models, exactly as `stop` does, and logs whether that worked. If it did not, the mode stays VM; the first answers are just slower.
+
+**What it never does.** It never submits, restarts or cancels a Tillicum job,
+never opens or closes a tunnel, never switches *to* GPU mode, and needs no
+admin password and no Duo. After a failback the Tillicum job may still be
+running and costing GPU time: run `stop` as usual. It repeats the full check
+on the VM, closes the tunnel, and names the job to cancel (`--cancel-job`
+works if the tunnel's connection is still alive).
+
+**It cannot overwrite a session you just started.** `start`, `stop` and the
+watchdog all write the mode file under one lock
+(`~/.config/aiswe/generation-mode.json.lock`), held for the write only. Under
+that lock the watchdog replaces the file only if it is still, byte for byte,
+the one it judged. If you ran `stop` or `start` while it was checking, it
+leaves your file alone. A switch back to the VM is never refused for want of
+the lock.
+
+**Where it records things** (`~/.local/state/css360-syllabus-bot/`):
+- `gpu-failback.log`: one JSON line per automatic failback (`at`, `reason`, `jobId`, `node`, `courseId`, `modelVersion`, `expiresAt`), and one for its warm-up (`ok`, and the failing models if not).
+- `gpu-failback-state.json`: the last check, the current count of failed checks, the last failback. `classroom_gpu_mode.sh status` reads it.
+- The journal (`journalctl --user -u aiswe-gpu-failback.service`) gets failed checks, failbacks and errors only; the routine "nothing to do" line is filtered out.
+
+The mode file the watchdog writes says `"switchedBy": "gpu-failback-watchdog"`
+and keeps the reason and the old job in a `failback` object, which `status`
+shows and `stop` uses for its job reminder.
+
+**Settings.** None are needed. To change one, put it in
+`~/.config/aiswe/gpu-failback.env`:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `AISWE_GPU_FAILBACK_FAILURES` | 3 | failed checks in a row before failing back |
+| `AISWE_GPU_FAILBACK_EXPIRY_MARGIN` | 30 | seconds before `expiresAt` to switch (0 = only once it is past) |
+| `AISWE_GPU_FAILBACK_HEALTH_TIMEOUT` | 5 | seconds to wait for `/health` |
+| `AISWE_GPU_FAILBACK_KEEP_ALIVE` | 4h | `keep_alive` for the warmed VM models |
+
+**Things to know.**
+- The watchdog trusts the recorded `expiresAt`. If a job's time limit is extended after `start`, run `stop` and `start` again so the new end is recorded.
+- A failback changes the engine mid-class. Every answer's `model` and the backend's `engine=` log field still say which engine answered, and the failback log gives the moment.
+- The VM serves about three simultaneous comparisons (see `docs/classroom-capacity.md`); after a failback a large class is slower, not broken.
+- The timer is a user unit: it needs lingering (`loginctl enable-linger`) to run while nobody is logged in, as `aiswe-backend` does.
 
 ## Capacity
 
@@ -156,3 +220,26 @@ On a laptop:
 
 The stand-in's answers are meaningless (random weights); answer quality and
 GPU speed are what the VM acceptance run checks.
+
+## Watchdog: tested locally (2026-10-01)
+
+`backend/tests/test_gpu_failback_watchdog.py`, plus two runs of the real
+wrapper script on a laptop against a temporary mode file, a stub `/health`
+server and the laptop's own Ollama.
+
+| Check | Result |
+|---|---|
+| VM mode, no mode file, or a file the backend ignores | no-op; the GPU is not asked |
+| GPU mode, healthy GPU | no-op, file untouched |
+| `expiresAt` passed, or within the margin | VM at once; logged `expired` |
+| one failed check, then healthy | no failback; the count resets |
+| three failed checks in a row | VM; logged `gpu_unreachable` (or `gpu_unhealthy`) |
+| stale mode file after the job expired (the incident) | VM on the first check |
+| VM warm-up fails | mode stays VM; failure logged; exit 1 |
+| manual `start` during or at the moment of a failback | the new session is never overwritten |
+| manual `stop` during or after a failback | VM either way; `stop` still names the job |
+| killed during the warm-up; run twice at once; torn state file | the next run finishes or ignores it |
+| unit files, `install` / `uninstall` twice | checked against a recording `systemctl` |
+
+Not exercised here: real systemd (the laptop has none). The deployment steps
+check `enable`, `stop` and `restart` on the VM.

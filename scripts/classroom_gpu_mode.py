@@ -32,6 +32,11 @@ cancels the Tillicum job (`--cancel-job`) or reminds you it is still running.
 
 Prompts: the admin password (or AISWE_VERIFY_PASSWORD) and UW Duo. Nothing is
 stored. No answer text is printed.
+
+If the GPU goes away while GPU mode is on, `scripts/gpu_failback_watchdog.py`
+(the `aiswe-gpu-failback` timer) switches back to the VM on its own. It never
+starts or cancels a job and never opens a tunnel; `start` and `stop` here and
+the watchdog write the mode file under one lock. `status` shows the watchdog.
 """
 
 from __future__ import annotations
@@ -42,6 +47,7 @@ import importlib.util
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -72,6 +78,9 @@ def _load(name: str, path: Path):
 checks = _load("finetuned_production_checks", LIB / "finetuned_production_checks.py")
 local_helpers = _load("finetuned_local_helpers", LIB / "finetuned_local_helpers.py")
 service_helpers = _load("tillicum_service_helpers", SERVICE_DIR / "helpers.py")
+# Shared with scripts/gpu_failback_watchdog.py, which may have loaded it first:
+# one module object, so one LockBusy class.
+failback = sys.modules.get("gpu_failback_helpers") or _load("gpu_failback_helpers", LIB / "gpu_failback_helpers.py")
 
 # The backend's own rules, so the script and the backend cannot disagree about
 # what a mode file means or what "production decoding" is.
@@ -84,6 +93,11 @@ CONDITIONS = ("base", "rag", "fineTuned", "fineTunedRag")
 DEFAULT_GPU_PORT = 9101
 DEFAULT_REMOTE_PORT = 8001
 DEFAULT_MIN_MINUTES = 60
+#: How long `start`/`stop` wait for the mode file lock. Its holders write one
+#: small file, so in practice this is never reached.
+MODE_LOCK_SECONDS = 30.0
+#: `status` says so when an active watchdog has not checked for this long.
+WATCHDOG_STALE_SECONDS = 120
 PROBE_QUESTION = "When does the course meet?"
 GPU_MARK = "(Tillicum GPU)"
 STATE_ROOT = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "css360-syllabus-bot"
@@ -132,20 +146,53 @@ class Config:
 
 def read_mode_file() -> tuple[Path, str | None, Any]:
     """(path, raw text or None, parsed GenerationMode or the error string)."""
-    path = gm.mode_file_path()
+    return failback.read_mode_file(gm)
+
+
+def _is_gpu_content(content: dict[str, Any] | str) -> bool:
+    if isinstance(content, dict):
+        return content.get("mode") == gm.GPU
     try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return path, None, gm.VM_MODE
-    except OSError as exc:
-        return path, None, f"cannot read: {exc}"
-    try:
-        return path, text, gm.parse_mode(text)
-    except ValueError as exc:
-        return path, text, f"invalid ({exc})"
+        return gm.parse_mode(content).is_gpu
+    except ValueError:
+        return False
 
 
 def write_mode_file(content: dict[str, Any] | str) -> Path:
+    """Replace the mode file, holding the lock the failback watchdog also takes.
+
+    A switch back to the VM is never refused for want of the lock: the VM is
+    the safe state, and `stop` must work whatever else is stuck.
+    """
+    try:
+        with failback.mode_lock(gm.mode_file_path(), timeout=MODE_LOCK_SECONDS):
+            return _replace_mode_file(content)
+    except failback.LockBusy:
+        if _is_gpu_content(content):
+            raise Abort(
+                f"Could not lock the mode file within {MODE_LOCK_SECONDS:.0f}s (another start/stop or the failback "
+                "watchdog is writing it). Nothing was switched; run `status`, then try again."
+            ) from None
+        say("WARN", "the mode file lock is held by another process; switching to the VM regardless")
+        return _replace_mode_file(content)
+
+
+def replace_mode_file_if_unchanged(expected_text: str, content: dict[str, Any] | str, *, lock_timeout: float) -> bool:
+    """The watchdog's write: only if the file is still, byte for byte, the one it judged.
+
+    The comparison and the replacement happen under the lock `start` and `stop`
+    write under, so a GPU session activated while the watchdog was checking the
+    previous one is never overwritten. Raises `failback.LockBusy` when a writer
+    holds the lock for longer than `lock_timeout`.
+    """
+    with failback.mode_lock(gm.mode_file_path(), timeout=lock_timeout):
+        if read_mode_file()[1] != expected_text:
+            return False
+        _replace_mode_file(content)
+        return True
+
+
+def _replace_mode_file(content: dict[str, Any] | str) -> Path:
     """Atomic: the backend reads either the old file or the new one, never half."""
     path = gm.mode_file_path()
     text = content if isinstance(content, str) else json.dumps(content, indent=2) + "\n"
@@ -430,6 +477,104 @@ def vm_model_names(course_id: str, version: str) -> tuple[str, str | None, str]:
     return base, tag, (values.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434").rstrip("/")
 
 
+def warm_vm_models(cfg: Config, *, base_model: str, finetuned_ollama: str, finetuned_tag: str | None,
+                   keep_alive: str, timeout: float | None = None) -> bool:
+    """Load the VM's base, embedding and course models, and check they are resident.
+
+    `scripts/warm_classroom_models.py`, as `stop` and the failback watchdog
+    both run it. Without a course tag only the base and embedding models are
+    loaded.
+    """
+    warm = _load("warm_classroom_models", REPO_ROOT / "scripts" / "warm_classroom_models.py")
+    argv = ["--base-ollama", cfg.ollama_url, "--base-model", base_model,
+            "--finetuned-ollama", finetuned_ollama, "--keep-alive", keep_alive]
+    if finetuned_tag:
+        argv += ["--finetuned-model", finetuned_tag]
+    if timeout is not None:
+        argv += ["--timeout", str(timeout)]
+    return warm.main(argv) == 0
+
+
+# --------------------------------------------------------------------------- #
+# The failback watchdog, as `status` shows it
+# --------------------------------------------------------------------------- #
+
+
+def watchdog_timer_state(run: Callable = subprocess.run) -> dict[str, str] | None:
+    """systemd's view of the failback timer; None on a host without systemctl."""
+    if shutil.which("systemctl") is None:
+        return None
+
+    def ask(verb: str) -> str:
+        try:
+            result = run(["systemctl", "--user", verb, failback.TIMER_UNIT], capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return "unknown"
+        answer = (result.stdout or "").strip().splitlines()
+        return answer[0] if answer else ("not-found" if result.returncode else "unknown")
+
+    return {"enabled": ask("is-enabled"), "active": ask("is-active")}
+
+
+def _ago(moment: Any, now: dt.datetime) -> str:
+    parsed = failback.parse_time(moment)
+    if parsed is None:
+        return ""
+    seconds = max(0, int((now - parsed).total_seconds()))
+    if seconds < 120:
+        return f"{seconds}s ago"
+    if seconds < 7200:
+        return f"{seconds // 60} min ago"
+    return f"{seconds // 3600} h ago"
+
+
+def watchdog_report(mode: Any, *, timer: dict[str, str] | None, now: dt.datetime | None = None) -> tuple[list[str], list[str]]:
+    """(lines, notes) for `status`: the timer, the last check, the last automatic failback."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    state = failback.read_state()
+    lines = [f"Automatic failback watchdog ({failback.TIMER_UNIT}):"]
+    notes: list[str] = []
+
+    running = bool(timer) and timer["active"] == "active"
+    if timer is None:
+        lines.append("  timer          systemctl is not available on this host")
+    elif timer["enabled"] in ("not-found", "unknown") and timer["active"] != "active":
+        lines.append("  timer          NOT INSTALLED (./scripts/gpu_failback_watchdog.sh install)")
+    else:
+        lines.append(f"  timer          {'RUNNING' if running else 'NOT RUNNING'} "
+                     f"({timer['enabled']}, {timer['active']})")
+
+    check = state.get("lastCheck") if isinstance(state.get("lastCheck"), dict) else None
+    if check:
+        ago = _ago(check.get("at"), now)
+        lines.append(f"  last check     {check.get('at')}{' (' + ago + ')' if ago else ''}: {check.get('detail') or check.get('outcome')}")
+    else:
+        lines.append("  last check     never")
+
+    last = state.get("lastFailback") if isinstance(state.get("lastFailback"), dict) else None
+    if last:
+        warm = {"ok": "VM warm-up ok", "failed": "VM WARM-UP FAILED", "pending": "VM warm-up not finished"}.get(
+            str(last.get("vmWarmup")), f"VM warm-up {last.get('vmWarmup')}")
+        lines.append(f"  last failback  {last.get('at')}: {last.get('reason')} "
+                     f"(job {last.get('jobId') or '?'} on {last.get('node') or '?'}, "
+                     f"{last.get('courseId') or '?'}@{last.get('modelVersion') or '?'}); {warm}")
+        if last.get("vmWarmup") == "failed":
+            for line in (last.get("vmWarmupDetail") or [])[:4]:
+                lines.append(f"                 {line}")
+    else:
+        lines.append("  last failback  none")
+
+    if mode.is_gpu and not running:
+        notes.append("GPU mode is on without the failback watchdog: if the GPU goes away, students get "
+                     "errors until you run `stop`.")
+    if running and check:
+        parsed = failback.parse_time(check.get("at"))
+        if parsed is not None and (now - parsed).total_seconds() > WATCHDOG_STALE_SECONDS:
+            notes.append(f"the watchdog timer is active but its last check was {_ago(check.get('at'), now)}; "
+                         f"see: journalctl --user -u {failback.SERVICE_UNIT} -n 20")
+    return lines, notes
+
+
 # --------------------------------------------------------------------------- #
 # Commands
 # --------------------------------------------------------------------------- #
@@ -540,9 +685,11 @@ def local_helpers_validate_node(node: str) -> str:
 
 def cmd_stop(args: argparse.Namespace, cfg: Config, transport: Any) -> int:
     print("Classroom GPU mode: stop. Switching back to the VM first, then proving it.\n")
-    _, _, before = read_mode_file()
+    _, text, before = read_mode_file()
     details = before.details if isinstance(before, gm.GenerationMode) else {}
-    job_id = str(args.job_id or details.get("jobId") or "")
+    # After an automatic failback the file already says VM; the job the watchdog
+    # left running (it never cancels one) is in the record it wrote there.
+    job_id = str(args.job_id or details.get("jobId") or failback.failback_record(text).get("jobId") or "")
     write_mode_file({"mode": gm.VM, "since": now_iso(), "switchedBy": os.environ.get("USER", "")})
     say("PASS", "mode file: vm (new requests generate on the VM from now)")
 
@@ -560,10 +707,9 @@ def cmd_stop(args: argparse.Namespace, cfg: Config, transport: Any) -> int:
         if tag is None:
             failures.append(f"{args.course} {version} is not mapped in {FINETUNED_ENV}")
         else:
-            warm = _load("warm_classroom_models", REPO_ROOT / "scripts" / "warm_classroom_models.py")
             print("      Warming the VM models (they may have been unloaded while the GPU served):", flush=True)
-            if warm.main(["--base-ollama", cfg.ollama_url, "--base-model", base_model,
-                          "--finetuned-ollama", ft_ollama, "--finetuned-model", tag, "--keep-alive", args.keep_alive]) != 0:
+            if not warm_vm_models(cfg, base_model=base_model, finetuned_ollama=ft_ollama, finetuned_tag=tag,
+                                  keep_alive=args.keep_alive):
                 failures.append("warming the VM models failed")
             else:
                 say("PASS", "VM models resident")
@@ -609,6 +755,11 @@ def cmd_status(args: argparse.Namespace, cfg: Config, transport: Any) -> int:
     print(f"MODE: {'CLASSROOM GPU' if mode.is_gpu else 'VM (normal)'}")
     for key, value in (mode.details or {}).items():
         print(f"  {key}: {value}")
+    record = failback.failback_record(text)
+    if record and not mode.is_gpu:
+        print(f"  AUTOMATIC FAILBACK at {record.get('at')}: {record.get('reason')} "
+              f"(job {record.get('jobId') or '?'} on {record.get('node') or '?'}). "
+              "Run `stop` to verify the VM path and close the tunnel.")
 
     alive = tunnel_alive(cfg)
     state = read_tunnel_state(cfg)
@@ -635,6 +786,11 @@ def cmd_status(args: argparse.Namespace, cfg: Config, transport: Any) -> int:
         names = [m.get("name") for m in (ps or {}).get("models") or []]
         print(f"  ollama       {url}: {'resident ' + ', '.join(names) if names else ('nothing resident' if ps is not None else 'DOWN')}")
 
+    watchdog_lines, watchdog_notes = watchdog_report(mode, timer=watchdog_timer_state())
+    print()
+    for line in watchdog_lines:
+        print(line)
+
     problems = []
     if mode.is_gpu and not health:
         problems.append("GPU MODE IS ON BUT THE GPU SERVICE IS UNREACHABLE: students get errors. Run: ./scripts/classroom_gpu_mode.sh stop ...")
@@ -654,6 +810,8 @@ def cmd_status(args: argparse.Namespace, cfg: Config, transport: Any) -> int:
         if not agree:
             problems.append("the backend and the mode file disagree")
 
+    for note in watchdog_notes:
+        print(f"\nNOTE: {note}")
     for problem in problems:
         print(f"\nWARNING: {problem}")
     return 1 if problems else 0
