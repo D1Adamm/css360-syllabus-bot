@@ -237,6 +237,20 @@ class ShellScriptTests(unittest.TestCase):
         self.assertNotIn("pkill", text)
         self.assertNotIn("kill -9", text)
 
+    def test_status_says_a_stopped_unit_breaks_both_fine_tuned_conditions(self) -> None:
+        # The 2026-10 outage: the unit was stopped for a week and nothing said so.
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / "systemctl"
+            fake.write_text('#!/bin/sh\ncase "$2" in is-active) echo inactive; exit 3;; is-enabled) echo enabled;; esac\n')
+            fake.chmod(0o755)
+            env = {**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", "XDG_STATE_HOME": str(Path(tmp) / "state"),
+                   "OLLAMA_BASE_URL": "http://127.0.0.1:1", "INFERENCE_PORT": "1"}
+            result = subprocess.run([str(REPO_ROOT / "scripts" / "aiswe_finetuned.sh"), "status"], capture_output=True,
+                                    text=True, env=env, timeout=60, check=False)
+        self.assertIn("aiswe-finetuned is NOT RUNNING", result.stdout)
+        self.assertIn("Fine-Tuned and Fine-Tuned + RAG fail for every course", result.stdout)
+        self.assertIn("aiswe_finetuned.sh start", result.stdout)
+
     def test_the_local_service_script_never_kills_and_refuses_the_tunnel(self) -> None:
         text = (REPO_ROOT / "scripts" / "aiswe_finetuned.sh").read_text()
         self.assertNotIn("pkill", text)

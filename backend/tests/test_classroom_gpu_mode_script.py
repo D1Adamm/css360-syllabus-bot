@@ -26,18 +26,31 @@ COURSE = "css360e-autumn-2026-c08m"
 GPU = "http://127.0.0.1:9101"
 
 
+VM_FT = "http://127.0.0.1:9001"
+
+
 def decoding(cap: int) -> dict:
     return script.service_helpers.decoding_summary(cap)
+
+
+def vm_ft_health(*courses) -> dict:
+    """The VM fine-tuned service's /health: `courses` are (courseId, [versions]) it can serve."""
+    courses = courses or ((COURSE, ["v1"]),)
+    return {"status": "ok", "adapterLoaded": True, "engine": "ollama", "ollamaUrl": "http://127.0.0.1:11435",
+            "courses": [{"courseId": c, "versions": list(v), "currentVersion": list(v)[-1]} for c, v in courses]}
 
 
 class FakeWorld:
     """The backend, the GPU service and the VM's Ollama, as one fake transport."""
 
-    def __init__(self, *, ft_on_gpu: bool = True, gpu_versions=("v1",), gpu_prompt_tokens: int = 31) -> None:
+    def __init__(self, *, ft_on_gpu: bool = True, gpu_versions=("v1",), gpu_prompt_tokens: int = 31,
+                 vm_ft="up") -> None:
         self.ft_on_gpu = ft_on_gpu
         self.gpu_versions = list(gpu_versions)
         self.gpu_prompt_tokens = gpu_prompt_tokens
         self.served = {"base": 0, "course": 0}
+        #: The VM fine-tuned service (:9001): "up", "down" or a /health body.
+        self.vm_ft = vm_ft
 
     def _r(self, status, body):
         return checks.HttpResult(status, body, 0.2)
@@ -46,6 +59,10 @@ class FakeWorld:
         mode = gm.current_mode()
         if url.endswith("/api/health"):
             return self._r(200, {"status": "ok"})
+        if url == VM_FT + "/health":
+            if self.vm_ft == "down":
+                return checks.HttpResult(0, None, 0.01, error="[Errno 111] Connection refused")
+            return self._r(200, vm_ft_health() if self.vm_ft == "up" else self.vm_ft)
         if url.endswith("/api/admin/generation-mode"):
             return self._r(200, gm.describe(mode, ollama_url="o", ollama_model="llama3.2:3b", finetuned_url="f"))
         if url == GPU + "/health":
@@ -143,6 +160,39 @@ class SwitchTests(unittest.TestCase):
         code, out = self.run_script(["status", "--gpu-port", "9199"], FakeWorld())
         self.assertEqual(code, 1)
         self.assertIn("GPU SERVICE IS UNREACHABLE", out)
+
+    def test_status_in_vm_mode_lists_what_the_vm_can_serve(self) -> None:
+        world = FakeWorld(vm_ft=vm_ft_health(("css360d-fall-2026-q0ne", ["v1"]), (COURSE, ["v1"])))
+        code, out = self.run_script(["status"], world)
+        self.assertEqual(code, 0, out)
+        self.assertIn("servable: css360d-fall-2026-q0ne v1, css360e-autumn-2026-c08m v1", out)
+        self.assertNotIn("WARNING", out)
+
+    def test_status_in_vm_mode_fails_when_the_vm_finetuned_service_is_down(self) -> None:
+        # The 2026-10 outage: VM mode, Base/RAG fine, aiswe-finetuned stopped for a week.
+        self.mode_file.write_text(json.dumps({"mode": "vm", "since": "2026-10-02T06:02:22+00:00"}))
+        code, out = self.run_script(["status"], FakeWorld(vm_ft="down"))
+        self.assertEqual(code, 1)
+        self.assertIn("fine-tuned   DOWN", out)
+        self.assertIn("WARNING: VM MODE, BUT the VM fine-tuned service http://127.0.0.1:9001 is not answering", out)
+
+    def test_status_in_gpu_mode_warns_that_the_failback_target_is_not_ready(self) -> None:
+        self.mode_file.write_text(json.dumps({"mode": "gpu", "gpuUrl": GPU, "jobId": "123"}))
+        with patch.object(script, "tunnel_alive", return_value=True):
+            code, out = self.run_script(["status"], FakeWorld(vm_ft={"status": "unavailable", "detail": "Ollama down"}))
+        self.assertEqual(code, 1)
+        self.assertIn("WARNING: the VM fallback is not ready: the VM fine-tuned service", out)
+        self.assertIn("status='unavailable': Ollama down", out)
+
+    def test_stop_names_a_course_version_the_vm_cannot_serve(self) -> None:
+        self.mode_file.write_text(json.dumps({"mode": "vm"}))
+        world = FakeWorld(vm_ft=vm_ft_health(("css360d-fall-2026-q0ne", ["v1"])))
+        with patch.object(script, "warm_vm_models", return_value=True), \
+                patch.object(script, "vm_model_names", return_value=("llama3.2:3b", "css360e-v1:latest", "x")):
+            code, out = self.run_script(["stop", "--course", COURSE, "--version", "v1", "--no-auth"], world)
+        self.assertEqual(code, 1)
+        self.assertIn(f"{COURSE} is not servable on the VM fine-tuned service", out)
+        self.assertFalse(gm.parse_mode(self.mode_file.read_text()).is_gpu)
 
     def test_an_invalid_mode_file_is_reported_as_vm(self) -> None:
         self.mode_file.write_text("{oops")

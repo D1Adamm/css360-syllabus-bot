@@ -3,9 +3,15 @@
 # point backend/.env at the local forward, and restart aiswe-backend.
 #
 # Usage (on aiswe.uwb.edu, from repository root):
-#   ./scripts/start_finetuned_tunnel.sh --from-backend
-#   ./scripts/start_finetuned_tunnel.sh g014
+#   ./scripts/start_finetuned_tunnel.sh --from-backend [--stop-local]
+#   ./scripts/start_finetuned_tunnel.sh g014 [--stop-local]
 #   ./scripts/start_finetuned_tunnel.sh --help
+#
+# `--stop-local` lets this script take 127.0.0.1:9001 from the VM-local service
+# (`aiswe-finetuned`): it stops the unit through `aiswe_finetuned.sh stop
+# --for-fallback`, which records what to restore. If anything after that fails,
+# the tunnel this run opened is closed and the unit is restored before exiting.
+# `stop_finetuned_tunnel.sh` restores it when the fallback ends.
 #
 # `--from-backend` asks the application which node the Tillicum start script
 # registered, instead of the operator reading a hostname off one machine and
@@ -27,7 +33,8 @@ BACKEND_SERVICE="${BACKEND_SERVICE:-aiswe-backend}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 HELPERS="${REPO_ROOT}/scripts/lib/finetuned_deploy_helpers.py"
-ENV_FILE="${REPO_ROOT}/backend/.env"
+ENV_FILE="${BACKEND_ENV_FILE:-${REPO_ROOT}/backend/.env}"
+LOCAL_SCRIPT="${REPO_ROOT}/scripts/aiswe_finetuned.sh"
 
 STATE_ROOT="${XDG_STATE_HOME:-${HOME}/.local/state}/css360-syllabus-bot"
 CONTROL_PATH="${STATE_ROOT}/ssh-ft-tunnel.sock"
@@ -42,9 +49,14 @@ FALLBACK ONLY. Normal production serving is the VM-local service
 port; this script refuses to run while that unit is active.
 
 Usage:
-  ./scripts/start_finetuned_tunnel.sh --from-backend
-  ./scripts/start_finetuned_tunnel.sh <compute-node>
+  ./scripts/start_finetuned_tunnel.sh --from-backend [--stop-local]
+  ./scripts/start_finetuned_tunnel.sh <compute-node> [--stop-local]
   ./scripts/start_finetuned_tunnel.sh --help
+
+--stop-local stops aiswe-finetuned for the fallback and records that it did.
+If this run then fails, it closes the tunnel it opened and restores the local
+service. End the fallback with ./scripts/stop_finetuned_tunnel.sh, which
+restores the local service and checks it serves the same courses again.
 
 Examples:
   ./scripts/start_finetuned_tunnel.sh --from-backend   # look the node up
@@ -148,6 +160,7 @@ managed_tunnel_is_trustworthy() {
 
 NODE=""
 FROM_BACKEND=0
+STOP_LOCAL=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
@@ -156,6 +169,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --from-backend)
       FROM_BACKEND=1
+      shift
+      ;;
+    --stop-local)
+      STOP_LOCAL=1
       shift
       ;;
     -*)
@@ -210,17 +227,49 @@ require_cmd systemctl
 mkdir -p "${STATE_ROOT}"
 
 # The VM-local service (`aiswe-finetuned`, the normal production path) listens
-# on the same 127.0.0.1:${LOCAL_PORT}. This tunnel is the fallback, and it never
-# takes the port from the service: the operator stops the service first, on
-# purpose, and starts it again with ./scripts/aiswe_finetuned.sh start when the
-# fallback is over.
+# on the same 127.0.0.1:${LOCAL_PORT}. This tunnel is the fallback, and the two
+# never run together. The port is taken from the service only when asked
+# (--stop-local), and only through `aiswe_finetuned.sh stop --for-fallback`,
+# which records what to restore. From then on this run owns giving it back:
+# on any failure below, the trap closes the tunnel this run opened and restores
+# the service. On success, stop_finetuned_tunnel.sh restores it.
 LOCAL_UNIT="${LOCAL_UNIT:-aiswe-finetuned}"
+STOPPED_LOCAL=0
+OPENED_TUNNEL=0
+SUCCEEDED=0
+
+restore_local_on_failure() {
+  [[ "${SUCCEEDED}" -eq 1 || "${STOPPED_LOCAL}" -eq 0 ]] && return 0
+  echo >&2
+  echo "Fallback start did not finish; returning to VM-local serving." >&2
+  if [[ "${OPENED_TUNNEL}" -eq 1 ]] && control_master_alive; then
+    ssh -O exit -o ControlPath="${CONTROL_PATH}" "${TILLICUM_LOGIN}" >/dev/null 2>&1 || true
+    if control_master_alive; then
+      echo "ERROR: could not close the tunnel this run opened; ${LOCAL_UNIT} was NOT restarted (it would compete for :${LOCAL_PORT})." >&2
+      echo "  Close it, then restore: ./scripts/stop_finetuned_tunnel.sh" >&2
+      return 0
+    fi
+    rm -f "${CONTROL_PATH}" "${STATE_FILE}"
+    echo "Closed the tunnel this run opened." >&2
+  fi
+  if "${LOCAL_SCRIPT}" restore >&2; then
+    echo "${LOCAL_UNIT} restored; Fine-Tuned is served on the VM again." >&2
+  else
+    echo "ERROR: ${LOCAL_UNIT} could not be restored. Fine-Tuned is unavailable until: ${LOCAL_SCRIPT} restore" >&2
+  fi
+}
+trap restore_local_on_failure EXIT
+trap 'exit 130' INT TERM
+
 if systemctl --user is-active --quiet "${LOCAL_UNIT}" 2>/dev/null; then
-  die "The VM-local fine-tuned service (${LOCAL_UNIT}) is active and owns 127.0.0.1:${LOCAL_PORT}.
-  This tunnel is the Tillicum fallback and must not run beside it. If you really need the fallback:
-    ./scripts/aiswe_finetuned.sh stop
-  then retry. Return to local serving afterwards with:
-    ./scripts/stop_finetuned_tunnel.sh && ./scripts/aiswe_finetuned.sh start"
+  if [[ "${STOP_LOCAL}" -ne 1 ]]; then
+    die "The VM-local fine-tuned service (${LOCAL_UNIT}) is active and owns 127.0.0.1:${LOCAL_PORT}.
+  This tunnel is the Tillicum fallback and must not run beside it. If you really need the fallback,
+  rerun with --stop-local: it stops ${LOCAL_UNIT}, records that it did, and restores it if this
+  start fails. End the fallback with ./scripts/stop_finetuned_tunnel.sh, which restores it."
+  fi
+  "${LOCAL_SCRIPT}" stop --for-fallback || die "Could not stop ${LOCAL_UNIT}; nothing was changed."
+  STOPPED_LOCAL=1
 fi
 
 echo "Fine-tuned tunnel startup"
@@ -278,6 +327,7 @@ else
     -o ServerAliveCountMax=3 \
     -L "${LOCAL_PORT}:${NODE}:${REMOTE_PORT}" \
     "${TILLICUM_LOGIN}" || die "SSH tunnel setup failed (auth cancelled, network error, or port forward refused)."
+  OPENED_TUNNEL=1
 
   write_state "${NODE}"
 
@@ -321,6 +371,7 @@ if ! health_ready "${BACKEND_URL}/api/fine-tuned/health"; then
   fi
 fi
 
+SUCCEEDED=1
 echo
 echo "Fine-tuned backend READY"
 echo "Tunnel:"
@@ -332,7 +383,7 @@ echo "Fine-Tuned endpoint: OK"
 echo "Fine-Tuned + RAG uses the same service and is now available."
 echo
 echo "Status: ./scripts/status_finetuned_tunnel.sh"
-echo "Stop tunnel: ./scripts/stop_finetuned_tunnel.sh"
+echo "Stop tunnel: ./scripts/stop_finetuned_tunnel.sh   (restores ${LOCAL_UNIT} and checks it)"
 echo
 echo "The Tillicum session has a bounded wall clock. When it ends, the tunnel"
 echo "goes dead and Fine-Tuned becomes unavailable until a new session is"

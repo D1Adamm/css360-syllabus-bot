@@ -538,8 +538,9 @@ runs code from the checkout, so a `git pull` updates what it runs; re-run
 1. **Switch first.** It replaces the mode file with VM mode (§3), atomically, under the mode-file lock. It does so **only if the file is still byte-for-byte the one it judged.** New requests go to the VM from this moment.
 2. **Record.** It appends a `failback` line to the log and updates the state file *before* the slow part, so a run killed mid-warm-up still leaves a trace.
 3. **Warm the VM models.** These are the same three models `stop` warms: base and embedding on `:11434`, and the course's tag on the fine-tuned Ollama from `finetuned.env`. It uses `keep_alive` 4h and a 120 s timeout per model. It logs `failback_warmup` with `ok: true/false` and the per-model lines.
-   - **If the warm-up fails, the mode stays VM.** The first answers are just slower, and the run exits 1 so the journal shows a failure.
-   - A warm-up interrupted by a restart is finished by the next run, at most twice, and otherwise recorded as failed.
+   - **It then asks the VM fine-tuned service** (`:9001/health`) whether it can serve the recorded course *at the recorded version*. A resident Ollama tag is not enough: both fine-tuned conditions go through that service, and a stopped `aiswe-finetuned` fails them for every course while Base and RAG keep working. Another course or version being servable never counts.
+   - **If the warm-up fails, the mode stays VM.** The run exits 1 so the journal shows a failure, and `status` shows `VM WARM-UP FAILED` with the reason (not mapped, service not answering, course/version not servable, a model that would not load).
+   - **Retries.** A failed warm-up is tried again by a later run, at least 60 s after the last attempt, and a warm-up interrupted by a restart is finished by the next run; three attempts in all per failback, and only while the mode file is still the one the failback wrote. The watchdog never starts or restarts a unit: if the service is stopped, start it (`./scripts/aiswe_finetuned.sh start`) and the next retry records the recovery.
 
 ### Race protection
 
@@ -759,6 +760,20 @@ Read the lines under it:
 
 - **`DOWN` instead of `nothing resident`** means that Ollama is not answering: `systemctl status ollama` (`:11434`) or `systemctl status ollama-finetuned` (`:11435`).
 
+### VM mode, but Fine-Tuned and Fine-Tuned + RAG fail
+
+`WARNING: VM MODE, BUT the VM fine-tuned service http://127.0.0.1:9001 is not answering /health` (and `fine-tuned   DOWN` under *VM services*).
+
+Base and RAG answer; both fine-tuned conditions fail for every course with "temporarily unavailable" (HTTP 503, `reason=service_unavailable` in the backend log). Nothing here depends on the mode or the watchdog: the `aiswe-finetuned` unit is not running. It is never restarted automatically after a deliberate stop, which is how it stayed down from 2026-10-06 to 2026-10-13. The fallback tunnel now records its own stop and restores the unit when it ends or fails (`start_finetuned_tunnel.sh --stop-local`, `stop_finetuned_tunnel.sh`; see [deployment.md](deployment.md)); a plain `aiswe_finetuned.sh stop` is still never undone.
+
+```bash
+./scripts/aiswe_finetuned.sh status
+./scripts/aiswe_finetuned.sh start
+./scripts/classroom_gpu_mode.sh status
+```
+
+`status` then lists `servable: <course> vN, …`. A course missing from that list is not mapped in `finetuned.env`, has no Ollama model, or was mapped without a restart. In GPU mode the same warning reads `the VM fallback is not ready: …`, because that is where a failback would land.
+
 ### Watchdog healthy
 
 ```text
@@ -974,7 +989,7 @@ a local Ollama.
 | one failed check, then healthy | no failback; the count resets |
 | three failed checks in a row | VM; logged `gpu_unreachable` (or `gpu_unhealthy`) |
 | stale mode file after the job expired (the incident) | VM on the first check |
-| VM warm-up fails | mode stays VM; failure logged; exit 1 |
+| VM warm-up fails (a model, no mapping, `aiswe-finetuned` down, course/version not servable on the VM) | mode stays VM; failure logged; exit 1; retried ≥ 60 s later, three attempts in all |
 | manual `start` during or at the moment of a failback | the new session is never overwritten |
 | manual `stop` during or after a failback | VM either way; `stop` still names the job |
 | killed during the warm-up; run twice at once; torn state file | the next run finishes or ignores it |

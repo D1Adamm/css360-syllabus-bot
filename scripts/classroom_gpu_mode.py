@@ -357,6 +357,41 @@ def gpu_health_problems(health: dict[str, Any] | None, *, course_id: str, versio
     return problems
 
 
+def vm_finetuned_problems(health: dict[str, Any] | None, *, url: str, course_id: str = "",
+                          version: str = "") -> list[str]:
+    """Why the VM fine-tuned service cannot answer (for `course_id` at `version`); empty when it can.
+
+    VM mode, or an Ollama with the course's tag, says nothing about this: the
+    backend sends both fine-tuned conditions to this service, and when it is
+    stopped they fail for every course while Base and RAG keep working. Its
+    `/health` lists a course only when the course is mapped *and* its Ollama
+    model exists, so that list is what "can generate" means here.
+    """
+    if health is None:
+        return [f"the VM fine-tuned service {url} is not answering /health: Fine-Tuned and Fine-Tuned + RAG "
+                "fail for every course in VM mode (./scripts/aiswe_finetuned.sh status, then start)"]
+    if health.get("status") != "ok":
+        detail = f": {health.get('detail')}" if health.get("detail") else ""
+        return [f"the VM fine-tuned service {url} reports status={health.get('status')!r}{detail}"]
+    if not (course_id and version):
+        return []
+    servable = {c.get("courseId"): c.get("versions") or [] for c in health.get("courses") or [] if isinstance(c, dict)}
+    if course_id not in servable:
+        return [f"{course_id} is not servable on the VM fine-tuned service (not mapped in {FINETUNED_ENV}, "
+                "its Ollama model is missing, or the service was not restarted after set-mapping)"]
+    if version not in servable[course_id]:
+        return [f"{course_id} {version} is not servable on the VM fine-tuned service "
+                f"(servable there: {', '.join(servable[course_id])})"]
+    return []
+
+
+def servable_summary(health: dict[str, Any] | None) -> str:
+    """`course v1, course v2` from a VM fine-tuned `/health`, or `none`."""
+    pairs = [f"{c.get('courseId')} {v}" for c in (health or {}).get("courses") or [] if isinstance(c, dict)
+             for v in c.get("versions") or []]
+    return ", ".join(pairs) or "none"
+
+
 def vm_prompt_tokens(transport: Any, ollama_url: str, model: str, question: str, timeout: float) -> int | None:
     """Prompt tokens the VM's Ollama computes for one user message (1 token generated)."""
     result = post_json(transport, f"{ollama_url}/api/chat", {
@@ -715,8 +750,7 @@ def cmd_stop(args: argparse.Namespace, cfg: Config, transport: Any) -> int:
                 say("PASS", "VM models resident")
 
         ft_health = get_json(transport, f"{cfg.finetuned_url}/health")
-        if not ft_health or ft_health.get("status") != "ok":
-            failures.append(f"VM fine-tuned service {cfg.finetuned_url} is not healthy")
+        failures += vm_finetuned_problems(ft_health, url=cfg.finetuned_url, course_id=args.course, version=version)
         problems = four_condition_problems(run_four(session, args.course, cfg.timeout),
                                            on_gpu=False, course_id=args.course, version=version)
         failures += problems
@@ -780,7 +814,8 @@ def cmd_status(args: argparse.Namespace, cfg: Config, transport: Any) -> int:
     print("\nVM services (ready for VM mode):")
     print(f"  backend      {'ok' if get_json(transport, cfg.backend_url + '/api/health') else 'DOWN'} ({cfg.backend_url})")
     ft = get_json(transport, cfg.finetuned_url + "/health")
-    print(f"  fine-tuned   {(ft or {}).get('status', 'DOWN')} ({cfg.finetuned_url} -> {(ft or {}).get('ollamaUrl', '?')})")
+    print(f"  fine-tuned   {(ft or {}).get('status', 'DOWN')} ({cfg.finetuned_url} -> {(ft or {}).get('ollamaUrl', '?')})"
+          + (f"; servable: {servable_summary(ft)}" if ft else ""))
     for url in dict.fromkeys([cfg.ollama_url, ft_ollama]):
         ps = get_json(transport, url + "/api/ps")
         names = [m.get("name") for m in (ps or {}).get("models") or []]
@@ -798,6 +833,9 @@ def cmd_status(args: argparse.Namespace, cfg: Config, transport: Any) -> int:
         problems.append("the GPU allocation ends within 15 minutes: plan to run `stop`")
     if not mode.is_gpu and alive:
         problems.append("VM mode, but the GPU tunnel is still open (and the Tillicum job may still be running)")
+    # Checked in both modes: in GPU mode the VM is where a failback lands.
+    for problem in vm_finetuned_problems(ft, url=cfg.finetuned_url):
+        problems.append(("VM MODE, BUT " if not mode.is_gpu else "the VM fallback is not ready: ") + problem)
 
     if args.verify:
         session = sign_in(cfg, args.admin_email, transport, no_auth=args.no_auth)

@@ -264,7 +264,7 @@ record_session() {
   echo "WARNING: the session is running but could not be recorded with the" >&2
   echo "application. The service works; the UWB VM cannot look up its node." >&2
   echo "Re-run this command later, or pass the node by hand on the VM:" >&2
-  echo "  ./scripts/start_finetuned_tunnel.sh ${node}" >&2
+  echo "  ./scripts/start_finetuned_tunnel.sh ${node} --stop-local" >&2
   return 0
 }
 
@@ -423,9 +423,12 @@ for course in courses:
   || echo "  (could not read /courses)"
 
 echo
-echo "Next, on aiswe.uwb.edu — this is the one step that still needs a person,"
-echo "because opening the tunnel authenticates to UW and Duo is not automated:"
-echo "  ./scripts/start_finetuned_tunnel.sh --from-backend"
+echo "Next, on aiswe.uwb.edu (UW password and Duo; not automated):"
+echo "  For a class (all four conditions on this GPU, VM services stay up):"
+echo "    ./scripts/classroom_gpu_mode.sh start --course <courseId> --admin-email <you>"
+echo "  Or the emergency fine-tuned-only fallback (stops aiswe-finetuned until"
+echo "  ./scripts/stop_finetuned_tunnel.sh restores it):"
+echo "    ./scripts/start_finetuned_tunnel.sh --from-backend --stop-local"
 echo
 echo "Status: ./training/status_finetuned_service.sh"
 echo "Stop:   ./training/stop_finetuned_service.sh"
