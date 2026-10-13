@@ -186,8 +186,8 @@ The Tillicum GPU service is the emergency fallback only:
 ./training/start_finetuned_service.sh
 ./training/status_finetuned_service.sh
 ./training/stop_finetuned_service.sh
-# on aiswe.uwb.edu, after ./scripts/aiswe_finetuned.sh stop:
-./scripts/start_finetuned_tunnel.sh --from-backend
+# on aiswe.uwb.edu (stops aiswe-finetuned for the fallback; stop_finetuned_tunnel.sh restores it):
+./scripts/start_finetuned_tunnel.sh --from-backend --stop-local
 ```
 
 See `training/inference_service/README.md` and

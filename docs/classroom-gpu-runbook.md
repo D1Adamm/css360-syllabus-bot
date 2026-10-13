@@ -40,7 +40,7 @@ SERVICE_QOS=normal ./training/start_finetuned_service.sh --hours 3
 - Use `--hours 2` for a shorter session.
 - The job must outlast the class: `start` refuses under 60 minutes left.
 - Wait for `Fine-tuned service READY` and check that `css360d-fall-2026-q0ne` is listed under "Courses this session can answer for".
-- **Ignore** the printed `start_finetuned_tunnel.sh` "Next" step. That is the old fallback (§4).
+- Use the printed `classroom_gpu_mode.sh start` "Next" step, not the `start_finetuned_tunnel.sh` one under it. That is the old fallback (§4), which stops `aiswe-finetuned`.
 - `State: PD — waiting for a node with the requested resources` means the job is queued; see §8 below.
 
 ## 3. Switch AISWE to GPU (VM)

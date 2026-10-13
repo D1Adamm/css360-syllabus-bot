@@ -376,6 +376,46 @@ def _cli_set_mapping(args: argparse.Namespace) -> int:
     return 0
 
 
+def servable_pairs(health: Any) -> list[str]:
+    """`course@vN` for every version a VM fine-tuned `/health` says it can serve.
+
+    The service lists a version only when it is mapped *and* its Ollama model
+    exists, so this is "can generate", not "is configured". Anything malformed
+    is simply not servable.
+    """
+    if not isinstance(health, dict) or health.get("status") != "ok":
+        return []
+    pairs: set[str] = set()
+    for course in health.get("courses") or []:
+        if not isinstance(course, dict) or not isinstance(course.get("courseId"), str):
+            continue
+        for version in course.get("versions") or []:
+            if isinstance(version, str) and version:
+                pairs.add(f"{course['courseId']}@{version}")
+    return sorted(pairs)
+
+
+def missing_pairs(expected: str, health: Any) -> list[str]:
+    """Which of the comma-separated `course@vN` pairs `health` cannot serve."""
+    wanted = [item.strip() for item in (expected or "").split(",") if item.strip()]
+    have = set(servable_pairs(health))
+    return [pair for pair in wanted if pair not in have]
+
+
+def _cli_servable(args: argparse.Namespace) -> int:
+    try:
+        health = json.loads(sys.stdin.read() or "null")
+    except ValueError:
+        health = None
+    if args.expect is None:
+        print(",".join(servable_pairs(health)))
+        return 0
+    missing = missing_pairs(args.expect, health)
+    for pair in missing:
+        print(pair)
+    return 1 if missing else 0
+
+
 def _cli_mapping_entries(args: argparse.Namespace) -> int:
     path = Path(args.path)
     text = path.read_text(encoding="utf-8") if path.is_file() else ""
@@ -411,6 +451,10 @@ def main(argv: list[str] | None = None) -> int:
     p_rows = sub.add_parser("mapping-entries", help="Print `course version model` rows from the env file")
     p_rows.add_argument("path")
     p_rows.set_defaults(func=_cli_mapping_entries)
+
+    p_serv = sub.add_parser("servable", help="`course@vN` pairs a /health body (stdin) can serve")
+    p_serv.add_argument("--expect", help="comma-separated pairs; print the missing ones and exit 1 if any")
+    p_serv.set_defaults(func=_cli_servable)
 
     p_tag = sub.add_parser("default-tag", help="The conventional Ollama tag for a course and version")
     p_tag.add_argument("course")

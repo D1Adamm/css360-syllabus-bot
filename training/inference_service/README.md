@@ -305,10 +305,11 @@ Inspect without starting:
 ```bash
 ssh <you>@aiswe.uwb.edu
 cd ~/css360-syllabus-bot
-./scripts/start_finetuned_tunnel.sh --from-backend
+./scripts/start_finetuned_tunnel.sh --from-backend --stop-local
 ```
 
-`--from-backend` looks the compute node up from the session Tillicum recorded,
+`--stop-local` takes the port from the VM-local service and records that it
+did; a failed start restores it. `--from-backend` looks the compute node up from the session Tillicum recorded,
 rather than the operator reading a hostname off one machine and typing it into
 another. Passing a hostname explicitly still works.
 
@@ -335,9 +336,10 @@ On Tillicum (stops GPU billing for this job):
 ./training/stop_finetuned_service.sh
 ```
 
-While the fallback is in use, closing the tunnel disables Fine-Tuned and
-Fine-Tuned + RAG on the website until `./scripts/aiswe_finetuned.sh start`
-returns them to VM-local serving; Base and RAG are unaffected. Cancelling the Slurm job stops the GPU allocation.
+`stop_finetuned_tunnel.sh` then restores the VM-local service and checks it
+serves the same courses and versions as before the fallback; if that fails it
+says so, exits 1, and `./scripts/aiswe_finetuned.sh restore` retries. Base and
+RAG are unaffected throughout. Cancelling the Slurm job stops the GPU allocation.
 Use `hyakusage` on Tillicum to inspect GPU usage / cost / credits.
 
 ## Important limitations (Tillicum fallback)
@@ -391,7 +393,7 @@ squeue -u $USER
 Prefer `squeue` for the node name. Then on the UWB VM:
 
 ```bash
-./scripts/start_finetuned_tunnel.sh <NODE>
+./scripts/start_finetuned_tunnel.sh <NODE> --stop-local
 ```
 
 ## Curl examples

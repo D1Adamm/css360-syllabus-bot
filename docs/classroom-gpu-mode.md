@@ -764,7 +764,7 @@ Read the lines under it:
 
 `WARNING: VM MODE, BUT the VM fine-tuned service http://127.0.0.1:9001 is not answering /health` (and `fine-tuned   DOWN` under *VM services*).
 
-Base and RAG answer; both fine-tuned conditions fail for every course with "temporarily unavailable" (HTTP 503, `reason=service_unavailable` in the backend log). Nothing here depends on the mode or the watchdog: the `aiswe-finetuned` unit is not running. It is never restarted automatically after a deliberate stop (for example `aiswe_finetuned.sh stop` before the Tillicum fallback tunnel), which is how it stayed down from 2026-10-06 to 2026-10-13.
+Base and RAG answer; both fine-tuned conditions fail for every course with "temporarily unavailable" (HTTP 503, `reason=service_unavailable` in the backend log). Nothing here depends on the mode or the watchdog: the `aiswe-finetuned` unit is not running. It is never restarted automatically after a deliberate stop, which is how it stayed down from 2026-10-06 to 2026-10-13. The fallback tunnel now records its own stop and restores the unit when it ends or fails (`start_finetuned_tunnel.sh --stop-local`, `stop_finetuned_tunnel.sh`; see [deployment.md](deployment.md)); a plain `aiswe_finetuned.sh stop` is still never undone.
 
 ```bash
 ./scripts/aiswe_finetuned.sh status

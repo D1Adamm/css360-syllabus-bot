@@ -119,8 +119,7 @@ Then, on the application VM:
 ```bash
 ssh <you>@aiswe.uwb.edu                  # UW password + Duo, by hand
 cd ~/css360-syllabus-bot
-./scripts/aiswe_finetuned.sh stop        # release 127.0.0.1:9001; the tunnel refuses while the unit is active
-./scripts/start_finetuned_tunnel.sh --from-backend
+./scripts/start_finetuned_tunnel.sh --from-backend --stop-local   # takes 127.0.0.1:9001 from aiswe-finetuned, restores it if this fails
 ```
 
 `--from-backend` looks the compute node up from the session Tillicum recorded,
@@ -153,8 +152,7 @@ Status and stop:
 
 # UWB VM
 ./scripts/status_finetuned_tunnel.sh
-./scripts/stop_finetuned_tunnel.sh
-./scripts/aiswe_finetuned.sh start       # back to VM-local serving
+./scripts/stop_finetuned_tunnel.sh       # closes the tunnel, restores aiswe-finetuned and checks its courses
 ```
 
 ### Why the fallback needs a person, and the normal path does not

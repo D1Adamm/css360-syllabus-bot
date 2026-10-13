@@ -6,11 +6,15 @@
 #   ./scripts/aiswe_finetuned.sh check                 # read-only: unit, mapping, port owner, tunnel, Ollama, health
 #   ./scripts/aiswe_finetuned.sh set-mapping <courseId> <vN> <ollamaTag> [--replace] [--dry-run]
 #   ./scripts/aiswe_finetuned.sh start | stop | restart | status | logs
+#   ./scripts/aiswe_finetuned.sh stop --for-fallback   # stop, recording what to restore afterwards
+#   ./scripts/aiswe_finetuned.sh restore               # start, then prove the recorded courses serve again
 #   ./scripts/aiswe_finetuned.sh preflight             # what the unit runs before ExecStart
 #
 # The local service and the Tillicum SSH tunnel both listen on 127.0.0.1:9001.
 # `start` and `preflight` refuse while the tunnel owns the port, and
-# `scripts/start_finetuned_tunnel.sh` refuses while this unit is active. Nothing
+# `scripts/start_finetuned_tunnel.sh` refuses while this unit is active unless
+# told to take the port (`--stop-local`), which records a fallback marker that
+# `stop_finetuned_tunnel.sh` (or a failed tunnel start) restores from. Nothing
 # here kills a process it did not start: when the port is taken, the owner is
 # named and the operator decides.
 #
@@ -49,13 +53,17 @@ HEALTH_WAIT_SECONDS="${HEALTH_WAIT_SECONDS:-30}"
 STATE_ROOT="${XDG_STATE_HOME:-${HOME}/.local/state}/css360-syllabus-bot"
 TUNNEL_STATE_FILE="${STATE_ROOT}/ft-tunnel.env"
 TUNNEL_CONTROL_PATH="${STATE_ROOT}/ssh-ft-tunnel.sock"
+# Written when this unit is stopped for the Tillicum fallback; removed once a
+# restore has proven the service serves what it served before. While it
+# exists, the stop was the fallback's, not a maintenance stop.
+FALLBACK_MARKER="${STATE_ROOT}/ft-fallback-local.env"
 
 LOCAL_HELPERS="${REPO_ROOT}/scripts/lib/finetuned_local_helpers.py"
 DEPLOY_HELPERS="${REPO_ROOT}/scripts/lib/finetuned_deploy_helpers.py"
 VENV_PY="${REPO_ROOT}/backend/.venv/bin/python"
 
 usage() {
-  sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 die() {
@@ -329,10 +337,78 @@ cmd_start() {
   return 1
 }
 
+marker_field() {
+  [[ -f "${FALLBACK_MARKER}" ]] || return 1
+  grep -E "^$1=" "${FALLBACK_MARKER}" | head -n 1 | cut -d= -f2- || true
+}
+
+write_fallback_marker() {
+  # What a restore must prove: the course/version pairs servable right now.
+  # Recorded before stopping, so a restore checks exactly what was lost.
+  local was="$1" servable
+  servable="$(health_json | local_helpers servable 2>/dev/null || true)"
+  mkdir -p "${STATE_ROOT}"
+  {
+    echo "UNIT=${UNIT}"
+    echo "WAS=${was}"
+    echo "STOPPED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "SERVABLE_BEFORE=${servable}"
+  } > "${FALLBACK_MARKER}.tmp"
+  mv "${FALLBACK_MARKER}.tmp" "${FALLBACK_MARKER}"
+}
+
 cmd_stop() {
   require_cmd systemctl
+  local for_fallback=0
+  case "${1:-}" in
+    "") ;;
+    --for-fallback) for_fallback=1 ;;
+    *) die "Unknown option: $1" ;;
+  esac
+  if [[ "${for_fallback}" -eq 1 ]]; then
+    # An existing marker is kept: a second fallback start must not overwrite
+    # what the first one recorded with the (empty) state it left behind.
+    if [[ -f "${FALLBACK_MARKER}" ]]; then
+      echo "Fallback marker already present (stopped $(marker_field STOPPED_AT)); keeping it."
+    else
+      write_fallback_marker "$(unit_state)"
+    fi
+  fi
   systemctl --user stop "${UNIT}" || die "systemctl --user stop ${UNIT} failed"
-  echo "${UNIT} stopped. Fine-Tuned and Fine-Tuned + RAG are unavailable until it starts again ($0 start); Base and RAG are unaffected."
+  if [[ "${for_fallback}" -eq 1 ]]; then
+    echo "${UNIT} stopped for the Tillicum fallback; ./scripts/stop_finetuned_tunnel.sh restores it (or: $0 restore)."
+  else
+    echo "${UNIT} stopped. Nothing restarts it: Fine-Tuned and Fine-Tuned + RAG fail for every course until $0 start; Base and RAG are unaffected."
+  fi
+}
+
+cmd_restore() {
+  # Start the unit and prove it serves what it served before the fallback
+  # (the marker's SERVABLE_BEFORE), or, with no record of that, every mapped
+  # course and version. The marker is removed only on that proof, so a failed
+  # restore can simply be run again.
+  require_cmd systemctl
+  if tunnel_control_alive; then
+    die "The Tillicum fallback tunnel still holds 127.0.0.1:${PORT}; close it first: ./scripts/stop_finetuned_tunnel.sh"
+  fi
+  local expected source
+  expected="$(marker_field SERVABLE_BEFORE || true)"
+  source="servable before the fallback"
+  if [[ -z "${expected}" ]]; then
+    expected="$(local_helpers mapping-entries "${ENV_FILE}" 2>/dev/null | awk '{printf "%s%s@%s", (NR>1?",":""), $1, $2}')"
+    source="mapped in ${ENV_FILE}"
+  fi
+  # A subshell, so a `die` inside start ends the start, not this report.
+  ( cmd_start ) || { echo "RESTORE FAILED: ${UNIT} did not become ready. The fallback marker is kept; fix the cause, then: $0 restore" >&2; return 1; }
+  local missing
+  if ! missing="$(health_json | local_helpers servable --expect "${expected}")"; then
+    echo "RESTORE INCOMPLETE: ${UNIT} is up but cannot serve (${source}):" >&2
+    printf '  %s\n' ${missing//,/ } >&2
+    echo "The fallback marker is kept; after fixing the mapping or the Ollama model: $0 restore" >&2
+    return 1
+  fi
+  rm -f "${FALLBACK_MARKER}"
+  echo "RESTORED: ${UNIT} serves ${expected:-nothing (no course was ${source})} (${source})."
 }
 
 cmd_restart() {
@@ -358,6 +434,9 @@ if not h.get("models"):
 
 cmd_status() {
   echo "unit:      ${UNIT} $(unit_state) ($(unit_enabled))"
+  if [[ -f "${FALLBACK_MARKER}" ]]; then
+    echo "fallback:  stopped for the Tillicum fallback at $(marker_field STOPPED_AT); restore: ./scripts/stop_finetuned_tunnel.sh (or $0 restore)"
+  fi
   if command -v systemctl >/dev/null 2>&1 && [[ "$(unit_state)" != "active" ]] && ! tunnel_control_alive; then
     echo "WARNING:   $(not_running_warning)"
   fi
@@ -447,6 +526,7 @@ case "${1:-}" in
   preflight) shift; cmd_preflight "$@" ;;
   start) shift; cmd_start "$@" ;;
   stop) shift; cmd_stop "$@" ;;
+  restore) shift; cmd_restore "$@" ;;
   restart) shift; cmd_restart "$@" ;;
   status) shift; cmd_status "$@" ;;
   logs) shift; cmd_logs "$@" ;;

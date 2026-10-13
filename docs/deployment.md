@@ -409,16 +409,34 @@ port through an SSH tunnel, so the two never run together. Normal operation
 needs neither. Switching is explicit in both directions:
 
 ```bash
-./scripts/aiswe_finetuned.sh stop && ./scripts/start_finetuned_tunnel.sh --from-backend    # to the fallback (Duo prompt)
+./scripts/start_finetuned_tunnel.sh --from-backend --stop-local    # to the fallback (Duo prompt)
 ```
 ```bash
-./scripts/stop_finetuned_tunnel.sh && ./scripts/aiswe_finetuned.sh start                   # back to normal
+./scripts/stop_finetuned_tunnel.sh                                 # back to normal, verified
 ```
 
-`start_finetuned_tunnel.sh` refuses while `aiswe-finetuned` is active, and
-`aiswe_finetuned.sh start` refuses while the tunnel owns the port. Stopping
-the tunnel never touches the unit. The unit stays enabled through a fallback,
-so a reboot returns the VM to local serving.
+`--stop-local` stops `aiswe-finetuned` through `aiswe_finetuned.sh stop
+--for-fallback`, which records the stop and the course/version pairs the
+service could serve (`~/.local/state/css360-syllabus-bot/ft-fallback-local.env`).
+If the tunnel start then fails (Duo cancelled, the node never healthy, the
+backend restart failing), it closes the tunnel it opened and restores the unit
+before exiting. `stop_finetuned_tunnel.sh` closes the tunnel and runs
+`aiswe_finetuned.sh restore`: start the unit, then require every recorded pair
+to be servable again, or every mapped pair when there is no record. The record
+is removed only then, so a failed restore can be re-run (`aiswe_finetuned.sh
+restore`). It also restores a unit that is enabled but stopped with no record
+(the older manual `aiswe_finetuned.sh stop`); `--keep-local-stopped` opts out.
+
+The two never compete for the port: `start_finetuned_tunnel.sh` refuses while
+`aiswe-finetuned` is active unless given `--stop-local`, `aiswe_finetuned.sh
+start` (and the unit's own preflight) refuses while the tunnel owns it, and
+`stop_finetuned_tunnel.sh` starts nothing while a tunnel it could not close
+still holds it. `./scripts/aiswe_finetuned.sh status` and `classroom_gpu_mode.sh
+status` warn when the unit is stopped and no tunnel holds the port. The unit
+stays enabled through a fallback, so a reboot returns the VM to local serving.
+
+Classroom GPU mode is not this fallback and never stops `aiswe-finetuned`: it
+tunnels on `:9101`, and the VM service stays up as the failback target.
 
 ### After a reboot
 
