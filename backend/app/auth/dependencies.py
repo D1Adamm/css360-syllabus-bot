@@ -36,7 +36,7 @@ from urllib.parse import urlparse
 from fastapi import Depends, HTTPException, Request
 
 from app import db_memberships, db_participants, db_sessions
-from app.auth.principal import ANONYMOUS, ADMIN, Participant, Principal, StaffUser
+from app.auth.principal import ANONYMOUS, Participant, Principal, StaffUser
 from app.auth.settings import (
     CSRF_HEADER_NAME,
     CSRF_HEADER_VALUE,
@@ -100,11 +100,11 @@ def _load_staff(conn: Any, token: str, now: datetime) -> StaffUser | None:
 
     user_id = str(row["user_id"])
     role = row["role"]
-    course_ids = (
-        frozenset()
-        if role == ADMIN
-        else frozenset(db_memberships.list_course_ids_for_user(conn, user_id))
-    )
+    # Loaded for every role. An administrator's access never goes through
+    # these (`Principal.can_staff_course` answers True first), but the rows
+    # are still theirs: the courses they were explicitly assigned to teach,
+    # kept through a promotion, which Professor view's "My courses only" lists.
+    course_ids = frozenset(db_memberships.list_course_ids_for_user(conn, user_id))
     if now - last_seen_at >= TOUCH_INTERVAL:
         db_sessions.touch_session(conn, session_id, now)
 

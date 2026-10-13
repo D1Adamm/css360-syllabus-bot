@@ -104,18 +104,19 @@ function InstructorsSection({ courseId }: { courseId: string }) {
   }
 
   const users = people.status === 'ready' ? people.users : [];
-  const instructors = users.filter(
-    (user) => user.role === 'professor' && user.courseIds.includes(courseId),
-  );
+  // Any staff account can be assigned: an administrator who teaches the
+  // course is listed like any other instructor (their access is global
+  // either way). Several instructors on one course is intended co-teaching.
+  const instructors = users.filter((user) => user.courseIds.includes(courseId));
   const candidates = users.filter(
-    (user) => user.role === 'professor' && !user.disabled && !user.courseIds.includes(courseId),
+    (user) => !user.disabled && !user.courseIds.includes(courseId),
   );
 
   return (
     <section className="ui-stack ui-stack--snug">
       <SectionHeader
         title="Instructors"
-        description="Professors assigned to this course. Administrators reach every course without being listed."
+        description="Staff assigned to teach this course. Administrators reach every course without being listed; add one here only if they teach it."
         divider
       />
       {people.status === 'loading' && (
@@ -144,7 +145,10 @@ function InstructorsSection({ courseId }: { courseId: string }) {
           )}
           {instructors.map((user) => (
             <li key={user.userId} className="admin-row">
-              <span className="admin-row__label">{user.displayName}</span>
+              <span className="admin-row__label">
+                {user.displayName}
+                {user.role === 'admin' && <span className="ui-text-muted"> · administrator</span>}
+              </span>
               <span className="admin-row__value">{user.email}</span>
               <Button
                 size="sm"
