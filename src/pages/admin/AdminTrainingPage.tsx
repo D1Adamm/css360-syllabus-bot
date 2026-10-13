@@ -15,6 +15,7 @@ import {
   createCourseModelRequest,
   DuplicateModelRequestError,
   fetchCourseModelRequest,
+  updateCourseModelRequest,
 } from '../../lib/courseModelRequestDb';
 import { countExamples } from '../../lib/exampleCounts';
 import { canRequestCourseModel } from '../../lib/modelStatus';
@@ -30,10 +31,15 @@ import {
 } from '../../lib/queueTraining';
 import { fetchCourseTrainingRuns } from '../../lib/trainingRunDb';
 import {
+  datasetRefForCourse,
   InsufficientApprovedExamplesError,
   prepareTrainingDataForRequest,
 } from '../../lib/prepareTrainingData';
-import type { CourseModelRequest, TrainingRun } from '../../types';
+import type {
+  CourseModelRequest,
+  CourseModelRequestPreparation,
+  TrainingRun,
+} from '../../types';
 import {
   ApiError,
   exportApprovedCourseSeeds,
@@ -68,7 +74,16 @@ const INITIAL: CourseTrainingState = {
   error: false,
 };
 
-function CourseTrainingRow({ courseId, name }: { courseId: string; name: string }) {
+function CourseTrainingRow({
+  courseId,
+  name,
+  onRequestPreparationUpdated,
+}: {
+  courseId: string;
+  name: string;
+  /** Called once a new split has been recorded on the course's model request. */
+  onRequestPreparationUpdated: () => void;
+}) {
   const [state, setState] = useState<CourseTrainingState>(INITIAL);
   // Approved counts come from the examples' review status, never from whether
   // an export file happens to exist — an export can be stale, missing, or made
@@ -127,16 +142,20 @@ function CourseTrainingRow({ courseId, name }: { courseId: string; name: string 
 
   async function handleSplit() {
     setState((current) => ({ ...current, busy: 'split', message: null, error: false }));
+    let train: number;
+    let validation: number;
+    let splitSeed: unknown;
+    let sourceExamples: number | null;
     try {
       const response = await prepareTrainingSplit(courseId);
-      const train = Number(response.summary?.trainExamples) || 0;
-      const validation = Number(response.summary?.validationExamples) || 0;
-      setState((current) => ({
-        ...current,
-        busy: null,
-        message: `Prepared split: ${train} train, ${validation} validation`,
-        error: false,
-      }));
+      train = Number(response.summary?.trainExamples) || 0;
+      validation = Number(response.summary?.validationExamples) || 0;
+      splitSeed = response.summary?.splitSeed;
+      // The approved examples the split actually read (the export), which can
+      // differ from the live review count if examples were approved since.
+      const source = response.summary?.sourceExamples;
+      sourceExamples =
+        typeof source === 'number' && Number.isInteger(source) && source >= 0 ? source : null;
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -145,7 +164,68 @@ function CourseTrainingRow({ courseId, name }: { courseId: string; name: string 
           error instanceof ApiError ? error.message : 'Prepare training split failed.',
         error: true,
       }));
+      return;
     }
+
+    const prepared = `Prepared split: ${train} train, ${validation} validation`;
+    const stale =
+      `${prepared}, but this course's model request still records the previous ` +
+      'split, so Train new version would use the old counts.';
+
+    /*
+     * Record the new split on the course's model request.
+     *
+     * Train new version reads `request.preparation`, and the Re-prepare control
+     * that normally writes it is hidden once a request is `ready`. Without this
+     * a course that already has a model keeps offering the split it was first
+     * trained on. Only `preparation` is sent: status, the current run pointer,
+     * runs and registered versions are left exactly as they are.
+     */
+    const approvedSource = sourceExamples ?? counts?.approved ?? null;
+    if (approvedSource === null) {
+      // Never record a guessed approved count.
+      setState((current) => ({
+        ...current,
+        busy: null,
+        message: `${stale} The approved count could not be read; prepare the split again.`,
+        error: true,
+      }));
+      return;
+    }
+
+    const preparation: CourseModelRequestPreparation = {
+      preparedAt: new Date().toISOString(),
+      sourceApprovedExampleCount: approvedSource,
+      datasetRef: datasetRefForCourse(courseId),
+      trainExamples: train,
+      validationExamples: validation,
+      ...(Number.isFinite(Number(splitSeed)) ? { splitSeed: Number(splitSeed) } : {}),
+    };
+
+    try {
+      await updateCourseModelRequest(courseId, { preparation });
+    } catch (error) {
+      if (error instanceof Error && 'status' in error && error.status === 404) {
+        // No request row yet: nothing to keep in step.
+        setState((current) => ({ ...current, busy: null, message: prepared, error: false }));
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        busy: null,
+        message: `${stale} ${error instanceof Error ? error.message : 'Updating the request failed.'}`,
+        error: true,
+      }));
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      busy: null,
+      message: `${prepared} · model request updated`,
+      error: false,
+    }));
+    onRequestPreparationUpdated();
   }
 
   const busy = state.busy !== null;
@@ -323,7 +403,7 @@ function runTone(state: TrainingRun['state']) {
  * have had to reach the cluster non-interactively. It could not, so the control
  * was permanently disabled; a queue entry needs nothing interactive at all.
  */
-function OutstandingRequests() {
+function OutstandingRequests({ refreshKey }: { refreshKey: number }) {
   const { state: courses } = useCourses();
   const [rows, setRows] = useState<RequestRow[] | null>(null);
   const [candidates, setCandidates] = useState<RequestCandidate[]>([]);
@@ -399,7 +479,7 @@ function OutstandingRequests() {
     return () => {
       cancelled = true;
     };
-  }, [courses, reload]);
+  }, [courses, reload, refreshKey]);
 
   /**
    * Creates the first model request for a course, on the admin's behalf.
@@ -899,6 +979,13 @@ function OutstandingRequests() {
 
 export function AdminTrainingPage() {
   const { state: courses } = useCourses();
+  // Bumped when a per-course split rewrites a request's preparation, so Model
+  // requests re-reads it rather than offering the previous split.
+  const [requestsRefreshKey, setRequestsRefreshKey] = useState(0);
+  const refreshRequests = useCallback(
+    () => setRequestsRefreshKey((current) => current + 1),
+    [],
+  );
 
   return (
     <div className="ui-stack ui-stack--loose">
@@ -919,7 +1006,7 @@ export function AdminTrainingPage() {
         submission, monitoring and promotion.
       </Callout>
 
-      <OutstandingRequests />
+      <OutstandingRequests refreshKey={requestsRefreshKey} />
 
       <section className="ui-stack">
         <SectionHeader title="Per-course datasets" divider />
@@ -943,6 +1030,7 @@ export function AdminTrainingPage() {
                 key={courseId}
                 courseId={courseId}
                 name={formatCourseHeading(metadata.name, metadata.title)}
+                onRequestPreparationUpdated={refreshRequests}
               />
             ))}
           </ul>

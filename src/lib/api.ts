@@ -307,6 +307,8 @@ export interface PrepareTrainingSplitResponse {
     trainExamples?: number;
     validationExamples?: number;
     totalExamples?: number;
+    /** Approved examples in the export the split read. */
+    sourceExamples?: number;
     splitSeed?: number;
     manifest?: Record<string, unknown>;
     files?: Record<string, string>;
