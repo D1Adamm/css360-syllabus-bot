@@ -113,6 +113,13 @@ unit_enabled() {
   systemctl --user is-enabled "${UNIT}" 2>/dev/null || true
 }
 
+not_running_warning() {
+  # The unit is the normal production path. A stop (e.g. for the Tillicum
+  # fallback) is never undone automatically, and a stopped unit looks healthy
+  # everywhere else: Base and RAG keep answering, VM mode is unchanged.
+  echo "${UNIT} is NOT RUNNING and no Tillicum tunnel holds the port: Fine-Tuned and Fine-Tuned + RAG fail for every course. Start it: $0 start"
+}
+
 health_json() {
   curl -fsS --max-time 5 "${SERVICE_URL}/health" 2>/dev/null || true
 }
@@ -351,6 +358,9 @@ if not h.get("models"):
 
 cmd_status() {
   echo "unit:      ${UNIT} $(unit_state) ($(unit_enabled))"
+  if command -v systemctl >/dev/null 2>&1 && [[ "$(unit_state)" != "active" ]] && ! tunnel_control_alive; then
+    echo "WARNING:   $(not_running_warning)"
+  fi
   echo "port ${PORT}: $(port_owner_json)"
   if tunnel_control_alive; then echo "tunnel:    ACTIVE (Tillicum fallback control socket)"; else echo "tunnel:    inactive"; fi
   echo "ollama:    $(ollama_up && echo up || echo DOWN) (${OLLAMA_URL})"
@@ -385,6 +395,9 @@ cmd_check() {
   fi
   if command -v systemctl >/dev/null 2>&1; then
     say INFO "unit state: $(unit_state) ($(unit_enabled))"
+    if [[ "$(unit_state)" != "active" ]] && ! tunnel_control_alive; then
+      say WARN "$(not_running_warning)"
+    fi
     local linger
     linger="$(loginctl show-user "${USER}" -p Linger --value 2>/dev/null || echo unknown)"
     [[ "${linger}" == "yes" ]] && say PASS "lingering enabled for ${USER}" || say WARN "lingering is '${linger}' (loginctl enable-linger ${USER})"

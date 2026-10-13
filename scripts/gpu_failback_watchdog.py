@@ -31,8 +31,12 @@ Failing back is, in this order:
      byte, the one that was judged. New requests generate on the VM from that
      moment. A GPU session a human activated meanwhile is left alone.
   2. log it (`gpu-failback.log`, and the journal).
-  3. load the VM's base, embedding and course models, as `stop` does, and log
-     whether that worked. If it did not, the mode stays VM.
+  3. load the VM's base, embedding and course models, as `stop` does, check
+     that the VM fine-tuned service answers and can serve the recorded course
+     and version, and log whether that worked. If it did not, the mode stays
+     VM, and later runs try again (at most `MAX_WARMUP_ATTEMPTS` in all, at
+     least `FAILED_WARMUP_RETRY_SECONDS` apart) while the mode file is still
+     the one the failback wrote.
 
 What it never does: submit, restart or cancel a Tillicum job, open or close a
 tunnel, sign in, or switch *to* GPU mode. After a failback, `stop` still does
@@ -93,8 +97,11 @@ DEFAULT_STREAK_WINDOW = 120.0
 DEFAULT_LOCK_TIMEOUT = 10.0
 DEFAULT_KEEP_ALIVE = "4h"
 DEFAULT_WARM_TIMEOUT = 120.0
-#: A warm-up interrupted by a restart is finished by the next run, once.
-MAX_WARMUP_ATTEMPTS = 2
+#: Warm-up attempts per failback, the first included. An interrupted one is
+#: finished by the next run; a failed one is retried by a later run.
+MAX_WARMUP_ATTEMPTS = 3
+#: A failed warm-up is not retried sooner than this after it finished.
+FAILED_WARMUP_RETRY_SECONDS = 60.0
 
 REASON_EXPIRED = "expired"
 REASON_UNREACHABLE = "gpu_unreachable"
@@ -180,8 +187,14 @@ def health_problems(cgm: Any, health: dict[str, Any], details: dict[str, Any]) -
         return [f"malformed /health answer ({exc!r})"]
 
 
-def warm_vm(cgm: Any, settings: Settings, course_id: str, version: str) -> tuple[bool, list[str]]:
-    """Load the VM models `stop` loads. (everything resident?, the lines worth logging)."""
+def warm_vm(cgm: Any, settings: Settings, course_id: str, version: str, *,
+            transport: Any = None) -> tuple[bool, list[str]]:
+    """Load the VM models `stop` loads, then ask the VM fine-tuned service.
+
+    (the course can generate on the VM?, the lines worth logging). A resident
+    Ollama tag is not enough: both fine-tuned conditions go through the
+    service on :9001, and a stopped service fails them for every course.
+    """
     base_model, tag, finetuned_ollama = cgm.vm_model_names(course_id, version)
     problems: list[str] = []
     if tag is None:
@@ -200,7 +213,18 @@ def warm_vm(cgm: Any, settings: Settings, course_id: str, version: str) -> tuple
     problems += [line for line in lines if line.startswith("FAIL")]
     if not warmed and not problems:
         problems.append("warming the VM models failed")
-    return (warmed and tag is not None), (problems or lines)
+
+    url = cgm.Config().finetuned_url
+    try:
+        result = (transport or cgm.checks.Transport()).request("GET", f"{url}/health", timeout=settings.health_timeout)
+        health = result.body if result.ok and isinstance(result.body, dict) else None
+    except Exception:  # noqa: BLE001 - reported as "not answering", like a refused connection
+        health = None
+    service = cgm.vm_finetuned_problems(health, url=url, course_id=course_id, version=version)
+    problems += service
+    if not service:
+        lines.append(f"PASS VM fine-tuned service {url} serves {course_id} {version}")
+    return (warmed and tag is not None and not service), (problems or lines)
 
 
 # --------------------------------------------------------------------------- #
@@ -215,7 +239,7 @@ def run_once(settings: Settings, *, transport: Any = None, clock: Callable[[], d
     state = helpers.read_state()
 
     if not isinstance(mode, gm.GenerationMode) or not mode.is_gpu or text is None:
-        return _vm_mode(settings, state, text, now, clock, warm)
+        return _vm_mode(settings, state, text, now, clock, warm, transport)
 
     cgm = switch_script()
     transport = transport or cgm.checks.Transport()
@@ -229,7 +253,7 @@ def run_once(settings: Settings, *, transport: Any = None, clock: Callable[[], d
         detail = (f"the allocation ended at {iso(expires)}" if left <= 0
                   else f"the allocation ends at {iso(expires)}, in {left:.0f}s")
         return _fail_back(settings, cgm, state, text=text, mode=mode, reason=REASON_EXPIRED, detail=detail,
-                          failures=0, now=now, clock=clock, warm=warm)
+                          failures=0, now=now, clock=clock, warm=warm, transport=transport)
 
     url = f"{mode.gpu_url}/health"
     result = transport.request("GET", url, timeout=settings.health_timeout)
@@ -238,7 +262,7 @@ def run_once(settings: Settings, *, transport: Any = None, clock: Callable[[], d
     if isinstance(remaining, (int, float)) and not isinstance(remaining, bool) and remaining <= settings.expiry_margin:
         return _fail_back(settings, cgm, state, text=text, mode=mode, reason=REASON_EXPIRED,
                           detail=f"the GPU service reports {remaining:.0f}s left on its allocation",
-                          failures=0, now=now, clock=clock, warm=warm)
+                          failures=0, now=now, clock=clock, warm=warm, transport=transport)
 
     if health is None:
         problems = [f"no answer from {url} ({result.error or 'HTTP ' + str(result.status)})"]
@@ -268,20 +292,27 @@ def run_once(settings: Settings, *, transport: Any = None, clock: Callable[[], d
     return _fail_back(settings, cgm, state, text=text, mode=mode,
                       reason=REASON_UNREACHABLE if health is None else REASON_UNHEALTHY,
                       detail=f"{failures} consecutive failed checks: {problem}",
-                      failures=failures, now=now, clock=clock, warm=warm)
+                      failures=failures, now=now, clock=clock, warm=warm, transport=transport)
 
 
 def _vm_mode(settings: Settings, state: dict[str, Any], text: str | None, now: dt.datetime,
-             clock: Callable[[], dt.datetime], warm: Any) -> int:
-    """Nothing to protect. The one thing left to do: a warm-up an earlier run was killed in."""
+             clock: Callable[[], dt.datetime], warm: Any, transport: Any) -> int:
+    """Nothing to protect. Left to do: a warm-up an earlier run was killed in, or one that failed."""
     state["streak"] = None
     state["lastCheck"] = {"at": iso(now), "mode": gm.VM, "outcome": "vm_mode", "detail": "VM mode, nothing to do"}
     last = state.get("lastFailback")
+    ours = isinstance(last, dict) and text is not None and helpers.fingerprint(text) == last.get("modeFingerprint")
+    attempts = int(last.get("warmupAttempts") or 0) if isinstance(last, dict) else 0
+    if ours and last.get("vmWarmup") == "failed" and attempts < MAX_WARMUP_ATTEMPTS and not settings.dry_run:
+        finished = helpers.parse_time(last.get("vmWarmupAt"))
+        if finished is None or (now - finished).total_seconds() >= FAILED_WARMUP_RETRY_SECONDS:
+            emit("warning", f"retrying the failed VM warm-up of the failback at {last.get('at')} "
+                            f"(attempt {attempts + 1}/{MAX_WARMUP_ATTEMPTS})")
+            return _warm_up(settings, switch_script(), state, clock, warm, transport)
     if isinstance(last, dict) and last.get("vmWarmup") == "pending" and not settings.dry_run:
-        ours = text is not None and helpers.fingerprint(text) == last.get("modeFingerprint")
-        if ours and int(last.get("warmupAttempts") or 0) < MAX_WARMUP_ATTEMPTS:
+        if ours and attempts < MAX_WARMUP_ATTEMPTS:
             emit("warning", f"finishing the VM warm-up of the failback at {last.get('at')}, which an earlier run did not complete")
-            return _warm_up(settings, switch_script(), state, clock, warm)
+            return _warm_up(settings, switch_script(), state, clock, warm, transport)
         # A human has switched since (their `start`/`stop` did its own checks),
         # or the warm-up keeps being interrupted: record that it never finished.
         last["vmWarmup"] = "failed"
@@ -296,7 +327,7 @@ def _vm_mode(settings: Settings, state: dict[str, Any], text: str | None, now: d
 
 
 def _fail_back(settings: Settings, cgm: Any, state: dict[str, Any], *, text: str, mode: Any, reason: str, detail: str,
-               failures: int, now: dt.datetime, clock: Callable[[], dt.datetime], warm: Any) -> int:
+               failures: int, now: dt.datetime, clock: Callable[[], dt.datetime], warm: Any, transport: Any) -> int:
     details = mode.details
     record = {
         "at": iso(now), "reason": reason, "detail": detail,
@@ -345,24 +376,28 @@ def _fail_back(settings: Settings, cgm: Any, state: dict[str, Any], *, text: str
                     "The Tillicum job and the tunnel were not touched.")
 
     # 3. The VM models.
-    return _warm_up(settings, cgm, state, clock, warm)
+    return _warm_up(settings, cgm, state, clock, warm, transport)
 
 
-def _warm_up(settings: Settings, cgm: Any, state: dict[str, Any], clock: Callable[[], dt.datetime], warm: Any) -> int:
+def _warm_up(settings: Settings, cgm: Any, state: dict[str, Any], clock: Callable[[], dt.datetime], warm: Any,
+             transport: Any) -> int:
     last = state["lastFailback"]
     last["warmupAttempts"] = int(last.get("warmupAttempts") or 0) + 1
     save(state)
-    ok, lines = (warm or warm_vm)(cgm, settings, str(last.get("courseId") or ""), str(last.get("modelVersion") or ""))
+    ok, lines = (warm or warm_vm)(cgm, settings, str(last.get("courseId") or ""), str(last.get("modelVersion") or ""),
+                                  transport=transport)
     finished = iso(clock())
     last["vmWarmup"] = "ok" if ok else "failed"
     last["vmWarmupAt"] = finished
     last["vmWarmupDetail"] = [str(line)[:300] for line in lines][:10]
     log_event({"event": "failback_warmup", "at": finished, "failbackAt": last.get("at"), "reason": last.get("reason"),
                "jobId": last.get("jobId"), "node": last.get("node"), "courseId": last.get("courseId"),
-               "modelVersion": last.get("modelVersion"), "ok": ok, "detail": last["vmWarmupDetail"]})
+               "modelVersion": last.get("modelVersion"), "attempt": last["warmupAttempts"], "ok": ok,
+               "detail": last["vmWarmupDetail"]})
     save(state)
     if ok:
-        emit("warning", "VM warm-up after the failback succeeded: base, embedding and course models are resident.")
+        emit("warning", "VM warm-up after the failback succeeded: base, embedding and course models are resident, "
+                        "and the VM fine-tuned service serves the course.")
         return 0
     emit("error", "VM warm-up after the failback FAILED (the mode stays VM): " + "; ".join(last["vmWarmupDetail"]))
     return 1

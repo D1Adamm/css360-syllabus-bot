@@ -151,6 +151,7 @@ Expect `MODE: VM (normal)`, `Tunnel: closed`, exit 0.
 | `MODE: VM` but you expected GPU | Read `switchedBy` / `AUTOMATIC FAILBACK` in `status` (§13). |
 | `ollama …: nothing resident` in VM mode | `backend/.venv/bin/python scripts/warm_classroom_models.py --base-model llama3.2:3b --finetuned-model css360d-v1:latest --keep-alive 4h` |
 | `ollama …: DOWN` | `systemctl status ollama` / `systemctl status ollama-finetuned` |
+| `VM MODE, BUT the VM fine-tuned service … is not answering` (Base/RAG work, both fine-tuned conditions fail) | `./scripts/aiswe_finetuned.sh start`, then `status` again. |
 | Watchdog `NOT RUNNING` / `NOT INSTALLED` | `./scripts/gpu_failback_watchdog.sh install` |
 | VM mode, but the tunnel is still open | `stop` closes it (§14). |
 

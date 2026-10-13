@@ -30,7 +30,7 @@ from app import generation_mode as gm
 
 # The switch script exactly as its own tests load it, so both test files (and
 # the watchdog, which looks it up in sys.modules) share one module object.
-from test_classroom_gpu_mode_script import COURSE, FakeWorld, script
+from test_classroom_gpu_mode_script import COURSE, VM_FT, FakeWorld, script, vm_ft_health
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location("gpu_failback_watchdog", REPO_ROOT / "scripts" / "gpu_failback_watchdog.py")
@@ -77,13 +77,21 @@ class FakeGpu:
     refuses), a dict is that /health body. When the script runs out, `default`.
     """
 
-    def __init__(self, *answers, default="up") -> None:
+    def __init__(self, *answers, default="up", vm_ft="up") -> None:
         self.answers = list(answers)
         self.default = default
         self.calls: list[tuple[str, str]] = []
         self.on_request = None
+        #: The VM fine-tuned service the warm-up asks after a failback: "up", "down" or a /health body.
+        self.vm_ft = vm_ft
+        self.vm_calls: list[str] = []
 
     def request(self, method, url, *, body=None, headers=None, timeout=30.0):
+        if url.startswith(VM_FT):
+            self.vm_calls.append(url)
+            if self.vm_ft == "down":
+                return checks.HttpResult(0, None, 0.01, error="[Errno 111] Connection refused")
+            return checks.HttpResult(200, vm_ft_health() if self.vm_ft == "up" else self.vm_ft, 0.01)
         self.calls.append((method, url))
         if self.on_request is not None:
             self.on_request()
@@ -104,7 +112,7 @@ class FakeWarm:
         self.calls: list[tuple[str, str]] = []
         self.mode_when_called: list[str] = []
 
-    def __call__(self, cgm, settings, course_id, version):
+    def __call__(self, cgm, settings, course_id, version, *, transport=None):
         self.calls.append((course_id, version))
         self.mode_when_called.append(gm.parse_mode(gm.mode_file_path().read_text()).kind)
         if self.raises is not None:
@@ -447,10 +455,10 @@ class WarmUpTests(WatchdogCase):
     def expire(self) -> None:
         self.write_gpu(expires=self.clock.now - dt.timedelta(minutes=5))
 
-    def run_real_warm_up(self, ollama: FakeOllama) -> tuple[int, str]:
+    def run_real_warm_up(self, ollama: FakeOllama, gpu: FakeGpu | None = None) -> tuple[int, str]:
         out = io.StringIO()
         with patch("urllib.request.urlopen", ollama), redirect_stdout(out), redirect_stderr(out):
-            code = watchdog.main([], transport=FakeGpu(), clock=self.clock)
+            code = watchdog.main([], transport=gpu or FakeGpu(), clock=self.clock)
         return code, out.getvalue()
 
     def test_the_mode_is_switched_before_any_model_is_warmed(self) -> None:
@@ -510,6 +518,127 @@ class WarmUpTests(WatchdogCase):
         self.assertEqual(code, 1)
         self.assertFalse(self.mode().is_gpu)
         self.assertIn("boom", self.log()[1]["detail"][0])
+
+
+OTHER_COURSE = "css360d-fall-2026-q0ne"
+
+
+class VmFinetunedServiceTests(WarmUpTests):
+    """After a failback the course must be able to generate on the VM, not merely have a resident model.
+
+    The outage this guards against: `aiswe-finetuned` (:9001) stopped while
+    Ollama :11435 still had every course tag. Base and RAG answered, both
+    fine-tuned conditions were 503 for every course, and a warm-up that only
+    loaded Ollama models would have called that "ok".
+    """
+
+    def test_a_stopped_vm_finetuned_service_fails_the_warm_up(self) -> None:
+        self.expire()
+        ollama = FakeOllama(self)
+        code, out = self.run_real_warm_up(ollama, FakeGpu(vm_ft="down"))
+        self.assertEqual(code, 1, out)
+        self.assertFalse(self.mode().is_gpu)  # still VM: the safe state
+        # The Ollama models were all loaded, and that is not mistaken for success.
+        self.assertEqual([model for _, model in ollama.requests], ["llama3.2:3b", "nomic-embed-text", "css360e-v1:latest"])
+        last = self.state()["lastFailback"]
+        self.assertEqual(last["vmWarmup"], "failed")
+        self.assertIn("is not answering /health", last["vmWarmupDetail"][0])
+        self.assertIn("for every course", last["vmWarmupDetail"][0])
+        self.assertEqual((self.log()[-1]["event"], self.log()[-1]["ok"]), ("failback_warmup", False))
+
+    def test_a_service_that_cannot_serve_the_recorded_version_fails_the_warm_up(self) -> None:
+        # Mapped and resident for v1 in finetuned.env, but the running service only serves v2:
+        # the service was not restarted after a mapping change, or the tag is missing in its Ollama.
+        self.expire()
+        code, out = self.run_real_warm_up(FakeOllama(self), FakeGpu(vm_ft=vm_ft_health((COURSE, ["v2"]))))
+        self.assertEqual(code, 1, out)
+        self.assertIn(f"{COURSE} v1 is not servable on the VM fine-tuned service (servable there: v2)",
+                      self.state()["lastFailback"]["vmWarmupDetail"])
+
+    def test_only_the_recorded_course_decides_and_another_course_is_never_substituted(self) -> None:
+        # The service serves CSS360D only. A failback for CSS360E must fail, not count CSS360D's model.
+        self.expire()
+        code, _ = self.run_real_warm_up(FakeOllama(self), FakeGpu(vm_ft=vm_ft_health((OTHER_COURSE, ["v1"]))))
+        self.assertEqual(code, 1)
+        detail = self.state()["lastFailback"]["vmWarmupDetail"]
+        self.assertTrue(any(line.startswith(f"{COURSE} is not servable") for line in detail), detail)
+
+    def test_with_several_courses_served_the_recorded_one_is_checked(self) -> None:
+        self.expire()
+        gpu = FakeGpu(vm_ft=vm_ft_health((OTHER_COURSE, ["v1"]), (COURSE, ["v1"])))
+        code, out = self.run_real_warm_up(FakeOllama(self), gpu)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(gpu.vm_calls, [VM_FT + "/health"])
+        last = self.state()["lastFailback"]
+        self.assertEqual(last["vmWarmup"], "ok")
+        self.assertIn(f"PASS VM fine-tuned service {VM_FT} serves {COURSE} v1", last["vmWarmupDetail"])
+
+    def test_a_missing_mapping_and_a_stopped_service_are_both_reported(self) -> None:
+        self.finetuned_env.write_text("FINETUNED_OLLAMA_MODELS=\n")
+        self.expire()
+        code, _ = self.run_real_warm_up(FakeOllama(self), FakeGpu(vm_ft="down"))
+        self.assertEqual(code, 1)
+        detail = self.state()["lastFailback"]["vmWarmupDetail"]
+        self.assertIn("is not mapped", detail[0])
+        self.assertTrue(any("is not answering /health" in line for line in detail), detail)
+
+
+class FailedWarmUpRetryTests(WatchdogCase):
+    def fail_back_with_a_failed_warm_up(self) -> None:
+        self.write_gpu(expires=self.clock.now - dt.timedelta(minutes=1))
+        code, _ = self.check(FakeGpu(), FakeWarm(ok=False))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.state()["lastFailback"]["vmWarmup"], "failed")
+
+    def test_a_failed_warm_up_is_retried_later_and_recovers(self) -> None:
+        # e.g. the operator starts aiswe-finetuned after the failback reported it down.
+        self.fail_back_with_a_failed_warm_up()
+        text = self.mode_file.read_text()
+
+        warm = FakeWarm()
+        self.clock.advance(15)
+        self.check(FakeGpu(), warm)
+        self.assertEqual(warm.calls, [])  # not before the retry delay
+
+        self.clock.advance(watchdog.FAILED_WARMUP_RETRY_SECONDS)
+        code, out = self.check(FakeGpu(), warm)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(warm.calls, [(COURSE, "v1")])
+        self.assertIn("retrying the failed VM warm-up", out)
+        last = self.state()["lastFailback"]
+        self.assertEqual((last["vmWarmup"], last["warmupAttempts"]), ("ok", 2))
+        self.assertEqual(self.log()[-1]["attempt"], 2)
+        self.assertEqual(self.mode_file.read_text(), text)  # a retry never writes the mode file
+
+        self.clock.advance(600)
+        self.check(FakeGpu(), warm)
+        self.assertEqual(len(warm.calls), 1)  # nothing more once it worked
+
+    def test_failed_retries_stop_at_the_limit(self) -> None:
+        self.fail_back_with_a_failed_warm_up()
+        warm = FakeWarm(ok=False)
+        for _ in range(5):
+            self.clock.advance(watchdog.FAILED_WARMUP_RETRY_SECONDS)
+            self.check(FakeGpu(), warm)
+        self.assertEqual(len(warm.calls), watchdog.MAX_WARMUP_ATTEMPTS - 1)
+        last = self.state()["lastFailback"]
+        self.assertEqual((last["vmWarmup"], last["warmupAttempts"]), ("failed", watchdog.MAX_WARMUP_ATTEMPTS))
+        self.assertFalse(self.mode().is_gpu)
+
+    def test_no_retry_once_the_mode_was_switched_by_hand(self) -> None:
+        self.fail_back_with_a_failed_warm_up()
+        script.write_mode_file({"mode": "vm", "since": "2026-10-01T18:05:00+00:00", "switchedBy": "madamk"})
+        warm = FakeWarm()
+        self.clock.advance(watchdog.FAILED_WARMUP_RETRY_SECONDS * 2)
+        self.check(FakeGpu(), warm)
+        self.assertEqual(warm.calls, [])  # `stop` did its own checks
+
+    def test_dry_run_does_not_retry(self) -> None:
+        self.fail_back_with_a_failed_warm_up()
+        warm = FakeWarm()
+        self.clock.advance(watchdog.FAILED_WARMUP_RETRY_SECONDS * 2)
+        self.check(FakeGpu(), warm, argv=["--dry-run"])
+        self.assertEqual(warm.calls, [])
 
 
 class ManualStartRaceTests(WatchdogCase):
@@ -681,12 +810,7 @@ class ManualWriteLockTests(WatchdogCase):
 
 
 class World(FakeWorld):
-    """FakeWorld plus the VM fine-tuned service, which `stop` asks for its health."""
-
-    def request(self, method, url, *, body=None, headers=None, timeout=30.0):
-        if url == "http://127.0.0.1:9001/health":
-            return self._r(200, {"status": "ok"})
-        return super().request(method, url, body=body, headers=headers, timeout=timeout)
+    """FakeWorld, which answers for the VM fine-tuned service `stop` and `status` ask."""
 
 
 class ManualStopRaceTests(WatchdogCase):
