@@ -21,6 +21,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-6);
+  /* An administrator's header (course nav, view menu, name, role, sign out)
+     can outgrow a laptop width; it wraps rather than scrolling the page. */
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
 }
 
 .shell-header__end {
@@ -448,4 +452,92 @@
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 0.15em;
+}
+
+/* ====================== Staff interface view (administrators) ====================== */
+
+/*
+ * Admin ⇄ Professor. Navigation, not a role: "Administrator" beside the name
+ * stays the account's role whichever view is open.
+ */
+.shell-view {
+  position: relative;
+}
+
+.shell-view__trigger {
+  gap: var(--space-1);
+}
+
+.shell-view__caption {
+  color: var(--ink-500);
+  font-weight: var(--weight-medium);
+}
+
+.shell-view__current {
+  color: var(--purple-800);
+  font-weight: var(--weight-semibold);
+}
+
+.shell-view__menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 50;
+  min-width: 16rem;
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  background-color: var(--surface);
+  border: 1px solid var(--line-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-2);
+}
+
+.shell-view__item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--ink-700);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-view__item:hover,
+.shell-view__item:focus-visible {
+  color: var(--purple-800);
+  background-color: var(--purple-50);
+}
+
+.shell-view__item--current {
+  color: var(--purple-800);
+  box-shadow: inset 2px 0 0 var(--gold-500);
+}
+
+.shell-view__item-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.shell-view__item-hint {
+  grid-column: 1;
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+}
+
+.shell-view__item .ui-icon {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+@media (max-width: 48rem) {
+  .shell-view__menu {
+    min-width: min(16rem, calc(100vw - 2 * var(--space-4)));
+  }
 }

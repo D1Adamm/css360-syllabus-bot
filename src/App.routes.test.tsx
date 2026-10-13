@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -531,10 +531,112 @@ describe('role navigation', () => {
   });
 
   it('never renders a development role switcher', async () => {
+    // The administrators' Admin/Professor view menu (below) is navigation for a
+    // real admin session; nothing here lets a browser claim a different role.
     const view = renderAt(`/student/course/${COURSE}`, 'student');
     await view.findByRole('navigation', { name: 'Main navigation' });
     expect(view.queryByLabelText(/Development role/)).toBeNull();
     expect(view.queryByText('DEV')).toBeNull();
+    expect(view.queryByRole('button', { name: /^View/ })).toBeNull();
+  });
+});
+
+describe('staff interface view (Admin / Professor)', () => {
+  async function viewButton(view: ReturnType<typeof render>) {
+    return view.findByRole('button', { name: /^View/ });
+  }
+
+  async function chooseView(view: ReturnType<typeof render>, label: 'Admin' | 'Professor') {
+    fireEvent.click(await viewButton(view));
+    const menu = await view.findByRole('menu');
+    fireEvent.click(within(menu).getByRole('menuitemradio', { name: new RegExp(`^${label}`) }));
+  }
+
+  it('lets an administrator switch from Admin to Professor and back, labelling the active view', async () => {
+    const view = renderAt('/admin', 'admin');
+    const button = await viewButton(view);
+    expect(button).toHaveTextContent('ViewAdmin');
+    expect(button).toHaveAttribute('aria-haspopup', 'menu');
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    const items = within(await view.findByRole('menu')).getAllByRole('menuitemradio');
+    expect(items.map((item) => item.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+    fireEvent.click(items[1]);
+
+    await expectLocation(view, '/professor/courses');
+    expect(await viewButton(view)).toHaveTextContent('ViewProfessor');
+    await view.findByRole('navigation', { name: 'Main navigation' });
+    // The interface changed; the account did not.
+    expect(view.getByText('Administrator')).toBeInTheDocument();
+
+    await chooseView(view, 'Admin');
+    await expectLocation(view, '/admin');
+    await view.findByRole('navigation', { name: 'Admin navigation' });
+  });
+
+  it('keeps the course when switching views on a course page', async () => {
+    const view = renderAt(`/admin/courses/${COURSE}`, 'admin');
+    await chooseView(view, 'Professor');
+    await expectLocation(view, `/professor/course/${COURSE}`);
+    expect(await view.findByRole('navigation', { name: /course/i })).toBeInTheDocument();
+
+    await chooseView(view, 'Admin');
+    await expectLocation(view, `/admin/courses/${COURSE}`);
+  });
+
+  it('opens the right view from a refresh or deep link, with nothing remembered', async () => {
+    const view = renderAt(`/professor/course/${COURSE}/results`, 'admin');
+    expect(await viewButton(view)).toHaveTextContent('ViewProfessor');
+    fireEvent.click(await viewButton(view));
+    const items = within(await view.findByRole('menu')).getAllByRole('menuitemradio');
+    expect(items[1]).toHaveAttribute('aria-checked', 'true');
+    expect(view.getByTestId('location')).toHaveTextContent(`/professor/course/${COURSE}/results`);
+  });
+
+  it('leaves Admin Preview as it was and offers a way back with the course', async () => {
+    const view = renderAt(`/student/course/${COURSE}/compare`, 'admin');
+    expect(await view.findByText('Admin Preview — responses are not saved')).toBeInTheDocument();
+    expect(await viewButton(view)).toHaveTextContent('ViewStudent preview');
+    fireEvent.click(await viewButton(view));
+    const items = within(await view.findByRole('menu')).getAllByRole('menuitemradio');
+    expect(items.map((item) => item.getAttribute('aria-checked'))).toEqual(['false', 'false']);
+    fireEvent.click(items[0]);
+    await expectLocation(view, `/admin/courses/${COURSE}`);
+  });
+
+  it('works from the keyboard: arrows move, Escape closes and returns focus', async () => {
+    const view = renderAt('/admin', 'admin');
+    const button = await viewButton(view);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
+    const menu = await view.findByRole('menu');
+    const [admin, professor] = within(menu).getAllByRole('menuitemradio');
+    await waitFor(() => expect(admin).toHaveFocus());
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(professor).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(admin).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'End' });
+    expect(professor).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    expect(view.queryByRole('menu')).toBeNull();
+    expect(button).toHaveFocus();
+    expect(view.getByTestId('location')).toHaveTextContent('/admin');
+  });
+
+  it('is never offered to a professor, who still cannot open the Admin interface', async () => {
+    const view = renderAt('/professor/courses', 'professor');
+    expect(await view.findByText('Prof Example')).toBeInTheDocument();
+    expect(view.queryByRole('button', { name: /^View/ })).toBeNull();
+    cleanup();
+
+    for (const path of ['/admin', `/admin/courses/${COURSE}`]) {
+      const denied = renderAt(path, 'professor');
+      await expectLocation(denied, '/forbidden');
+      expect(denied.queryByRole('button', { name: /^View/ })).toBeNull();
+      cleanup();
+    }
   });
 });
 
