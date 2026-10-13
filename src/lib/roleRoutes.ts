@@ -21,6 +21,7 @@ export const PROFESSOR_COURSE_SEGMENTS = [
   'model',
   'results',
   'invite',
+  'ask',
 ] as const;
 
 export type StudentCourseSegment = (typeof STUDENT_COURSE_SEGMENTS)[number];

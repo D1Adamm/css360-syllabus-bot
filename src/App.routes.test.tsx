@@ -640,6 +640,74 @@ describe('staff interface view (Admin / Professor)', () => {
   });
 });
 
+describe('instructor course isolation and the Ask questions tab', () => {
+  function renderAs(path: string, session: Session) {
+    backendSession.current = session;
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <SessionProvider initialSession={session}>
+          <ComparisonRunProvider>
+            <LocationProbe />
+            <AppRoutes />
+          </ComparisonRunProvider>
+        </SessionProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  const PROFESSOR_SECTIONS = ['', '/syllabus', '/examples', '/model', '/results', '/invite', '/ask'];
+
+  it("refuses another instructor's course on every professor page, by direct URL", async () => {
+    for (const section of PROFESSOR_SECTIONS) {
+      const view = renderAt(`/professor/course/${OTHER}${section}`, 'professor');
+      await expectLocation(view, '/forbidden');
+      cleanup();
+    }
+  });
+
+  it('admits an explicitly assigned co-instructor to the shared course, Ask questions included', async () => {
+    const coInstructor: Session = {
+      user: {
+        userId: 'u-co',
+        email: 'co@uw.edu',
+        displayName: 'Co Instructor',
+        role: 'professor',
+        courseIds: [COURSE, OTHER],
+      },
+      participants: [],
+    };
+    const view = renderAs(`/professor/course/${OTHER}/ask`, coInstructor);
+    await expectLocation(view, `/professor/course/${OTHER}/ask`);
+    expect(await view.findByRole('heading', { name: 'Ask questions' })).toBeInTheDocument();
+  });
+
+  it('offers Ask questions in the course navigation, with the not-saved note, without a class code', async () => {
+    const view = renderAt(`/professor/course/${COURSE}`, 'professor');
+    const link = await view.findByRole('link', { name: 'Ask questions' });
+    expect(link).toHaveAttribute('href', `/professor/course/${COURSE}/ask`);
+    fireEvent.click(link);
+    await expectLocation(view, `/professor/course/${COURSE}/ask`);
+    expect(await view.findByText('Staff testing — not saved')).toBeInTheDocument();
+    // Professor chrome, not the student shell or the admin preview strip.
+    expect(view.queryByText('Admin Preview — responses are not saved')).toBeNull();
+  });
+
+  it('lets an administrator use Ask questions on any course from Professor view', async () => {
+    const view = renderAt(`/professor/course/${OTHER}/ask`, 'admin');
+    await expectLocation(view, `/professor/course/${OTHER}/ask`);
+    expect(await view.findByRole('heading', { name: 'Ask questions' })).toBeInTheDocument();
+    expect(await view.findByRole('button', { name: /^View/ })).toHaveTextContent('ViewProfessor');
+  });
+
+  it("keeps an administrator's access global even with My courses only set", async () => {
+    // The filter narrows the list; it never makes a course unreachable.
+    window.localStorage.setItem('sml.professorCourses.mineOnly.u-admin', '1');
+    const view = renderAt(`/professor/course/${OTHER}/model`, 'admin');
+    await expectLocation(view, `/professor/course/${OTHER}/model`);
+    window.localStorage.clear();
+  });
+});
+
 describe('legacy URL redirects', () => {
   const cases: { from: string; to: string; who?: Who }[] = [
     { from: '/architecture', to: '/admin/system', who: 'admin' },

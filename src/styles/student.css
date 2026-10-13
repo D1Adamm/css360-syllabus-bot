@@ -340,6 +340,14 @@
   color: var(--ink-500);
 }
 
+/* Which model and version answered: staff testing only. */
+.approach__model {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+  overflow-wrap: anywhere;
+}
+
 /* The response is the point of the card. */
 .approach__text {
   margin: 0;

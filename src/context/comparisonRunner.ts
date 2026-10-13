@@ -5,6 +5,7 @@ import {
   generateRag,
 } from '../lib/api';
 import { toUserMessage } from '../lib/errorMessages';
+import type { Role } from './role';
 import type { ModelKey } from '../types';
 import { formatRagSourceLabels } from '../utils/ragSourceLabels';
 import type { ComparisonRunResponse } from './comparisonRun';
@@ -30,7 +31,13 @@ import type { ComparisonRunResponse } from './comparisonRun';
 export type ApproachState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; text: string; sources: string[] }
+  | {
+      status: 'success';
+      text: string;
+      sources: string[];
+      /** Which model (and version) answered. Set only when the caller asked for it. */
+      model?: string;
+    }
   | { status: 'error'; message: string };
 
 export type ApproachStates = Record<ModelKey, ApproachState>;
@@ -54,8 +61,19 @@ export interface ConditionReporter {
   onSettled: (key: ModelKey, state: ApproachState, response: ComparisonRunResponse) => void;
 }
 
-function studentMessage(error: unknown): string {
-  return toUserMessage(error, { audience: 'student', context: 'model-response' }).message;
+export interface RunOptions {
+  /**
+   * Whose wording a failed condition is reported in. The student pages (and
+   * an administrator previewing them) use `student`; the staff question tab
+   * uses the signed-in staff role.
+   */
+  audience?: Role;
+  /** Report which model and version answered each condition (staff testing). */
+  includeModel?: boolean;
+}
+
+function answeredBy(model: string, version?: string | null): string {
+  return version ? `${model} · ${version}` : model;
 }
 
 export function generateRunId(): string {
@@ -71,6 +89,7 @@ export async function runFourConditions(
   courseId: string,
   question: string,
   reporter: ConditionReporter,
+  { audience = 'student', includeModel = false }: RunOptions = {},
 ): Promise<Record<ModelKey, ComparisonRunResponse>> {
   const responses: Record<ModelKey, ComparisonRunResponse> = {
     base: { text: '', error: null, sources: [] },
@@ -81,14 +100,20 @@ export async function runFourConditions(
 
   const settle = async (
     key: ModelKey,
-    request: () => Promise<{ answer: string; sources?: string[] }>,
+    request: () => Promise<{ answer: string; sources?: string[]; model?: string }>,
   ) => {
     try {
-      const { answer, sources = [] } = await request();
+      const { answer, sources = [], model } = await request();
       responses[key] = { text: answer, error: null, sources };
-      reporter.onSettled(key, { status: 'success', text: answer, sources }, responses[key]);
+      reporter.onSettled(
+        key,
+        includeModel && model
+          ? { status: 'success', text: answer, sources, model }
+          : { status: 'success', text: answer, sources },
+        responses[key],
+      );
     } catch (error) {
-      const message = studentMessage(error);
+      const message = toUserMessage(error, { audience, context: 'model-response' }).message;
       responses[key] = { text: '', error: message, sources: [] };
       reporter.onSettled(key, { status: 'error', message }, responses[key]);
     }
@@ -96,22 +121,32 @@ export async function runFourConditions(
 
   const comparisonId = generateRunId();
   const base = () =>
-    settle('base', async () => ({
-      answer: (await generateBaseModel(courseId, question, comparisonId)).answer,
-    }));
+    settle('base', async () => {
+      const result = await generateBaseModel(courseId, question, comparisonId);
+      return { answer: result.answer, model: result.model };
+    });
   const rag = () =>
     settle('rag', async () => {
       const result = await generateRag(courseId, question, undefined, comparisonId);
-      return { answer: result.answer, sources: formatRagSourceLabels(result.sources) };
+      return {
+        answer: result.answer,
+        sources: formatRagSourceLabels(result.sources),
+        model: result.model,
+      };
     });
   const fineTuned = () =>
-    settle('fineTuned', async () => ({
-      answer: (await generateFineTuned(courseId, question, comparisonId)).answer,
-    }));
+    settle('fineTuned', async () => {
+      const result = await generateFineTuned(courseId, question, comparisonId);
+      return { answer: result.answer, model: answeredBy(result.model, result.modelVersion) };
+    });
   const fineTunedRag = () =>
     settle('fineTunedRag', async () => {
       const result = await generateFineTunedRag(courseId, question, undefined, comparisonId);
-      return { answer: result.answer, sources: formatRagSourceLabels(result.sources) };
+      return {
+        answer: result.answer,
+        sources: formatRagSourceLabels(result.sources),
+        model: answeredBy(result.model, result.modelVersion),
+      };
     });
 
   await Promise.all([
