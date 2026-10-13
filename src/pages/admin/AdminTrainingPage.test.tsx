@@ -48,6 +48,7 @@ const retryTrainingForRequest = vi.fn();
 const fetchCourseTrainingRuns = vi.fn();
 
 const createCourseModelRequest = vi.fn();
+const updateCourseModelRequest = vi.fn();
 const fetchCourseModel = vi.fn();
 
 vi.mock('../../lib/courseModelRequestDb', async () => {
@@ -58,6 +59,7 @@ vi.mock('../../lib/courseModelRequestDb', async () => {
     ...actual,
     fetchCourseModelRequest: (...args: unknown[]) => fetchCourseModelRequest(...args),
     createCourseModelRequest: (...args: unknown[]) => createCourseModelRequest(...args),
+    updateCourseModelRequest: (...args: unknown[]) => updateCourseModelRequest(...args),
   };
 });
 
@@ -331,6 +333,10 @@ describe('AdminTrainingPage', () => {
     });
     fetchCourseModel.mockResolvedValue(null);
     fetchCourseModelRequest.mockResolvedValue(null);
+    // Matches fetchCourseModelRequest above: no request row, so the backend 404s.
+    updateCourseModelRequest.mockRejectedValue(
+      Object.assign(new Error('Course has no model request.'), { status: 404 }),
+    );
     fetchCourseTrainingRuns.mockResolvedValue([]);
     queueTrainingForRequest.mockResolvedValue({ run: QUEUED_RUN });
     queueNewVersionForRequest.mockResolvedValue({ run: NEW_VERSION_RUN });
@@ -1200,6 +1206,192 @@ describe('AdminTrainingPage', () => {
       await screen.findAllByText(new RegExp(READY_SUCCEEDED_RUN.runId));
 
       expect(screen.queryByRole('button', { name: /Train new version/i })).toBeNull();
+    });
+  });
+
+  /* ------------------------------------------------------------------------ *
+   * A new split must reach the request Train new version reads.
+   *
+   * The CSS 360E case: the dataset was rebuilt and re-split (238 / 28 from 144
+   * approved) while the `ready` request still recorded the first split, so the
+   * Train new version dialog offered the old counts.
+   * ------------------------------------------------------------------------ */
+
+  describe('keeping the request in step with a new split', () => {
+    const EXPORT_STATUS = {
+      courseId: COURSE_ID,
+      exists: true,
+      exportPath: 'data/exports/css-360-winter-2026-a7rp/approved-finetune.jsonl',
+      exampleCount: 3,
+      sourceFile: 'approved-finetune.jsonl',
+    };
+
+    beforeEach(() => {
+      getApprovedExportStatus.mockResolvedValue(EXPORT_STATUS);
+      listCourseSeeds.mockResolvedValue({
+        courseId: COURSE_ID,
+        count: 4,
+        seeds: [
+          { id: 'a', question: 'q1', answer: 'a1', reviewStatus: 'approved' },
+          { id: 'b', question: 'q2', answer: 'a2', reviewStatus: 'approved' },
+          { id: 'c', question: 'q3', answer: 'a3', reviewStatus: 'approved' },
+          { id: 'd', question: 'q4', answer: 'a4', reviewStatus: 'generated' },
+        ],
+      });
+      prepareTrainingSplit.mockResolvedValue({
+        courseId: COURSE_ID,
+        summary: {
+          trainExamples: 238,
+          validationExamples: 28,
+          totalExamples: 266,
+          sourceExamples: 3,
+          splitSeed: 360,
+        },
+      });
+    });
+
+    async function prepareSplit() {
+      // The approved count is what gets recorded, so wait for it first.
+      await screen.findByText(/^3 approved examples$/);
+      const button = screen.getByRole('button', { name: 'Prepare training split' });
+      await waitFor(() => expect(button).not.toBeDisabled());
+      fireEvent.click(button);
+    }
+
+    it('patches only preparation on a ready request, then the dialog uses the new split', async () => {
+      // A stand-in for the row: PATCH merges, and the next read sees it.
+      let stored: Record<string, unknown> = { ...READY_REQUEST };
+      fetchCourseModelRequest.mockImplementation(async () => stored);
+      updateCourseModelRequest.mockImplementation(
+        async (_courseId: string, patch: Record<string, unknown>) => {
+          stored = { ...stored, ...patch };
+        },
+      );
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+
+      renderPage();
+      await screen.findByRole('button', { name: /Train new version/i });
+      const readsBefore = fetchCourseModelRequest.mock.calls.length;
+
+      await prepareSplit();
+
+      await waitFor(() => expect(updateCourseModelRequest).toHaveBeenCalledTimes(1));
+      const [courseId, patch] = updateCourseModelRequest.mock.calls[0];
+      expect(courseId).toBe(COURSE_ID);
+      // Status, the run pointer and everything else are left alone.
+      expect(Object.keys(patch)).toEqual(['preparation']);
+      expect(patch.preparation).toEqual({
+        preparedAt: expect.any(String),
+        sourceApprovedExampleCount: 3,
+        datasetRef: `exports/${COURSE_ID}`,
+        trainExamples: 238,
+        validationExamples: 28,
+        splitSeed: 360,
+      });
+      expect(patch.preparation.preparedAt).not.toBe(READY_REQUEST.preparation.preparedAt);
+
+      expect(
+        await screen.findByText('Prepared split: 238 train, 28 validation · model request updated'),
+      ).toBeInTheDocument();
+
+      // Model requests re-reads the request rather than keeping the old one.
+      await waitFor(() =>
+        expect(fetchCourseModelRequest.mock.calls.length).toBeGreaterThan(readsBefore),
+      );
+      await screen.findByText(/238 train \/ 28 validation · from 3 approved/);
+
+      fireEvent.click(screen.getByRole('button', { name: /Train new version/i }));
+      const dialog = await screen.findByRole('alertdialog');
+      expect(
+        within(dialog).getByText(/238 train \/ 28 validation from 3 approved/),
+      ).toBeInTheDocument();
+      expect(within(dialog).queryByText(/37 train \/ 5 validation/)).toBeNull();
+      expect(queueNewVersionForRequest).not.toHaveBeenCalled();
+
+      // The run is queued from the refreshed request, so its metadata carries the new split.
+      fireEvent.click(within(dialog).getByRole('button', { name: /Queue new run/i }));
+      await waitFor(() => expect(queueNewVersionForRequest).toHaveBeenCalledTimes(1));
+      const [, queuedFrom] = queueNewVersionForRequest.mock.calls[0];
+      expect(queuedFrom.preparation).toMatchObject({
+        sourceApprovedExampleCount: 3,
+        trainExamples: 238,
+        validationExamples: 28,
+      });
+      // Status and run pointer are what they were before the split.
+      expect(queuedFrom.status).toBe(READY_REQUEST.status);
+      expect(queuedFrom.currentRunId).toBe(READY_REQUEST.currentRunId);
+    });
+
+    it('records the approved count the split read, not a later review count', async () => {
+      // One more example was approved after the export: the split still read 3.
+      listCourseSeeds.mockResolvedValue({
+        courseId: COURSE_ID,
+        count: 4,
+        seeds: ['a', 'b', 'c', 'd'].map((id, index) => ({
+          id,
+          question: `q${index}`,
+          answer: `a${index}`,
+          reviewStatus: 'approved',
+        })),
+      });
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+      updateCourseModelRequest.mockResolvedValue(undefined);
+
+      renderPage();
+      await screen.findByText(/^4 approved examples$/);
+      const button = screen.getByRole('button', { name: 'Prepare training split' });
+      await waitFor(() => expect(button).not.toBeDisabled());
+      fireEvent.click(button);
+
+      await waitFor(() => expect(updateCourseModelRequest).toHaveBeenCalledTimes(1));
+      expect(updateCourseModelRequest.mock.calls[0][1].preparation.sourceApprovedExampleCount).toBe(3);
+    });
+
+    it('falls back to the loaded approved count when the backend does not report one', async () => {
+      prepareTrainingSplit.mockResolvedValue({
+        courseId: COURSE_ID,
+        summary: { trainExamples: 238, validationExamples: 28, splitSeed: 360 },
+      });
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+      updateCourseModelRequest.mockResolvedValue(undefined);
+
+      renderPage();
+      await prepareSplit();
+
+      await waitFor(() => expect(updateCourseModelRequest).toHaveBeenCalledTimes(1));
+      expect(updateCourseModelRequest.mock.calls[0][1].preparation.sourceApprovedExampleCount).toBe(3);
+    });
+
+    it('treats a course with no request row as nothing to update', async () => {
+      renderPage();
+      await prepareSplit();
+
+      expect(
+        await screen.findByText('Prepared split: 238 train, 28 validation'),
+      ).toBeInTheDocument();
+      expect(updateCourseModelRequest).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('says so when the split succeeded but the request could not be updated', async () => {
+      fetchCourseModelRequest.mockResolvedValue(READY_REQUEST);
+      fetchCourseTrainingRuns.mockResolvedValue([READY_SUCCEEDED_RUN]);
+      updateCourseModelRequest.mockRejectedValue(
+        Object.assign(new Error('The backend could not update the model request.'), {
+          status: 503,
+        }),
+      );
+
+      renderPage();
+      await screen.findByRole('button', { name: /Train new version/i });
+      await prepareSplit();
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent(/Prepared split: 238 train, 28 validation/);
+      expect(alert).toHaveTextContent(/still records the previous split/);
+      expect(alert).toHaveTextContent(/could not update the model request/);
     });
   });
 
