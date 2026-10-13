@@ -87,6 +87,7 @@ export function courseNavItems(role: Role, courseId: string): NavItem[] {
         icon: 'review',
       },
       { to: professorCoursePath(courseId, 'model'), label: 'Model', icon: 'model' },
+      { to: professorCoursePath(courseId, 'ask'), label: 'Ask questions', icon: 'compare' },
       {
         to: professorCoursePath(courseId, 'results'),
         label: 'Results',

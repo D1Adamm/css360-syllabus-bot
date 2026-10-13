@@ -37,6 +37,7 @@ import { InviteStudentsPage } from './pages/professor/InviteStudentsPage';
 import { ProfessorCoursesPage } from './pages/professor/ProfessorCoursesPage';
 import { ProfessorModelPage } from './pages/professor/ProfessorModelPage';
 import { ProfessorResultsPage } from './pages/professor/ProfessorResultsPage';
+import { ProfessorAskPage } from './pages/professor/ProfessorAskPage';
 import { ProfessorSyllabusPage } from './pages/professor/ProfessorSyllabusPage';
 import { ReviewExamplesPage } from './pages/professor/ReviewExamplesPage';
 
@@ -144,6 +145,8 @@ export function AppRoutes() {
           <Route path="examples" element={<ReviewExamplesPage />} />
           <Route path="model" element={<ProfessorModelPage />} />
           <Route path="results" element={<ProfessorResultsPage />} />
+          {/* Staff testing: the course's instructors and administrators, no class code. */}
+          <Route path="ask" element={<ProfessorAskPage />} />
           <Route path="invite" element={<InviteStudentsPage />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>

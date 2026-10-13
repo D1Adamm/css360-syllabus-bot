@@ -58,6 +58,11 @@ export function ApproachCard({ label, description, state, marker }: ApproachCard
 
       {state.status === 'success' && <p className="approach__text">{state.text}</p>}
 
+      {/* Only a staff run asks for this; the student pages never set it. */}
+      {state.status === 'success' && state.model && (
+        <p className="approach__model">Answered by {state.model}</p>
+      )}
+
       {state.status === 'success' && sources.length > 0 && (
         <div className="approach__sources">
           <button

@@ -14,6 +14,7 @@ describe('staffViewPath', () => {
     expect(staffViewPath('admin', `/professor/course/${C}`)).toBe(`/admin/courses/${C}`);
     expect(staffViewPath('admin', `/professor/course/${C}/model`)).toBe(`/admin/courses/${C}`);
     expect(staffViewPath('admin', `/professor/course/${C}/examples`)).toBe(`/admin/courses/${C}/review`);
+    expect(staffViewPath('admin', `/professor/course/${C}/ask`)).toBe(`/admin/courses/${C}`);
   });
 
   it('carries the course out of an admin preview of its student pages', () => {

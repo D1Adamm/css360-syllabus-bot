@@ -26,6 +26,8 @@ export interface FineTunedGenerateResponse {
   model: string;
   responseType: 'fineTuned';
   courseId?: string;
+  /** The course version that answered, as the backend resolved it. */
+  modelVersion?: string | null;
   adapterLoaded: boolean;
   generationSeconds?: number | null;
 }
@@ -37,6 +39,7 @@ export interface FineTunedRagGenerateResponse {
   sources: RagGenerateSource[];
   retrievedChunks: RagRetrieveResult[];
   responseType: 'fineTunedRag';
+  modelVersion?: string | null;
   adapterLoaded: boolean;
   generationSeconds?: number | null;
 }
