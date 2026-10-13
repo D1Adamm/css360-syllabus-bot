@@ -117,6 +117,42 @@ export function getRoleAreaFromPathname(pathname: string): Role | null {
   return null;
 }
 
+/** The two staff interfaces an administrator can switch between. */
+export type StaffView = 'admin' | 'professor';
+
+/**
+ * Where switching to `view` from `pathname` lands, keeping the course in view.
+ *
+ * Course pages map to the same course's page in the other interface (the
+ * review workflow to its counterpart, anything else to the course's home), the
+ * two course lists map to each other, and everything else goes to the view's
+ * landing page. Only the URL changes: what the account may do is the session's
+ * role, which the route guards and the backend check as before.
+ */
+export function staffViewPath(view: StaffView, pathname: string): string {
+  const courseId = getCourseIdFromRolePathname(pathname);
+  const fromReview =
+    /^\/professor\/course\/[^/]+\/examples(\/|$)/.test(pathname) ||
+    /^\/admin\/courses\/[^/]+\/review(\/|$)/.test(pathname);
+
+  if (view === 'professor') {
+    if (courseId) {
+      return fromReview
+        ? professorCoursePath(courseId, 'examples')
+        : professorCourseHomePath(courseId);
+    }
+    return '/professor/courses';
+  }
+
+  if (courseId) {
+    return fromReview ? adminCourseReviewPath(courseId) : adminCoursePath(courseId);
+  }
+  if (pathname === '/professor/courses' || pathname.startsWith('/professor/courses/')) {
+    return '/admin/courses';
+  }
+  return roleHomePath('admin');
+}
+
 const COURSE_PATH_PATTERNS = [
   /^\/student\/course\/([^/]+)/,
   /^\/professor\/course\/([^/]+)/,

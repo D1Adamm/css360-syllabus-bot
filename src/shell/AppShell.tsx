@@ -15,6 +15,7 @@ import { BrandMark } from './BrandMark';
 import { CourseContextBar } from './CourseContextBar';
 import { courseNavItems, primaryNavItems } from './navigation';
 import { PrimaryNav } from './PrimaryNav';
+import { StaffViewMenu } from './StaffViewMenu';
 import './shell.css';
 
 /**
@@ -65,6 +66,7 @@ export function AppShell() {
           <div className="shell-header__end">
             {session.user ? (
               <div className="shell-identity">
+                <StaffViewMenu />
                 <span className="shell-identity__name" title={session.user.email}>
                   {session.user.displayName}
                 </span>
