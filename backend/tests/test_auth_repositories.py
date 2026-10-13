@@ -62,6 +62,14 @@ class UserRepositoryTests(unittest.TestCase):
                 password_hash="h", now=NOW,
             )
 
+    def test_a_role_change_touches_the_users_row_and_nothing_else(self) -> None:
+        # Promotion keeps course assignments: no statement reaches course_memberships.
+        conn = FakeConnection(results=[1, [{**USER_ROW, "role": "admin"}]])
+        updated = db_users.set_role(conn, USER_ROW["user_id"], "admin")
+        self.assertEqual(updated["role"], "admin")
+        self.assertTrue(conn.statements[0][0].startswith("UPDATE users SET role"))
+        self.assertFalse(any("course_memberships" in sql for sql, _ in conn.statements))
+
     def test_unknown_roles_and_bad_emails_are_refused(self) -> None:
         with self.assertRaises(ValueError):
             db_users.create_user(

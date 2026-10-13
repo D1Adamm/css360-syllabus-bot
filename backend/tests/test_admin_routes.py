@@ -174,6 +174,16 @@ class UserManagementTests(AdminRouteTestCase):
         self.revoke_sessions.assert_called_once()
         self.assertEqual(self.record_action.call_args.kwargs["action"], "user.disable")
 
+    def test_promoting_an_instructor_keeps_their_course_assignments(self) -> None:
+        self.act_as(staff("admin", ADMIN_ID))
+        response = self.client.patch(
+            f"/api/admin/users/{PROF_ID}", json={"role": "admin"}, headers=CSRF
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["role"], "admin")
+        self.assertEqual(response.json()["courseIds"], [COURSE])
+        self.remove_membership.assert_not_called()
+
     def test_role_change_is_audited_with_before_and_after(self) -> None:
         response = self.client.patch(
             f"/api/admin/users/{PROF_ID}", json={"role": "admin"}, headers=CSRF

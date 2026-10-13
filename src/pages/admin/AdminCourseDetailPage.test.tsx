@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
@@ -81,6 +81,7 @@ import type {
   CourseModelRegistry,
   CourseModelVersion,
 } from '../../types';
+import { listUsers } from '../../lib/adminPeopleApi';
 import { AdminCourseDetailPage } from './AdminCourseDetailPage';
 
 const METADATA: CourseMetadata = {
@@ -248,3 +249,46 @@ describe('AdminCourseDetailPage student preview', () => {
     ).toHaveAttribute('href', `/student/course/${courseId}/compare`);
   });
 });
+
+describe('AdminCourseDetailPage instructors', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  function account(userId: string, role: 'admin' | 'professor', courseIds: string[]) {
+    return {
+      userId,
+      email: `${userId}@uw.edu`,
+      displayName: userId,
+      role,
+      disabled: false,
+      courseIds,
+    };
+  }
+
+  it('lists co-instructors and an assigned administrator, and offers any unassigned staff', async () => {
+    courseId = 'css360e-autumn-2026-c08m';
+    vi.mocked(listUsers).mockResolvedValue({
+      count: 4,
+      users: [
+        account('prof-one', 'professor', [courseId]),
+        account('prof-two', 'professor', [courseId, 'css360d-fall-2026-q0ne']),
+        account('promoted-admin', 'admin', [courseId]),
+        account('other-admin', 'admin', []),
+      ],
+    });
+    renderPage();
+
+    const list = await screen.findByRole('list', { name: 'Instructors' });
+    expect(within(list).getByText('prof-one')).toBeInTheDocument();
+    expect(within(list).getByText('prof-two')).toBeInTheDocument();
+    expect(within(list).getByText('promoted-admin')).toBeInTheDocument();
+    expect(within(list).getByText(/administrator/)).toBeInTheDocument();
+
+    const options = within(screen.getByLabelText('Assign an instructor'))
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+    expect(options).toEqual(['Assign an instructor…', 'other-admin · other-admin@uw.edu']);
+  });
+});
+

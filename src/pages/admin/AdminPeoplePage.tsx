@@ -324,8 +324,10 @@ export function AdminPeoplePage() {
                     <p className="ui-text-xs ui-text-muted">
                       Last sign-in {formatDate(user.lastLoginAt)}
                     </p>
-                    {user.role === 'professor' && (
-                      <div className="people__memberships">
+                    {/* Administrators too: an assignment is a course they teach,
+                        kept through a promotion, and what Professor view's
+                        "My courses only" lists. It never limits an admin's access. */}
+                    <div className="people__memberships">
                         <span className="ui-text-xs ui-text-muted">Courses:</span>
                         {user.courseIds.length === 0 && (
                           <span className="ui-text-xs ui-text-muted">none assigned</span>
@@ -387,8 +389,7 @@ export function AdminPeoplePage() {
                             </Button>
                           </span>
                         )}
-                      </div>
-                    )}
+                    </div>
                   </div>
                   <div className="admin-row__actions people__actions">
                     <Button

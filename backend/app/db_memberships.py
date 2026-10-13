@@ -3,7 +3,11 @@
 Which professors may act on which courses. This table, not `users.role`, is
 what course-scoped authorization reads: a professor with no row for a course
 is refused that course exactly as an anonymous visitor would be.
-Administrators have no rows here and need none.
+Administrators need no rows here for access, but may hold them: an instructor
+promoted to administrator keeps theirs, and an administrator can be assigned a
+course they teach, which is what Professor view's "My courses only" lists.
+Only `/api/admin` writes this table; course creation adds the creating
+professor.
 """
 
 from __future__ import annotations

@@ -79,7 +79,29 @@ describe('AdminPeoplePage', () => {
     expect(within(list).getByText('Prof Example')).toBeInTheDocument();
     expect(within(list).getByText('instructor')).toBeInTheDocument();
     expect(within(list).getByText('administrator')).toBeInTheDocument();
-    expect(within(list).getByText('CSS 360')).toBeInTheDocument();
+    expect(
+      within(within(list).getByRole('list', { name: 'Courses for Prof Example' })).getByText('CSS 360'),
+    ).toBeInTheDocument();
+  });
+
+  it('lets an administrator hold and be given course assignments too', async () => {
+    // An instructor promoted to administrator keeps their courses, and an
+    // administrator can be assigned a course they teach.
+    api.listUsers.mockResolvedValue({
+      count: 2,
+      users: [{ ...ADMIN_SESSION.user, disabled: false, courseIds: ['css-360-winter-2026-a7rp'] }, PROF],
+    });
+    api.addMembership.mockResolvedValue({ userId: 'u-admin', courseId: 'css-350-spring-2026-n3h9', member: true });
+    renderPage();
+    const courses = await screen.findByRole('list', { name: 'Courses for Admin' });
+    expect(within(courses).getByText('CSS 360')).toBeInTheDocument();
+
+    const select = screen.getByLabelText('Assign a course to Admin');
+    fireEvent.change(select, { target: { value: 'css-350-spring-2026-n3h9' } });
+    fireEvent.click(within(select.closest('span') as HTMLElement).getByRole('button', { name: 'Add' }));
+    await waitFor(() =>
+      expect(api.addMembership).toHaveBeenCalledWith('u-admin', 'css-350-spring-2026-n3h9'),
+    );
   });
 
   it('creates an instructor invitation for the chosen courses and shows the link once', async () => {
@@ -137,10 +159,9 @@ describe('AdminPeoplePage', () => {
       expect(api.removeMembership).toHaveBeenCalledWith('u-prof', 'css-360-winter-2026-a7rp'),
     );
 
-    fireEvent.change(screen.getByLabelText(/Assign a course to Prof Example/), {
-      target: { value: 'css-350-spring-2026-n3h9' },
-    });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Add' })[0]);
+    const select = screen.getByLabelText(/Assign a course to Prof Example/);
+    fireEvent.change(select, { target: { value: 'css-350-spring-2026-n3h9' } });
+    fireEvent.click(within(select.closest('span') as HTMLElement).getByRole('button', { name: 'Add' }));
     await waitFor(() =>
       expect(api.addMembership).toHaveBeenCalledWith('u-prof', 'css-350-spring-2026-n3h9'),
     );

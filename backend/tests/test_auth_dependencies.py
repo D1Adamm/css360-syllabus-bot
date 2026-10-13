@@ -48,6 +48,12 @@ def _admin(principal: Principal = Depends(deps.require_admin)) -> dict[str, Any]
     return {"ok": True}
 
 
+@app.get("/whoami")
+def _whoami(principal: Principal = Depends(deps.require_user)) -> dict[str, Any]:
+    user = principal.user
+    return {"role": user.role, "courseIds": sorted(user.course_ids)} if user else {}
+
+
 @app.get("/courses/{course_id}/staff")
 def _staff(course_id: str, principal: Principal = Depends(deps.require_course_staff)) -> dict:
     return {"courseId": course_id}
@@ -232,6 +238,14 @@ class AdminTests(GuardTestCase):
 
     def test_admin_is_still_not_a_participant(self) -> None:
         self.assertEqual(self.client.get(f"/courses/{COURSE_A}/participant").status_code, 403)
+
+    def test_an_admins_own_assignments_are_loaded_and_do_not_narrow_access(self) -> None:
+        # An instructor promoted to administrator, or an administrator assigned
+        # a course they teach: Professor view's "My courses only" lists these.
+        self.sign_in(_staff_row(role="admin"), memberships=[COURSE_A])
+        self.assertEqual(self.client.get("/whoami").json(), {"role": "admin", "courseIds": [COURSE_A]})
+        self.assertEqual(self.client.get(f"/courses/{COURSE_B}/staff").status_code, 200)
+        self.assertEqual(self.client.get("/admin").status_code, 200)
 
 
 class ParticipantTests(GuardTestCase):

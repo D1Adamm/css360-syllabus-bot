@@ -27,8 +27,10 @@ class StaffUser:
     email: str
     display_name: str
     role: str
-    #: Courses this user holds an instructor membership in. Empty for an
-    #: administrator, whose access does not go through memberships.
+    #: Courses this user holds an instructor membership in. For an
+    #: administrator these are the courses they were explicitly assigned to
+    #: teach (Professor view's "My courses only"); their access never goes
+    #: through them.
     course_ids: frozenset[str] = field(default_factory=frozenset)
     session_id: str | None = None
 
