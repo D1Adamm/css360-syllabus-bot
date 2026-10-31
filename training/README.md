@@ -273,6 +273,21 @@ Environment variables:
 
 ## CPU training on the UWB VM (no Tillicum)
 
+**Status: experimental.** This path is driven by hand, is not used by the
+training queue, and nothing in production depends on it. It has produced one
+artifact so far, the `css360-cpu-v3-test:latest` model mapped on the VM as
+CSS 360 `v3` (a test adapter for a course that is not in class), and no
+complete cycle from a CPU run through registration to an activated version
+serving students has been recorded in
+[docs/verification-history.md](../docs/verification-history.md). The VM also
+holds an untracked local script, `train_cpu_qlora_experiment.py`, in this
+directory, from the 2026-09-08 experiment described in
+[docs/css360-model-evolution.md](../docs/css360-model-evolution.md); it is not
+in the repository and a `git pull` never touches it. The long-term goal of
+making VM training independently usable is tracked in
+[docs/workflows.md](../docs/workflows.md#4-vm-cpu-training-experimental) and
+[docs/remaining-work.md](../docs/remaining-work.md#6-fine-tuned-inference-without-tillicum).
+
 The same recipe can run on the VM's own CPU. It is the same trainer, the same
 `train.jsonl` / `validation.jsonl` split, the same chat formatting, the same
 LoRA (`r=8`, `alpha=16`, `dropout=0.05`, the seven Llama attention/MLP

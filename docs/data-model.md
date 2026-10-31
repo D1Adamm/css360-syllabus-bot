@@ -108,7 +108,10 @@ exported as training data. Primary key `(course_id, seed_id)`.
 | `reviewed_at` | TIMESTAMPTZ NULL | |
 
 `generated` is the starting state for a validated AI example — reviewed by
-nobody yet. Only `approved` and `edited` examples are exported for training.
+nobody yet. Only `approved` examples are exported for training
+(`seed_review.is_approved_for_export`); an `edited` example is shown to
+students like an approved one but is not exported. That mismatch is audit
+finding B6, open in [remaining-work.md](remaining-work.md#8-open-findings-from-the-2026-10-27-audit).
 
 **Evidence** — what the example is grounded in, so a claim can be traced back to
 the syllabus.

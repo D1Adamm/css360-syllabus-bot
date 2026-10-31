@@ -160,8 +160,9 @@ How to read it:
   evaluation already saturates all 8 vCPUs. Two runners at once (Base on one
   server, the course model on the other) each start 8 threads on 8 vCPUs, so
   they compete rather than overlap. Keep `GENERATION_MAX_CONCURRENCY=1`,
-  `OLLAMA_NUM_PARALLEL=1` on both servers, and `FINETUNED_MAX_CONCURRENCY=1`
-  unless the VM load test shows otherwise.
+  `OLLAMA_NUM_PARALLEL=1` on the fine-tuned server (the main `ollama` unit
+  sets no `OLLAMA_*` value and runs on Ollama's defaults; verified 2026-10-31),
+  and `FINETUNED_MAX_CONCURRENCY=1` unless the VM load test shows otherwise.
 - **Worth measuring on the VM, one at a time:** `num_thread` 4 vs 8 (if the 8
   vCPUs are 4 cores with hyperthreading, 4 is often faster), and
   `GENERATION_MAX_CONCURRENCY=2` with `OLLAMA_NUM_PARALLEL=2`. Neither changes

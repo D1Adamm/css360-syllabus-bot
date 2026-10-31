@@ -469,7 +469,10 @@ Deployment of the application and the cluster checkout is documented separately:
 **[deployment.md](deployment.md)**. The Tillicum half in brief:
 
 ```bash
-cd /gpfs/projects/simswe/$USER/css360-syllabus-bot && git pull origin main
+cd /gpfs/projects/simswe/$USER/css360-syllabus-bot && (pgrep -af run_training_queue || echo "no worker running") && git fetch origin && git log --oneline HEAD..origin/main
+```
+```bash
+git pull --ff-only origin main && git rev-parse --short HEAD
 ```
 ```bash
 mkdir -p /gpfs/projects/simswe/$USER/training_outputs/serving
@@ -480,6 +483,13 @@ chmod 600 .env.local
 ```bash
 ./training/run_training_queue.sh --once --dry-run
 ```
+
+Pull Tillicum the same day as the backend: an older worker treats the
+backend's newer 409 refusals as outages and keeps a refused publication report
+pending until it is updated. When `pytest` is available on the login node,
+`python3 -m pytest training -q` proves the worker scripts under the cluster's
+Python; the dry run above claims, writes and sends nothing and proves the
+worker still talks to the upgraded backend.
 
 ### Compute-node connectivity: observed working, fallback still required
 

@@ -1,0 +1,27 @@
+# Reference copy of the aiswe-backend systemd *user* unit as verified on
+# aiswe.uwb.edu on 2026-10-31 (docs/verification-history.md). Not installed by
+# any script. To install by hand, render @REPO_ROOT@ to the checkout path and
+# write the result to ~/.config/systemd/user/aiswe-backend.service, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now aiswe-backend
+#   loginctl enable-linger $USER     # once per account, or user units stop at logout
+#
+# One uvicorn process, deliberately: the generation queue, the join/login
+# throttles and the mode-file cache are process-local (docs/classroom-capacity.md).
+# Never add --workers. No proxy flags either: uvicorn's defaults trust
+# X-Forwarded-For from the loopback peer only, which is this host's Nginx.
+# Secrets stay in backend/.env (mode 600), never in Environment= lines here.
+[Unit]
+Description=AISWE FastAPI backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_ROOT@/backend
+EnvironmentFile=@REPO_ROOT@/backend/.env
+ExecStart=@REPO_ROOT@/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

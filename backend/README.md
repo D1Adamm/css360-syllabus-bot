@@ -78,7 +78,7 @@ curl -s http://127.0.0.1:8001/api/health
 
 ## API groups
 
-80 paths. Every one is under `/api`, except six root-level aliases
+84 unique paths as of `568a480` (2026-10-31). Every one is under `/api`, except six root-level aliases
 (`/health`, `/base-model/generate`, `/rag/generate`, `/fine-tuned/generate`,
 `/fine-tuned/health`, `/fine-tuned-rag/generate`) kept because Nginx forwards
 only `location /api/` and those are useful directly on the VM.

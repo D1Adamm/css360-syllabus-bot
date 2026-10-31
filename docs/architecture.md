@@ -8,6 +8,9 @@ root [README](../README.md); for operating the cluster side see
 
 ## The whole system
 
+Where each workflow runs, and how far each has been verified, is summarised in
+[workflows.md](workflows.md).
+
 ```
 Browser (React 19 + TypeScript + Vite, built by Vite, served by Nginx)
   │
