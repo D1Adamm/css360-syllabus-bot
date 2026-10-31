@@ -1,8 +1,11 @@
 # Remaining work
 
 What is genuinely unfinished. Everything not listed here is implemented and
-covered by tests — if you are looking for a feature and it is not below, look for
-it in the code before building it.
+covered by tests, as far as the repository-wide audit of 2026-10-27 found — if
+you are looking for a feature and it is not below, look for it in the code
+before building it. The audit's open findings are in §8; which of the four
+workflows is verified and which is experimental is in
+[workflows.md](workflows.md).
 
 Ordered by what blocks real classroom use.
 
@@ -98,7 +101,9 @@ classroom evaluation. What still depends on it today:
 
 - **Queued QLoRA training** runs on Tillicum GPUs (`run_training_queue.sh`,
   started by a person after a Duo login). The CPU path (`train_qlora.py --cpu`)
-  exists but is launched and registered by hand rather than through the queue.
+  exists but is launched and registered by hand rather than through the queue;
+  it is **experimental** ([workflows.md §4](workflows.md#4-vm-cpu-training-experimental)):
+  one test adapter so far, no recorded cycle to an activated version.
 Publication no longer needs Tillicum: an administrator activates a version
 from Admin → Models once the VM serves it, and only an activated version
 answers — finishing or registering training never moves traffic on its own.
@@ -123,7 +128,8 @@ steps and the load test are in [classroom-capacity.md](classroom-capacity.md).
 
 Still open:
 
-- **Measure the VM** with `scripts/classroom_load_test.py` after deploying,
+- **Measure the VM** with `scripts/classroom_load_test.py` after deploying
+  (still open on 2026-10-31: no recorded result),
   then decide `num_thread` 4 vs 8 and whether `GENERATION_MAX_CONCURRENCY=2`
   with `OLLAMA_NUM_PARALLEL=2` helps. Defaults stay at one generation at a
   time until measured.
@@ -139,11 +145,85 @@ Still open:
   `classroom-concise-v1` answers reach the 128-token cap
   (`docs/css360-model-evolution.md` §13).
 
+## 8. Open findings from the 2026-10-27 audit
+
+A read-only, repository-wide audit on 2026-10-27 (commit `211f6e9`) rated
+three findings High and the rest Medium or Low. The three High ones are closed:
+
+- **B1** (the legacy publication route could point a course at a version the
+  VM did not serve) and **B2** (the worker's repair step could move a finished
+  run back to `submitted`) were fixed in `ef7b7c7`, deployed as `568a480` on
+  2026-10-31.
+- **B3** (the backend unit and the Nginx site were never checked against the
+  code's assumptions) was closed by the 2026-10-31 inspection
+  ([verification-history.md](verification-history.md#production-vm-configuration-2026-10-31));
+  reference copies are in [templates/](templates/README.md). The inspection also
+  found and `ef7b7c7` fixed the emergency fallback scripts' final check, which
+  had probed an administrator-only route since 2026-09-04.
+
+Open, Medium unless marked. Ordered as the audit's action plan ordered them:
+
+- **B7** Nothing tells an operator when the fine-tuned path is down or a
+  course's activated version is not servable; the verify script SKIPs the
+  backend checks without credentials.
+- **B5** Actionable failures (a 409 for an unmapped version, a 404) reach
+  students and professors as "temporarily unavailable"; pages wrap errors as
+  plain strings and lose the status.
+- **B4** The Professor Model page describes the newest registered version
+  (`currentVersion`), not the version that serves.
+- **B13** A failed session check (5xx, timeout) is treated as "signed out".
+- **B8** Evaluations lack provenance (the answers rated, the retrieved
+  passages, the versions that produced them); one comparison can be rated
+  twice or against the wrong answers.
+- **B6** `edited` examples are visible to students like approved ones but are
+  excluded from training export; [data-model.md](data-model.md) describes the
+  export rule.
+- **B9** Participant-writable fields are under-validated server-side.
+- **B11** The course → Ollama-tag mapping has no cross-check; a typo serves
+  another course's adapter with every check green.
+- **B12** The launcher's "existing active job" short-circuit can attribute
+  another run's job to a new run (likely).
+- **B15** A job that dies without running its trap strands the run at
+  `submitted`; no `sacct` reconciliation.
+- **B18** The automatic starter-seed job defaults on in code (`.env` must say
+  `false`) and cannot recover from a restart mid-run.
+- **B10** The dataset a run trains on is not pinned to the run.
+- **B14** Training-time prompt rendering (`apply_chat_template`) differs from
+  serving-time rendering (Ollama's template); retraining would be needed to
+  benefit from a fix (likely).
+- **B16** The GPU failback watchdog judges `/health` only, not generation
+  (likely).
+- **B17** The per-account login throttle lets anyone lock a professor out.
+- **B19** A professor on the student pages without joining dead-ends
+  (Medium-Low).
+- **B20** The second Ollama is wired by an env-file edit the installer does not
+  make, and the verifier never checks which Ollama answers (Medium-Low; the
+  example env file now carries the production value).
+
+Low findings worth knowing about: a completion refused with a status other
+than 404/409 is retried on every flush forever (L1); the Admin Training page
+never polls (L2); `/styleguide` is routed in production (L3); a comparison id
+can hold a queue position for 600 s (L4); uploads embed outside the generation
+queue (L5); hardcoded CSS 360 defaults in the Slurm scripts (L6);
+`backend/requirements.txt` is unpinned (L11; the VM runs FastAPI 0.141.1,
+uvicorn 0.52.0); dead launch paths are still mounted (L12); stale comments say
+`/api/db` and `/api/fine-tuned/health` need no credential (L13); the Admin
+System page still says all four conditions share one Ollama (L15).
+
+Unexposed but implemented: own-password change (`POST /api/auth/password`),
+single and bulk evaluation deletion. HTTP/2 on the Nginx TLS listener remains
+the one recommended infrastructure change not yet applied.
+
 ## Known issues
 
 - **Compare under classroom load** — §7. Root cause found and fixed in code
   2026-10-01; the second Ollama and the VM load test are deployment steps
   ([classroom-capacity.md](classroom-capacity.md)).
+- **HTTP/2 is not enabled** on the Nginx TLS listener (verified 2026-10-31), so
+  a browser has six connections per origin and a Compare run in one tab can
+  starve another tab's requests; the client-side timeout and retry on the
+  session check is the mitigation. `http2 on;` is a one-line, reloadable Nginx
+  change ([templates/nginx-aiswe.conf](templates/nginx-aiswe.conf)).
 - **The adapter installer needs two explicit flags for newer courses**, by
   design: `--tag` for course ids outside the legacy `css-360-…` form (a
   derived tag could collide across terms), and, on the VM,

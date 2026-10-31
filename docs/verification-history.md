@@ -234,6 +234,39 @@ route is for Admin → Models; `training/test_finetuned_fallback_scripts.py`
 runs them against a backend that answers that route with 401. The emergency
 fallback itself was not exercised during this verification.
 
+## Deployment of 568a480, 2026-10-31
+
+The first deployment after the 2026-10-27 audit: `main` at `568a480` (merge of
+`ef7b7c7`), carrying the B1 and B2 fixes, the emergency-fallback script repair
+and the documentation corrections. GitHub, the VM and Tillicum were all at
+`568a480` afterwards.
+
+Order followed on the VM: pre-checks (`211f6e9`, two untracked local files, VM
+mode, no class); backups of the untracked files, both env files, the mode file,
+the user units, the state directory, the Nginx site, the Ollama units and a
+database dump; `git fetch` and review of the 27 incoming paths; `git pull
+--ff-only`; `chmod 600 backend/.env`; the backend and training/scripts suites
+on the VM (1785 and 631 passed); one restart of `aiswe-backend`; verification.
+No frontend rebuild, migration, dependency change or fine-tuned-service restart
+was needed. Tillicum: `git pull --ff-only`, the worker tests, and
+`./training/run_training_queue.sh --once --dry-run`.
+
+Results, as recorded by the operator:
+
+- `scripts/verify_finetuned_production.py --course css360d-fall-2026-q0ne
+  --course css360e-autumn-2026-c08m` passed **31 of 31** checks.
+- All four conditions answered for CSS 360D and CSS 360E, each from its own
+  model.
+- The Tillicum worker tests and the dry run passed against the upgraded backend.
+- `status_finetuned_tunnel.sh` reports the VM-local service available; before
+  the repair it said "unavailable" beside a healthy service.
+
+Not exercised: the emergency fallback itself and classroom GPU mode, both of
+which need a Tillicum allocation. Whether the optional `backend/.env` edits
+offered for this deployment (the site origin in `CORS_ALLOWED_ORIGINS`,
+explicit `GENERATION_*` lines) were applied is not recorded here; none of the
+checks above depends on them.
+
 ## What was not run
 
 Neither `scripts/sync_training_data_to_tillicum.sh` nor

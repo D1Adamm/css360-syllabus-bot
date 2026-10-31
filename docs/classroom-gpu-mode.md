@@ -829,10 +829,11 @@ In order of preference:
 
 ## 15. Deploying from GitHub to AISWE
 
-On the VM. The full reference is [deployment.md](deployment.md#uwb-vm).
+On the VM. The full reference is [deployment.md](deployment.md#uwb-vm),
+including the backup taken [before pulling](deployment.md#before-pulling).
 
 ```bash
-cd ~/css360-syllabus-bot && git pull origin main
+cd ~/css360-syllabus-bot && git pull --ff-only origin main
 ```
 
 **Frontend** (rebuild and redeploy whenever `src/`, `package.json` or

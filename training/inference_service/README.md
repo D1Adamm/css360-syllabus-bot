@@ -127,7 +127,7 @@ curl -s http://127.0.0.1:9001/health
 curl -s -X POST http://127.0.0.1:9001/generate \
   -H "Content-Type: application/json" \
   -d '{"courseId":"css-360-winter-2026-a7rp","modelVersion":"v2","question":"When does the course meet?"}'
-curl -s http://127.0.0.1:8001/api/fine-tuned/health      # through the backend (admin)
+curl -s http://127.0.0.1:8001/api/fine-tuned/health      # through the backend: administrator session required, a bare curl gets 401
 ```
 
 `/health` answers 200 whether or not Ollama is up. `status` is `ok` or
@@ -147,17 +147,17 @@ Responses have the GPU service's shape, with three differences:
 
 ### What is kept the same as the GPU service
 
-The GPU service wraps the question as one user turn with the tokenizer's chat
-template and decodes greedily: 256 new tokens, repetition penalty 1.05 over the
-whole sequence, seed 360. This service sends the same single user turn to
+The GPU service renders the question with the same llama3.2 prompt rendering
+production uses (`helpers.render_production_prompt`, not the tokenizer's
+`apply_chat_template`) and decodes greedily: 256 new tokens, repetition penalty
+1.05 over the whole sequence, seed 360. This service sends the same single user turn to
 `/api/chat`, where the model's own Llama 3.2 template is applied, with
 `temperature 0`, `num_predict 256`, `repeat_penalty 1.05` over the whole
 context window, and `seed 360`. A Fine-Tuned + RAG prompt travels verbatim as
 that user turn, exactly as it did to Tillicum.
 
 Answers are comparable, not bit-identical: the two stacks quantise the base
-differently (4-bit NF4 there, the Q4 GGUF Ollama ships here), and the two chat
-templates differ in their fixed system header.
+differently (4-bit NF4 there, the Q4 GGUF Ollama ships here).
 
 ### Tests
 
@@ -437,11 +437,15 @@ curl http://NODE:8001/courses
 Via the UWB tunnel after helpers succeed:
 
 ```bash
-# The tunnel to the Tillicum service — that service only has /health.
+# The tunnel to the Tillicum service: the same /health, /courses and /generate
+# contract as the VM-local service.
 curl http://127.0.0.1:9001/health
 
 # The UWB backend — Nginx proxies only /api/, so /api/... is the canonical form
-# and is the one that works both directly and through the proxy.
+# and is the one that works both directly and through the proxy. This route has
+# needed an administrator session since 2026-09-04: from a shell, use the
+# service's /health above, scripts/status_finetuned_tunnel.sh, or
+# scripts/verify_finetuned_production.py with credentials.
 curl http://127.0.0.1:8001/api/fine-tuned/health
 ```
 

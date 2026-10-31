@@ -269,7 +269,8 @@ VITE_API_BASE_URL=http://127.0.0.1:8001/api
 
 **The `/api` suffix is required.** The frontend clients write paths *below* it —
 `dbApi.ts` composes `/db/courses`, `api.ts` composes `/courses/{id}/seeds` — and
-only 6 of the backend's 58 routes have a root-level alias. Without the suffix,
+only six of the backend's routes (the health and inference routes) have a
+root-level alias. Without the suffix,
 every persistence request 404s.
 
 ### 6. Ollama
@@ -427,6 +428,7 @@ What is genuinely unfinished, and what is deliberately out of scope:
 | Document | For |
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | How a request flows, and how courses stay isolated |
+| [docs/workflows.md](docs/workflows.md) | The four workflows — VM inference, Tillicum inference, Tillicum training, VM CPU training — and how far each is verified |
 | [docs/data-model.md](docs/data-model.md) | Every table and API record, field by field |
 | [docs/tillicum-operations.md](docs/tillicum-operations.md) | Operator runbook: training, publication, retries, secrets, the inference fallback |
 | [docs/deployment.md](docs/deployment.md) | Deploying to the UWB VM, including installing and serving fine-tuned models |

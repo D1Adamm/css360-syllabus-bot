@@ -25,6 +25,7 @@ VM. Anything not represented anywhere in the repository is not documented here.
 | Generation | Ollama on the VM |
 | Fine-tuned inference | `training/inference_service/ollama_service.py` on `127.0.0.1:9001`, systemd **user** unit `aiswe-finetuned`, against a second Ollama on `127.0.0.1:11435` (system unit `ollama-finetuned`; see [classroom-capacity.md](classroom-capacity.md)) |
 | Repository | `~/css360-syllabus-bot` on the VM, `/gpfs/projects/simswe/$USER/css360-syllabus-bot` on Tillicum |
+| Reference copies | [templates/](templates/README.md): the backend unit, the Nginx site and the `backend/.env` shape as verified on 2026-10-31 |
 
 **Nginx forwards only `/api/`.** This is why `VITE_API_BASE_URL` carries the
 `/api` prefix and the frontend clients write paths below it, and why the backend
@@ -51,13 +52,85 @@ After review:
 git checkout main && git merge --no-ff <branch> && git push origin main
 ```
 
+If the SSH remote is refused from the shell you are in (`Permission denied
+(publickey)`), push the same fast-forward over HTTPS with the `gh` credential
+helper, never with `--force`:
+
+```bash
+GIT_CONFIG_GLOBAL=/dev/null git -c credential.helper='!gh auth git-credential' push https://github.com/D1Adamm/css360-syllabus-bot.git main:main
+```
+
+Read the live remote head first the same way (`ls-remote … refs/heads/main`)
+and confirm `origin/main` is an ancestor of your `main`.
+
 ---
 
 ## UWB VM
 
+The deployment of `568a480` on 2026-10-31 followed this order and is recorded
+in [verification-history.md](verification-history.md#deployment-of-568a480-2026-10-31).
+Everything up to the backend restart leaves production serving the old code,
+so any step before it is a safe place to stop.
+
+### Before pulling
+
+Confirm the VM is idle and in VM mode (expect the current commit, only
+untracked local files in `git status`, three `active`, `MODE: VM (normal)`,
+and no generation in the last quarter hour):
+
 ```bash
-cd ~/css360-syllabus-bot && git pull origin main
+cd ~/css360-syllabus-bot && git rev-parse --short HEAD && git status --short
 ```
+```bash
+systemctl --user is-active aiswe-backend aiswe-finetuned aiswe-gpu-failback.timer
+```
+```bash
+./scripts/classroom_gpu_mode.sh status | head -4
+```
+```bash
+journalctl --user-unit aiswe-backend --since '-15 min' --no-pager -o cat | grep -c 'generation condition='
+```
+
+Back up what a rollback or a rebuilt host would need. The directory is private
+to the account; keep the same shell so `$B` stays set:
+
+```bash
+B=~/backups/deploy-$(date -u +%Y%m%dT%H%M%SZ) && mkdir -p "$B" && chmod 700 "$B" && echo "$B"
+```
+```bash
+cp -a $(git ls-files --others --exclude-standard) "$B/" 2>/dev/null; cp -p backend/.env "$B/backend.env" && chmod 600 "$B/backend.env" && cp -p ~/.config/aiswe/finetuned.env "$B/finetuned.env" && cp -p ~/.config/aiswe/generation-mode.json "$B/" && cp -a ~/.config/systemd/user/aiswe-*.service ~/.config/systemd/user/aiswe-*.timer "$B/" && cp -a ~/.local/state/css360-syllabus-bot "$B/state"
+```
+```bash
+sudo cat /etc/nginx/conf.d/aiswe.conf > "$B/aiswe.conf" && sudo systemctl cat ollama ollama-finetuned > "$B/ollama-units.txt" && git rev-parse HEAD > "$B/previous-commit.txt"
+```
+```bash
+(set -a && source backend/.env && set +a && pg_dump "$DATABASE_URL" -Fc -f "$B/db-before.dump") && ls -la "$B"
+```
+
+The first line copies every untracked file in the checkout (local experiments
+such as `training/train_cpu_qlora_experiment.py`). Model artifacts (the Ollama
+store, `~/model_artifacts`, `data/`, `local-artifact-backup/`) are not part of
+a deployment and are left alone by every step here.
+
+Review what will arrive, and whether it needs a frontend rebuild (`src/`,
+`package.json`), a migration (`backend/db/`), a dependency install
+(`backend/requirements.txt`) or a fine-tuned-service restart
+(`training/inference_service/`):
+
+```bash
+git fetch origin && git log --oneline HEAD..origin/main && git diff --name-only HEAD origin/main
+```
+
+### Pull
+
+```bash
+git pull --ff-only origin main && git rev-parse --short HEAD && git status --short
+```
+
+A fast-forward pull changes tracked files only. It never touches untracked
+files, ignored files (`backend/.env`, `.env.local`) or any model artifact.
+Never run `git clean`, `git stash -u` or `git checkout .` on the VM. Afterwards
+`git status` must show the same untracked files as before.
 
 ### Database migrations, if any
 
@@ -113,14 +186,23 @@ configuration is caught while the old one is still serving.
 
 ### Backend
 
+Run both suites on the VM first (next section); they prove the pulled code
+under the VM's own Python and libraries before anything restarts. Then, with no
+class in progress, restart only the backend. An in-flight generation at that
+moment fails once; a retry works.
+
 ```bash
-systemctl --user restart aiswe-backend
+systemctl --user restart aiswe-backend && sleep 3 && curl -s http://127.0.0.1:8001/api/health && echo && systemctl --user show aiswe-backend -p ActiveState -p NRestarts
 ```
 ```bash
-curl -s http://127.0.0.1:8001/api/health
+journalctl --user-unit aiswe-backend --since '-2 min' --no-pager -o cat | grep -iE 'traceback|error|Application startup complete' | tail -5
 ```
 
-Expect `{"status":"ok","service":"syllabus-model-lab-backend"}`.
+Expect `{"status":"ok","service":"syllabus-model-lab-backend"}`, `active`,
+`NRestarts=0`, `Application startup complete` and no traceback. Nothing else
+restarts for a code deployment: not `ollama`, not `ollama-finetuned`, not
+Nginx, and no `daemon-reload` unless a unit file changed. Then run the checks
+under [After a deployment](#after-a-deployment).
 
 A user unit, not a system one — so it is managed without root, and it needs
 lingering enabled for the account if it is to survive logout.
@@ -244,6 +326,14 @@ Safe to run. The suite cannot reach the production database: under pytest,
 ```bash
 backend/.venv/bin/python -m pytest backend/tests -q
 ```
+```bash
+backend/.venv/bin/python -m pytest training scripts -q
+```
+
+The second suite includes the fallback-script tests, which run the real
+operator scripts against fake `systemctl`, `ssh` and `curl` placed first on
+`PATH`; they touch no real unit. Both suites must pass before the backend is
+restarted.
 
 That barrier exists because it was once not true — see
 [tillicum-operations.md](tillicum-operations.md#test-isolation) and
@@ -352,11 +442,12 @@ unit's preflight refuses to start on a malformed mapping.
 ### Verifying
 
 ```bash
-AISWE_VERIFY_PASSWORD='<admin password>' backend/.venv/bin/python scripts/verify_finetuned_production.py --admin-email <admin email>
+AISWE_VERIFY_PASSWORD='<admin password>' backend/.venv/bin/python scripts/verify_finetuned_production.py --admin-email <admin email> --course css360d-fall-2026-q0ne --course css360e-autumn-2026-c08m
 ```
 
-Without `--course` it checks CSS 350 and CSS 360. Name other courses
-explicitly, once per course:
+Always name the courses in class. Without `--course` the script checks the
+legacy CSS 350 and CSS 360 ids (`KNOWN_COURSES` in
+`scripts/lib/finetuned_production_checks.py`), once per course:
 
 ```bash
 AISWE_VERIFY_PASSWORD='<admin password>' backend/.venv/bin/python scripts/verify_finetuned_production.py --admin-email <admin email> --course <courseId> --course <otherCourseId>
@@ -390,6 +481,49 @@ then two requests each at concurrency 1 and 2. Concurrency 4 needs
 `--allow-concurrency-4` and is the ceiling. The VM's Ollama is one shared CPU
 process and the service serialises generations, so concurrency measures
 queueing; the second student waits for the first.
+
+### After a deployment
+
+Read-only unless marked. The deployment of `568a480` passed every one of these.
+
+1. `./scripts/aiswe_finetuned.sh check`: every line PASS, mapping unchanged.
+2. `./scripts/classroom_gpu_mode.sh status`: `MODE: VM (normal)`, `backend ok`,
+   `fine-tuned ok (… -> http://127.0.0.1:11435)`, watchdog `timer RUNNING`,
+   no WARNING.
+3. `./scripts/status_finetuned_tunnel.sh`: `Overall: Fine-Tuned / Fine-Tuned +
+   RAG available`, exit 0.
+4. The verify script above for the taught courses: every line PASS. It sends
+   each course's **activated** version through the backend, so all four
+   conditions are exercised for every course named.
+5. In a browser signed in as an administrator: `/api/admin/generation-mode`
+   answers `"mode":"vm"` with the fine-tuned routes on `http://127.0.0.1:9001`;
+   `/api/admin/generation-queue` answers `maxConcurrency 1`, `maxWaiting 160`,
+   `queueTimeoutSeconds 150`.
+6. Admin → Models shows the activated version of each taught course. Pressing
+   **Activate** on the version that is already active answers `unchanged` and
+   moves nothing; the servability probe ran.
+7. Admin → student preview: one Compare for each taught course, all four
+   answers. Then confirm each course answered with its own model:
+   ```bash
+   journalctl --user-unit aiswe-finetuned --since '-15 min' --no-pager -o cat | grep -oE 'css360[de]-v1:latest' | sort | uniq -c
+   ```
+8. Switch Admin ↔ Professor view; the My courses filter; the Ask questions tab.
+   In preview, submit one rating: it is accepted with a `preview-…` id and
+   Admin → Research counts do not change.
+9. Worker callbacks (writes nothing): pick a run in state `succeeded` from
+   Admin → Training jobs and post a submission report for it with the worker
+   token read from the env file, never echoed. Expect `HTTP 409`, "already
+   succeeded … Nothing was recorded" (or the "superseded" refusal if an admin
+   retry has moved the request on), and the run unchanged.
+   ```bash
+   set -a && source backend/.env && set +a && curl -s -o /dev/stderr -w '\nHTTP %{http_code}\n' -X POST -H "X-Training-Worker-Token: $TRAINING_WORKER_TOKEN" -H 'Content-Type: application/json' -d '{"jobId":"0"}' http://127.0.0.1:8001/api/training-queue/courses/<course id>/runs/<succeeded run id>/submitted
+   ```
+10. `./scripts/gpu_failback_watchdog.sh status`: timer running, last check
+    seconds old.
+
+Not part of an ordinary deployment: rehearsing the emergency fallback or a
+classroom GPU mode drill. Both need a Tillicum allocation and a Duo prompt and
+briefly move where the fine-tuned conditions are served; schedule them.
 
 ### Making a new version the one students get
 
@@ -528,17 +662,67 @@ site origin **plus `/api`**.
 **Tillicum** — `.env.local`, from `.env.example`: `TRAINING_API_BASE_URL` and
 `TRAINING_WORKER_TOKEN`, matching the backend's value.
 
+`backend/.env` holds `DATABASE_URL` and the worker token and must be mode 600
+(`chmod 600 backend/.env`; it was 644 until 2026-10-31). The shape production
+sets, with placeholders for the secrets, is
+[templates/backend.env.production.example](templates/backend.env.production.example).
+Two values are worth checking against it: `CORS_ALLOWED_ORIGINS` should be the
+site origin (the 2026-10-31 inspection found the Vite development origins still
+listed, which is harmless only because `APP_PUBLIC_ORIGIN` also feeds the CSRF
+allow-list), and `AUTO_STARTER_SEED_GENERATION=false` must be present because
+the code default is `true`.
+
+---
+
+## Monitoring and troubleshooting
+
+There is no alerting ([remaining-work.md](remaining-work.md#4-privacy-retention-and-monitoring));
+these are the places to look.
+
+- **A class in progress:** `journalctl --user-unit aiswe-backend -f | grep ' generation '`
+  prints one line per generation with its queue wait; `busy` outcomes are
+  refusals. The administrator endpoint `/api/admin/generation-queue` shows the
+  live queue. Details: [classroom-capacity.md](classroom-capacity.md).
+- **Serving health:** `./scripts/aiswe_finetuned.sh status` (unit, port owner,
+  mapping, `/health`), `./scripts/classroom_gpu_mode.sh status` (mode, tunnel,
+  every condition's destination, both Ollama servers, the watchdog),
+  `./scripts/status_finetuned_tunnel.sh` (the emergency fallback). The
+  backend's own `/api/fine-tuned/health` needs an administrator session;
+  Admin → Models shows it.
+- **GPU mode and failback:** `./scripts/gpu_failback_watchdog.sh status`, and
+  [classroom-gpu-mode.md §12–§13](classroom-gpu-mode.md#12-monitoring) for
+  Tillicum job, node and VM resource checks and the symptom-by-symptom
+  troubleshooting list.
+- **Training and the worker:** the outage and retry table in
+  [tillicum-operations.md](tillicum-operations.md#outage-and-retry-behaviour);
+  the cluster's own record under `training/state/`.
+- **Nginx:** `sudo tail -n 100 /var/log/nginx/error.log` for upstream
+  timeouts (`upstream timed out`) and oversize bodies (`client intended to
+  send too large body`); the current access log for 5xx responses.
+- **After a reboot:** everything comes back on its own (system Ollama units,
+  user units with lingering); confirm with the commands under
+  [After a reboot](#after-a-reboot).
+
 ---
 
 ## Rolling back
 
-Application code:
+Application code, on the VM. `git reset --hard` moves tracked files only: the
+untracked local files stay, and the backup taken before the pull holds copies
+of everything else.
 
 ```bash
-git -C ~/css360-syllabus-bot checkout <previous-commit> && npm ci && npm run build
+cd ~/css360-syllabus-bot && git reset --hard "$(cat "$B/previous-commit.txt")" && git rev-parse --short HEAD && git status --short
 ```
 
-then republish and restart as above.
+Then, as needed: restore `backend/.env` from the backup only if it was edited
+for the deployment (`cp -p "$B/backend.env" backend/.env && chmod 600 backend/.env`;
+the mode-600 change can stay); rebuild and republish the frontend only if
+`src/` changed between the two commits; restart `aiswe-backend` and check
+`/api/health` and `./scripts/aiswe_finetuned.sh check`. On Tillicum,
+`git reset --hard <previous-commit>` in the cluster checkout. Leave GitHub
+`main` as it is and fix forward on a new branch rather than rewriting pushed
+history.
 
 **Model versions do not roll back with code.** They are data. To return a course
 to an earlier adapter, make sure the VM still maps that version
