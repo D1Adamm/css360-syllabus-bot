@@ -409,8 +409,11 @@ def flush_pending_reports(
     print(f"Delivering {len(pending)} queued training report(s)...")
     summary = _load_reporter().flush_pending(root, queue)
     print(
-        "  delivered {0}, still queued {1}, dropped as superseded {2}".format(
-            summary["delivered"], summary["failed"], summary["superseded"]
+        "  delivered {0}, still queued {1}, dropped as superseded {2}, refused {3}".format(
+            summary["delivered"],
+            summary["failed"],
+            summary["superseded"],
+            summary.get("refused", 0),
         )
     )
 

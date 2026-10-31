@@ -146,9 +146,12 @@ registers a version automatically with `status = ready` and
 `deployment = offline`. The normal way to make it the version students get is
 to install and map it on the VM (section D) and **Activate** it in Admin →
 Models, which checks the VM first. Publishing from Tillicum is the legacy
-alternative: it records the version as the one the course serves
-(`deployment = online`) and copies the adapter into the GPU fallback's serving
-tree, but does not check the VM, so install and map the version first.
+alternative: it copies the adapter into the GPU fallback's serving tree and
+reports the version as the one the course serves (`deployment = online`). That
+report is checked against the fine-tuned service exactly as activation is, so
+install and map the version on the VM first: otherwise the report is refused,
+nothing is written, the previously published version keeps serving, and the
+script exits 3 saying so.
 
 ```bash
 ./training/promote_qlora_adapter.sh \

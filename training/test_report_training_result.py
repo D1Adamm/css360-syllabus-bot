@@ -355,6 +355,109 @@ class DeliveryTests(ReporterTestCase):
         self.assertEqual(state.list_pending_callbacks(self.root), [])
 
 
+class LostSubmissionThenCompletionTests(ReporterTestCase):
+    """Audit finding B2, reproduced at the reporter.
+
+    The worker submitted the job but its `/submitted` call was lost, so the local
+    run record says `reported: false`. The job's completion is then accepted by
+    the backend. Before the fix the record stayed unreported, and the next
+    worker run "repaired" it by re-posting `/submitted` against a run that was
+    already `succeeded`, moving it back to `submitted` and the request to
+    `training` with nothing left to finish it.
+    """
+
+    def _lost_submission(self) -> None:
+        state.write_run_record(
+            self.root,
+            run_id=RUN_ID,
+            course_id=COURSE,
+            mode="full",
+            job_id=JOB_ID,
+            output_dir=str(self.output_dir),
+            reported=False,
+        )
+        self.assertEqual(
+            [item["runId"] for item in state.unreported_submissions(self.root)], [RUN_ID]
+        )
+
+    def test_an_accepted_completion_retires_the_lost_submission(self) -> None:
+        """The scenario: nothing is left for the next worker run to re-report."""
+        self.write_run_output()
+        self._lost_submission()
+
+        code = reporter.report_completion(
+            course_id=COURSE,
+            run_id=RUN_ID,
+            payload=self.payload(),
+            repo_root=self.root,
+            queue=RecordingQueue(),
+        )
+
+        self.assertEqual(code, 0)
+        record = state.read_run_record(self.root, RUN_ID)
+        assert record is not None
+        self.assertTrue(record["reported"])
+        self.assertEqual(record["jobId"], JOB_ID)
+        self.assertIn("completionDelivered", record)
+        self.assertEqual(state.unreported_submissions(self.root), [])
+
+    def test_a_completion_delivered_by_a_later_flush_retires_it_too(self) -> None:
+        """The backend was down when the job ended; the next worker run flushes."""
+        self.write_run_output()
+        self._lost_submission()
+        reporter.report_completion(
+            course_id=COURSE,
+            run_id=RUN_ID,
+            payload=self.payload(),
+            repo_root=self.root,
+            queue=RecordingQueue(error=TrainingQueueError("Could not reach the backend")),
+        )
+        # Still unreported while the completion itself is undelivered: the run
+        # may genuinely be unknown to the backend, and re-reporting is right.
+        self.assertEqual(len(state.unreported_submissions(self.root)), 1)
+
+        reporter.flush_pending(self.root, RecordingQueue())
+
+        self.assertEqual(state.unreported_submissions(self.root), [])
+
+    def test_a_finally_refused_completion_retires_it_as_well(self) -> None:
+        """Superseded or gone: re-reporting the submission would be refused the same way."""
+        self.write_run_output()
+        self._lost_submission()
+
+        reporter.report_completion(
+            course_id=COURSE,
+            run_id=RUN_ID,
+            payload=self.payload(),
+            repo_root=self.root,
+            queue=RecordingQueue(error=TrainingQueueError("failed with HTTP 409: superseded")),
+        )
+
+        record = state.read_run_record(self.root, RUN_ID)
+        assert record is not None
+        self.assertTrue(record["reported"])
+        self.assertIn("completionRefused", record)
+        self.assertEqual(state.unreported_submissions(self.root), [])
+
+    def test_an_undelivered_completion_leaves_the_submission_unreported(self) -> None:
+        """A network failure decides nothing; both reports stay recoverable."""
+        self.write_run_output()
+        self._lost_submission()
+
+        reporter.report_completion(
+            course_id=COURSE,
+            run_id=RUN_ID,
+            payload=self.payload(),
+            repo_root=self.root,
+            queue=RecordingQueue(error=TrainingQueueError("HTTP 503: unavailable")),
+        )
+
+        record = state.read_run_record(self.root, RUN_ID)
+        assert record is not None
+        self.assertFalse(record["reported"])
+        self.assertEqual(len(state.list_pending_callbacks(self.root)), 1)
+
+
 class FlushTests(ReporterTestCase):
     def _queue_pending(self, run_id: str = RUN_ID, outcome: str = "succeeded") -> None:
         state.queue_pending_callback(
@@ -387,7 +490,10 @@ class FlushTests(ReporterTestCase):
 
         summary = reporter.flush_pending(self.root, queue)
 
-        self.assertEqual(summary, {"pending": 0, "delivered": 0, "failed": 0, "superseded": 0})
+        self.assertEqual(
+            summary,
+            {"pending": 0, "delivered": 0, "failed": 0, "superseded": 0, "refused": 0},
+        )
         self.assertEqual(queue.calls, [])
 
     def test_a_still_unreachable_backend_leaves_the_report_queued(self) -> None:
@@ -420,6 +526,47 @@ class FlushTests(ReporterTestCase):
 
         self.assertEqual(len(queue.calls), 1)
         self.assertEqual(second["pending"], 0)
+
+    def test_a_refused_publication_is_dropped_during_flush(self) -> None:
+        """A queued publish report the backend then refuses is final (audit B1)."""
+        state.queue_pending_callback(
+            self.root,
+            run_id=f"publish-{COURSE}-v2",
+            course_id=COURSE,
+            kind="published",
+            payload={"courseId": COURSE, "version": "v2", "publishedAt": "2026-10-28T00:00:00Z"},
+        )
+
+        class RefusingQueue(RecordingQueue):
+            def report_model_published(self, course_id, version, **kwargs):
+                raise TrainingQueueError(
+                    "The backend request for /courses/x/model-versions/v2/published "
+                    "failed with HTTP 409: The fine-tuned service cannot serve it."
+                )
+
+        summary = reporter.flush_pending(self.root, RefusingQueue())
+
+        self.assertEqual(summary["refused"], 1)
+        self.assertEqual(summary["failed"], 0)
+        self.assertEqual(state.list_pending_callbacks(self.root), [])
+
+    def test_an_undeliverable_publication_stays_queued_during_flush(self) -> None:
+        state.queue_pending_callback(
+            self.root,
+            run_id=f"publish-{COURSE}-v2",
+            course_id=COURSE,
+            kind="published",
+            payload={"courseId": COURSE, "version": "v2", "publishedAt": "2026-10-28T00:00:00Z"},
+        )
+
+        class DownQueue(RecordingQueue):
+            def report_model_published(self, course_id, version, **kwargs):
+                raise TrainingQueueError("Could not reach the backend API: timed out")
+
+        summary = reporter.flush_pending(self.root, DownQueue())
+
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(len(state.list_pending_callbacks(self.root)), 1)
 
     def test_several_queued_reports_are_all_delivered(self) -> None:
         self._queue_pending(RUN_ID)

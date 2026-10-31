@@ -44,6 +44,10 @@ from app.course_id import assert_valid_course_id
 from app.course_model_resolution import assert_valid_model_version
 from app.db import db_connection, translate_db_errors
 from app.finetuned_client import check_finetuned_service_health
+from app.model_publication import (
+    require_ready_version as _require_ready_version,
+    require_servable_version,
+)
 from app.db_schemas import (
     CourseActivityResponse,
     CourseCreateRequest,
@@ -696,31 +700,9 @@ def get_course_model(course_id: str, principal: Principal = Depends(require_cour
     return ModelRegistryResponse(**provenance_privacy.public_model_registry(registry))
 
 
-def _require_ready_version(registry: dict[str, Any] | None, course_id: str, version: str) -> None:
-    """Refuse a version this course cannot serve, before or after the VM is asked."""
-    record = ((registry or {}).get("versions") or {}).get(version)
-    if not isinstance(record, dict):
-        raise HTTPException(
-            status_code=404,
-            detail=f'Course "{course_id}" has no registered model version "{version}".',
-        )
-    if record.get("status") != "ready":
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f'Version "{version}" is "{record.get("status")}", not ready. '
-                "Only a ready version can be activated."
-            ),
-        )
-
-
-def _servable_versions(health: dict[str, Any], course_id: str) -> list[str]:
-    """The versions the fine-tuned service says it can answer this course with."""
-    for entry in health.get("courses") or []:
-        if isinstance(entry, dict) and entry.get("courseId") == course_id:
-            versions = entry.get("versions")
-            return [v for v in versions if isinstance(v, str)] if isinstance(versions, list) else []
-    return []
+# `_require_ready_version` and the servability check live in
+# `app.model_publication`, shared with the cluster's publication report so the
+# two writers of `deployment = online` cannot drift apart.
 
 
 @router.post(
@@ -768,32 +750,14 @@ async def activate_course_model_version(
     registry = await run_in_threadpool(_run, "reading the model registry", read_registry)
     _require_ready_version(registry, safe_course_id, safe_version)
 
-    try:
-        health = await check_finetuned_service_health()
-    except HTTPException as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Could not confirm that the fine-tuned service can serve "
-                f"{safe_course_id} {safe_version}, so nothing was activated. "
-                f"{exc.detail}"
-            ),
-        ) from exc
-
-    servable = _servable_versions(health, safe_course_id)
-    if safe_version not in servable:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"The fine-tuned service cannot serve {safe_course_id} "
-                f"{safe_version}: it is not mapped, or its Ollama model is "
-                "missing. Install and map it on the VM "
-                "(scripts/install_finetuned_adapter.py, then "
-                "scripts/aiswe_finetuned.sh set-mapping and restart), then "
-                "activate it. Servable now: "
-                f"{', '.join(servable) if servable else 'none'}."
-            ),
-        )
+    # The probe is passed from this module's namespace so the route tests can
+    # patch `app.db_routes.check_finetuned_service_health` as they always have.
+    await require_servable_version(
+        safe_course_id,
+        safe_version,
+        probe=check_finetuned_service_health,
+        action="activated",
+    )
 
     def activate(connection: Any) -> tuple[dict[str, Any], str | None, bool]:
         # Re-read inside the write's transaction: the registry may have moved

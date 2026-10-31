@@ -245,9 +245,11 @@ Tillicum: it prints "Published course adapters".
 
 If the version is missing, publish it into the serving tree with
 `./training/promote_qlora_adapter.sh --course <courseId> --version <vN> <adapter dir>`.
-Add `--no-report` when the version is already activated on the VM: without it,
-the script also reports the publication to the backend, which is the legacy
-way of choosing a course's version.
+Add `--no-report` when the backend should not be told at all: without it, the
+script also reports the publication to the backend, which is the legacy way of
+choosing a course's version. That report is held to the same check as
+activation, so it cannot switch a course to a version the VM does not map; a
+refusal is printed (exit 3) and nothing changes.
 
 `--course` is always explicit. `start` checks only the course you name, and
 `stop` verifies only that course on the VM. Other courses' fine-tuned

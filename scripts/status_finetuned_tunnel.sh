@@ -15,6 +15,7 @@ FINETUNED_LOCAL_URL="http://127.0.0.1:${LOCAL_PORT}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 HELPERS="${REPO_ROOT}/scripts/lib/finetuned_deploy_helpers.py"
+ENV_FILE="${BACKEND_ENV_FILE:-${REPO_ROOT}/backend/.env}"
 
 STATE_ROOT="${XDG_STATE_HOME:-${HOME}/.local/state}/css360-syllabus-bot"
 CONTROL_PATH="${STATE_ROOT}/ssh-ft-tunnel.sock"
@@ -29,9 +30,13 @@ Usage:
 
 Checks:
   - saved tunnel state / control socket
-  - localhost:$LOCAL_PORT/health
+  - localhost:$LOCAL_PORT/health (the tunnel while the control master is
+    active, otherwise the VM-local aiswe-finetuned unit)
   - $BACKEND_URL/api/health
-  - $BACKEND_URL/api/fine-tuned/health
+  - FINETUNED_SERVICE_URL in backend/.env names localhost:$LOCAL_PORT
+
+The backend's own /api/fine-tuned/health needs an administrator session and
+is not probed here; Admin → Models shows it.
 
 Exits nonzero if Fine-Tuned is unavailable.
 EOF
@@ -95,9 +100,9 @@ fi
 FT_OK=1
 
 if health_ready "${FINETUNED_LOCAL_URL}/health"; then
-  echo "Tunnel health (${FINETUNED_LOCAL_URL}/health): OK (adapterLoaded=true)"
+  echo "Fine-tuned service (${FINETUNED_LOCAL_URL}/health): OK (adapterLoaded=true)"
 else
-  echo "Tunnel health (${FINETUNED_LOCAL_URL}/health): UNAVAILABLE"
+  echo "Fine-tuned service (${FINETUNED_LOCAL_URL}/health): UNAVAILABLE"
   FT_OK=0
 fi
 
@@ -108,12 +113,17 @@ else
   FT_OK=0
 fi
 
-if health_ready "${BACKEND_URL}/api/fine-tuned/health"; then
-  echo "Fine-Tuned endpoint (${BACKEND_URL}/api/fine-tuned/health): OK (adapterLoaded=true)"
+# Whether the backend uses that port is in the file it loads. Its own
+# /api/fine-tuned/health has needed an administrator session since bca5428
+# (2026-09-04); probing it bare got 401 and made this script call a healthy
+# service unavailable until 2026-10-31. Admin → Models shows that route.
+if [[ -f "${ENV_FILE}" ]] && grep -qE "^FINETUNED_SERVICE_URL=${FINETUNED_LOCAL_URL}/?$" "${ENV_FILE}"; then
+  echo "backend/.env: FINETUNED_SERVICE_URL=${FINETUNED_LOCAL_URL}"
 else
-  echo "Fine-Tuned endpoint (${BACKEND_URL}/api/fine-tuned/health): UNAVAILABLE"
+  echo "backend/.env: FINETUNED_SERVICE_URL is not ${FINETUNED_LOCAL_URL} (${ENV_FILE})"
   FT_OK=0
 fi
+echo "Backend route ${BACKEND_URL}/api/fine-tuned/health: needs an administrator session, not probed here (see Admin → Models)"
 
 if [[ "${FT_OK}" -eq 1 ]]; then
   echo "Overall: Fine-Tuned / Fine-Tuned + RAG available"

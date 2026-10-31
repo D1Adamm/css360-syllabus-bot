@@ -368,6 +368,18 @@ class FakeQueueApi:
             if self.run(course_id, run_id) is None:
                 return error(404, f'Training run "{run_id}" was not found.')
 
+            # As the real router does since audit finding B2: a run that has
+            # already finished is never moved back by a worker callback.
+            current_state = (self.run(course_id, run_id) or {}).get("state")
+            if action in ("release", "submitted", "submission-failed", "failed") and (
+                current_state in ("succeeded", "failed")
+            ):
+                return error(
+                    409,
+                    f'Run "{run_id}" for course "{course_id}" is already {current_state}; '
+                    "a worker report cannot reopen it. Nothing was recorded.",
+                )
+
             if action == "release":
                 patch = {
                     "state": "queued",
@@ -1241,6 +1253,52 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("Reconciling 1 unreported submission", output)
         self.assertEqual(self._run_record()["jobId"], "225122")
+
+    def test_a_submission_lost_before_the_jobs_own_completion_is_not_replayed(self) -> None:
+        """Audit finding B2, end to end through the worker.
+
+        The local record is what the cluster held after `sbatch` succeeded, the
+        `/submitted` call was lost, and the job then reported its completion
+        straight from the compute node — before the reporter learned to mark
+        the record: job id present, `reported: false`, and on the backend a run
+        that is already `succeeded` with its request `ready`. The next worker
+        run used to "repair" this by re-posting `/submitted`, which moved the
+        run back to `submitted` and the request to `training` with nothing left
+        to finish it. Now the backend refuses, the worker records that the run
+        needs no further report, and the finished run stays finished.
+        """
+        state = self._state()
+        state.write_run_record(
+            self.root,
+            run_id="run-1",
+            course_id=COURSE_A,
+            mode="full",
+            job_id="225122",
+            reported=False,
+        )
+        self.fake.set_run(
+            COURSE_A, "run-1", {**make_run_record(), "state": "succeeded", "jobId": "225122"}
+        )
+        self.fake.set_request(
+            COURSE_A, {**make_request_record(), "status": "ready", "currentRunId": "run-1"}
+        )
+
+        code, output = self._run_once(launcher=boom_launcher)
+
+        self.assertEqual(code, 0)
+        self.assertIn("Reconciling 1 unreported submission", output)
+        self.assertIn("not applied", output)
+        self.assertIn("HTTP 409", output)
+        # The finished run and its request are exactly as the completion left them.
+        self.assertEqual(self._run_record()["state"], "succeeded")
+        self.assertEqual(self._request()["status"], "ready")
+        self.assertFalse(
+            any(kind == "run" and patch.get("state") == "submitted" for kind, _, patch in self.fake.writes)
+        )
+        # Recorded locally as decided, so the next run does not ask again.
+        self.assertTrue(state.read_run_record(self.root, "run-1")["reported"])
+        _, second = self._run_once(launcher=boom_launcher)
+        self.assertNotIn("Reconciling", second)
 
     def test_a_reconciled_submission_is_not_reported_twice(self) -> None:
         state = self._state()

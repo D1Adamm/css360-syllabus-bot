@@ -172,13 +172,15 @@ and every step before the bootstrap link is safe to do ahead of time.
 ### Nginx notes for sessions
 
 The Nginx configuration is not in this repository; these are the properties it
-must have, checked with `sudo nginx -T`.
+must have, checked with `sudo nginx -T`. The live `/api/` block was read on
+2026-10-31 and had every one of them; it is recorded in
+[verification-history.md](verification-history.md#production-vm-configuration-2026-10-31).
 
 - `try_files $uri /index.html` (or equivalent) must already be in place for
   the SPA; `/join`, `/join/<code>`, `/invite/<token>` and `/login` are
   frontend routes served by `index.html`.
 - **Forward the client address, or the whole class shares one throttle.**
-  Join-code and login failures are limited per client. Uvicorn (0.49, its
+  Join-code and login failures are limited per client. Uvicorn (0.49 or later, 0.52.0 on the VM as of 2026-10-31; its
   defaults `--proxy-headers` on and `--forwarded-allow-ips 127.0.0.1`) trusts
   `X-Forwarded-For` only from the loopback peer, i.e. from this Nginx, and takes
   the entry Nginx appended — a value a browser adds itself is ignored. Nginx
@@ -192,6 +194,8 @@ must have, checked with `sudo nginx -T`.
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header X-Forwarded-Proto $scheme;
       client_max_body_size 11m;
+      proxy_read_timeout 300;
+      proxy_connect_timeout 60;
   }
   ```
 
@@ -200,6 +204,14 @@ must have, checked with `sudo nginx -T`.
   for everyone for ten minutes. If a load balancer ever sits in front of the
   VM, add `set_real_ip_from <its address>; real_ip_header X-Forwarded-For;` so
   `$remote_addr` is the student's address rather than the balancer's.
+- **Give the generation queue its 300 s.** A generation request may wait up to
+  150 s in the backend's queue (`GENERATION_QUEUE_TIMEOUT_SECONDS`) and then
+  generate for up to 120 s, so the backend answers within 270 s and tells the
+  student "busy" itself. Nginx's default `proxy_read_timeout` is 60 s, which
+  would turn every longer wait into a bare 504 while the backend kept
+  generating. `proxy_read_timeout 300;` in the `/api/` location is what the
+  queue is sized for (`backend/app/generation_queue.py`); if the queue timeout
+  is ever raised, raise this with it, keeping queue timeout + 120 s below it.
 - **Let a 10 MB syllabus through.** The backend accepts syllabus files up to
   10 MB (`MAX_SYLLABUS_BYTES` in `backend/app/syllabus_upload.py`) and says so
   when one is larger. Nginx refuses any request body over its
@@ -218,7 +230,7 @@ must have, checked with `sudo nginx -T`.
   a `/api/` location with no `client_max_body_size` above or inside it is on
   the 1 MB default. `proxy_read_timeout` is in the same listing because an
   upload is processed before it answers (extraction and embedding, typically
-  well under a minute): if Nginx gives up first (60 s by default), the browser
+  well under a minute): if Nginx gives up first (60 s by default; the `/api/` block above sets 300 s), the browser
   shows an error while the backend finishes and records the syllabus, and a
   reload shows it ready.
 - Nothing rewrites cookies. The backend sets `Secure; HttpOnly; SameSite=Lax;
@@ -266,7 +278,8 @@ them kills a process it did not start.
 `install` renders `training/inference_service/aiswe-finetuned.service` with
 this checkout's path, writes it to `~/.config/systemd/user/`, creates the
 environment file from `scripts/finetuned.env.example` if it does not exist
-(mode 600, empty mapping), sets `FINETUNED_SERVICE_URL=http://127.0.0.1:9001`
+(mode 600, empty mapping, `OLLAMA_BASE_URL=http://127.0.0.1:11435` for the
+second Ollama), sets `FINETUNED_SERVICE_URL=http://127.0.0.1:9001`
 in `backend/.env` if it is not already that, and enables the unit. It does
 not start it. Lingering, once per account:
 
@@ -393,8 +406,10 @@ fallback to the newest registered version. A course's first trained version
 therefore serves nothing until it is installed, mapped and activated.
 
 Tillicum's `training/promote_qlora_adapter.sh` still records a publication as
-the legacy path ([tillicum-operations.md](tillicum-operations.md#per-course-serving));
-it does not check the VM.
+the legacy path ([tillicum-operations.md](tillicum-operations.md#per-course-serving)).
+Its report is checked against the fine-tuned service exactly as activation is:
+a version the VM does not map is refused, nothing is written, and the previously
+published version keeps serving.
 
 ### Tillicum fallback, and back again
 
@@ -427,6 +442,16 @@ is removed only then, so a failed restore can be re-run (`aiswe_finetuned.sh
 restore`). It also restores a unit that is enabled but stopped with no record
 (the older manual `aiswe_finetuned.sh stop`); `--keep-local-stopped` opts out.
 
+Neither script needs an administrator session. `start_finetuned_tunnel.sh`
+ends by checking what it can without one: the backend answers `/api/health`,
+`backend/.env` names the tunnel as `FINETUNED_SERVICE_URL`, and the tunnel
+still answers `/health`. The backend's own `/api/fine-tuned/health` has
+required an administrator session since the authorization work (2026-09-04);
+until 2026-10-31 both scripts still probed it bare, so a correct fallback
+start failed at its last step and undid itself, and `status` reported a
+healthy service as unavailable. The authenticated end-to-end check is
+Admin → Models, which calls that route.
+
 The two never compete for the port: `start_finetuned_tunnel.sh` refuses while
 `aiswe-finetuned` is active unless given `--stop-local`, `aiswe_finetuned.sh
 start` (and the unit's own preflight) refuses while the tunnel owns it, and
@@ -445,8 +470,12 @@ Ollama is a system service and comes up on its own; `aiswe-backend` and
 preflight waits for Ollama rather than failing while it starts. Confirm with:
 
 ```bash
-./scripts/aiswe_finetuned.sh check && AISWE_VERIFY_PASSWORD='<admin password>' backend/.venv/bin/python scripts/verify_finetuned_production.py --admin-email <admin email>
+./scripts/aiswe_finetuned.sh check && AISWE_VERIFY_PASSWORD='<admin password>' backend/.venv/bin/python scripts/verify_finetuned_production.py --admin-email <admin email> --course css360d-fall-2026-q0ne --course css360e-autumn-2026-c08m
 ```
+
+Name the taught courses: without `--course`, the script checks the legacy
+CSS 350 and CSS 360 ids (`KNOWN_COURSES` in
+`scripts/lib/finetuned_production_checks.py`), not the ones in class.
 
 ---
 
@@ -489,6 +518,8 @@ Neither `.env` file is in the repository. Copy the example and fill it in.
 | `APP_PUBLIC_ORIGIN` | recommended | The site origin, for the bootstrap script's printed link |
 | `AUTH_COOKIE_SECURE` | no | Default true. Never set false on the VM |
 | `AUTH_*` lifetimes | no | Session and invitation lifetimes; defaults documented in `backend/.env.example` |
+| `AUTO_STARTER_SEED_GENERATION` | yes | Set `false` explicitly. The code default is `true` (`backend/app/starter_jobs.py`), and a starter seed job holds the single generation slot for minutes; `backend/.env.example` ships `false` |
+| `GENERATION_MAX_CONCURRENCY`, `GENERATION_MAX_WAITING`, `GENERATION_QUEUE_TIMEOUT_SECONDS` | no | The generation queue. Defaults `1`, `160`, `150` (`backend/app/generation_queue.py`), sized for Nginx's `proxy_read_timeout 300` |
 | `OLLAMA_*` | yes | Base and RAG generation |
 
 **UWB VM** — `.env.local` for the frontend build: `VITE_API_BASE_URL` must be the
@@ -514,7 +545,8 @@ to an earlier adapter, make sure the VM still maps that version
 (`./scripts/aiswe_finetuned.sh set-mapping`, then `restart`), then press
 **Activate** on it in Admin → Models; the previously active version moves to
 `offline`. The legacy alternative is publishing it again on Tillicum
-(idempotent, not checked against the VM):
+(idempotent, and refused unless the fine-tuned service can serve that version,
+exactly as activation is):
 
 ```bash
 ./training/promote_qlora_adapter.sh --course <courseId> --version <previousVersion> /gpfs/projects/simswe/$USER/training_outputs/qlora-runs/<courseId>/<run>-full/adapter

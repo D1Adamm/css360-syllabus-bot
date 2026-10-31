@@ -166,6 +166,74 @@ outside the legacy `css-360-…` form.
   `--base-model-path` to the locally cached base snapshot; with only
   `--base-model-id`, the converter tried to reach Hugging Face.
 
+## Production VM configuration, 2026-10-31
+
+Recorded 2026-10-31 from a read-only inspection of `aiswe.uwb.edu` (checkout at
+`211f6e9`). Audit finding B3 had noted that the backend unit and the Nginx site
+are not in the repository, so the assumptions the code makes about them had
+never been checked. They hold.
+
+- **One uvicorn worker.** `~/.config/systemd/user/aiswe-backend.service` is a
+  user unit, enabled, `Restart=always`, `WantedBy=default.target`:
+
+  ```ini
+  [Service]
+  Type=simple
+  WorkingDirectory=~/css360-syllabus-bot/backend
+  EnvironmentFile=~/css360-syllabus-bot/backend/.env
+  ExecStart=~/css360-syllabus-bot/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
+  Restart=always
+  RestartSec=5
+  ```
+
+  No `--workers`, no proxy flags, so uvicorn's defaults apply
+  (`--proxy-headers` on, `--forwarded-allow-ips 127.0.0.1`). uvicorn 0.52.0,
+  Python 3.12.13, FastAPI 0.141.1, Starlette 1.3.1. Lingering is on; every unit
+  came back after the 2026-10-15 reboot.
+- **Nginx 1.26.3**, `/etc/nginx/conf.d/aiswe.conf`, `location /api/`:
+  `client_max_body_size 11m`, `proxy_pass http://127.0.0.1:8001`,
+  `proxy_http_version 1.1`, `Host`, `X-Real-IP`, `X-Forwarded-For` and
+  `X-Forwarded-Proto` forwarded, `proxy_read_timeout 300`,
+  `proxy_connect_timeout 60`. No `proxy_intercept_errors`, so the backend's
+  JSON refusals reach browsers and the Tillicum worker. `try_files $uri $uri/
+  /index.html` for the SPA. The TLS listener has no `http2`, so the browser's
+  six-connections-per-origin limit stands. The same server also proxies
+  `/ftlab/` to another application on `:3001`, which is not part of this
+  project.
+- **Two Ollama servers**, both 0.32.5, one model store: `ollama` on `:11434`
+  with no `OLLAMA_*` overrides; `ollama-finetuned` on `:11435` identical to
+  `training/inference_service/ollama-finetuned.service` plus the main unit's
+  `Environment="PATH=…"` line. Both enabled and running.
+- **`aiswe-finetuned`** identical to the rendered template. `finetuned.env`
+  (mode 600) has `OLLAMA_BASE_URL=http://127.0.0.1:11435`,
+  `FINETUNED_KEEP_ALIVE=30m` and mappings for CSS 350 v2, CSS 360 v2 and v3,
+  CSS 360D v1 and CSS 360E v1. `/health` answered in 16 ms with `ollamaUrl`
+  `http://127.0.0.1:11435`; `aiswe_finetuned.sh check` was PASS on every line.
+- **`backend/.env`**: `FINETUNED_SERVICE_URL=http://127.0.0.1:9001`,
+  `FINETUNED_SERVICE_TIMEOUT_SECONDS=120`, `AUTO_STARTER_SEED_GENERATION=false`,
+  `OLLAMA_TIMEOUT_SECONDS=60`, `APP_PUBLIC_ORIGIN=https://aiswe.uwb.edu`;
+  `GENERATION_*` unset, so the code defaults (1 / 160 / 150) apply, which fit
+  the 300 s timeout. Two things to tidy, neither affecting students:
+  `CORS_ALLOWED_ORIGINS` still listed the Vite dev origins (the CSRF allow-list
+  also includes `APP_PUBLIC_ORIGIN`, so the site works), and the file was mode
+  644.
+- **Classroom GPU mode**: mode file `vm` since 2026-10-02; the failback timer
+  enabled and firing every 15 s, both units identical to the templates; no
+  fallback marker, no tunnel, port 9001 owned by `aiswe-finetuned`.
+- **Backend journal, 14 days**: no `busy` refusal, four abandoned requests,
+  longest queue wait 32 s, no restart since the reboot.
+
+One defect surfaced. `scripts/status_finetuned_tunnel.sh` reported the healthy
+service as "Fine-Tuned unavailable" because it, and the last step of
+`scripts/start_finetuned_tunnel.sh`, probed `/api/fine-tuned/health` without
+the administrator session that route has required since 2026-09-04. The start
+script would therefore have failed and rolled the emergency fallback back.
+Both scripts now check the tunnel's `/health`, the backend's `/api/health` and
+`FINETUNED_SERVICE_URL` in `backend/.env` instead, and say that the backend's
+route is for Admin → Models; `training/test_finetuned_fallback_scripts.py`
+runs them against a backend that answers that route with 401. The emergency
+fallback itself was not exercised during this verification.
+
 ## What was not run
 
 Neither `scripts/sync_training_data_to_tillicum.sh` nor
