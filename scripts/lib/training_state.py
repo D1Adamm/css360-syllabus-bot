@@ -198,6 +198,39 @@ def read_run_record(repo_root: Path, run_id: str) -> Optional[Dict[str, Any]]:
     return read_json(run_record_path(repo_root, run_id))
 
 
+def mark_run_reported(
+    repo_root: Path, run_id: str, *, extra: Optional[Dict[str, Any]] = None
+) -> bool:
+    """Record that the backend needs no further submission report for this run.
+
+    Called once a completion has been accepted, or finally refused: the run is
+    terminal on the backend, so re-reporting its submission would be wrong — and
+    before this existed, it happened. A run whose `/submitted` call was lost but
+    whose completion landed straight from the compute node kept `reported:
+    false` here, so the next worker run "repaired" it by posting `/submitted`
+    against a run that was already `succeeded`, moving it back to `submitted`
+    and the request back to `training`, with nothing left to finish it. The
+    backend now refuses that too; this is the half that stops the worker from
+    asking.
+
+    Returns False when there is no record to mark (a job this cluster did not
+    submit, or a state directory that was cleaned). Merges like every other
+    write here, so the job id and output directory are kept.
+    """
+    record = read_run_record(repo_root, run_id)
+    if not record:
+        return False
+    write_run_record(
+        repo_root,
+        run_id=run_id,
+        course_id=str(record.get("courseId") or ""),
+        mode=str(record.get("mode") or "full"),
+        reported=True,
+        extra=extra,
+    )
+    return True
+
+
 def list_run_records(repo_root: Path) -> List[Dict[str, Any]]:
     directory = runs_dir(repo_root)
     if not directory.is_dir():

@@ -128,6 +128,12 @@ another. It reads `TRAINING_API_BASE_URL` and `TRAINING_WORKER_TOKEN` from
 `backend/.env` — the file the backend service already loads — so no `source` or
 export is needed; a variable already in the environment takes precedence.
 
+The script ends by checking what it can without an administrator session: the
+backend answers `/api/health`, `backend/.env` names the tunnel, and the tunnel
+answers `/health`. The backend's own `/api/fine-tuned/health` needs an
+administrator session (`status_finetuned_tunnel.sh` says so instead of probing
+it), so confirm the switch end to end from Admin → Models.
+
 **Session length is bounded by the QOS, not by preference.** `serve.slurm` runs
 under `debug`, which caps a job at one hour, and that is the default. Asking for
 more is refused before submission with the reason — Slurm would otherwise accept
@@ -182,9 +188,11 @@ the GPU fallback's serving tree:
 on the VM side: install and map it, then **Activate** it in Admin → Models,
 which checks the fine-tuned service first (see
 [deployment.md](deployment.md#making-a-new-version-the-one-students-get)).
-Publishing from here is the legacy path. It is not checked against the VM, so
-install and map the version first; publishing a version the VM does not map
-makes that course's fine-tuned answers fail until it is mapped.
+Publishing from here is the legacy path. Its report is checked against the
+fine-tuned service exactly as activation is, so install and map the version on
+the VM first: a version the VM does not map is refused, nothing is written, the
+previously published version keeps serving, and `promote_qlora_adapter.sh`
+exits 3 saying so.
 
 Publishing an adapter for a course:
 
@@ -347,6 +355,8 @@ unreachable, because it has been.
 | Operator re-runs the worker | Safe. A run with a job id is never submitted again. |
 | Login session drops mid-job | The Slurm job is unaffected. Its completion is reported by the job itself. |
 | Run was superseded by an admin retry | The callback is refused with 409 and dropped locally, so it is not replayed forever. |
+| Publication report refused (the fine-tuned service cannot serve the version, or it is not registered and ready) | Final. 404/409 is dropped locally, not queued; `promote_qlora_adapter.sh` exits 3 and the previously published version keeps serving. Install and map the version on the VM, then activate it or re-run the report. |
+| Worker callback for a run that already finished | Refused with 409 and marked reported locally. A `succeeded` or `failed` run is never moved back to `submitted`, `queued` or `training`. |
 
 The cluster's own record lives in `training/state/`:
 

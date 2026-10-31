@@ -49,11 +49,26 @@ CSS350 = "css-350-spring-2026-n3h9"
 CSS360 = "css-360-winter-2026-a7rp"
 
 
-class FakeQueue:
-    """Records what would be sent, and can be told to fail like a real outage."""
+REFUSAL = (
+    "The backend request for /courses/{0}/model-versions/v2/published failed with "
+    "HTTP 409: The fine-tuned service cannot serve {0} v2: it is not mapped, or its "
+    "Ollama model is missing. Servable now: v1."
+).format(CSS350)
 
-    def __init__(self, *, fail: bool = False, result: Optional[Dict[str, Any]] = None):
+
+class FakeQueue:
+    """Records what would be sent, and can be told to fail like a real outage,
+    or to refuse like a backend whose fine-tuned service cannot serve the version."""
+
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        refuse: Optional[str] = None,
+        result: Optional[Dict[str, Any]] = None,
+    ):
         self.fail = fail
+        self.refuse = refuse
         self.result = result or {
             "courseId": CSS350,
             "version": "v2",
@@ -74,6 +89,8 @@ class FakeQueue:
     ) -> Dict[str, Any]:
         if self.fail:
             raise TrainingQueueError("Could not reach the backend API: timed out")
+        if self.refuse:
+            raise TrainingQueueError(self.refuse)
         self.calls.append(
             {
                 "courseId": course_id,
@@ -234,7 +251,88 @@ class OutageTests(ReporterTestCase):
         self.assertEqual(courses, [CSS350, CSS360])
 
 
+class RefusalTests(ReporterTestCase):
+    """A refusal is a decision, not an outage, and must not be queued.
+
+    Audit finding B1: the backend now asks the fine-tuned service before marking
+    a version online. When it says no, replaying the report on every queue run
+    would show the same refusal forever while an operator believed it was merely
+    pending — and `promote_qlora_adapter.sh` would have said "queued".
+    """
+
+    def test_a_refused_report_is_final_and_leaves_nothing_pending(self) -> None:
+        outcome = reporter.report_publication(
+            course_id=CSS350, version="v2", repo_root=self.root, queue=FakeQueue(refuse=REFUSAL)
+        )
+
+        self.assertFalse(outcome["delivered"])
+        self.assertTrue(outcome["refused"])
+        self.assertIn("HTTP 409", outcome["error"])
+        self.assertEqual(self.pending(), [])
+
+    def test_an_unregistered_version_refusal_is_final_too(self) -> None:
+        refusal = REFUSAL.replace("HTTP 409", "HTTP 404")
+
+        outcome = reporter.report_publication(
+            course_id=CSS350, version="v2", repo_root=self.root, queue=FakeQueue(refuse=refusal)
+        )
+
+        self.assertTrue(outcome["refused"])
+        self.assertEqual(self.pending(), [])
+
+    def test_an_outage_is_still_queued_not_refused(self) -> None:
+        outcome = reporter.report_publication(
+            course_id=CSS350, version="v2", repo_root=self.root, queue=FakeQueue(fail=True)
+        )
+
+        self.assertFalse(outcome.get("refused", False))
+        self.assertEqual(len(self.pending()), 1)
+
+    def test_a_report_queued_during_an_outage_is_dropped_if_refused_later(self) -> None:
+        """What the worker's flush does with a queued report the backend then refuses."""
+        reporter.report_publication(
+            course_id=CSS350, version="v2", repo_root=self.root, queue=FakeQueue(fail=True)
+        )
+        queued = self.pending()[0]
+
+        sent = reporter.send_publication(
+            FakeQueue(refuse=REFUSAL), queued["payload"], repo_root=self.root
+        )
+
+        self.assertTrue(sent["refused"])
+        self.assertEqual(self.pending(), [])
+
+    def test_only_a_final_status_is_treated_as_a_refusal(self) -> None:
+        self.assertTrue(reporter.is_final_refusal("… failed with HTTP 409: nope"))
+        self.assertTrue(reporter.is_final_refusal("… failed with HTTP 404: unknown"))
+        self.assertFalse(reporter.is_final_refusal("… failed with HTTP 503: down"))
+        self.assertFalse(reporter.is_final_refusal("Could not reach the backend API"))
+
+
 class CliTests(ReporterTestCase):
+    def test_a_refusal_exits_three_and_says_the_version_is_not_serving(self) -> None:
+        """`promote_qlora_adapter.sh` keys its warning off this exit status."""
+        import io
+        from contextlib import redirect_stderr
+        from unittest.mock import patch
+
+        refused = {
+            "delivered": False,
+            "refused": True,
+            "error": REFUSAL,
+            "payload": reporter.build_payload(course_id=CSS350, version="v2"),
+        }
+        stderr = io.StringIO()
+        with patch.object(reporter, "report_publication", return_value=refused):
+            with redirect_stderr(stderr):
+                code = reporter.main(["--course-id", CSS350, "--version", "v2"])
+
+        self.assertEqual(code, reporter.REFUSED_EXIT)
+        self.assertEqual(code, 3)
+        self.assertIn("REFUSED", stderr.getvalue())
+        self.assertIn("previously published version", stderr.getvalue())
+        self.assertNotIn("queued", stderr.getvalue().lower().replace("nothing was queued", ""))
+
     def test_a_dry_run_writes_and_sends_nothing(self) -> None:
         code = reporter.main(
             ["--course-id", CSS350, "--version", "v2", "--dry-run"]
@@ -284,6 +382,14 @@ class PublicationOrderingTests(ReporterTestCase):
 
     def test_publication_can_be_reported_separately(self) -> None:
         self.assertIn("--no-report", self.script)
+
+    def test_a_refused_report_is_told_apart_from_an_undelivered_one(self) -> None:
+        """Exit 3 from the reporter means "not serving", never "queued"."""
+        tail = self.script[self.script.index("scripts/report_model_published.py") :]
+
+        self.assertIn('"${REPORT_RC}" -eq 3', tail)
+        self.assertIn("REFUSED", tail)
+        self.assertIn("previously", tail)
 
 
 if __name__ == "__main__":

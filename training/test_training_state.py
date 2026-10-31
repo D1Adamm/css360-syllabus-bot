@@ -116,6 +116,36 @@ class RunRecordTests(TrainingStateTestCase):
 
         self.assertEqual([item["runId"] for item in outstanding], [RUN_ID])
 
+    def test_marking_a_run_reported_takes_it_out_of_the_reconcile_list(self) -> None:
+        """Audit B2: once a completion landed, the submission is never re-reported.
+
+        Re-reporting `/submitted` for a run whose completion had already been
+        accepted moved the run back to `submitted` and the request to `training`.
+        """
+        state.write_run_record(
+            self.root, run_id=RUN_ID, course_id=COURSE, mode="full",
+            job_id="264787", output_dir="/gpfs/out", reported=False,
+        )
+
+        marked = state.mark_run_reported(
+            self.root, RUN_ID, extra={"completionDelivered": "2026-10-28T00:00:00Z"}
+        )
+
+        self.assertTrue(marked)
+        record = state.read_run_record(self.root, RUN_ID)
+        assert record is not None
+        self.assertTrue(record["reported"])
+        # Merged, not replaced: the job id and output directory survive.
+        self.assertEqual(record["jobId"], "264787")
+        self.assertEqual(record["outputDir"], "/gpfs/out")
+        self.assertEqual(record["completionDelivered"], "2026-10-28T00:00:00Z")
+        self.assertEqual(state.unreported_submissions(self.root), [])
+
+    def test_marking_a_run_with_no_record_is_a_no_op(self) -> None:
+        """A job this cluster did not submit, or a cleaned state directory."""
+        self.assertFalse(state.mark_run_reported(self.root, RUN_ID))
+        self.assertEqual(state.list_run_records(self.root), [])
+
     def test_no_state_directory_is_not_an_error(self) -> None:
         """A fresh checkout has none, and that is the normal first run."""
         self.assertEqual(state.list_run_records(self.root), [])

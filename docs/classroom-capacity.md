@@ -185,7 +185,9 @@ How to read it:
    `aiswe-finetuned`, rebuild the frontend. No migration.
 2. Install the second Ollama (needs sudo). First compare `systemctl cat ollama`
    with `training/inference_service/ollama-finetuned.service`, and make
-   `ExecStart`, `User`, `Group` and `OLLAMA_MODELS` match the main server:
+   `ExecStart`, `User`, `Group`, `OLLAMA_MODELS` and any `Environment="PATH=…"`
+   line match the main server (the unit installed on `aiswe` carries the main
+   unit's `PATH` line; the tracked template does not):
    ```bash
    sudo cp training/inference_service/ollama-finetuned.service /etc/systemd/system/
    ```
@@ -196,8 +198,10 @@ How to read it:
    curl -s http://127.0.0.1:11435/api/tags | head -c 300
    ```
    The tags listed must include the course models (same store).
-3. Point the fine-tuned service at it. Add `OLLAMA_BASE_URL=http://127.0.0.1:11435`
-   to `~/.config/aiswe/finetuned.env`, then run, from a shell that has not
+3. Point the fine-tuned service at it. Make sure `~/.config/aiswe/finetuned.env`
+   has `OLLAMA_BASE_URL=http://127.0.0.1:11435` (`scripts/finetuned.env.example`
+   carries it; the service's own default is the main Ollama on `:11434`), then
+   run, from a shell that has not
    sourced `backend/.env` (a shell-exported `OLLAMA_BASE_URL` wins over the file):
    ```bash
    ./scripts/aiswe_finetuned.sh restart && ./scripts/aiswe_finetuned.sh check

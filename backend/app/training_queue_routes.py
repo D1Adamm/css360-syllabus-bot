@@ -44,6 +44,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from app import (
@@ -62,6 +63,8 @@ from app.dataset_artifacts import (
 )
 from app.db import db_connection, translate_db_errors
 from app.db_schemas import TrainingRunRecord
+from app.finetuned_client import check_finetuned_service_health
+from app.model_publication import require_servable_version
 
 WORKER_TOKEN_ENV_VAR = "TRAINING_WORKER_TOKEN"
 WORKER_TOKEN_HEADER = "X-Training-Worker-Token"
@@ -446,6 +449,65 @@ def _require_run(connection: Any, course_id: str, run_id: str) -> dict[str, Any]
     return run
 
 
+class TerminalRunCallback(HTTPException):
+    """A worker reported against a run that has already finished.
+
+    `succeeded` and `failed` are terminal. Nothing a worker can say about such a
+    run is news, and every callback that could move it would move it backwards:
+    a submission report to `submitted` (and the request to `training`), a
+    release or submission failure to `queued`, a training failure over a
+    success. Each of those happened, or could, in one real sequence — `sbatch`
+    succeeds, the `/submitted` call is lost, the job finishes and reports its
+    completion straight from the compute node, and the next worker run then
+    "repairs" the lost submission by re-reporting it against a run that is
+    already `succeeded` with its model registered. The professor's page went
+    back to "training" for a model that was ready, and nothing was ever going to
+    finish the run again.
+
+    409 rather than a quiet no-op, for the same reason as `SupersededRunCallback`:
+    the worker treats a 409 as final and records locally that the run needs no
+    further report, so the replay stops; a 200 would have it believe it had
+    changed something.
+    """
+
+    def __init__(self, course_id: str, run_id: str, state: str, what: str) -> None:
+        super().__init__(
+            status_code=409,
+            detail=(
+                f'Run "{run_id}" for course "{course_id}" is already {state}; '
+                f"{what} cannot reopen it. Nothing was recorded."
+            ),
+        )
+
+
+def _refuse_terminal(run: dict[str, Any], what: str) -> None:
+    """Refuse a callback that would move a finished run out of its terminal state."""
+    state = run.get("state")
+    if state in db_training_runs.TERMINAL_RUN_STATES:
+        raise TerminalRunCallback(
+            str(run.get("courseId") or ""), str(run.get("runId") or ""), str(state), what
+        )
+
+
+def _refuse_conflicting_completion(run: dict[str, Any], outcome: str) -> None:
+    """A completion may be redelivered, but not rewritten.
+
+    The same outcome again is the idempotent redelivery the whole reporting
+    path is built around and is let through. A *different* outcome for a run
+    that has already ended — a `failed` after a `succeeded`, or the reverse —
+    is a conflicting report about one job, and the run's own record is the one
+    to trust.
+    """
+    state = run.get("state")
+    if state in db_training_runs.TERMINAL_RUN_STATES and state != outcome:
+        raise TerminalRunCallback(
+            str(run.get("courseId") or ""),
+            str(run.get("runId") or ""),
+            str(state),
+            f'a "{outcome}" completion',
+        )
+
+
 @router.post(
     "/courses/{course_id}/runs/{run_id}/release",
     response_model=TrainingRunRecord,
@@ -459,7 +521,10 @@ def release_run(
     body = request or ReleaseRequest()
 
     def work(connection: Any) -> dict[str, Any]:
-        _require_run(connection, safe_course_id, run_id)
+        run = _require_run(connection, safe_course_id, run_id)
+        # A finished run has nothing to hand back; releasing it would put a
+        # terminal run back on the queue beside its own replacement.
+        _refuse_terminal(run, "a release")
         return db_training_runs.release_training_run(
             connection, safe_course_id, run_id, error=body.error, now=_utc_now()
         )
@@ -495,6 +560,10 @@ def record_submission(
         # would move a retired run back to a non-terminal state, which is a
         # second active run for the course as well as a stolen request.
         _require_current_run(connection, safe_course_id, run_id)
+        # The lost-`/submitted` repair, arriving after the job's own completion
+        # already landed: the run is finished and must stay so. See
+        # `TerminalRunCallback`.
+        _refuse_terminal(run, "a submission report")
         submitted = db_training_runs.mark_training_run_submitted(
             connection,
             safe_course_id,
@@ -557,12 +626,13 @@ def record_submission_failure(
     safe_course_id = _safe_course_id(course_id)
 
     def work(connection: Any) -> dict[str, Any]:
-        _require_run(connection, safe_course_id, run_id)
+        run = _require_run(connection, safe_course_id, run_id)
         # `release_training_run` puts the run back to `queued`. On a superseded
         # run that would resurrect it alongside its own replacement, leaving
         # the course with two active runs and the queue guard unable to say
         # which is real.
         _require_current_run(connection, safe_course_id, run_id)
+        _refuse_terminal(run, "a submission-failure report")
         released = db_training_runs.release_training_run(
             connection, safe_course_id, run_id, error=request.error, now=_utc_now()
         )
@@ -599,10 +669,13 @@ def record_training_failure(
     safe_course_id = _safe_course_id(course_id)
 
     def work(connection: Any) -> dict[str, Any]:
-        _require_run(connection, safe_course_id, run_id)
+        run = _require_run(connection, safe_course_id, run_id)
         # A late failure from a retired run must not tell a professor their
         # model failed while its replacement is queued and untried.
         _require_current_run(connection, safe_course_id, run_id)
+        # A failure report cannot overwrite a success (or re-fail a failure
+        # differently): a finished run keeps the outcome it ended with.
+        _refuse_terminal(run, "a training-failure report")
         failed = db_training_runs.fail_training_run(
             connection, safe_course_id, run_id, error=request.error, now=_utc_now()
         )
@@ -871,6 +944,9 @@ def record_completion(
         # an admin has retired must not move the replacement's request, and must
         # not register the adapter the retry existed to discard.
         _require_current_run(connection, safe_course_id, run_id)
+        # Redelivery of the same outcome is idempotent and continues below; a
+        # different outcome for a run that already ended is refused.
+        _refuse_conflicting_completion(run, request.outcome)
 
         recorded_job_id = (run.get("jobId") or "").strip()
         reported_job_id = (request.job_id or "").strip()
@@ -1489,28 +1565,43 @@ def get_current_serving_session() -> ServingSessionResponse:
     response_model=PublishVersionResponse,
     dependencies=[Depends(require_worker_token)],
 )
-def record_model_version_published(
+async def record_model_version_published(
     course_id: str, version: str, request: PublishVersionRequest | None = None
 ) -> PublishVersionResponse:
     """Record that a version's adapter is now in the cluster's serving tree.
 
     Reported *after* the copy has succeeded and been validated, never before.
-    That ordering is the whole failure-safety story for an operation spanning
+    That ordering is half of the failure-safety story for an operation spanning
     two machines: if the copy fails, nothing is reported and the database goes
-    on naming the version that really is published. The opposite order would
-    let a failed copy leave the application confidently routing every question
-    to an adapter that is not there.
+    on naming the version that really is published.
 
-    Publication is what inference resolves from. Registering `v2` moves
-    `current_version` — a professor's newest model is the honest answer to
-    "what is my model" — but it does not move what answers questions, because
-    the cluster does not have `v2` until somebody puts it there. Without this
-    endpoint that gap was an outage: the backend asked for `v2`, the cluster had
-    only `v1`, and a course that was answering fine stopped.
+    The other half is the same check Admin → Models → Activate makes
+    (`app.model_publication`). Publication is what inference resolves from, and
+    the adapter being in Tillicum's serving tree says nothing about whether the
+    service students' questions actually reach — the VM-local one, normally —
+    can serve the version. Before this check the report marked a version
+    `online` regardless, so one `promote_qlora_adapter.sh` run for a version the
+    VM did not map broke every Fine-Tuned and Fine-Tuned + RAG answer for the
+    course. Now the service at `FINETUNED_SERVICE_URL` is asked first, and
+    nothing is written unless it lists this course and version: 409 when it does
+    not (the detail says what is servable), 503 when it cannot be asked. The
+    previously published version keeps serving either way, and
+    `scripts/report_model_published.py` treats both as final rather than
+    queueing the report for redelivery.
+
+    Registering `v2` moves `current_version` — a professor's newest model is the
+    honest answer to "what is my model" — but it does not move what answers
+    questions, because the cluster does not have `v2` until somebody puts it
+    there. Without this endpoint that gap was an outage: the backend asked for
+    `v2`, the cluster had only `v1`, and a course that was answering fine
+    stopped.
 
     Idempotent. Publishing the version that is already published is a no-op that
     reports `unchanged`, so a rerun of the promote script, or a report delivered
-    twice after a network failure, cannot corrupt anything.
+    twice after a network failure, cannot corrupt anything — provided the
+    service still serves it; a version the service no longer lists is refused
+    even when the registry already says `online`, because the honest answer to
+    "is this serving?" is no.
 
     Not guarded by `_require_current_run`: publication is an operator's
     deliberate act on a registered artifact, not a callback from a run that may
@@ -1524,10 +1615,11 @@ def record_model_version_published(
             status_code=422, detail="version must look like v1, v2, …"
         )
 
-    def work(connection: Any) -> tuple[str, str | None, str | None, bool]:
+    def read(connection: Any) -> dict[str, dict[str, Any]]:
         existing = db_models.list_model_versions(connection, safe_course_id)
-        by_version = {item["version"]: item for item in existing}
+        return {item["version"]: item for item in existing}
 
+    def require_ready(by_version: dict[str, dict[str, Any]]) -> dict[str, Any]:
         target = by_version.get(version)
         if target is None:
             raise HTTPException(
@@ -1537,7 +1629,6 @@ def record_model_version_published(
                     f'"{version}". Register it before publishing it.'
                 ),
             )
-
         # A version that is not ready is not an artifact anyone should be
         # routed to, whatever is sitting on the cluster's filesystem.
         if target.get("status") != "ready":
@@ -1548,12 +1639,34 @@ def record_model_version_published(
                     "Only a ready version can be published."
                 ),
             )
+        return target
 
+    # Checked first so an unregistered or unready version is refused without
+    # depending on the service being up.
+    require_ready(
+        await run_in_threadpool(_run, "reading registered model versions", read)
+    )
+
+    # The probe is passed from this module's namespace so the route tests can
+    # patch `app.training_queue_routes.check_finetuned_service_health`.
+    await require_servable_version(
+        safe_course_id,
+        version,
+        probe=check_finetuned_service_health,
+        action="published",
+        then="then activate it from Admin → Models or re-run this report.",
+    )
+
+    def work(connection: Any) -> tuple[str | None, str | None, str, bool]:
+        # Re-read inside the write's transaction: the registry may have moved
+        # while the service was being asked.
+        by_version = read(connection)
+        target = require_ready(by_version)
         previous = next(
             (
-                item["version"]
-                for item in existing
-                if item.get("deployment") == "online" and item["version"] != version
+                key
+                for key, item in by_version.items()
+                if item.get("deployment") == "online" and key != version
             ),
             None,
         )
@@ -1566,8 +1679,8 @@ def record_model_version_published(
         return current, previous, version, already
 
     try:
-        current, previous, published, already = _run(
-            "recording a published model version", work
+        current, previous, published, already = await run_in_threadpool(
+            _run, "recording a published model version", work
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

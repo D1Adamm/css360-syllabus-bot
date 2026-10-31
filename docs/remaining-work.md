@@ -103,7 +103,7 @@ Publication no longer needs Tillicum: an administrator activates a version
 from Admin → Models once the VM serves it, and only an activated version
 answers — finishing or registering training never moves traffic on its own.
 `promote_qlora_adapter.sh` still records publications too, as the legacy
-path.
+path, checked against the VM's fine-tuned service exactly as activation is.
 
 Still by hand, deliberately, wherever training runs: deciding that a trained
 version should be served (install and map it on the VM, then activate it).

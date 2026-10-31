@@ -7,6 +7,15 @@ week while Base and RAG worked. These tests run the real operator scripts
 against fake `systemctl`, `ssh`, `curl`, `nc` and `ss` that share one small
 "world" directory: whether the unit is active, whether a tunnel is up, what
 each `/health` says, and which step should fail.
+
+The 2026-10-31 finding: the backend's `/api/fine-tuned/health` has required an
+administrator session since `bca5428` (2026-09-04), and both tunnel scripts
+still probed it with a bare `curl -f`. The start script therefore died at its
+last step and rolled a correct fallback back; the status script reported a
+healthy service as unavailable. The fake `curl` answers that route the way
+production does (401, which `curl -f` reports as exit 22), so the scripts have
+to prove readiness without a session: the tunnel's own `/health`, the backend's
+`/api/health`, and `FINETUNED_SERVICE_URL` in `backend/.env`.
 """
 
 from __future__ import annotations
@@ -23,6 +32,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 START = REPO_ROOT / "scripts" / "start_finetuned_tunnel.sh"
 STOP = REPO_ROOT / "scripts" / "stop_finetuned_tunnel.sh"
+STATUS = REPO_ROOT / "scripts" / "status_finetuned_tunnel.sh"
 LOCAL = REPO_ROOT / "scripts" / "aiswe_finetuned.sh"
 
 D = "css360d-fall-2026-q0ne"
@@ -36,6 +46,9 @@ FAKES = {
         open(os.path.join(w, "log"), "a").write("systemctl " + " ".join(args) + "\n")
         verb, unit = (args + ["", ""])[:2]
         local = unit.startswith("aiswe-finetuned")
+        if verb == "restart" and unit.startswith("aiswe-backend") and os.path.exists(os.path.join(w, "gpu_dies_on_restart")):
+            # The Tillicum job ended while the backend was restarting.
+            os.remove(os.path.join(w, "gpu_ready"))
         active = os.path.exists(os.path.join(w, "unit_active"))
         if verb == "is-active":
             state = "active" if (active or not local) else "inactive"
@@ -96,7 +109,11 @@ FAKES = {
                 {"courseId": "css360d-fall-2026-q0ne", "versions": ["v1"], "currentVersion": "v1"},
                 {"courseId": "css360e-autumn-2026-c08m", "versions": ["v1"], "currentVersion": "v1"}]
             return {"status": "ok", "engine": "ollama", "adapterLoaded": bool(courses), "courses": courses}
-        if url.endswith(":9001/health") or url.endswith("/api/fine-tuned/health"):
+        if url.endswith("/api/fine-tuned/health"):
+            # Administrator session required since bca5428; a bare `curl -f` sees 401.
+            print("curl: (22) The requested URL returned error: 401", file=sys.stderr)
+            sys.exit(22)
+        if url.endswith(":9001/health"):
             if has("tunnel"):
                 if not has("gpu_ready"):
                     sys.exit(7)
@@ -227,6 +244,33 @@ class FallbackScriptsTest(unittest.TestCase):
         self.assertIn("WAS=active", marker)
         self.assertIn(f"SERVABLE_BEFORE={D}@v1,{E}@v1", marker)
 
+    def test_the_fallback_completes_without_an_administrator_session(self) -> None:
+        """2026-10-31: the last check probed /api/fine-tuned/health, administrator-only
+        since 2026-09-04, so a correct fallback start died here and undid itself."""
+        result = self.start_fallback()
+        self.assertIn("Fine-tuned backend READY", result.stdout)
+        self.assertIn("FINETUNED_SERVICE_URL=http://127.0.0.1:9001", result.stdout)
+        self.assertIn("Admin → Models", result.stdout)
+        self.assertNotIn("returning to VM-local serving", result.stderr)
+        self.assertNotIn("systemctl start", self.log())
+        self.assertTrue(self.has("tunnel"))
+        self.assertFalse(self.has("unit_active"))
+        self.assertTrue(self.marker.exists())
+        self.assertEqual(self.backend_env.read_text().strip(), "FINETUNED_SERVICE_URL=http://127.0.0.1:9001")
+
+    def test_a_tunnel_that_dies_during_the_backend_restart_is_rolled_back(self) -> None:
+        """The check that replaced the administrator route still catches a dead tunnel."""
+        self.set("unit_active")
+        self.set("gpu_ready")
+        self.set("gpu_dies_on_restart")
+        result = self.run_script(START, "g014", "--stop-local")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no longer ready", result.stderr)
+        self.assertIn("returning to VM-local serving", result.stderr)
+        self.assertTrue(self.has("unit_active"))
+        self.assertFalse(self.has("tunnel"))
+        self.assertFalse(self.marker.exists())
+
     def test_a_failed_ssh_sign_in_restores_the_local_service(self) -> None:
         self.set("unit_active")
         self.set("ssh_open_fails")
@@ -265,6 +309,32 @@ class FallbackScriptsTest(unittest.TestCase):
         self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
         self.assertIn("reusing", again.stdout)
         self.assertEqual(self.marker.read_text(), first)
+
+    # -- status ---------------------------------------------------------------- #
+
+    def test_status_reports_the_fallback_without_an_administrator_session(self) -> None:
+        """2026-10-31: `status` said "Fine-Tuned unavailable" beside a healthy service."""
+        self.start_fallback()
+        result = self.run_script(STATUS)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SSH control master: active", result.stdout)
+        self.assertIn("FINETUNED_SERVICE_URL=http://127.0.0.1:9001", result.stdout)
+        self.assertIn("administrator session", result.stdout)
+        self.assertNotIn("UNAVAILABLE", result.stdout)
+        self.assertIn("Overall: Fine-Tuned / Fine-Tuned + RAG available", result.stdout)
+
+    def test_status_reports_vm_local_serving_the_same_way(self) -> None:
+        self.set("unit_active")
+        result = self.run_script(STATUS)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SSH control master: inactive", result.stdout)
+        self.assertIn("Overall: Fine-Tuned / Fine-Tuned + RAG available", result.stdout)
+
+    def test_status_is_nonzero_when_nothing_answers_the_port(self) -> None:
+        result = self.run_script(STATUS)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("UNAVAILABLE", result.stdout)
+        self.assertIn("Overall: Fine-Tuned unavailable", result.stdout)
 
     # -- ending it ------------------------------------------------------------- #
 
@@ -358,6 +428,18 @@ class FallbackScriptsTest(unittest.TestCase):
         self.start_fallback()
         self.run_script(STOP)
         self.assertEqual(env_file.read_text(), before)
+
+
+class TheScriptsNeverProbeTheAdministratorRoute(unittest.TestCase):
+    """`/api/fine-tuned/health` needs an administrator session (bca5428). An operator
+    script carries no credentials, so none may depend on that route answering."""
+
+    def test_no_bare_probe_of_the_backend_fine_tuned_route(self) -> None:
+        for rel in ("scripts/start_finetuned_tunnel.sh", "scripts/status_finetuned_tunnel.sh",
+                    "scripts/stop_finetuned_tunnel.sh", "scripts/aiswe_finetuned.sh"):
+            text = (REPO_ROOT / rel).read_text()
+            self.assertNotIn('health_ready "${BACKEND_URL}/api/fine-tuned/health"', text, rel)
+            self.assertNotIn('curl -fsS --max-time 5 "${BACKEND_URL}/api/fine-tuned/health"', text, rel)
 
 
 class ClassroomGpuModeLeavesTheServiceAlone(unittest.TestCase):

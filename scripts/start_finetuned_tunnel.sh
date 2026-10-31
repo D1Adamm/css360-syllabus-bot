@@ -363,13 +363,22 @@ while (( SECONDS < deadline )); do
 done
 [[ "${backend_ok}" -eq 1 ]] || die "Backend restarted but ${BACKEND_URL}/api/health never became ready."
 
-if ! health_ready "${BACKEND_URL}/api/fine-tuned/health"; then
-  # Give the backend a moment after /health before declaring FT failure.
+# The backend's own fine-tuned health route (/api/fine-tuned/health) has needed
+# an administrator session since bca5428 (2026-09-04). This script carries no
+# credentials and must not, so it cannot ask the backend what it sees; until
+# 2026-10-31 it tried anyway, got 401, and undid a fallback that was working.
+# What it can prove without a session, and does: the backend is up again
+# (above), backend/.env names this tunnel, and the tunnel still answers /health
+# after the restart. The authenticated end-to-end check is Admin → Models in a
+# browser, which calls that route and lists the courses the backend now serves.
+if ! health_ready "${FINETUNED_LOCAL_URL}/health"; then
+  # Give a slow node a moment before declaring the tunnel dead.
   sleep 2
-  if ! health_ready "${BACKEND_URL}/api/fine-tuned/health"; then
-    die "Backend restarted but /api/fine-tuned/health failed (need status=ok and adapterLoaded=true). Check FINETUNED_SERVICE_URL and the Tillicum job."
-  fi
+  health_ready "${FINETUNED_LOCAL_URL}/health" \
+    || die "Backend restarted but ${FINETUNED_LOCAL_URL}/health is no longer ready (need status=ok and adapterLoaded=true). Check the Tillicum job."
 fi
+grep -qE "^FINETUNED_SERVICE_URL=${FINETUNED_LOCAL_URL}/?$" "${ENV_FILE}" \
+  || die "Backend restarted but ${ENV_FILE} does not name ${FINETUNED_LOCAL_URL} as FINETUNED_SERVICE_URL."
 
 SUCCEEDED=1
 echo
@@ -379,8 +388,10 @@ echo "  localhost:${LOCAL_PORT} -> ${NODE}:${REMOTE_PORT} via tillicum.hyak.uw.e
 echo "Tillicum health: OK"
 echo "Adapter loaded: true"
 echo "FastAPI: OK"
-echo "Fine-Tuned endpoint: OK"
+echo "backend/.env: FINETUNED_SERVICE_URL=${FINETUNED_LOCAL_URL}"
 echo "Fine-Tuned + RAG uses the same service and is now available."
+echo "Confirm end to end from Admin → Models (signed in as an administrator): it calls"
+echo "the backend's /api/fine-tuned/health, which needs a session this script does not have."
 echo
 echo "Status: ./scripts/status_finetuned_tunnel.sh"
 echo "Stop tunnel: ./scripts/stop_finetuned_tunnel.sh   (restores ${LOCAL_UNIT} and checks it)"

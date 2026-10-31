@@ -207,7 +207,8 @@ completion callback idempotent instead of a source of `v2`, `v3`, …
   which first confirms the fine-tuned service can serve it — installed and
   mapped (`FINETUNED_OLLAMA_MODELS`, outside the database). Registration
   refuses `online`. Tillicum's `promote_qlora_adapter.sh` can also set it, as
-  the legacy path. Every activation is recorded in `admin_actions` as
+  the legacy path, under the same servability check. Every activation is
+  recorded in `admin_actions` as
   `model.activate`.
 - Whether the Tillicum fallback is running *right now* is `serving_sessions`,
   not this column.

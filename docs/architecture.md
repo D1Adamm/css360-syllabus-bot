@@ -296,8 +296,12 @@ version, under the same check. Registration can never do this: a training run
 lands `offline`, and the registration route refuses `deployment=online`.
 
 Tillicum's `training/promote_qlora_adapter.sh` still records a publication too —
-the legacy path, unchanged and not checked against the VM — after copying the
-adapter into the GPU fallback's serving tree.
+the legacy path — after copying the adapter into the GPU fallback's serving
+tree. Its report is held to the same check as activation
+(`backend/app/model_publication.py`): the backend asks the fine-tuned service
+first and writes nothing unless it lists that course and version, so a
+publication the VM cannot serve is refused (the script exits 3 and says so)
+rather than recorded.
 
 Resolution reads only the activated version: `deployment = online` and
 `ready`. `current_version` is never consulted, so registering a version — from
@@ -346,6 +350,13 @@ Properties that matter:
   under its replacement.
 - **A run that already has a Slurm job id is never submitted again**, so an
   ambiguous network failure cannot produce two GPU jobs for one run.
+- **A finished run stays finished.** A worker callback for a run that is
+  already `succeeded` or `failed` — a replayed submission report, a late
+  failure, a release, a completion with the other outcome — is refused with 409
+  rather than moving the run back to `submitted` or `queued` and the request
+  back to `training`. The worker marks its local record reported once a
+  completion has been accepted, so it never replays the submission of a run
+  whose completion already landed.
 
 ---
 

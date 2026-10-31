@@ -257,16 +257,33 @@ PY
   # and sent by the next ./training/run_training_queue.sh --once. The reporter
   # exits 0 in that case on purpose: the publication is real, and a nonzero exit
   # here would make an operator think it had failed and run it again.
+  #
+  # A report the backend REFUSES is different, and exits 3. The backend holds it
+  # to the same check as Admin -> Models -> Activate: the fine-tuned service
+  # students' questions reach must be able to serve this course and version.
+  # When it cannot, nothing is written and nothing is queued; inference keeps
+  # the previously published version until the version is installed and mapped
+  # on the VM and then activated (or this report re-run).
   if [[ "${SET_CURRENT}" -eq 1 && "${REPORT_PUBLICATION}" -eq 1 ]]; then
     echo
     echo "Telling the application ${COURSE_ID} is serving ${VERSION}..."
+    set +e
     python3 "${REPO_ROOT}/scripts/report_model_published.py" \
       --course-id "${COURSE_ID}" \
       --version "${VERSION}" \
-      --source-ref "${SOURCE_REF}" || {
-        echo "WARNING: could not report the publication. The adapter IS published;" >&2
-        echo "the report is queued and will be sent by the next queue run." >&2
-      }
+      --source-ref "${SOURCE_REF}"
+    REPORT_RC=$?
+    set -e
+    if [[ "${REPORT_RC}" -eq 3 ]]; then
+      echo "WARNING: the application REFUSED to switch ${COURSE_ID} to ${VERSION}." >&2
+      echo "The adapter IS published in the serving tree, but the fine-tuned service the" >&2
+      echo "backend uses cannot serve that version, so inference keeps the previously" >&2
+      echo "published version. Install and map ${VERSION} on the VM, then activate it from" >&2
+      echo "Admin -> Models (or re-run scripts/report_model_published.py). Nothing was queued." >&2
+    elif [[ "${REPORT_RC}" -ne 0 ]]; then
+      echo "WARNING: could not report the publication. The adapter IS published;" >&2
+      echo "the report is queued and will be sent by the next queue run." >&2
+    fi
   fi
 
   echo

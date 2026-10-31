@@ -30,6 +30,18 @@ know it. The payload is persisted under `training/state/pending/` and delivered
 by the next `./training/run_training_queue.sh --once`, the same mechanism a
 finished training job uses. Nothing is lost and nothing has to be remembered.
 
+Refusals are final, not outages
+-------------------------------
+The backend holds this report to the same check as Admin → Models → Activate:
+it asks the fine-tuned service students' questions reach whether it can serve
+this course and version, and refuses with 409 when it cannot (or 404 when the
+version is not registered). That is a decision, not a network failure, and
+replaying it on every queue run would show the same refusal forever while an
+operator believed a report was merely pending. So a 404/409 clears the pending
+entry, is printed in full, and exits 3 — the adapter is in Tillicum's serving
+tree, but inference keeps the previously published version until the version is
+installed and mapped on the VM and then activated or re-reported.
+
 Usage:
     python3 scripts/report_model_published.py \\
         --course-id css-350-spring-2026-n3h9 --version v1
@@ -68,6 +80,20 @@ from training_state import (  # noqa: E402
 #: same version overwrites its own pending entry rather than queueing a second.
 PENDING_KIND = "published"
 
+#: Exit status when the backend refused the publication (404/409). Distinct
+#: from 0 ("delivered, or queued for redelivery") so the promote script can
+#: tell an operator the version is NOT serving rather than "the report is queued".
+REFUSED_EXIT = 3
+
+#: Backend answers that mean "decided, do not replay". The queue client puts the
+#: status in the message (`training_queue.TrainingQueue._decode`), the same
+#: text the completion reporter matches on.
+FINAL_REFUSAL_MARKERS = ("HTTP 404", "HTTP 409")
+
+
+def is_final_refusal(message: str) -> bool:
+    return any(marker in message for marker in FINAL_REFUSAL_MARKERS)
+
 
 def pending_key(course_id: str, version: str) -> str:
     return "publish-{0}-{1}".format(
@@ -99,18 +125,34 @@ def send_publication(
     *,
     repo_root: Path = PROJECT_ROOT,
 ) -> dict[str, Any]:
-    """Deliver one publication report, clearing its pending entry on success."""
+    """Deliver one publication report, clearing its pending entry once decided.
+
+    Returns `{"delivered": True, "result": ...}` when the backend accepted it,
+    or `{"delivered": False, "refused": True, "detail": ...}` when it refused
+    with 404/409 — final either way, so the pending entry is cleared in both
+    cases. Anything else (unreachable, 5xx, a bad token) raises and leaves the
+    entry queued, which is what the next worker run exists to retry.
+    """
     course_id = str(payload["courseId"])
     version = str(payload["version"])
 
-    result = queue.report_model_published(
-        course_id,
-        version,
-        source_ref=payload.get("sourceRef"),
-        published_at=payload.get("publishedAt"),
-    )
+    try:
+        result = queue.report_model_published(
+            course_id,
+            version,
+            source_ref=payload.get("sourceRef"),
+            published_at=payload.get("publishedAt"),
+        )
+    except TrainingQueueError as exc:
+        message = str(exc)
+        if is_final_refusal(message):
+            clear_pending_callback(
+                repo_root, pending_key(course_id, version), PENDING_KIND
+            )
+            return {"delivered": False, "refused": True, "detail": message}
+        raise
     clear_pending_callback(repo_root, pending_key(course_id, version), PENDING_KIND)
-    return result
+    return {"delivered": True, "result": result}
 
 
 def report_publication(
@@ -142,11 +184,18 @@ def report_publication(
 
     try:
         client = queue if queue is not None else build_queue()
-        result = send_publication(client, payload, repo_root=repo_root)
+        sent = send_publication(client, payload, repo_root=repo_root)
     except TrainingQueueError as exc:
         return {"delivered": False, "error": str(exc), "payload": payload}
 
-    return {"delivered": True, "result": result, "payload": payload}
+    if sent.get("refused"):
+        return {
+            "delivered": False,
+            "refused": True,
+            "error": str(sent.get("detail") or ""),
+            "payload": payload,
+        }
+    return {"delivered": True, "result": sent.get("result"), "payload": payload}
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -186,6 +235,28 @@ def main(argv: Optional[list[str]] = None) -> int:
         version=args.version,
         source_ref=args.source_ref,
     )
+
+    if outcome.get("refused"):
+        # The backend decided, so nothing is queued and nothing will change on
+        # its own. Say exactly that: the one message an operator must not read
+        # here is "the report is queued".
+        print(
+            "REFUSED: the application did not switch {courseId} to {version}.".format(
+                **payload
+            ),
+            file=sys.stderr,
+        )
+        print("  {0}".format(outcome["error"]), file=sys.stderr)
+        print(
+            "The adapter is in the serving tree, but the fine-tuned service the "
+            "backend uses cannot serve this course and version, so inference "
+            "keeps the previously published version. Install and map it on the VM "
+            "(scripts/install_finetuned_adapter.py, then scripts/aiswe_finetuned.sh "
+            "set-mapping and restart), then activate it from Admin → Models or "
+            "re-run this report. Nothing was queued for redelivery.",
+            file=sys.stderr,
+        )
+        return REFUSED_EXIT
 
     if not outcome["delivered"]:
         # Exit 0 deliberately. The adapter really is published; only the report

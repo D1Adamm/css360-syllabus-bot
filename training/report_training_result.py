@@ -76,6 +76,7 @@ from training_queue import (  # noqa: E402  (path set above)
 from training_state import (  # noqa: E402
     clear_pending_callback,
     list_pending_callbacks,
+    mark_run_reported,
     queue_pending_callback,
     read_run_record,
     write_run_record,
@@ -313,6 +314,9 @@ def send_completion(
         message = str(exc)
         if "HTTP 409" in message or "HTTP 404" in message:
             clear_pending_callback(repo_root, run_id, "completed")
+            # Final on the backend's side as well, so the run's submission
+            # must not be re-reported either (it would be refused the same way).
+            mark_run_reported(repo_root, run_id, extra={"completionRefused": message[:500]})
             return {
                 "delivered": False,
                 "superseded": True,
@@ -321,6 +325,10 @@ def send_completion(
         raise
 
     clear_pending_callback(repo_root, run_id, "completed")
+    # The run is terminal on the backend now. Whatever happened to the
+    # `/submitted` call, re-reporting it would only ever be refused, and before
+    # the backend refused it, it reopened the run (audit finding B2).
+    mark_run_reported(repo_root, run_id, extra={"completionDelivered": utc_now_iso()})
     return {"delivered": True, "result": result}
 
 
@@ -420,7 +428,13 @@ def flush_pending(
     one thing they were going to do anyway.
     """
     pending = list_pending_callbacks(repo_root)
-    summary = {"pending": len(pending), "delivered": 0, "failed": 0, "superseded": 0}
+    summary = {
+        "pending": len(pending),
+        "delivered": 0,
+        "failed": 0,
+        "superseded": 0,
+        "refused": 0,
+    }
     if not pending:
         return summary
 
@@ -443,13 +457,32 @@ def flush_pending(
             # the application catching up with it, and until it does, inference
             # keeps resolving the previously published version rather than
             # failing.
+            publication = _load_publication_reporter()
             try:
-                _load_publication_reporter().send_publication(
-                    client, payload, repo_root=repo_root
-                )
+                sent = publication.send_publication(client, payload, repo_root=repo_root)
             except TrainingQueueError as exc:
-                print("  {0}: still undelivered ({1})".format(run_id, exc))
-                summary["failed"] += 1
+                # The reporter clears a 404/409 itself. Checked here as well, by
+                # message, the way `send_completion` is: the publication module
+                # is loaded by path, so a wrapper or a reloaded `training_queue`
+                # can hand back the same refusal as an exception, and a final
+                # answer must never be left queued.
+                if publication.is_final_refusal(str(exc)):
+                    clear_pending_callback(repo_root, run_id, "published")
+                    sent = {"delivered": False, "refused": True, "detail": str(exc)}
+                else:
+                    print("  {0}: still undelivered ({1})".format(run_id, exc))
+                    summary["failed"] += 1
+                    continue
+            if sent.get("refused"):
+                # The backend asked the fine-tuned service and said no (or the
+                # version is not registered). Final: the reporter cleared the
+                # entry, and the previously published version keeps serving.
+                print(
+                    "  {0}: dropped, the application refused it ({1})".format(
+                        run_id, sent.get("detail")
+                    )
+                )
+                summary["refused"] += 1
                 continue
             summary["delivered"] += 1
             print(

@@ -10,6 +10,14 @@ What is left for these tests is everything that happens once a report does
 arrive: that it is idempotent, that it moves exactly one course, that it refuses
 to publish something that is not a ready registered version, and that it does
 not require a live run the way the training callbacks do.
+
+And one more, added after the audit of 2026-10-27 (finding B1): the adapter being
+in Tillicum's serving tree says nothing about whether the service students'
+questions actually reach can serve it. The report is therefore held to the same
+check as Admin → Models → Activate — the fine-tuned service's `/health` must list
+the exact course and version — and the `ServabilityTests` below prove a version
+the VM cannot serve is refused with nothing written, an unreachable service
+publishes nothing, and the previously published version keeps serving.
 """
 
 from __future__ import annotations
@@ -17,8 +25,9 @@ from __future__ import annotations
 import unittest
 from contextlib import contextmanager
 from typing import Any, Iterator
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -40,6 +49,22 @@ def _version(
         "deployment": deployment,
         "artifactRef": f"serving/{CSS350}/{key}/adapter",
         "createdAt": "2026-08-27T06:48:00+00:00",
+    }
+
+
+def _version_number(key: str) -> int:
+    return int(key[1:]) if key[1:].isdigit() else 0
+
+
+def _health(**servable: list[str]) -> dict[str, Any]:
+    """`/health` as the backend client returns it: only servable versions listed."""
+    return {
+        "status": "ok",
+        "courses": [
+            {"courseId": course, "versions": versions, "currentVersion": versions[-1]}
+            for course, versions in servable.items()
+            if versions
+        ],
     }
 
 
@@ -66,6 +91,40 @@ class PublicationApiTestCase(unittest.TestCase):
         #: second call sees what the first one did.
         self.versions: dict[str, dict[str, dict[str, Any]]] = {}
         self.current: dict[str, str] = {}
+
+        #: What the fine-tuned service's `/health` says. None means "every
+        #: registered version of every seeded course is servable" — a VM that
+        #: has been installed and mapped for all of them, which is the state the
+        #: older tests implicitly assumed. A test narrows it, or makes it an
+        #: exception, to show the refusals.
+        self.health: dict[str, Any] | Exception | None = None
+        self.health_calls = 0
+        self._health = patch(
+            "app.training_queue_routes.check_finetuned_service_health",
+            new=AsyncMock(side_effect=self._health_call),
+        )
+        self._health.start()
+        self.addCleanup(self._health.stop)
+
+    async def _health_call(self) -> dict[str, Any]:
+        self.health_calls += 1
+        if isinstance(self.health, Exception):
+            raise self.health
+        if self.health is not None:
+            return self.health
+        return _health(
+            **{
+                course_id: sorted(records, key=_version_number)
+                for course_id, records in self.versions.items()
+            }
+        )
+
+    def _online(self, course_id: str) -> list[str]:
+        return [
+            key
+            for key, record in self.versions[course_id].items()
+            if record["deployment"] == "online"
+        ]
 
     def _publish(self, connection: Any, course_id: str, version: str, **kwargs: Any):
         records = self.versions.get(course_id)
@@ -289,6 +348,150 @@ class CourseIsolationTests(PublicationApiTestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(self.versions[CSS360]["v1"]["deployment"], "online")
+
+
+class ServabilityTests(PublicationApiTestCase):
+    """The publish report is held to the same rule as Admin → Models → Activate.
+
+    Audit finding B1: this route marked a version `online` as soon as the
+    adapter was in Tillicum's serving tree, so one `promote_qlora_adapter.sh`
+    run for a version the VM did not map broke every fine-tuned answer for the
+    course. Inference resolves `online`, so whoever writes it has to ask the
+    service that answers students first.
+    """
+
+    def test_a_servable_version_is_published_and_the_service_was_asked_first(self) -> None:
+        self._seed(
+            CSS350, [_version("v1", deployment="online"), _version("v2")], "v2"
+        )
+        self.health = _health(**{CSS350: ["v1", "v2"]})
+
+        response = self._post(CSS350, "v2")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.health_calls, 1)
+        self.assertEqual(self._online(CSS350), ["v2"])
+
+    def test_a_version_the_service_does_not_map_is_refused_and_serving_is_unchanged(self) -> None:
+        """The B1 scenario: v2 is in Tillicum's serving tree, the VM maps only v1."""
+        self._seed(
+            CSS350, [_version("v1", deployment="online"), _version("v2")], "v2"
+        )
+        self.health = _health(**{CSS350: ["v1"]})
+
+        response = self._post(CSS350, "v2")
+
+        self.assertEqual(response.status_code, 409)
+        detail = response.json()["detail"]
+        self.assertIn("set-mapping", detail)
+        self.assertIn("Servable now: v1", detail)
+        self.assertIn("re-run this report", detail)
+        # Nothing written: v1 keeps serving, v2 stays offline.
+        self.assertEqual(self._online(CSS350), ["v1"])
+        self.assertEqual(self.versions[CSS350]["v2"]["deployment"], "offline")
+
+    def test_an_unreachable_service_publishes_nothing(self) -> None:
+        """An unverifiable publication is not one."""
+        self._seed(
+            CSS350, [_version("v1", deployment="online"), _version("v2")], "v2"
+        )
+        self.health = HTTPException(
+            status_code=503, detail="Fine-tuned inference service is unavailable."
+        )
+
+        response = self._post(CSS350, "v2")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("nothing was published", response.json()["detail"])
+        self.assertEqual(self._online(CSS350), ["v1"])
+
+    def test_a_course_the_service_does_not_list_is_refused(self) -> None:
+        self._seed(CSS350, [_version("v1", deployment="online"), _version("v2")], "v2")
+        self.health = _health()
+
+        response = self._post(CSS350, "v2")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Servable now: none", response.json()["detail"])
+        self.assertEqual(self._online(CSS350), ["v1"])
+
+    def test_another_courses_mapping_does_not_count(self) -> None:
+        """Course isolation at the servability check: CSS 360's v2 is not CSS 350's."""
+        self._seed(CSS350, [_version("v1", deployment="online"), _version("v2")], "v2")
+        self._seed(CSS360, [_version("v2", deployment="online")], "v2")
+        self.health = _health(**{CSS360: ["v2"]})
+
+        response = self._post(CSS350, "v2")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self._online(CSS350), ["v1"])
+
+    def test_republishing_the_active_version_still_requires_it_to_be_servable(self) -> None:
+        """A rerun is idempotent only while the answer is still true."""
+        self._seed(CSS350, [_version("v1"), _version("v2", deployment="online")], "v2")
+        self.health = _health()
+
+        response = self._post(CSS350, "v2")
+
+        self.assertEqual(response.status_code, 409)
+        # Refused, not demoted: nothing was written either way.
+        self.assertEqual(self._online(CSS350), ["v2"])
+
+    def test_rollback_to_a_still_mapped_older_version_is_allowed(self) -> None:
+        self._seed(CSS350, [_version("v1"), _version("v2", deployment="online")], "v2")
+        self.health = _health(**{CSS350: ["v1", "v2"]})
+
+        response = self._post(CSS350, "v1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._online(CSS350), ["v1"])
+
+    def test_rollback_is_refused_when_the_older_version_is_no_longer_mapped(self) -> None:
+        self._seed(CSS350, [_version("v1"), _version("v2", deployment="online")], "v2")
+        self.health = _health(**{CSS350: ["v2"]})
+
+        response = self._post(CSS350, "v1")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self._online(CSS350), ["v2"])
+
+    def test_an_unregistered_version_is_refused_without_asking_the_service(self) -> None:
+        self._seed(CSS350, [_version("v1", deployment="online")], "v1")
+
+        response = self._post(CSS350, "v9")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(self.health_calls, 0)
+
+    def test_a_version_that_is_not_ready_is_refused_without_asking_the_service(self) -> None:
+        self._seed(
+            CSS350,
+            [_version("v1", deployment="online"), _version("v2", status="training")],
+            "v1",
+        )
+
+        response = self._post(CSS350, "v2")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.health_calls, 0)
+        self.assertEqual(self._online(CSS350), ["v1"])
+
+    def test_a_malformed_version_is_refused_without_asking_the_service(self) -> None:
+        self._seed(CSS350, [_version("v1")], "v1")
+
+        response = self._post(CSS350, "latest")
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.health_calls, 0)
+
+    def test_activation_and_publication_apply_one_rule(self) -> None:
+        """Both writers of `deployment = online` share `model_publication`."""
+        import app.db_routes as activation
+        import app.training_queue_routes as publication
+        from app import model_publication
+
+        self.assertIs(activation.require_servable_version, model_publication.require_servable_version)
+        self.assertIs(publication.require_servable_version, model_publication.require_servable_version)
 
 
 if __name__ == "__main__":
