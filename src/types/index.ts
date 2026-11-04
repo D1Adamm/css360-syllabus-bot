@@ -420,6 +420,18 @@ export interface CourseModelRequestPreparation {
   validationExamples: number;
   /** Recorded so a split can be reproduced exactly. */
   splitSeed?: number;
+  /**
+   * SHA-256 over the prepared train and validation files, as the backend
+   * reported it at preparation. A queued run pins the same digest, and the
+   * worker refuses to train if the files no longer match it (audit B10).
+   */
+  datasetSha256?: string;
+  /**
+   * Examples the backend's length check flagged as unlikely to fit the
+   * 2048-token training window. Training refuses them rather than silently
+   * truncating, so a non-zero count here is work to do before queueing.
+   */
+  oversizedExamples?: number;
 }
 
 /* ------------------------------------------------------------------------ *
@@ -471,6 +483,11 @@ export interface TrainingRun {
   updatedAt: string;
   /** Relative, course-scoped dataset reference the preparation stage recorded. */
   datasetRef: string;
+  /**
+   * Digest of the prepared files this run was queued against. The worker
+   * refuses to train when the files on disk no longer match it.
+   */
+  datasetSha256?: string;
   /** Approved examples the prepared dataset was built from. */
   approvedExampleCount: number;
   trainExamples: number;

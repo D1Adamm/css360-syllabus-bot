@@ -130,7 +130,17 @@ export interface UseExampleReviewResult {
   /** Resolves true when the write landed; false when it failed and rolled back. */
   approve: (seedId: string) => Promise<boolean>;
   reject: (seedId: string) => Promise<boolean>;
-  saveEdit: (seedId: string, draft: ReviewDraft) => Promise<boolean>;
+  /**
+   * Save new wording. By default the example moves to `edited` — reviewed,
+   * not approved, so neither shown to students nor exported for training.
+   * With `approve`, the backend records the text and the approval in one
+   * request, so the example enters training data without a second click.
+   */
+  saveEdit: (
+    seedId: string,
+    draft: ReviewDraft,
+    options?: { approve?: boolean },
+  ) => Promise<boolean>;
   reviewMany: (
     seedIds: string[],
     reviewStatus: Extract<SeedReviewStatus, 'approved' | 'rejected'>,
@@ -273,18 +283,24 @@ export function useExampleReview(courseId: string): UseExampleReviewResult {
   );
 
   const saveEdit = useCallback(
-    (seedId: string, draft: ReviewDraft) =>
-      applyReviewAction(
+    (seedId: string, draft: ReviewDraft, options: { approve?: boolean } = {}) => {
+      // `apply_seed_review` keeps an explicit `approved` on a text edit (the
+      // edit is still recorded as such: wasEdited, originalQuestion/Answer).
+      const reviewStatus: SeedReviewStatus = options.approve ? 'approved' : 'edited';
+      return applyReviewAction(
         seedId,
-        'edited',
+        reviewStatus,
         {
-          reviewStatus: 'edited',
+          reviewStatus,
           question: draft.question,
           answer: draft.answer,
           reviewNotes: draft.reviewNotes,
         },
-        'Example updated.',
-      ),
+        options.approve
+          ? 'Example updated and approved.'
+          : 'Example updated. It is not shown to students or used for training until you approve it.',
+      );
+    },
     [applyReviewAction],
   );
 

@@ -181,6 +181,7 @@ class FakeConnection:
                 "claim_claimed_at": None,
                 "claim_expires_at": None,
                 "error": None,
+                "dataset_sha256": params.get("dataset_sha256"),
             }
             return ([], 1)
 
@@ -329,6 +330,39 @@ class RetryEligibilityTests(unittest.TestCase):
         block = training_run_retry_block(self._run(state="queued"), now=NOW)
         self.assertIsNotNone(block)
         self.assertIn("already queued", block or "")
+        # Pinned to exactly the data on disk: still healthy, still refused.
+        self.assertIsNotNone(
+            training_run_retry_block(
+                self._run(state="queued", datasetSha256="a" * 64),
+                now=NOW,
+                current_dataset_sha256="a" * 64,
+            )
+        )
+
+    def test_a_queued_run_a_worker_put_back_with_a_reason_may_be_retried(self) -> None:
+        """Audit B10 (2026-11-03): a worker took it, refused it (dataset changed,
+        files missing) and released it to `queued` with the reason. It is no
+        longer what a retry would produce; the replacement is queued for the
+        current data."""
+        self.assertIsNone(
+            training_run_retry_block(
+                self._run(state="queued", error="The prepared training data changed after this run was queued"),
+                now=NOW,
+            )
+        )
+
+    def test_a_queued_run_pinned_to_data_no_longer_on_disk_may_be_retried(self) -> None:
+        self.assertIsNone(
+            training_run_retry_block(
+                self._run(state="queued", datasetSha256="a" * 64),
+                now=NOW,
+                current_dataset_sha256="b" * 64,
+            )
+        )
+        # Without knowing what is on disk, the pin alone proves nothing.
+        self.assertIsNotNone(
+            training_run_retry_block(self._run(state="queued", datasetSha256="a" * 64), now=NOW)
+        )
 
     def test_a_live_claim_is_refused_without_naming_the_account(self) -> None:
         """The refusal says a lease is held and when it lapses, not by whom.
@@ -1132,3 +1166,95 @@ class LiveJobRetryPolicyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetryPinsTheReplacementTests(unittest.TestCase):
+    """Audit B10 (2026-11-03): the replacement is pinned to the prepared files
+    as they are on disk, with the counts those files hold."""
+
+    def setUp(self) -> None:
+        import json
+        import tempfile
+        from pathlib import Path
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        directory = root / COURSE
+        directory.mkdir(parents=True)
+        (directory / "train.jsonl").write_text(
+            "".join(json.dumps({"instruction": f"Q{i}", "response": "A"}) + "\n" for i in range(3)),
+            encoding="utf-8",
+        )
+        (directory / "validation.jsonl").write_text(
+            json.dumps({"instruction": "Qv", "response": "A"}) + "\n", encoding="utf-8"
+        )
+        (directory / "manifest.json").write_text(
+            json.dumps({"datasetVersion": "x", "splitSeed": 360, "trainExamples": 3, "validationExamples": 1}),
+            encoding="utf-8",
+        )
+        export_dir = patch(
+            "app.dataset_artifacts.course_export_dir",
+            side_effect=lambda course_id, root=None: root_dir / course_id,
+        )
+        root_dir = root
+        export_dir.start()
+        self.addCleanup(export_dir.stop)
+
+    def test_the_replacement_is_pinned_to_the_files_on_disk_with_their_counts(self) -> None:
+        from app.dataset_artifacts import describe_dataset
+
+        connection = _stale_store()
+        created = retry_training_run(connection, COURSE, now=NOW)["run"]
+
+        self.assertEqual(created["datasetSha256"], describe_dataset(COURSE)["datasetSha256"])
+        # The files hold 3 / 1; the retired run said 37 / 5. The replacement
+        # trains on the files, so it records the files.
+        self.assertEqual(created["trainExamples"], 3)
+        self.assertEqual(created["validationExamples"], 1)
+        self.assertEqual(created["approvedExampleCount"], 42)
+        self.assertEqual(created["datasetRef"], DATASET_REF)
+
+    def test_a_queued_run_pinned_to_replaced_data_is_retired_and_requeued(self) -> None:
+        connection = _stale_store(state="queued", job_id=None, attempt=0)
+        connection.runs[(COURSE, STALE_RUN_ID)]["dataset_sha256"] = "0" * 64
+
+        result = retry_training_run(connection, COURSE, now=NOW)
+
+        self.assertEqual(result["superseded"]["state"], "failed")
+        self.assertEqual(result["run"]["state"], "queued")
+        self.assertNotEqual(result["run"]["datasetSha256"], "0" * 64)
+
+    def test_a_queued_run_pinned_to_the_current_data_is_still_refused(self) -> None:
+        from app.dataset_artifacts import describe_dataset
+
+        connection = _stale_store(state="queued", job_id=None, attempt=0)
+        connection.runs[(COURSE, STALE_RUN_ID)]["dataset_sha256"] = describe_dataset(COURSE)["datasetSha256"]
+
+        with self.assertRaises(RetryNotEligibleError):
+            retry_training_run(connection, COURSE, now=NOW)
+        self.assertEqual(len(connection.active_runs()), 1)
+
+
+class RetryWithoutFilesTests(unittest.TestCase):
+    """No prepared files on disk: the replacement is queued unpinned with the
+    carried counts, as before, and the worker's own check refuses it until the
+    data is prepared."""
+
+    def test_the_replacement_carries_the_old_counts_and_no_pin(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        # An export root with nothing in it, so the real data/exports of this
+        # checkout cannot make the test depend on what happens to be on disk.
+        empty = tempfile.TemporaryDirectory()
+        self.addCleanup(empty.cleanup)
+        with patch(
+            "app.dataset_artifacts.course_export_dir",
+            side_effect=lambda course_id, root=None: Path(empty.name) / course_id,
+        ):
+            connection = _stale_store()
+            created = retry_training_run(connection, COURSE, now=NOW)["run"]
+        self.assertNotIn("datasetSha256", created)
+        self.assertEqual(created["trainExamples"], 37)
+        self.assertEqual(created["validationExamples"], 5)

@@ -52,6 +52,7 @@ from app.error_classification import (
     install as install_classified_errors,
 )
 from app.finetuned_rag import generate_course_finetuned_rag_answer
+from app.dataset_pinning import pin_dataset_for_enqueue
 from app.finetuned_readiness import collect_readiness, start_readiness_monitor
 from app.generation_mode import current_mode, describe as describe_generation_mode, on_mode_change
 from app.generation_queue import bind_request, get_generation_queue
@@ -127,6 +128,7 @@ from app.db_seeds import list_seeds, review_seed
 from app.db_training_runs import (
     ActiveTrainingRunError,
     enqueue_training_run,
+    find_active_training_run,
 )
 from app.training_retry import RetryNotEligibleError, retry_training_run
 from app.starter_status import reconcile_starter_seed_generation
@@ -657,6 +659,43 @@ async def generate_model_testing_pair(
     )
 
 
+#: Run states in which a worker holds, is copying, or has copied the prepared
+#: files. Re-preparing under one of these would change the data mid-flight.
+RUN_STATES_HOLDING_DATASET = frozenset({"claimed", "submitted", "training"})
+
+
+def _refuse_while_training_run_active(course_id: str) -> None:
+    """Export and split rewrite the files a run in progress is using.
+
+    Audit finding B10. A run that is claimed, submitted or training has a
+    worker reading (or has read) the prepared files; re-preparing underneath it
+    would change the data mid-flight, so preparation waits until it finishes
+    or is retired with Retry.
+
+    A run that is merely `queued` does not block preparation. It is pinned to
+    the digest it was queued with, so re-preparing makes it stale rather than
+    silently retargeted: the worker refuses it (`dataset_changed`), and a
+    stale queued run may be retried, which queues a replacement for the new
+    data. Blocking here instead would freeze a course's data for as long as
+    the queue goes unserved, with no way out but waiting.
+    """
+    with translate_db_errors("checking the training queue"):
+        with db_connection() as connection:
+            active = find_active_training_run(connection, course_id)
+    if active is None or active.get("state") not in RUN_STATES_HOLDING_DATASET:
+        return
+    raise ClassifiedHTTPException(
+        status_code=409,
+        code=TRAINING_RUN_ACTIVE,
+        message=(
+            f'Training run "{active.get("runId")}" for this course is {active.get("state")}: '
+            "a worker is using the prepared training data, so it cannot be "
+            "re-exported or re-split until the run finishes or is retired."
+        ),
+        extra={"runId": active.get("runId"), "state": active.get("state")},
+    )
+
+
 def _syllabus_course_exists(course_id: str) -> bool:
     with translate_db_errors("checking the course"):
         with db_connection() as connection:
@@ -1080,6 +1119,15 @@ def enqueue_course_training_run(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # The run is pinned to the prepared files as they are now (audit B10): the
+    # same check and the same refusals as the `/api/db` twin.
+    dataset_sha256 = pin_dataset_for_enqueue(
+        safe_course_id,
+        dataset_ref=request.dataset_ref,
+        train_examples=request.train_examples,
+        validation_examples=request.validation_examples,
+    )
+
     def work(connection):
         if not course_exists(connection, safe_course_id):
             raise HTTPException(
@@ -1093,6 +1141,7 @@ def enqueue_course_training_run(
             approved_example_count=request.approved_example_count,
             train_examples=request.train_examples,
             validation_examples=request.validation_examples,
+            dataset_sha256=dataset_sha256,
         )
 
     try:
@@ -1529,6 +1578,7 @@ async def export_approved_course_seeds(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    await run_in_threadpool(_refuse_while_training_run_active, safe_course_id)
     seeds = _course_seed_records(safe_course_id)
     try:
         summary = export_approved_seeds(course_id=safe_course_id, seeds=seeds)
@@ -1636,6 +1686,7 @@ async def prepare_course_training_split(
     if body is not None and body.split_seed is not None:
         split_seed = int(body.split_seed)
 
+    await run_in_threadpool(_refuse_while_training_run_active, safe_course_id)
     try:
         summary = await prepare_training_split(
             safe_course_id,

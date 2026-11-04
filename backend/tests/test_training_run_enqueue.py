@@ -40,6 +40,16 @@ BODY = {
     "validationExamples": 6,
 }
 
+#: What `dataset_pinning.describe_dataset` reports about the prepared files
+#: (audit B10): the route refuses a request that disagrees with it and pins
+#: the run to its digest.
+PREPARED_ON_DISK = {
+    "datasetRef": f"exports/{COURSE}",
+    "trainExamples": 48,
+    "validationExamples": 6,
+    "datasetSha256": "f" * 64,
+}
+
 
 def _queued_run(course_id: str = COURSE, run_id: str = "run-20260813t120000z-a1b2c3"):
     return {
@@ -87,6 +97,7 @@ class EnqueueRouteTests(unittest.TestCase):
             patch("app.main.db_connection", _fake_connection),
             patch("app.main.course_exists", return_value=course_exists),
             patch("app.main.enqueue_training_run", side_effect=_enqueue),
+            patch("app.dataset_pinning.describe_dataset", return_value=dict(PREPARED_ON_DISK)),
         ):
             yield calls
 
@@ -107,6 +118,34 @@ class EnqueueRouteTests(unittest.TestCase):
         self.assertEqual(calls[0]["courseId"], COURSE)
         self.assertEqual(calls[0]["dataset_ref"], f"exports/{COURSE}")
         self.assertEqual(calls[0]["train_examples"], 48)
+        # Pinned to the prepared files as they are on disk (audit B10).
+        self.assertEqual(calls[0]["dataset_sha256"], "f" * 64)
+
+    def test_a_request_whose_counts_no_longer_match_the_files_is_409(self) -> None:
+        with self._stubbed() as calls:
+            response = self.client.post(
+                f"/api/courses/{COURSE}/training-runs",
+                json={**BODY, "trainExamples": 47},
+            )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["detail"]["code"], "dataset_changed")
+        self.assertEqual(calls, [])
+
+    def test_a_course_with_no_prepared_files_is_409(self) -> None:
+        from app.dataset_artifacts import DatasetArtifactError
+
+        with self._stubbed() as calls, patch(
+            "app.dataset_pinning.describe_dataset",
+            side_effect=DatasetArtifactError("No prepared training data."),
+        ):
+            response = self.client.post(
+                f"/api/courses/{COURSE}/training-runs", json=BODY
+            )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["detail"]["code"], "dataset_not_prepared")
+        self.assertEqual(calls, [])
 
     def test_the_response_no_longer_hedges_about_where_the_run_landed(self) -> None:
         """`mirroredToPostgres` described a second store. There isn't one."""
@@ -137,6 +176,7 @@ class EnqueueRouteTests(unittest.TestCase):
             patch("app.main.db_connection", _fake_connection),
             patch("app.main.course_exists", return_value=True),
             patch("app.main.enqueue_training_run", side_effect=_enqueue),
+            patch("app.dataset_pinning.describe_dataset", return_value=dict(PREPARED_ON_DISK)),
         ):
             created = self.client.post(
                 f"/api/courses/{COURSE}/training-runs", json=BODY
@@ -225,7 +265,12 @@ class EnqueueRouteTests(unittest.TestCase):
         def _boom(**kwargs: Any) -> Any:
             raise DatabaseConfigurationError("PostgreSQL is not configured.")
 
-        with patch("app.main.db_connection", _boom):
+        # The pin check reads the prepared files before the database is opened;
+        # describe them so the test does not depend on data/exports/ on disk.
+        with (
+            patch("app.dataset_pinning.describe_dataset", return_value=dict(PREPARED_ON_DISK)),
+            patch("app.main.db_connection", _boom),
+        ):
             response = self.client.post(
                 f"/api/courses/{COURSE}/training-runs", json=BODY
             )
@@ -274,10 +319,20 @@ class RetrainEnqueueTests(unittest.TestCase):
             runs.append(created)
             return created
 
+        # The prepared files the route pins the new run to (audit B10): the
+        # counts the retrain bodies below carry, so the pin check passes and the
+        # tests do not depend on what happens to be under data/exports/.
+        prepared = {
+            "datasetRef": f"exports/{OTHER_COURSE}",
+            "trainExamples": 37,
+            "validationExamples": 5,
+            "datasetSha256": "e" * 64,
+        }
         with (
             patch("app.main.db_connection", _fake_connection),
             patch("app.main.course_exists", return_value=True),
             patch("app.main.enqueue_training_run", side_effect=_enqueue),
+            patch("app.dataset_pinning.describe_dataset", return_value=prepared),
         ):
             yield runs
 

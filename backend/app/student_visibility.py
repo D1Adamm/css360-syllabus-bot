@@ -7,22 +7,26 @@ the whole record; a participant reads this projection.
 
 Visible to a participant:
 
-- every example the instructor approved (or edited and thereby approved),
-  whoever wrote it — these are the course's reviewed questions, and the
-  Compare page suggests from them;
+- every example the instructor approved, whoever wrote it — these are the
+  course's reviewed questions, and the Compare page suggests from them;
 - the participant's own contributions in any state, marked `mine`, so the
   Contribute page can show what they added and let them remove it.
 
-Not visible: unreviewed AI drafts, rejected examples, and other participants'
-contributions until an instructor approves them. On every visible record the
-review-internal fields are dropped.
+Not visible: unreviewed AI drafts, rejected examples, other participants'
+contributions until an instructor approves them, and examples the instructor
+has edited but not yet approved. That last rule changed on 2026-11-03 (audit
+finding B6): `edited` used to be shown to students as if approved while the
+training export left it out, so students saw examples a model would never be
+trained on. Now `approved` means the same thing everywhere — visible to
+students and exported for training — and an edit waits for its approval. On
+every visible record the review-internal fields are dropped.
 """
 
 from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
-STUDENT_VISIBLE_REVIEW_STATUSES = frozenset({"approved", "edited"})
+STUDENT_VISIBLE_REVIEW_STATUSES = frozenset({"approved"})
 
 #: Fields that describe the review process or the generator's evidence rather
 #: than the example itself, and the attribution a student has no use for.

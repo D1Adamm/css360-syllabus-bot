@@ -359,6 +359,19 @@ export function canRetryTraining(
     return true;
   }
 
+  // A queued run is normally exactly what a retry would produce. Not when a
+  // worker has already put it back with a reason, or when it is pinned to a
+  // dataset digest that the request's latest preparation no longer matches
+  // (the data was re-prepared under it): then the replacement would be queued
+  // for the current data. Mirrors the backend's `training_run_retry_block`.
+  if (run.state === 'queued') {
+    const prepared = request.preparation?.datasetSha256;
+    return (
+      Boolean(run.error) ||
+      Boolean(run.datasetSha256 && prepared && run.datasetSha256 !== prepared)
+    );
+  }
+
   if (LIVE_JOB_RUN_STATES.includes(run.state)) {
     const updatedAt = Date.parse(run.updatedAt || run.enqueuedAt);
     // An unreadable timestamp is treated as stale, matching the backend: a run

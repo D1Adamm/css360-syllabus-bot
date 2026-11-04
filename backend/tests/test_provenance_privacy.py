@@ -616,6 +616,14 @@ class MainRouteTrainingRunTests(unittest.TestCase):
 
         with patch("app.main.db_connection", _connect), patch(
             "app.main.course_exists", return_value=True
+        ), patch(
+            "app.dataset_pinning.describe_dataset",
+            return_value={
+                "datasetRef": "exports/{0}".format(COURSE),
+                "trainExamples": 37,
+                "validationExamples": 5,
+                "datasetSha256": "f" * 64,
+            },
         ):
             yield
 

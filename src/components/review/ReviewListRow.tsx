@@ -38,6 +38,8 @@ export interface ReviewListRowProps {
   onDraftChange: (patch: Partial<ReviewDraft>) => void;
   onCancelEdit: () => void;
   onSaveEdit: (seedId: string, draft: ReviewDraft) => void;
+  /** Save the new wording and approve it in the same request. */
+  onSaveAndApprove: (seedId: string, draft: ReviewDraft) => void;
   onApprove: (seedId: string) => void;
   onReject: (seedId: string) => void;
 }
@@ -76,6 +78,7 @@ export function ReviewListRow({
   onDraftChange,
   onCancelEdit,
   onSaveEdit,
+  onSaveAndApprove,
   onApprove,
   onReject,
 }: ReviewListRowProps) {
@@ -112,14 +115,16 @@ export function ReviewListRow({
   const category = String(example.category || '').trim();
   const blocked = busy || disabled;
 
-  function save() {
+  function save(approve = false) {
     if (!seedId || !draft) {
       return;
     }
-    onSaveEdit(seedId, {
-      question: draft.question.trim(),
-      answer: draft.answer.trim(),
-    });
+    const trimmed = { question: draft.question.trim(), answer: draft.answer.trim() };
+    if (approve) {
+      onSaveAndApprove(seedId, trimmed);
+    } else {
+      onSaveEdit(seedId, trimmed);
+    }
   }
 
   return (
@@ -223,14 +228,27 @@ export function ReviewListRow({
             </Button>
             <Button
               size="sm"
-              variant="primary"
-              onClick={save}
+              variant="secondary"
+              onClick={() => save(false)}
               loading={busy}
               loadingLabel="Saving…"
               disabled={!draft.question.trim() || !draft.answer.trim()}
               aria-label={`Save changes to example ${position}`}
+              title="Saves the wording. The example waits for your approval before students see it or it is used for training."
             >
               Save changes
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => save(true)}
+              loading={busy}
+              loadingLabel="Saving…"
+              disabled={!draft.question.trim() || !draft.answer.trim()}
+              aria-label={`Save and approve example ${position}`}
+              title="Saves the wording and approves the example in one step."
+            >
+              Save and approve
             </Button>
           </div>
         </div>

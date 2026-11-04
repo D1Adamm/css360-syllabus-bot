@@ -214,6 +214,10 @@ class ExportApprovedRouteTests(unittest.TestCase):
         seeds_patch = patch("app.main._course_seed_records", return_value=[])
         seeds_patch.start()
         self.addCleanup(seeds_patch.stop)
+        # No training run is active; the guard is tested in test_dataset_pinning.
+        guard_patch = patch("app.main._refuse_while_training_run_active", return_value=None)
+        guard_patch.start()
+        self.addCleanup(guard_patch.stop)
 
     def _summary(self) -> dict[str, Any]:
         finetune = "{0}/data/exports/{1}/approved-finetune.jsonl".format(
@@ -298,6 +302,10 @@ class PrepareTrainingSplitRouteTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.client = TestClient(app)
+        # No training run is active; the guard is tested in test_dataset_pinning.
+        guard_patch = patch("app.main._refuse_while_training_run_active", return_value=None)
+        guard_patch.start()
+        self.addCleanup(guard_patch.stop)
 
     def _summary(self) -> dict[str, Any]:
         base = "{0}/data/exports/{1}".format(MAC_ROOT, COURSE)

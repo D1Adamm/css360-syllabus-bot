@@ -57,12 +57,14 @@ from app import (
 from app.course_id import assert_valid_course_id
 from app.dataset_artifacts import (
     DatasetArtifactError,
+    DatasetChangedError,
     UnknownDatasetFileError,
     resolve_dataset_file,
     resolve_run_dataset,
 )
 from app.db import db_connection, translate_db_errors
 from app.db_schemas import TrainingRunRecord
+from app.error_classification import DATASET_CHANGED, ClassifiedHTTPException
 from app.finetuned_client import check_finetuned_service_health
 from app.model_publication import require_servable_version
 
@@ -1095,6 +1097,12 @@ def _dataset_for_run(course_id: str, run_id: str) -> dict[str, Any]:
     )
     try:
         return resolve_run_dataset(run)
+    except DatasetChangedError as exc:
+        # The files were re-prepared after this run was queued. Final for this
+        # run: the worker must not train on data nobody queued.
+        raise ClassifiedHTTPException(
+            status_code=409, code=DATASET_CHANGED, message=str(exc)
+        ) from exc
     except DatasetArtifactError as exc:
         # 409 rather than 404: the run is real and the request was well formed.
         # What is missing is a preparation step on this side, and an operator

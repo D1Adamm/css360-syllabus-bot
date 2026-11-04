@@ -93,6 +93,28 @@ class UnknownDatasetFileError(DatasetArtifactError):
     """A name that is not one of this dataset's files was requested."""
 
 
+class DatasetChangedError(DatasetArtifactError):
+    """The prepared files no longer match what this run was queued against.
+
+    Audit finding B10: a run named its dataset by directory, so re-preparing
+    after queueing changed what the worker would train on, and the counts on
+    the run were the only thing that could notice. The digest recorded at
+    enqueue is what a queued run means; files that differ from it are a new
+    dataset, and a new dataset needs a new run.
+    """
+
+    def __init__(self, run_id: str | None, pinned: str, current: str) -> None:
+        super().__init__(
+            "The prepared training data changed after this run was queued "
+            f"(queued against dataset {pinned[:12]}…, the files are now "
+            f"{current[:12]}…). Nothing was served. Queue a new run for the "
+            "re-prepared data, or restore the data this run was queued for."
+        )
+        self.run_id = run_id
+        self.pinned = pinned
+        self.current = current
+
+
 def dataset_ref_for_course(course_id: str) -> str:
     """The relative reference a prepared export is recorded under.
 
@@ -272,6 +294,11 @@ def describe_dataset(
     }
 
 
+def optional_run_id(run: dict[str, Any]) -> str | None:
+    value = run.get("runId")
+    return str(value) if value else None
+
+
 def resolve_run_dataset(
     run: dict[str, Any],
     *,
@@ -297,7 +324,13 @@ def resolve_run_dataset(
         )
 
     described = describe_dataset(course_id, export_root=export_root)
+    pinned = str(run.get("datasetSha256") or "").strip()
+    if pinned and pinned != described["datasetSha256"]:
+        raise DatasetChangedError(
+            optional_run_id(run), pinned, str(described["datasetSha256"])
+        )
     described["runId"] = run.get("runId")
+    described["pinnedDatasetSha256"] = pinned or None
     described["approvedExampleCount"] = int(run.get("approvedExampleCount") or 0)
     described["enqueuedTrainExamples"] = int(run.get("trainExamples") or 0)
     described["enqueuedValidationExamples"] = int(run.get("validationExamples") or 0)

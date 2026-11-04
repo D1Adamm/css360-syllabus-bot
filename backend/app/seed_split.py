@@ -79,6 +79,16 @@ DATASET_FORMAT = "mixed-v4"
 
 BARE = "bare"
 GROUNDED = "grounded"
+
+#: The training window (`train_qlora.DEFAULT_MAX_SEQ_LENGTH`). A record whose
+#: prompt and answer together will not fit is refused on the cluster rather
+#: than truncated, so the split flags likely cases here, where an instructor
+#: can still shorten an example before a run is queued.
+TRAINING_MAX_SEQ_LENGTH = 2048
+#: A deliberately conservative characters-per-token estimate for Llama 3 text
+#: (English prose averages closer to four). The authoritative count needs the
+#: tokenizer, which only the training job has; this is the early warning.
+APPROX_CHARS_PER_TOKEN = 3
 ANSWERABLE = "answerable"
 ABSTAIN = "abstain"
 FALSE_PREMISE = "false_premise"
@@ -395,6 +405,48 @@ def abstention_citation_analysis(
     }
 
 
+def approximate_tokens(text: str) -> int:
+    return -(-len(text) // APPROX_CHARS_PER_TOKEN)  # ceiling division
+
+
+def length_check(
+    records: list[dict[str, Any]], *, max_seq_length: int = TRAINING_MAX_SEQ_LENGTH
+) -> dict[str, Any]:
+    """Which records are likely too long for the training window.
+
+    Counts the instruction and the response together, the way the model sees
+    them, plus a small allowance for the chat template. `flagged` names each
+    record that may not fit, so the summary an administrator reads before
+    queueing a run says exactly which examples to look at; `train_qlora.py`
+    makes the authoritative decision with the real tokenizer and refuses to
+    truncate silently.
+    """
+    template_allowance = 40
+    flagged: list[dict[str, Any]] = []
+    max_tokens = 0
+    for record in records:
+        text = f"{record.get('instruction') or ''}\n{record.get('response') or ''}"
+        tokens = approximate_tokens(text) + template_allowance
+        max_tokens = max(max_tokens, tokens)
+        if tokens > max_seq_length:
+            flagged.append(
+                {
+                    "seedId": record.get("seedId"),
+                    "kind": record.get("kind"),
+                    "format": record.get("format"),
+                    "characters": len(text),
+                    "approxTokens": tokens,
+                }
+            )
+    return {
+        "maxSeqLength": max_seq_length,
+        "approxCharsPerToken": APPROX_CHARS_PER_TOKEN,
+        "maxApproxTokens": max_tokens,
+        "flaggedCount": len(flagged),
+        "flagged": flagged,
+    }
+
+
 def _context_entries(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
@@ -701,6 +753,7 @@ async def prepare_training_split(
     )
     dataset_version = f"{course_id}-mixed-split-seed{split_seed}-n{len(mixed)}"
     total_counts = composition(mixed)
+    lengths = length_check(mixed)
 
     manifest = {
         "courseId": course_id,
@@ -731,8 +784,23 @@ async def prepare_training_split(
         "retrieval": {"topK": top_k, **_index_description(artifact_storage, course_id)},
         "checksums": checksums,
         "checksumAlgorithm": "sha256",
+        "lengthCheck": lengths,
     }
     write_json(manifest_path, manifest)
+
+    # The digest a queued run is pinned to (`dataset_artifacts`), so the
+    # administrator sees the same fingerprint on the split and on the run.
+    from app.dataset_artifacts import DatasetArtifactError, describe_dataset
+
+    try:
+        dataset_sha256 = describe_dataset(course_id, export_root=export_root)["datasetSha256"]
+    except DatasetArtifactError as exc:
+        # The files were written; what failed is reading them back as a dataset
+        # (a file over the size limit, an unreadable manifest). Reported as the
+        # split's failure rather than as an unexplained 500.
+        raise TrainingSplitError(
+            f"The split was written but could not be fingerprinted: {exc}"
+        ) from exc
 
     return {
         "courseId": course_id,
@@ -743,6 +811,8 @@ async def prepare_training_split(
         "sourceExamples": len(records),
         "composition": manifest["composition"],
         "groundedSkipped": skipped,
+        "lengthCheck": lengths,
+        "datasetSha256": dataset_sha256,
         "splitSeed": split_seed,
         "files": {
             "trainJsonl": str(train_path),

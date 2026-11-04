@@ -251,9 +251,68 @@ describe('ReviewExamplesPage list view', () => {
       expect(
         within(rowFor('How do I contact the TA?')).getByText('Rejected'),
       ).toBeInTheDocument();
+      // Edited is reviewed but not decided, and the badge says so.
       expect(
-        within(rowFor('When is the final exam?')).getByText('Edited'),
+        within(rowFor('When is the final exam?')).getByText('Edited · not yet approved'),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('edited examples wait for approval', () => {
+    /*
+     * Audit finding B6 (2026-11-03). `edited` used to look like a finished
+     * review while the training export skipped it, so a professor who edited
+     * answers and never clicked Approve trained on none of them. The page now
+     * says what the status means, and editing offers approval in one step.
+     */
+    it('tells the professor that edited examples are not used until approved', async () => {
+      renderPage();
+      await screen.findByText('Can I submit late?');
+
+      expect(
+        screen.getByText('1 edited example is waiting for approval'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/not shown to students and is not included in training data until you approve it/),
+      ).toBeInTheDocument();
+    });
+
+    it('shows no such notice when nothing is in the edited state', async () => {
+      loadSeeds(SEEDS.filter((seed) => seed.reviewStatus !== 'edited'));
+      renderPage();
+      await screen.findByText('Can I submit late?');
+
+      expect(screen.queryByText(/waiting for approval/)).not.toBeInTheDocument();
+    });
+
+    it('can save new wording and approve it in one request', async () => {
+      renderPage();
+      await screen.findByText('What is the grading policy?');
+
+      fireEvent.click(
+        within(rowFor('What is the grading policy?')).getByRole('button', {
+          name: 'Edit example 3',
+        }),
+      );
+      fireEvent.change(await screen.findByLabelText('Answer'), {
+        target: { value: 'Grades come from two exams and one project.' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /^Save and approve/ }));
+
+      await waitFor(() => {
+        expect(reviewCourseSeed).toHaveBeenCalledWith(courseId, 'seed-3', {
+          reviewStatus: 'approved',
+          question: 'What is the grading policy?',
+          answer: 'Grades come from two exams and one project.',
+          reviewNotes: undefined,
+        });
+      });
+      // Approved, so it left Awaiting review and did not land in Edited.
+      await waitFor(() => {
+        expect(countOnTab('Approved')).toBe('2');
+      });
+      expect(countOnTab('Edited')).toBe('1');
+      expect(screen.getByText('Example updated and approved.')).toBeInTheDocument();
     });
   });
 

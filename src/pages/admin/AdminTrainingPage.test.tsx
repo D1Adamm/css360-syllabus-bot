@@ -24,7 +24,9 @@ const getApprovedExportStatus = vi.fn();
 const prepareTrainingSplit = vi.fn();
 const listCourseSeeds = vi.fn();
 
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (importOriginal) => ({
+  // Pure helpers (splitSummaryDetails) are the real ones; only requests are faked.
+  ...(await importOriginal<typeof import('../../lib/api')>()),
   ApiError: class ApiError extends Error {
     status?: number;
     constructor(message: string, status?: number) {
@@ -688,6 +690,118 @@ describe('AdminTrainingPage', () => {
 
     const requests = await screen.findByRole('list', { name: 'Model requests' });
     expect(within(requests).queryByRole('button', { name: /Queue training/i })).toBeNull();
+  });
+
+  /*
+   * Dataset pinning (audit finding B10, 2026-11-03). A queued run names the
+   * prepared files by digest and the worker refuses files that changed, so
+   * re-preparing under an outstanding run is refused by the backend — and not
+   * offered here.
+   */
+  it('does not offer to re-prepare while a worker holds the prepared data', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([
+      {
+        ...QUEUED_RUN,
+        state: 'claimed',
+        attempt: 1,
+        claim: {
+          owner: 'alice@tillicum',
+          claimedAt: '2026-08-12T12:05:00.000Z',
+          expiresAt: '2026-08-12T12:20:00.000Z',
+        },
+      },
+    ]);
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(
+      within(requests).queryByRole('button', { name: /prepare training data/i }),
+    ).toBeNull();
+    expect(within(requests).getByRole('note')).toHaveTextContent(
+      'Training data is in use by the claimed run above',
+    );
+  });
+
+  it('still offers to re-prepare while a run is only queued, and says the run will go stale', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([QUEUED_RUN]);
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(
+      within(requests).getByRole('button', { name: /Re-prepare training data/i }),
+    ).toBeInTheDocument();
+    expect(within(requests).getByRole('note')).toHaveTextContent(
+      'A queued run is pinned to the current training data',
+    );
+  });
+
+  it('offers to re-prepare again once the pinned run has finished', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([{ ...QUEUED_RUN, state: 'failed' }]);
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(
+      within(requests).getByRole('button', { name: /Re-prepare training data/i }),
+    ).toBeInTheDocument();
+    expect(within(requests).queryByRole('note')).toBeNull();
+  });
+
+  it('shows the dataset digest a run was pinned to', async () => {
+    fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
+    fetchCourseTrainingRuns.mockResolvedValue([
+      { ...QUEUED_RUN, datasetSha256: 'abcdef0123456789'.repeat(4) },
+    ]);
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(within(requests).getByText(/dataset abcdef012345/)).toBeInTheDocument();
+  });
+
+  it('reports the digest and any oversized examples after preparing a split', async () => {
+    getApprovedExportStatus.mockResolvedValue({
+      courseId: COURSE_ID,
+      exists: true,
+      exportPath: 'data/exports/css-360-winter-2026-a7rp/approved-finetune.jsonl',
+      exampleCount: 54,
+      sourceFile: 'approved-finetune.jsonl',
+    });
+    prepareTrainingSplit.mockResolvedValue({
+      courseId: COURSE_ID,
+      summary: {
+        trainExamples: 48,
+        validationExamples: 6,
+        totalExamples: 54,
+        datasetSha256: '0123456789abcdef'.repeat(4),
+        lengthCheck: {
+          maxSeqLength: 2048,
+          flaggedCount: 2,
+          flagged: [
+            { seedId: 'long-1', kind: 'train', approxTokens: 2300 },
+            { seedId: 'long-2', kind: 'validation', approxTokens: 2100 },
+          ],
+        },
+      },
+    });
+
+    renderPage();
+    await screen.findByText(/CSS 360/);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Prepare training split' })).not.toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare training split' }));
+
+    const message = await screen.findByText(/Prepared split: 48 train, 6 validation/);
+    expect(message).toHaveTextContent('dataset 0123456789ab');
+    expect(message).toHaveTextContent('2 examples may not fit the 2048-token window');
+    expect(message).toHaveTextContent('Training refuses the dataset');
   });
 
   it('offers a fresh run once the last one finished', async () => {

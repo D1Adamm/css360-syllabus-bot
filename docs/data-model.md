@@ -281,6 +281,7 @@ The durable queue the cluster claims work from. Primary key
 | `state` | TEXT | See below |
 | `enqueued_at` / `updated_at` | TIMESTAMPTZ | |
 | `dataset_ref` | TEXT | Relative, e.g. `exports/{courseId}` |
+| `dataset_sha256` | TEXT NULL | Since migration 003 (2026-11-03): the prepared dataset's digest when the run was queued (or retried), computed by the backend over all four prepared files (`train.jsonl`, `validation.jsonl`, `manifest.json` and the timestamped `approved-export-summary.json`, so even a content-identical rebuild changes it). The worker is refused the run's dataset (`409 dataset_changed`) when the files no longer match; it releases the run back to `queued` with that reason, and such a stale queued run may be retried, which queues a replacement pinned to the current files. The export and split routes refuse (`409 training_run_active`) while a run is `claimed`, `submitted` or `training` — a worker is using the files — but not while one is merely `queued`. NULL on runs queued before it existed, which are served as before |
 | `approved_example_count` | INTEGER | |
 | `train_examples` / `validation_examples` | INTEGER | |
 | `attempt` | INTEGER | Incremented on every claim, including after an expired lease |

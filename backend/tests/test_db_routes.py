@@ -112,6 +112,13 @@ class DbRouteTestCase(unittest.TestCase):
         self.addCleanup(patcher.stop)
         return mock
 
+    def patch_pinning(self, **kwargs: Any) -> Any:
+        """The on-disk dataset the enqueue routes pin a run to (`app.dataset_pinning`)."""
+        patcher = patch("app.dataset_pinning.describe_dataset", **kwargs)
+        mock = patcher.start()
+        self.addCleanup(patcher.stop)
+        return mock
+
     def as_participant(self, course_id: str = COURSE) -> None:
         """Run the request as an anonymous student who joined `course_id`.
 
@@ -695,41 +702,97 @@ class TrainingRunRouteTests(DbRouteTestCase):
         response = self.client.get(f"/api/db/courses/{COURSE}/training-runs/nope")
         self.assertEqual(response.status_code, 404)
 
-    def test_enqueue_returns_201(self) -> None:
+    PREPARED = {
+        "datasetRef": f"exports/{COURSE}",
+        "trainExamples": 48,
+        "validationExamples": 6,
+        "datasetSha256": "d" * 64,
+    }
+    ENQUEUE_BODY = {
+        "mode": "full",
+        "datasetRef": f"exports/{COURSE}",
+        "trainExamples": 48,
+        "validationExamples": 6,
+    }
+
+    def test_enqueue_returns_201_and_pins_the_prepared_dataset(self) -> None:
         self.patch_repo("db_courses.course_exists", return_value=True)
-        self.patch_repo(
+        self.patch_pinning( return_value=dict(self.PREPARED))
+        enqueue = self.patch_repo(
             "db_training_runs.enqueue_training_run",
-            return_value={**TRAINING_RUN, "state": "queued"},
+            return_value={**TRAINING_RUN, "state": "queued", "datasetSha256": "d" * 64},
         )
         response = self.client.post(
-            f"/api/db/courses/{COURSE}/training-runs",
-            json={"mode": "full", "datasetRef": "exports/x"},
+            f"/api/db/courses/{COURSE}/training-runs", json=self.ENQUEUE_BODY
         )
 
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(response.json()["state"], "queued")
+        self.assertEqual(response.json()["datasetSha256"], "d" * 64)
+        # The digest of the files on disk right now travels onto the run.
+        self.assertEqual(enqueue.call_args.kwargs["dataset_sha256"], "d" * 64)
+
+    def test_enqueue_without_prepared_data_is_409(self) -> None:
+        from app.dataset_artifacts import DatasetArtifactError
+
+        self.patch_repo("db_courses.course_exists", return_value=True)
+        self.patch_pinning( side_effect=DatasetArtifactError("No prepared training data.")
+        )
+        enqueue = self.patch_repo("db_training_runs.enqueue_training_run")
+        response = self.client.post(
+            f"/api/db/courses/{COURSE}/training-runs", json=self.ENQUEUE_BODY
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"]["code"], "dataset_not_prepared")
+        enqueue.assert_not_called()
+
+    def test_enqueue_with_stale_counts_is_409(self) -> None:
+        """Audit B10: the request remembers a split the files no longer are."""
+        self.patch_repo("db_courses.course_exists", return_value=True)
+        self.patch_pinning(
+            return_value={**self.PREPARED, "trainExamples": 50, "validationExamples": 7},
+        )
+        enqueue = self.patch_repo("db_training_runs.enqueue_training_run")
+        response = self.client.post(
+            f"/api/db/courses/{COURSE}/training-runs", json=self.ENQUEUE_BODY
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"]["code"], "dataset_changed")
+        enqueue.assert_not_called()
+
+    def test_enqueue_for_another_courses_export_is_422(self) -> None:
+        self.patch_repo("db_courses.course_exists", return_value=True)
+        self.patch_pinning( return_value=dict(self.PREPARED))
+        response = self.client.post(
+            f"/api/db/courses/{COURSE}/training-runs",
+            json={**self.ENQUEUE_BODY, "datasetRef": "exports/x"},
+        )
+        self.assertEqual(response.status_code, 422)
 
     def test_a_second_active_run_is_409(self) -> None:
         self.patch_repo("db_courses.course_exists", return_value=True)
+        self.patch_pinning( return_value=dict(self.PREPARED))
         self.patch_repo(
             "db_training_runs.enqueue_training_run",
             side_effect=db_training_runs.ActiveTrainingRunError("active"),
         )
         response = self.client.post(
-            f"/api/db/courses/{COURSE}/training-runs",
-            json={"mode": "full", "datasetRef": "exports/x"},
+            f"/api/db/courses/{COURSE}/training-runs", json=self.ENQUEUE_BODY
         )
         self.assertEqual(response.status_code, 409)
 
     def test_an_unknown_mode_is_422(self) -> None:
         self.patch_repo("db_courses.course_exists", return_value=True)
+        self.patch_pinning( return_value=dict(self.PREPARED))
         self.patch_repo(
             "db_training_runs.enqueue_training_run",
             side_effect=ValueError("Unknown training mode: 'turbo'"),
         )
         response = self.client.post(
             f"/api/db/courses/{COURSE}/training-runs",
-            json={"mode": "turbo", "datasetRef": "exports/x"},
+            json={**self.ENQUEUE_BODY, "mode": "turbo"},
         )
         self.assertEqual(response.status_code, 422)
 

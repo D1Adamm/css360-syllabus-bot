@@ -43,6 +43,7 @@ from app.student_visibility import contribution_payload, seeds_for_participant
 from app.course_id import assert_valid_course_id
 from app.course_model_resolution import assert_valid_model_version
 from app.db import db_connection, translate_db_errors
+from app.dataset_pinning import pin_dataset_for_enqueue
 from app.error_classification import EVALUATION_ALREADY_RECORDED, ClassifiedHTTPException
 from app.finetuned_client import check_finetuned_service_health
 from app.model_publication import (
@@ -940,8 +941,22 @@ def enqueue_course_training_run(
     request: TrainingRunCreateRequest,
     principal: Principal = Depends(require_admin),
 ) -> TrainingRunRecord:
-    """Queue one run, refusing while this course already has an active one."""
+    """Queue one run, refusing while this course already has an active one.
+
+    The run is pinned to the prepared dataset as it is on disk right now
+    (audit finding B10): its digest is read here and stored on the run, and
+    the worker is refused the data if the files change afterwards. A request
+    whose counts disagree with the files is a preparation record that has gone
+    stale, and is refused rather than queued against data nobody reviewed.
+    """
     safe_course_id = _safe_course_id(course_id)
+
+    dataset_sha256 = pin_dataset_for_enqueue(
+        safe_course_id,
+        dataset_ref=request.dataset_ref,
+        train_examples=request.train_examples,
+        validation_examples=request.validation_examples,
+    )
 
     def work(connection: Any) -> dict[str, Any]:
         if not db_courses.course_exists(connection, safe_course_id):
@@ -956,6 +971,7 @@ def enqueue_course_training_run(
             approved_example_count=request.approved_example_count,
             train_examples=request.train_examples,
             validation_examples=request.validation_examples,
+            dataset_sha256=dataset_sha256,
         )
 
     try:

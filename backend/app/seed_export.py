@@ -218,6 +218,10 @@ def export_approved_seeds(
     for seed in seeds:
         status = resolve_review_status(seed)
         by_status[status] = by_status.get(status, 0) + 1
+    # What was left out, by the reason it was left out. `edited` is the one an
+    # instructor can act on: it is their own wording, waiting for their
+    # approval, and nothing of it reaches training until they give it.
+    excluded = {status: count for status, count in by_status.items() if status != "approved"}
 
     summary = {
         "courseId": course_id,
@@ -230,15 +234,18 @@ def export_approved_seeds(
         "exportPath": str(finetune_path),
         "skippedCount": skipped,
         "reviewStatusCounts": by_status,
+        "excludedCounts": excluded,
+        "editedAwaitingApprovalCount": by_status.get("edited", 0),
         "files": {
             "finetuneJsonl": str(finetune_path),
             "metadataJson": str(metadata_path),
             "summaryJson": str(summary_path),
         },
         "note": (
-            "Only reviewStatus=approved seeds are exported. "
-            "Validated AI seeds remain generated until human review. "
-            "approved-finetune.jsonl is re-validated immediately after write."
+            "Only reviewStatus=approved seeds are exported. Edited examples are "
+            "not exported until they are approved; validated AI seeds remain "
+            "generated until human review. approved-finetune.jsonl is "
+            "re-validated immediately after write."
         ),
     }
     write_json(summary_path, summary)

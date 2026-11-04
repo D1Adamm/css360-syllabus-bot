@@ -2,6 +2,7 @@ import {
   exportApprovedCourseSeeds,
   listCourseSeeds,
   prepareTrainingSplit,
+  splitSummaryDetails,
 } from './api';
 import { assertValidCourseId } from './courseId';
 import { updateCourseModelRequest } from './courseModelRequestDb';
@@ -88,6 +89,11 @@ export async function prepareTrainingDataForRequest(
     // 3. Deterministic train/validation split over that export.
     const split = await prepareTrainingSplit(courseId);
 
+    // The digest pins what was prepared; a queued run records the same value
+    // and the worker refuses files that no longer match it. The oversized
+    // count is what training would refuse — surfaced here so it is fixed
+    // before a run is queued, not discovered on the cluster.
+    const details = splitSummaryDetails(split.summary);
     const preparation: CourseModelRequestPreparation = {
       preparedAt: new Date().toISOString(),
       sourceApprovedExampleCount: counts.approved,
@@ -97,6 +103,8 @@ export async function prepareTrainingDataForRequest(
       ...(Number.isFinite(Number(split.summary?.splitSeed))
         ? { splitSeed: Number(split.summary?.splitSeed) }
         : {}),
+      ...(details.datasetSha256 ? { datasetSha256: details.datasetSha256 } : {}),
+      ...(details.oversizedExamples > 0 ? { oversizedExamples: details.oversizedExamples } : {}),
     };
 
     /*

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ReviewListRow } from '../../components/review/ReviewListRow';
 import { ReviewQueueCard } from '../../components/review/ReviewQueueCard';
+import { editedAwaitingApprovalNotice } from '../../components/review/reviewLabels';
 import { Button } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -345,6 +346,13 @@ export function ReviewExamplesPage({ audience = 'professor' }: ReviewExamplesPag
     [saveEdit],
   );
 
+  const handleSaveAndApprove = useCallback(
+    (seedId: string, draft: ReviewDraft) => {
+      void saveEdit(seedId, draft, { approve: true });
+    },
+    [saveEdit],
+  );
+
   /*
    * Inline save closes the editor only once the write has landed. Closing it
    * optimistically would show the new wording next to an unchanged database.
@@ -352,6 +360,17 @@ export function ReviewExamplesPage({ audience = 'professor' }: ReviewExamplesPag
   const handleRowSaveEdit = useCallback(
     (seedId: string, draft: ReviewDraft) => {
       void saveEdit(seedId, draft).then((saved) => {
+        if (saved) {
+          setEdit((current) => (current?.seedId === seedId ? null : current));
+        }
+      });
+    },
+    [saveEdit],
+  );
+
+  const handleRowSaveAndApprove = useCallback(
+    (seedId: string, draft: ReviewDraft) => {
+      void saveEdit(seedId, draft, { approve: true }).then((saved) => {
         if (saved) {
           setEdit((current) => (current?.seedId === seedId ? null : current));
         }
@@ -495,6 +514,16 @@ export function ReviewExamplesPage({ audience = 'professor' }: ReviewExamplesPag
           {generation.state === 'generating' && counts.total > 0 && generationMessage && (
             <Callout tone="info" title={generationMessage.title}>
               {generationMessage.detail}
+            </Callout>
+          )}
+
+          {/* Edited examples are reviewed but not decided. They used to sit
+              under a calm "Edited" badge while the training export left them
+              out, so a professor who edited twenty answers and never clicked
+              Approve trained a model on none of them (audit finding B6). */}
+          {!loading && counts.edited > 0 && (
+            <Callout tone="warning" title={editedAwaitingApprovalNotice(counts.edited).title}>
+              {editedAwaitingApprovalNotice(counts.edited).body}
             </Callout>
           )}
 
@@ -667,6 +696,7 @@ export function ReviewExamplesPage({ audience = 'professor' }: ReviewExamplesPag
                       onApprove={(seedId) => void approve(seedId)}
                       onReject={(seedId) => void reject(seedId)}
                       onSaveEdit={handleSaveEdit}
+                      onSaveAndApprove={handleSaveAndApprove}
                     />
                   )}
 
@@ -765,6 +795,7 @@ export function ReviewExamplesPage({ audience = 'professor' }: ReviewExamplesPag
                           }
                           onCancelEdit={() => setEdit(null)}
                           onSaveEdit={handleRowSaveEdit}
+                          onSaveAndApprove={handleRowSaveAndApprove}
                           onApprove={(id) => void approve(id)}
                           onReject={(id) => void reject(id)}
                         />
