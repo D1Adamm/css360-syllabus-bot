@@ -157,12 +157,13 @@ the backend route tests and the worker tests, including an end-to-end
 fake-backend run; after the deployment of `568a480` the worker tests and a dry
 run passed on Tillicum.
 
-**Known gaps.** The dataset a run trains on is not pinned to the run (B10); the
-launcher's existing-job short-circuit can attribute another run's job (B12); a
-job that dies without its trap strands the run at `submitted` (B15); a
-completion refused with a status other than 404/409 is retried on every flush
-(L1). Training-time prompt rendering differs from serving-time rendering
-(B14). All are listed in [remaining-work.md](remaining-work.md#8-open-findings-from-the-2026-10-27-audit).
+**Known gaps.** The launcher's existing-job short-circuit can attribute another
+run's job (B12); a job that dies without its trap strands the run at
+`submitted` (B15); a completion refused with a status other than 404/409 is
+retried on every flush (L1). All are listed in
+[remaining-work.md](remaining-work.md#8-open-findings-from-the-2026-10-27-audit),
+which also records the dataset pinning (B10) and the shared prompt renderer
+(B14) fixed in code on 2026-11-03 and pending deployment.
 
 ## 4. VM CPU training (experimental)
 

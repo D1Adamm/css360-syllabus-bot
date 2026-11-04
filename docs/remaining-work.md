@@ -161,24 +161,61 @@ three findings High and the rest Medium or Low. The three High ones are closed:
   found and `ef7b7c7` fixed the emergency fallback scripts' final check, which
   had probed an administrator-only route since 2026-09-04.
 
+Fixed in code on 2026-11-03 (branch `fix/audit-medium-findings`; not yet
+deployed — the deployment carries migration 003, see
+[deployment.md](deployment.md#database-migrations-if-any)):
+
+- **B7** The backend classifies every fine-tuned, Ollama and model-resolution
+  failure (`app/error_classification.py`: `{"detail": {"code", "message"}}`),
+  `GET /api/admin/model-readiness` judges every registered course against what
+  the service serves, the admin Overview shows it per course, and a background
+  task (`FINETUNED_READINESS_CHECK_SECONDS`, default 300 s) logs a WARNING to
+  the journal when a problem appears and INFO when it clears. Still open from
+  B7: the verify script SKIPs the backend checks without credentials.
+- **B5** The browser maps each code to its own sentence for students and
+  professors (`src/lib/errorMessages.ts`): "no published course model yet",
+  "service not answering", "took too long" and "syllabus not prepared" no
+  longer read alike, and each says what still works. Admin keeps the raw text.
+- **B4** The Professor Model page and Course overview describe the activated
+  version (`deployment = online`, `status = ready`, the backend's own rule),
+  falling back to the newest only when nothing is activated, with one line
+  about a newer version that is trained-and-waiting, training or failed.
+- **B8** Each rating stores a snapshot of the four answers with the model,
+  version and engine that produced them (`evaluations.responses`), and the
+  rated run is marked rated in the browser. Retrieved passages are still only
+  the source labels the student saw, not the chunk texts.
+- **B6** `edited` is now hidden from students on the same rule the export
+  uses (`approved` only); the review pages label it "Edited · not yet
+  approved", say how many are waiting, and offer "Save and approve".
+- **B9** The create-evaluation route validates every participant-writable
+  field (approach keys, lengths, the snapshot shape), stamps `created_at`
+  itself and refuses a second rating of the same run (`409
+  evaluation_already_recorded`).
+- **B10** Every run — queued from either enqueue route or created by Retry —
+  records the SHA-256 of the prepared files; the worker is refused the dataset
+  of a run whose files changed (`409 dataset_changed`) and reports the run as
+  refused (`POST …/runs/{run_id}/refused`, 2026-11-04): the run ends `failed`
+  with the refusal as its reason and is never claimed again, while the request
+  stays `preparing` with the reason on `launchError` (no job ran, so the
+  professor is not told one failed). Retry, or Queue training, then queues a
+  replacement pinned to the current files. Transient refusals — data not yet
+  prepared, a file that did not transfer — still release the run for the next
+  cycle. The export and split routes refuse while a worker holds the files
+  (`claimed`, `submitted`, `training`: `409 training_run_active`), and the
+  admin Training page hides Re-prepare in that state and shows the digests.
+  Tillicum must pull before the next run: a worker on older code still
+  releases a refused run and re-claims it every cycle.
+- **B14** Training and serving render prompts from one module
+  (`training/llama3_prompt.py`): `train_qlora.py` no longer calls
+  `apply_chat_template`, refuses a tokenizer that does not know the Llama 3
+  special tokens, counts every record's tokens before training and fails (or,
+  with `--on-oversized drop`, drops and reports) anything over the window
+  instead of truncating it. Adapters trained before this were trained on the
+  older rendering; retraining is needed to benefit, as the audit said.
+
 Open, Medium unless marked. Ordered as the audit's action plan ordered them:
 
-- **B7** Nothing tells an operator when the fine-tuned path is down or a
-  course's activated version is not servable; the verify script SKIPs the
-  backend checks without credentials.
-- **B5** Actionable failures (a 409 for an unmapped version, a 404) reach
-  students and professors as "temporarily unavailable"; pages wrap errors as
-  plain strings and lose the status.
-- **B4** The Professor Model page describes the newest registered version
-  (`currentVersion`), not the version that serves.
 - **B13** A failed session check (5xx, timeout) is treated as "signed out".
-- **B8** Evaluations lack provenance (the answers rated, the retrieved
-  passages, the versions that produced them); one comparison can be rated
-  twice or against the wrong answers.
-- **B6** `edited` examples are visible to students like approved ones but are
-  excluded from training export; [data-model.md](data-model.md) describes the
-  export rule.
-- **B9** Participant-writable fields are under-validated server-side.
 - **B11** The course → Ollama-tag mapping has no cross-check; a typo serves
   another course's adapter with every check green.
 - **B12** The launcher's "existing active job" short-circuit can attribute
@@ -187,10 +224,6 @@ Open, Medium unless marked. Ordered as the audit's action plan ordered them:
   `submitted`; no `sacct` reconciliation.
 - **B18** The automatic starter-seed job defaults on in code (`.env` must say
   `false`) and cannot recover from a restart mid-run.
-- **B10** The dataset a run trains on is not pinned to the run.
-- **B14** Training-time prompt rendering (`apply_chat_template`) differs from
-  serving-time rendering (Ollama's template); retraining would be needed to
-  benefit from a fix (likely).
 - **B16** The GPU failback watchdog judges `/health` only, not generation
   (likely).
 - **B17** The per-account login throttle lets anyone lock a professor out.
