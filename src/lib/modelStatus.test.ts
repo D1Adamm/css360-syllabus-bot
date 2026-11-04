@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { CourseModelRequest, CourseModelVersion } from '../types';
+import type { CourseModelRegistry, CourseModelRequest, CourseModelVersion } from '../types';
 import {
   canRequestCourseModel,
   canRequestNewModelVersion,
   describeCourseModel,
+  describeNewerVersion,
   getModelReadiness,
   presenceFromVersion,
   RECOMMENDED_APPROVED_EXAMPLES,
@@ -244,5 +245,47 @@ describe('canRequestNewModelVersion', () => {
         ).toBe(false);
       }
     }
+  });
+});
+
+describe('describeNewerVersion', () => {
+  const v1online: CourseModelVersion = { ...READY_OFFLINE, deployment: 'online' };
+  const v2: CourseModelVersion = {
+    ...READY_OFFLINE,
+    version: 'v2',
+    createdAt: '2026-10-01T00:00:00.000Z',
+    artifactRef: 'serving/css-360/v2/adapter',
+  };
+
+  function registry(versions: Record<string, CourseModelVersion>): CourseModelRegistry {
+    return { currentVersion: 'v2', versions };
+  }
+
+  it('says nothing when the version in use is the newest', () => {
+    expect(describeNewerVersion(registry({ v1: v1online }))).toBeNull();
+    expect(describeNewerVersion(null)).toBeNull();
+  });
+
+  it('says nothing when no version is in use (the page describes the newest itself)', () => {
+    expect(describeNewerVersion(registry({ v1: READY_OFFLINE, v2 }))).toBeNull();
+  });
+
+  it('names a trained version that is waiting to be published, and which one still answers', () => {
+    const note = describeNewerVersion(registry({ v1: v1online, v2 }));
+    expect(note).toMatch(/v2.*waiting to be published/);
+    expect(note).toMatch(/keeps using v1/);
+  });
+
+  it('describes a newer version that is still training', () => {
+    const note = describeNewerVersion(registry({ v1: v1online, v2: { ...v2, status: 'training' } }));
+    expect(note).toMatch(/v2.*being prepared/);
+    expect(note).toMatch(/v1 keeps answering/);
+  });
+
+  it('describes a newer version that failed, without infrastructure', () => {
+    const note = describeNewerVersion(registry({ v1: v1online, v2: { ...v2, status: 'failed' } }));
+    expect(note).toMatch(/v2.*did not finish/);
+    expect(note).toMatch(/v1 keeps answering/);
+    expect(note).not.toMatch(/slurm|tillicum|adapter|job|gpu/i);
   });
 });

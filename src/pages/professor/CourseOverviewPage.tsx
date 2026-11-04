@@ -13,7 +13,7 @@ import {
 import { useCourseModel } from '../../hooks/useCourseModel';
 import { useCourseModelRequest } from '../../hooks/useCourseModelRequest';
 import { useEvaluations } from '../../hooks/useEvaluations';
-import { getCurrentVersion } from '../../lib/courseModelDb';
+import { getDisplayVersion } from '../../lib/courseModelDb';
 import { canRequestCourseModel, summariseCourseModel } from '../../lib/modelStatus';
 import { professorCoursePath } from '../../lib/roleRoutes';
 import { getStarterGeneration } from '../../lib/starterSeedGeneration';
@@ -92,8 +92,10 @@ export function CourseOverviewPage() {
    * and re-subscribe when `courseId` changes, so one course's state cannot be
    * shown against another's.
    */
+  // The activated version when there is one, else the newest — the same rule
+  // as the Model page, so the two cannot disagree about which version counts.
   const version =
-    modelState.status === 'ready' ? getCurrentVersion(modelState.registry) : null;
+    modelState.status === 'ready' ? getDisplayVersion(modelState.registry) : null;
   const request = requestState.status === 'ready' ? requestState.request : null;
 
   const model = summariseCourseModel({

@@ -10,7 +10,7 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { TrainingJobs } from '../../components/admin/TrainingJobs';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
-import { fetchCourseModel, getCurrentVersion } from '../../lib/courseModelDb';
+import { fetchCourseModel, getDisplayVersion } from '../../lib/courseModelDb';
 import {
   createCourseModelRequest,
   DuplicateModelRequestError,
@@ -332,7 +332,9 @@ async function readRequestCandidate(
     ]);
     const approved = countExamples(seeds.seeds || []).approved;
     const offer = canRequestCourseModel({
-      version: registry ? getCurrentVersion(registry) : null,
+      // The activated version, else the newest — the same input the professor
+      // Model page gives this helper, so the two cannot offer differently.
+      version: registry ? getDisplayVersion(registry) : null,
       request: null,
       approved,
     });

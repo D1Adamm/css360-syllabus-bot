@@ -1,4 +1,5 @@
-import type { CourseModelRequest, CourseModelVersion } from '../types';
+import type { CourseModelRegistry, CourseModelRequest, CourseModelVersion } from '../types';
+import { getNewestVersion, getServingVersion } from './courseModelDb';
 
 /**
  * How a course's model is described to people.
@@ -164,6 +165,46 @@ export function describeCourseModel({
       'It has been trained from your approved examples. Whether it is currently answering questions is not known.',
     tone: 'success',
   };
+}
+
+/**
+ * A newer registered version that is not the one in use, in a professor's
+ * words — or null when the version in use is the newest, or nothing is in use.
+ *
+ * The page describes the version students get (`getDisplayVersion`); this is
+ * the one line that says what else exists, so a professor whose retrain has
+ * finished but not been published, or whose retrain failed, is not left
+ * reading "ready" about a version they did not ask about. Never names
+ * infrastructure; the administrator has the details.
+ */
+export function describeNewerVersion(registry: CourseModelRegistry | null): string | null {
+  if (!registry) {
+    return null;
+  }
+  const serving = getServingVersion(registry);
+  const newest = getNewestVersion(registry);
+  if (!serving || !newest || newest.version === serving.version) {
+    return null;
+  }
+  switch (newest.status) {
+    case 'ready':
+      return (
+        `A newer version (${newest.version}) has been trained and is waiting to be published. ` +
+        `Until then, the Compare page keeps using ${serving.version}.`
+      );
+    case 'training':
+      return (
+        `A newer version (${newest.version}) is being prepared from your approved examples. ` +
+        `${serving.version} keeps answering until it is ready.`
+      );
+    case 'failed':
+      return (
+        `A newer version (${newest.version}) did not finish. ${serving.version} keeps answering; ` +
+        'the project administrator has the details.'
+      );
+    default:
+      return null;
+  }
 }
 
 /** Minimum approved examples before training a model is worthwhile. */

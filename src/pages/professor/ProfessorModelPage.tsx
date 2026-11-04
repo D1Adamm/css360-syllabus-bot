@@ -10,12 +10,13 @@ import { useCourseMetadata } from '../../hooks/useCourseMetadata';
 import { useCourseModel } from '../../hooks/useCourseModel';
 import { useCourseModelRequest } from '../../hooks/useCourseModelRequest';
 import { formatCourseCode } from '../../lib/courseLabels';
-import { getCurrentVersion } from '../../lib/courseModelDb';
+import { getDisplayVersion, getNewestVersion, getServingVersion } from '../../lib/courseModelDb';
 import {
   canRequestCourseModel,
   canRequestNewModelVersion,
   describeCourseModel,
   describeModelRequest,
+  describeNewerVersion,
   summariseCourseModel,
   getModelReadiness,
   RECOMMENDED_APPROVED_EXAMPLES,
@@ -60,8 +61,18 @@ export function ProfessorModelPage() {
   const counts = countsState.status === 'ready' ? countsState.counts : null;
   const readiness = getModelReadiness(counts?.approved ?? 0);
 
-  const version =
-    modelState.status === 'ready' ? getCurrentVersion(modelState.registry) : null;
+  /*
+   * The version described is the one students get — the activated version —
+   * and only when nothing is activated the newest registered one, whose state
+   * is then the whole story. The registry's own `currentVersion` pointer is
+   * the newest version and used to be shown here, so after a retrain the page
+   * announced a version nobody was served (audit finding B4).
+   */
+  const registry = modelState.status === 'ready' ? modelState.registry : null;
+  const version = registry ? getDisplayVersion(registry) : null;
+  const servingVersion = registry ? getServingVersion(registry) : null;
+  const newestVersion = registry ? getNewestVersion(registry) : null;
+  const newerVersionNote = describeNewerVersion(registry);
 
   const presentation = describeCourseModel({
     version,
@@ -133,7 +144,12 @@ export function ProfessorModelPage() {
    * anything; and the row it writes is the one the administrator's normal
    * prepare-and-queue flow picks up.
    */
-  const canRequestNewVersion = canRequestNewModelVersion(offerInput);
+  const canRequestNewVersion =
+    canRequestNewModelVersion(offerInput) &&
+    // A newer version already registered as training is that request, under
+    // way; offering another beside it would be the same double-ask the
+    // request record guards against.
+    newestVersion?.status !== 'training';
 
   return (
     <div className="ui-stack ui-stack--section">
@@ -183,13 +199,19 @@ export function ProfessorModelPage() {
 
             {/* A new version being built is an addition to what they have,
                 not a replacement for it, so it reads as one quiet line under
-                the model they are still using. */}
-            {buildingNewVersion && (
+                the model they are still using. When the registry already
+                knows about the newer version — trained and waiting, training,
+                or failed — that more specific line is used instead. */}
+            {hasModel && newerVersionNote ? (
+              <p className="ui-text-xs ui-text-muted" role="status">
+                {newerVersionNote}
+              </p>
+            ) : buildingNewVersion ? (
               <p className="ui-text-xs ui-text-muted" role="status">
                 An updated version is being prepared from your approved
                 examples. The model above keeps working until it is ready.
               </p>
-            )}
+            ) : null}
 
             {/* What the model was built from. No artifact reference, no base
                 model id, no service address — none of it changes what a
@@ -209,7 +231,10 @@ export function ProfessorModelPage() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Version</dt>
+                  {/* "in use" only when this is the activated version: a
+                      ready-but-unpublished model is theirs, but not yet what
+                      students get. */}
+                  <dt>{servingVersion?.version === version.version ? 'Version in use' : 'Version'}</dt>
                   <dd>{version.version}</dd>
                 </div>
                 <div>

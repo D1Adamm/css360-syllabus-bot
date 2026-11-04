@@ -11,7 +11,7 @@ import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourseMetadata } from '../../hooks/useCourseMetadata';
 import { useCourseModel } from '../../hooks/useCourseModel';
 import { useCourseModelRequest } from '../../hooks/useCourseModelRequest';
-import { getCurrentVersion, sortVersionsNewestFirst } from '../../lib/courseModelDb';
+import { getDisplayVersion, sortVersionsNewestFirst } from '../../lib/courseModelDb';
 import { summariseCourseModel } from '../../lib/modelStatus';
 import {
   ApiError,
@@ -288,7 +288,10 @@ export function AdminCourseDetailPage() {
    * uses, so the four surfaces cannot disagree again.
    */
   const registry = modelState.status === 'ready' ? modelState.registry : null;
-  const currentVersion = registry ? getCurrentVersion(registry) : null;
+  // The activated version, else the newest (`getDisplayVersion`): the same
+  // input the professor overview gives this helper, so the two agree after a
+  // retrain registers a newer, unpublished version.
+  const currentVersion = registry ? getDisplayVersion(registry) : null;
   const model = summariseCourseModel({
     version: currentVersion,
     request: requestState.status === 'ready' ? requestState.request : null,

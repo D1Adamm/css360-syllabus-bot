@@ -701,3 +701,85 @@ describe('ProfessorModelPage for a course that already has a model', () => {
     );
   });
 });
+
+/*
+ * Which version the page describes (audit finding B4, 2026-11-03).
+ *
+ * After a retrain the registry's `currentVersion` points at the newest
+ * registered version while students are still served the activated one. The
+ * page used to describe the newest — announcing a version nobody was given
+ * and saying nothing about the one that was.
+ */
+describe('ProfessorModelPage when the newest version is not the one in use', () => {
+  const v1online = {
+    ...CSS360_REGISTRY.versions.v1!,
+    deployment: 'online' as const,
+    trainingExampleCount: 37,
+  };
+  const v2 = {
+    ...CSS360_REGISTRY.versions.v1!,
+    version: 'v2',
+    trainingExampleCount: 54,
+    deployment: 'offline' as const,
+    createdAt: '2026-10-20T06:22:50.979Z',
+  };
+
+  function withVersions(versions: CourseModelRegistry['versions']): CourseModelRegistry {
+    return { currentVersion: 'v2', versions };
+  }
+
+  it('describes the activated version, not the newest registered one', () => {
+    mockRegistry(withVersions({ v1: v1online, v2 }));
+    renderPage();
+
+    expect(screen.getByText('Ready · published')).toBeInTheDocument();
+    expect(screen.getByText('Version in use').nextElementSibling).toHaveTextContent('v1');
+    expect(screen.getByText('37 examples')).toBeInTheDocument();
+    expect(screen.queryByText('54 examples')).not.toBeInTheDocument();
+  });
+
+  it('tells the professor a newer version is trained and waiting to be published', () => {
+    mockRegistry(withVersions({ v1: v1online, v2 }));
+    renderPage();
+
+    expect(
+      screen.getByText(/A newer version \(v2\) has been trained and is waiting to be published/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/keeps using v1/)).toBeInTheDocument();
+  });
+
+  it('tells the professor a newer version is still being prepared, and offers no second request', () => {
+    mockRegistry(withVersions({ v1: v1online, v2: { ...v2, status: 'training' } }));
+    renderPage();
+
+    expect(screen.getByText(/A newer version \(v2\) is being prepared/)).toBeInTheDocument();
+    expect(screen.getByText('Ready · published')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request updated model' })).not.toBeInTheDocument();
+  });
+
+  it('tells the professor a newer version failed, while the model they have keeps answering', () => {
+    mockRegistry(withVersions({ v1: v1online, v2: { ...v2, status: 'failed' } }));
+    renderPage();
+
+    expect(screen.getByText(/A newer version \(v2\) did not finish/)).toBeInTheDocument();
+    expect(screen.getByText('Your course model is ready')).toBeInTheDocument();
+    expect(document.body.textContent ?? '').not.toMatch(/slurm|tillicum|adapter|sbatch/i);
+  });
+
+  it('describes the newest version when nothing is activated', () => {
+    mockRegistry(withVersions({ v1: { ...v1online, deployment: 'offline' }, v2 }));
+    renderPage();
+
+    expect(screen.getByText('Ready · not published')).toBeInTheDocument();
+    expect(screen.getByText('Version').nextElementSibling).toHaveTextContent('v2');
+    expect(screen.queryByText(/A newer version/)).not.toBeInTheDocument();
+  });
+
+  it('says only "Version" for a ready model that is not published', () => {
+    mockRegistry(CSS360_REGISTRY);
+    renderPage();
+
+    expect(screen.getByText('Version')).toBeInTheDocument();
+    expect(screen.queryByText('Version in use')).not.toBeInTheDocument();
+  });
+});

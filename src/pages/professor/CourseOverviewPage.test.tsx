@@ -349,6 +349,28 @@ describe('CourseOverviewPage', () => {
       expect(courseModelRow()).toHaveTextContent('Ready · published');
     });
 
+    it('describes the activated version even when a newer one is registered but not published', () => {
+      // Audit finding B4: `currentVersion` names the newest registered version;
+      // students get the activated one, and so does this row.
+      const v2 = {
+        ...READY_VERSION,
+        version: 'v2',
+        createdAt: '2026-10-20T06:48:00.000Z',
+        deployment: 'offline' as const,
+      };
+      modelStateByCourse.set(courseId, {
+        status: 'ready',
+        registry: {
+          currentVersion: 'v2',
+          versions: { v1: { ...READY_VERSION, deployment: 'online' }, v2 },
+        },
+      });
+
+      renderPage();
+
+      expect(courseModelRow()).toHaveTextContent('Ready · published');
+    });
+
     it('keeps showing the model while a newer version is being trained', () => {
       // The professor still has a working model. Replacing "ready" with
       // "training" here would tell them they have nothing.

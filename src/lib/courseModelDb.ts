@@ -127,10 +127,68 @@ export function sortVersionsNewestFirst(
   });
 }
 
+/**
+ * The registry's own pointer. Written as the newest registered version by the
+ * run that registers it, which is why professor pages no longer describe it:
+ * see `getDisplayVersion`.
+ */
 export function getCurrentVersion(
   registry: CourseModelRegistry,
 ): CourseModelVersion | null {
   return registry.versions[registry.currentVersion] ?? null;
+}
+
+/**
+ * `v10` after `v9`, not before `v2`: the backend's `_version_sort_key` order,
+ * so the browser and the backend agree on which activated version wins.
+ */
+function versionOrder(version: string): [number, string] {
+  const match = /^v(\d+)$/i.exec(version.trim());
+  return match ? [Number(match[1]), ''] : [Number.NEGATIVE_INFINITY, version];
+}
+
+function byVersionDescending(left: CourseModelVersion, right: CourseModelVersion): number {
+  const [leftNumber, leftText] = versionOrder(left.version);
+  const [rightNumber, rightText] = versionOrder(right.version);
+  if (leftNumber !== rightNumber) {
+    return rightNumber - leftNumber;
+  }
+  return rightText.localeCompare(leftText);
+}
+
+/**
+ * The version students' Fine-Tuned answers actually come from.
+ *
+ * Mirrors the backend's `select_servable_version`: only an explicitly
+ * activated version — `deployment = online` and `status = ready` — and the
+ * highest such version when more than one row claims it. Null when nothing is
+ * activated, in which case the backend refuses fine-tuned requests for the
+ * course rather than guessing.
+ */
+export function getServingVersion(registry: CourseModelRegistry): CourseModelVersion | null {
+  const activated = Object.values(registry.versions)
+    .filter((version) => version.deployment === 'online' && version.status === 'ready')
+    .sort(byVersionDescending);
+  return activated[0] ?? null;
+}
+
+/** The most recently registered version, whatever its state. */
+export function getNewestVersion(registry: CourseModelRegistry): CourseModelVersion | null {
+  return sortVersionsNewestFirst(registry.versions)[0] ?? null;
+}
+
+/**
+ * The version a professor's pages describe.
+ *
+ * The activated version when there is one — that is what their students get —
+ * and otherwise the newest registered version, whose state (ready but not
+ * published, training, failed) is then the whole story. Until 2026-11-03 these
+ * pages described `currentVersion`, which the registering run sets to the
+ * newest version: after a retrain the Model page announced a version nobody
+ * was being served, and said nothing about the one that was (audit B4).
+ */
+export function getDisplayVersion(registry: CourseModelRegistry): CourseModelVersion | null {
+  return getServingVersion(registry) ?? getNewestVersion(registry);
 }
 
 /**
