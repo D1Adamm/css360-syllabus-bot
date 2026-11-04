@@ -30,8 +30,36 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# The prompt rendering is shared with the trainer (`training/llama3_prompt.py`,
+# audit finding B14): one definition, imported from the parent directory. The
+# directory is appended, never prepended, so nothing already importable is
+# shadowed by a file in `training/`.
+_TRAINING_DIR = str(Path(__file__).resolve().parent.parent)
+if _TRAINING_DIR not in sys.path:
+    sys.path.append(_TRAINING_DIR)
+
+from llama3_prompt import (  # noqa: E402 - needs the path above
+    BOS_TOKEN,
+    END_OF_GENERATION_TOKENS,
+    PROMPT_FORMAT,
+    STOP_TOKENS,
+    SYSTEM_BLOCK as _SYSTEM_BLOCK,
+    render_production_prompt,
+    with_single_bos,
+)
+
+__all__ = [  # the prompt names, re-exported for the services and their tests
+    "BOS_TOKEN",
+    "END_OF_GENERATION_TOKENS",
+    "PROMPT_FORMAT",
+    "STOP_TOKENS",
+    "render_production_prompt",
+    "with_single_bos",
+]
 
 
 DEFAULT_MODEL_ID = "meta-llama/Llama-3.2-3B-Instruct"
@@ -53,56 +81,15 @@ DEFAULT_NUM_CTX = 4096
 #
 # The VM answers every condition through Ollama's `/api/chat` with one user
 # message, which Ollama renders with the llama3.2 model's own template. That
-# rendering is reproduced here exactly, so a GPU answer is computed from the
-# same tokens a VM answer is. `apply_chat_template` from Transformers is NOT the
-# same text: it adds a "Today Date: <today>" line to the system block, so the
-# prompt differed from production and even changed from day to day. Checked
-# against Ollama 0.33.2: `/api/generate` with `raw: true` and this string gives
-# the same answer and the same prompt token count as `/api/chat`.
+# rendering is reproduced exactly in `training/llama3_prompt.py` — imported
+# above — so a GPU answer is computed from the same tokens a VM answer is, and
+# since 2026-11-03 so is every training example (`train_qlora.py` imports the
+# same module; audit finding B14). `apply_chat_template` from Transformers is
+# NOT the same text: it adds a "Today Date: <today>" line to the system block,
+# so the prompt differed from production and even changed from day to day.
+# Checked against Ollama 0.33.2: `/api/generate` with `raw: true` and this
+# string gives the same answer and the same prompt token count as `/api/chat`.
 # --------------------------------------------------------------------------- #
-
-PROMPT_FORMAT = "ollama-llama3.2-chat"
-
-_SYSTEM_BLOCK = (
-    "<|start_header_id|>system<|end_header_id|>\n\n"
-    "Cutting Knowledge Date: December 2023\n\n"
-    "<|eot_id|>"
-)
-
-#: Ollama's llama3.2 stop parameters. Generation also ends at the tokenizer's
-#: end-of-sequence tokens.
-STOP_TOKENS = ("<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>")
-#: Tokens llama.cpp treats as end of generation for Llama 3 on its own,
-#: whatever the stop parameters say.
-END_OF_GENERATION_TOKENS = ("<|eot_id|>", "<|eom_id|>", "<|end_of_text|>")
-BOS_TOKEN = "<|begin_of_text|>"
-
-
-def with_single_bos(token_ids: List[int], bos_id: int) -> List[int]:
-    """Exactly one leading BOS, as llama.cpp tokenises the prompt on the VM.
-
-    Whether a Transformers tokenizer adds BOS depends on how it was built (the
-    Hub tokenizer's post-processor does; one rebuilt from a GGUF did not), so
-    the service does not rely on it either way.
-    """
-    ids = list(token_ids)
-    while ids and ids[0] == bos_id:
-        ids.pop(0)
-    return [bos_id] + ids
-
-
-def render_production_prompt(content: str) -> str:
-    """One user turn, rendered exactly as Ollama renders it for llama3.2.
-
-    No `<|begin_of_text|>`: the tokenizer adds it, as llama.cpp does on the VM.
-    """
-    return (
-        _SYSTEM_BLOCK
-        + "<|start_header_id|>user<|end_header_id|>\n\n"
-        + content
-        + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-    )
-
 
 def resolve_max_new_tokens(requested: Optional[int]) -> int:
     """The request's output cap, or the default; never above the default."""

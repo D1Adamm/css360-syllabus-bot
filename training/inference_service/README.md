@@ -148,8 +148,10 @@ Responses have the GPU service's shape, with three differences:
 ### What is kept the same as the GPU service
 
 The GPU service renders the question with the same llama3.2 prompt rendering
-production uses (`helpers.render_production_prompt`, not the tokenizer's
-`apply_chat_template`) and decodes greedily: 256 new tokens, repetition penalty
+production uses (`helpers.render_production_prompt`, which is
+`training/llama3_prompt.py` — the module the trainer renders its examples with
+since 2026-11-03 — not the tokenizer's `apply_chat_template`) and decodes
+greedily: 256 new tokens, repetition penalty
 1.05 over the whole sequence, seed 360. This service sends the same single user turn to
 `/api/chat`, where the model's own Llama 3.2 template is applied, with
 `temperature 0`, `num_predict 256`, `repeat_penalty 1.05` over the whole

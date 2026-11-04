@@ -26,6 +26,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    import llama3_prompt
+except ImportError:  # imported from another directory (a test, a script)
+    sys.path.append(str(Path(__file__).resolve().parent))
+    import llama3_prompt
+
+from llama3_prompt import (  # noqa: E402
+    ASSISTANT_HEADER,
+    END_OF_GENERATION_TOKENS,
+    END_OF_TURN,
+    PROMPT_FORMAT,
+    REQUIRED_SPECIAL_TOKENS,
+    render_production_prompt,
+    render_training_completion,
+    render_training_text,
+)
+
 # ---------------------------------------------------------------------------
 # Pure helpers (unit-tested without GPU / model download)
 # ---------------------------------------------------------------------------
@@ -39,7 +56,11 @@ DEFAULT_SEED = 360
 DEFAULT_MAX_SEQ_LENGTH = 2048
 #: Where the answer starts in the Llama 3 chat format. The completion-only
 #: collator on older TRL releases masks everything up to and including this.
-LLAMA3_RESPONSE_TEMPLATE = "<|start_header_id|>assistant<|end_header_id|>\n\n"
+#: The same string the production prompt ends with (`llama3_prompt`).
+LLAMA3_RESPONSE_TEMPLATE = ASSISTANT_HEADER
+#: What to do with a record that does not fit `--max-seq-length`.
+OVERSIZED_POLICIES = ("fail", "drop")
+DEFAULT_OVERSIZED_POLICY = "fail"
 #: Every record has a format and a kind; older bare exports carry neither and
 #: read as these.
 DEFAULT_RECORD_FORMAT = "bare"
@@ -408,15 +429,21 @@ def build_runtime_report(
     dataset_composition_value: dict[str, Any] | None = None,
     completion_only_strategy: str | None = None,
     max_seq_length: int | None = None,
+    prompt_format: str | None = None,
+    length_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "mode": mode,
         # What the adapter was trained on: how many records of each
-        # format/kind, whether the loss covered the answer only, and the
-        # sequence window the grounded prompts had to fit.
+        # format/kind, whether the loss covered the answer only, the sequence
+        # window the grounded prompts had to fit, the prompt rendering (the
+        # one serving uses, since 2026-11-03), and what the per-record length
+        # audit found.
         "datasetComposition": dataset_composition_value,
         "completionOnlyLoss": completion_only_strategy,
         "maxSeqLength": max_seq_length,
+        "promptFormat": prompt_format,
+        "lengthAudit": length_audit,
         "modelId": model_id,
         "device": device,
         "computeDtype": compute_dtype,
@@ -645,53 +672,207 @@ def dtype_name(dtype: Any) -> str:
 
 
 def format_chat_example(tokenizer: Any, example: dict[str, str]) -> dict[str, str]:
-    """One instruction/response pair as the model's own chat format.
+    """One instruction/response pair as the text production will prompt with.
 
+    The production rendering (`llama3_prompt.render_training_text`), not the
+    tokenizer's `apply_chat_template`: that template adds a "Today Date" line
+    the model never sees on the VM or the GPU service, and puts the BOS token
+    into the text where the tokenizer adds it again (audit finding B14). The
+    tokenizer is accepted for signature compatibility and not consulted; what
+    it must satisfy is checked once by `assert_tokenizer_matches_prompt_format`.
     Shared by both device modes so the CPU path trains on byte-identical text.
     """
-    messages = [
-        {"role": "user", "content": example["instruction"]},
-        {"role": "assistant", "content": example["response"]},
-    ]
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=False,
-    )
-    return {"text": text}
+    del tokenizer
+    return {"text": render_training_text(example["instruction"], example["response"])}
 
 
 def format_prompt_completion(tokenizer: Any, example: dict[str, str]) -> dict[str, str]:
-    """The same chat text as `format_chat_example`, split where the answer starts.
+    """The same text as `format_chat_example`, split where the answer starts.
 
-    `prompt` is the user turn rendered by the chat template with the
-    generation header appended; `completion` is the answer closed with the
-    end-of-turn token. Concatenated they are byte-identical to the single
-    `text` the older format produced, which `assert_prompt_completion_matches`
-    checks against the real tokenizer before training. TRL trains on the
-    completion only when given the two halves.
+    `prompt` is the production prompt for the instruction (system block, user
+    turn, assistant header); `completion` is the answer closed with
+    `<|eot_id|>`, which is what the model emits to end an answer in production.
+    Concatenated they are byte-identical to `format_chat_example`'s `text`,
+    which `assert_prompt_completion_matches` checks before training. TRL
+    trains on the completion only when given the two halves.
     """
-    prompt = tokenizer.apply_chat_template(
-        [{"role": "user", "content": example["instruction"]}],
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    end_of_turn = getattr(tokenizer, "eos_token", None) or ""
-    return {"prompt": prompt, "completion": example["response"] + end_of_turn}
+    del tokenizer
+    return {
+        "prompt": render_production_prompt(example["instruction"]),
+        "completion": render_training_completion(example["response"]),
+    }
 
 
 def assert_prompt_completion_matches(tokenizer: Any) -> None:
-    """Refuse to train if the two renderings disagree for this tokenizer."""
+    """Refuse to train if the two renderings disagree."""
     probe = {"instruction": "probe question?", "response": "probe answer."}
     halves = format_prompt_completion(tokenizer, probe)
     whole = format_chat_example(tokenizer, probe)["text"]
     if halves["prompt"] + halves["completion"] != whole:
         raise TrainingDataError(
-            "The chat template's assistant turn does not split into prompt and "
-            "completion as expected, so completion-only loss would train on a "
-            "different text than the whole-text format. Check the tokenizer's "
-            "chat template and eos_token."
+            "The prompt/completion rendering does not concatenate to the whole "
+            "training text, so completion-only loss would train on a different "
+            "text than the whole-text format."
         )
+
+
+def assert_tokenizer_matches_prompt_format(tokenizer: Any) -> None:
+    """Refuse to train with a tokenizer that would tokenise the format differently.
+
+    The rendering relies on four Llama 3 special tokens each being one token id,
+    and on the end-of-turn token being one the model stops at. A tokenizer that
+    spells `<|eot_id|>` out as several pieces would train the model to emit text
+    that production's stop tokens never match; one whose eos is something else
+    would be closing every answer with a token the serving side does not stop
+    on. Both are failures to refuse, not to work around.
+    """
+    problems: list[str] = []
+    for token in REQUIRED_SPECIAL_TOKENS:
+        ids = list(tokenizer.encode(token, add_special_tokens=False))
+        if len(ids) != 1:
+            problems.append(f"{token!r} tokenises to {len(ids)} ids, not one")
+    # TRL appends `eos_token` to a completion that does not already end with
+    # it, so the eos must be the very token the completion ends with — any
+    # other end-of-generation token would add one the audit never counted.
+    eos = getattr(tokenizer, "eos_token", None)
+    if eos != END_OF_TURN:
+        problems.append(f"eos_token is {eos!r}, not {END_OF_TURN!r}")
+    if problems:
+        raise TrainingDataError(
+            f"This tokenizer does not fit the {PROMPT_FORMAT} prompt format the "
+            "fine-tuned service prompts with, so training on it would not match "
+            "serving: " + "; ".join(problems) + ". Use the Llama 3 tokenizer "
+            "(meta-llama/Llama-3.2-3B-Instruct) or change the renderer in "
+            "training/llama3_prompt.py on both sides together."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Per-record length audit: nothing is truncated without being named
+# ---------------------------------------------------------------------------
+
+
+def _instruction_preview(text: str, limit: int = 80) -> str:
+    flat = " ".join(str(text).split())
+    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
+
+
+def audit_record_lengths(
+    tokenizer: Any,
+    records: list[dict[str, str]],
+    *,
+    max_seq_length: int,
+    split: str,
+) -> dict[str, Any]:
+    """Token counts for every record, and which ones will not fit the window.
+
+    Counted on the exact text training sees (`format_chat_example`) plus the
+    one BOS the tokenizer adds, so this is the length `SFTConfig.max_length`
+    would otherwise truncate at. SFT truncation keeps the start of the
+    sequence, which for a grounded example is syllabus context, and drops the
+    end, which is the answer — the only part the loss covers. A record that
+    does not fit is therefore a record that teaches nothing, or teaches a cut
+    answer, and it is reported here by line number rather than trained on.
+    """
+    rows: list[dict[str, Any]] = []
+    for line, record in enumerate(records, start=1):
+        halves = format_prompt_completion(tokenizer, record)
+        prompt_tokens = len(tokenizer.encode(halves["prompt"], add_special_tokens=False))
+        completion_tokens = len(
+            tokenizer.encode(halves["completion"], add_special_tokens=False)
+        )
+        whole = format_chat_example(tokenizer, record)["text"]
+        # One BOS, as the tokenizer adds it and as serving tokenises the prompt.
+        tokens = len(tokenizer.encode(whole, add_special_tokens=False)) + 1
+        rows.append(
+            {
+                "line": line,
+                "format": record.get("format", DEFAULT_RECORD_FORMAT),
+                "kind": record.get("kind", DEFAULT_RECORD_KIND),
+                "tokens": tokens,
+                "promptTokens": prompt_tokens + 1,
+                "completionTokens": completion_tokens,
+                "fits": tokens <= max_seq_length,
+                "instructionPreview": _instruction_preview(record["instruction"]),
+            }
+        )
+    oversized = [row for row in rows if not row["fits"]]
+    token_counts = [row["tokens"] for row in rows]
+    return {
+        "split": split,
+        "maxSeqLength": int(max_seq_length),
+        "promptFormat": PROMPT_FORMAT,
+        "records": len(rows),
+        "maxTokens": max(token_counts) if token_counts else 0,
+        "meanTokens": (sum(token_counts) / len(token_counts)) if token_counts else 0.0,
+        "oversizedCount": len(oversized),
+        "oversizedLines": [row["line"] for row in oversized],
+        "rows": rows,
+    }
+
+
+def apply_oversized_policy(
+    audit: dict[str, Any],
+    records: list[dict[str, str]],
+    *,
+    policy: str,
+) -> list[dict[str, str]]:
+    """Fail on, or drop, the records the audit found too long. Never truncate."""
+    if policy not in OVERSIZED_POLICIES:
+        raise ValueError(f"Unknown oversized policy: {policy!r}")
+    oversized_lines = list(audit["oversizedLines"])
+    if not oversized_lines:
+        return list(records)
+    rows_by_line = {row["line"]: row for row in audit["rows"]}
+    described = "; ".join(
+        f"line {line} ({rows_by_line[line]['format']}/{rows_by_line[line]['kind']}, "
+        f"{rows_by_line[line]['tokens']} tokens: {rows_by_line[line]['instructionPreview']!r})"
+        for line in oversized_lines[:10]
+    )
+    if len(oversized_lines) > 10:
+        described += f"; and {len(oversized_lines) - 10} more"
+    if policy == "fail":
+        raise TrainingDataError(
+            f"{len(oversized_lines)} {audit['split']} record(s) exceed --max-seq-length "
+            f"{audit['maxSeqLength']} and would be truncated — which for a grounded "
+            "example cuts off the answer, the only part the loss covers. Nothing was "
+            f"trained. Oversized: {described}. Shorten or reject these examples in "
+            "review and re-prepare the split, raise --max-seq-length if the hardware "
+            "allows, or rerun with --on-oversized drop to train without them (the "
+            "dropped lines are then listed in length-report.json)."
+        )
+    print(
+        f"WARNING: dropping {len(oversized_lines)} {audit['split']} record(s) that exceed "
+        f"--max-seq-length {audit['maxSeqLength']}: {described}"
+    )
+    dropped = set(oversized_lines)
+    return [record for line, record in enumerate(records, start=1) if line not in dropped]
+
+
+def length_audit_summary(
+    train_audit: dict[str, Any],
+    validation_audit: dict[str, Any],
+    *,
+    policy: str,
+) -> dict[str, Any]:
+    """The runtime report's view of the audit: counts, not every row."""
+
+    def summarise(audit: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "records": audit["records"],
+            "maxTokens": audit["maxTokens"],
+            "meanTokens": round(float(audit["meanTokens"]), 1),
+            "oversizedCount": audit["oversizedCount"],
+            "oversizedLines": list(audit["oversizedLines"]),
+            "droppedCount": audit["oversizedCount"] if policy == "drop" else 0,
+        }
+
+    return {
+        "maxSeqLength": train_audit["maxSeqLength"],
+        "onOversized": policy,
+        "train": summarise(train_audit),
+        "validation": summarise(validation_audit),
+    }
 
 
 def resolve_completion_only_strategy(config_class: Any) -> str:
@@ -882,6 +1063,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "unrepresentable at the old 512."
         ),
     )
+    parser.add_argument(
+        "--on-oversized",
+        choices=OVERSIZED_POLICIES,
+        default=DEFAULT_OVERSIZED_POLICY,
+        help=(
+            "What to do with a record longer than --max-seq-length: 'fail' (default) "
+            "refuses to train and names the lines; 'drop' trains without them and "
+            "lists them in length-report.json. Nothing is ever truncated silently."
+        ),
+    )
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--epochs", type=float, default=3.0)
     parser.add_argument("--per-device-batch-size", type=int, default=1)
@@ -1031,6 +1222,49 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # The tokenizer is loaded before the step budget is computed, so that the
+    # length audit below can refuse or drop records and every count after it
+    # describes what is actually trained on.
+    print(f"Loading tokenizer: {args.model_id}")
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    assert_tokenizer_matches_prompt_format(tokenizer)
+    print(f"Prompt format: {PROMPT_FORMAT} (training/llama3_prompt.py, as served)")
+
+    # Every record is tokenised as training will see it. Anything that does
+    # not fit the window is named — and, by default, refused — rather than
+    # truncated by SFTConfig.max_length, which would cut the answer off a
+    # grounded example and train on the syllabus text alone.
+    train_audit = audit_record_lengths(
+        tokenizer, train_records, max_seq_length=args.max_seq_length, split="train"
+    )
+    validation_audit = audit_record_lengths(
+        tokenizer, validation_records, max_seq_length=args.max_seq_length, split="validation"
+    )
+    write_json(
+        output_dir / "length-report.json",
+        {"train": train_audit, "validation": validation_audit, "onOversized": args.on_oversized},
+    )
+    print(
+        f"Length audit ({args.max_seq_length}-token window): train max {train_audit['maxTokens']} "
+        f"tokens, {train_audit['oversizedCount']} oversized; validation max "
+        f"{validation_audit['maxTokens']} tokens, {validation_audit['oversizedCount']} oversized"
+    )
+    train_records = apply_oversized_policy(train_audit, train_records, policy=args.on_oversized)
+    validation_records = apply_oversized_policy(
+        validation_audit, validation_records, policy=args.on_oversized
+    )
+    if not train_records:
+        raise TrainingDataError("Training dataset is empty after dropping oversized records")
+    if mode == "full":
+        # A full run trains on the whole split; the "full" counts the step
+        # budget and the report describe must not include dropped records.
+        full_train, full_validation = train_records, validation_records
+    length_audit = length_audit_summary(
+        train_audit, validation_audit, policy=args.on_oversized
+    )
+
     # Full runs pass an explicit ceil-based optimizer-step budget so Trainer's
     # floor(len(dataloader) / gradient_accumulation_steps) does not truncate the
     # run when the dataset is not divisible by the effective batch size.
@@ -1091,11 +1325,8 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         gpu_count=device_count,
     )
 
-    print(f"Loading tokenizer/model: {args.model_id} (device mode: {device})")
+    print(f"Loading model: {args.model_id} (device mode: {device})")
     model_load_start = time.perf_counter()
-    tokenizer = AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
 
     bnb_config = BitsAndBytesConfig(**quantization_settings(compute_dtype))
     model = AutoModelForCausalLM.from_pretrained(
@@ -1123,8 +1354,7 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         print(f"Peak resident memory after model load: {peak_rss_after_model_load / MIB:.0f} MiB")
 
     completion_strategy = resolve_completion_only_strategy(SFTConfig)
-    if completion_strategy == "config":
-        assert_prompt_completion_matches(tokenizer)
+    assert_prompt_completion_matches(tokenizer)
     print(
         f"Completion-only loss: {completion_strategy} "
         f"({'SFTConfig.completion_only_loss' if completion_strategy == 'config' else 'DataCollatorForCompletionOnlyLM'})"
@@ -1279,6 +1509,8 @@ def run_training(args: argparse.Namespace) -> dict[str, Any]:
         },
         completion_only_strategy=completion_strategy,
         max_seq_length=args.max_seq_length,
+        prompt_format=PROMPT_FORMAT,
+        length_audit=length_audit,
         mode=mode,
         model_id=args.model_id,
         gpu_count=gpu_count,
