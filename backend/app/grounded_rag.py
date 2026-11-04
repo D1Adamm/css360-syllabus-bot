@@ -24,6 +24,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from app.error_classification import SYLLABUS_NOT_INDEXED, ClassifiedHTTPException
+
 from app.course_id import assert_valid_course_id
 from app.course_model_resolution import (
     resolve_course_model_version,
@@ -120,9 +122,13 @@ async def retrieve_and_prompt(
         storage=storage,
     )
     if not retrieved_chunks:
-        raise HTTPException(
+        # Nothing indexed for this course, or nothing relevant: either way a
+        # grounded answer cannot be produced, and the browser needs to say
+        # "syllabus not indexed" rather than "temporarily unavailable".
+        raise ClassifiedHTTPException(
             status_code=404,
-            detail=(
+            code=SYLLABUS_NOT_INDEXED,
+            message=(
                 f'No usable syllabus context was retrieved for course "{safe_course_id}". '
                 "Cannot generate a grounded answer without retrieved context."
             ),
@@ -170,6 +176,7 @@ async def generate_from_prompt(
             "modelVersion": None,
             "adapterLoaded": None,
             "generationSeconds": None,
+            "engine": None,
             "responseType": "rag",
         }
 
@@ -197,6 +204,7 @@ async def generate_from_prompt(
         "modelVersion": generation.get("model_version") or resolved["version"],
         "adapterLoaded": generation["adapter_loaded"],
         "generationSeconds": generation["generation_seconds"],
+        "engine": generation.get("engine"),
         "responseType": "fineTunedRag",
     }
 

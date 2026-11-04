@@ -43,6 +43,11 @@ from app.finetuned_client import (
     public_service_health,
     generate_finetuned_response,
 )
+from app.error_classification import (
+    TRAINING_RUN_ACTIVE,
+    ClassifiedHTTPException,
+    install as install_classified_errors,
+)
 from app.finetuned_rag import generate_course_finetuned_rag_answer
 from app.generation_mode import current_mode, describe as describe_generation_mode, on_mode_change
 from app.generation_queue import bind_request, get_generation_queue
@@ -182,6 +187,9 @@ app = FastAPI(
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
 )
 
+# Failures a browser must tell apart answer with `{"detail": {"code", "message"}}`;
+# see app/error_classification.py.
+install_classified_errors(app)
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
@@ -374,6 +382,7 @@ async def generate_fine_tuned(
         modelVersion=result.get("model_version") or resolved["version"],
         adapterLoaded=result["adapter_loaded"],
         generationSeconds=result["generation_seconds"],
+        engine=result.get("engine"),
     )
 
 
@@ -451,6 +460,7 @@ async def generate_fine_tuned_rag(
         modelVersion=result.get("modelVersion"),
         adapterLoaded=result["adapterLoaded"],
         generationSeconds=result["generationSeconds"],
+        engine=result.get("engine"),
     )
 
 

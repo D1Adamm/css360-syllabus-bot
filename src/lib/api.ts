@@ -28,6 +28,8 @@ export interface FineTunedGenerateResponse {
   courseId?: string;
   /** The course version that answered, as the backend resolved it. */
   modelVersion?: string | null;
+  /** Where it was generated: `vm` (local Ollama) or `gpu` (classroom mode). */
+  engine?: string | null;
   adapterLoaded: boolean;
   generationSeconds?: number | null;
 }
@@ -40,6 +42,7 @@ export interface FineTunedRagGenerateResponse {
   retrievedChunks: RagRetrieveResult[];
   responseType: 'fineTunedRag';
   modelVersion?: string | null;
+  engine?: string | null;
   adapterLoaded: boolean;
   generationSeconds?: number | null;
 }

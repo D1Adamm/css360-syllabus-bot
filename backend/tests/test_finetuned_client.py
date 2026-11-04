@@ -223,7 +223,7 @@ class FineTunedClientTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(ctx.exception.status_code, 503)
-        self.assertIn("adapter is not loaded", ctx.exception.detail.lower())
+        self.assertIn("no adapter loaded", ctx.exception.detail.lower())
 
     async def test_missing_finetuned_service_url(self) -> None:
         os.environ.pop("FINETUNED_SERVICE_URL", None)
@@ -345,11 +345,13 @@ class FineTunedEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 409)
         generate.assert_not_awaited()
-        # The body is the student-facing sentence, not the operator reason.
+        # The body is the student-facing sentence, not the operator reason —
+        # plus the code the browser maps to audience-specific copy.
+        detail = response.json()["detail"]
         self.assertEqual(
-            response.json()["detail"],
-            "A fine-tuned model is not available for this course yet.",
+            detail["message"], "A fine-tuned model is not available for this course yet."
         )
+        self.assertEqual(detail["code"], "model_not_activated")
 
     def test_generate_endpoint_missing_url(self) -> None:
         os.environ.pop("FINETUNED_SERVICE_URL", None)
@@ -364,7 +366,9 @@ class FineTunedEndpointTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 503)
-        self.assertIn("FINETUNED_SERVICE_URL", response.json()["detail"])
+        detail = response.json()["detail"]
+        self.assertIn("FINETUNED_SERVICE_URL", detail["message"])
+        self.assertEqual(detail["code"], "finetuned_not_configured")
 
 
 class ExplicitVersionClientTests(unittest.IsolatedAsyncioTestCase):

@@ -282,8 +282,9 @@ class UpstreamErrorBodyTests(unittest.IsolatedAsyncioTestCase):
         self.assert_body_absent(body)
         assert_no_topology(self, body)
         # Still says what happened and what the upstream code was.
-        self.assertIn("health check failed", body["detail"])
-        self.assertIn("HTTP 502", body["detail"])
+        self.assertIn("health check failed", body["detail"]["message"])
+        self.assertIn("HTTP 502", body["detail"]["message"])
+        self.assertEqual(body["detail"]["code"], "finetuned_upstream_error")
 
     def test_the_generate_route_returns_the_status_code_and_nothing_else(self) -> None:
         with patch(
@@ -302,8 +303,9 @@ class UpstreamErrorBodyTests(unittest.IsolatedAsyncioTestCase):
         body = response.json()
         self.assert_body_absent(body)
         assert_no_topology(self, body)
-        self.assertIn("server error", body["detail"].lower())
-        self.assertIn("HTTP 500", body["detail"])
+        self.assertIn("server error", body["detail"]["message"].lower())
+        self.assertIn("HTTP 500", body["detail"]["message"])
+        self.assertEqual(body["detail"]["code"], "finetuned_upstream_error")
 
     # -- the two remaining client branches ---------------------------------- #
 
