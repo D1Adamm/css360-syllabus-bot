@@ -654,6 +654,7 @@ Neither `.env` file is in the repository. Copy the example and fill it in.
 | `AUTH_*` lifetimes | no | Session and invitation lifetimes; defaults documented in `backend/.env.example` |
 | `AUTO_STARTER_SEED_GENERATION` | yes | Set `false` explicitly. The code default is `true` (`backend/app/starter_jobs.py`), and a starter seed job holds the single generation slot for minutes; `backend/.env.example` ships `false` |
 | `GENERATION_MAX_CONCURRENCY`, `GENERATION_MAX_WAITING`, `GENERATION_QUEUE_TIMEOUT_SECONDS` | no | The generation queue. Defaults `1`, `160`, `150` (`backend/app/generation_queue.py`), sized for Nginx's `proxy_read_timeout 300` |
+| `FINETUNED_READINESS_CHECK_SECONDS` | no | How often the backend re-checks that every course's activated model version is one the fine-tuned service serves, logging a journal WARNING when it is not and INFO when it recovers (`backend/app/finetuned_readiness.py`). Default `300`; `0` disables the background check. The same assessment is `GET /api/admin/model-readiness` (Admin → Overview) |
 | `OLLAMA_*` | yes | Base and RAG generation |
 
 **UWB VM** — `.env.local` for the frontend build: `VITE_API_BASE_URL` must be the

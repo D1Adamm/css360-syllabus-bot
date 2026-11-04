@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import os
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 # Load backend/.env before other app modules read configuration.
 from app import config as _config  # noqa: F401
@@ -11,6 +13,7 @@ load_backend_env()
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.auth.dependencies import (
     authorize_course_access,
@@ -49,6 +52,7 @@ from app.error_classification import (
     install as install_classified_errors,
 )
 from app.finetuned_rag import generate_course_finetuned_rag_answer
+from app.finetuned_readiness import collect_readiness, start_readiness_monitor
 from app.generation_mode import current_mode, describe as describe_generation_mode, on_mode_change
 from app.generation_queue import bind_request, get_generation_queue
 from app.grounded_rag import (
@@ -180,16 +184,41 @@ logger = logging.getLogger(__name__)
 # `production`) the three documentation paths do not exist.
 DOCS_ENABLED = is_test_mode() or app_env() in {"development", "dev", "local"}
 
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Background work that lives as long as the process does.
+
+    Only the fine-tuned readiness monitor (`finetuned_readiness`), which
+    writes a journal WARNING when a course's activated version stops being
+    servable. It does not start under tests, without a database, or when
+    `FINETUNED_READINESS_CHECK_SECONDS=0`.
+    """
+    monitor = start_readiness_monitor()
+    try:
+        yield
+    finally:
+        if monitor is not None:
+            monitor.cancel()
+            try:
+                await monitor
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - shutdown must not fail
+                pass
+
+
 app = FastAPI(
     title="Syllabus Model Lab Backend",
     docs_url="/docs" if DOCS_ENABLED else None,
     redoc_url="/redoc" if DOCS_ENABLED else None,
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
+    lifespan=lifespan,
 )
 
 # Failures a browser must tell apart answer with `{"detail": {"code", "message"}}`;
 # see app/error_classification.py.
 install_classified_errors(app)
+
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
@@ -322,6 +351,16 @@ def generation_queue_status(principal: Principal = Depends(require_admin)) -> di
 # A different engine has a different speed: the queue's wait estimate starts
 # over when the mode changes, rather than refusing GPU requests on CPU timings.
 on_mode_change(lambda _old, _new: get_generation_queue().reset_estimate())
+
+
+@app.get("/api/admin/model-readiness")
+async def model_readiness(principal: Principal = Depends(require_admin)) -> dict[str, Any]:
+    """Every course's activated version against what the fine-tuned service serves.
+
+    Admin → Overview reads this; the same assessment runs in the background
+    and writes to the journal when it changes (`finetuned_readiness`).
+    """
+    return await collect_readiness()
 
 
 @app.get("/api/admin/generation-mode")
