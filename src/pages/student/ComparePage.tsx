@@ -30,8 +30,13 @@ export function ComparePage() {
   const { states, activeQuestion, isRunning, run } = useComparisonRun(courseId);
 
   // A run stored earlier this session means Evaluate has something to show
-  // even before a new question is asked.
+  // even before a new question is asked — unless it has already been rated,
+  // in which case there is nothing left to do with it.
   const storedRun = getRun(courseId);
+  const unratedRun = storedRun && !storedRun.ratedAt ? storedRun : null;
+  const ratedThisQuestion = Boolean(
+    storedRun?.ratedAt && storedRun.question === activeQuestion,
+  );
   const hasAnswered = Object.values(states).some((state) => state.status !== 'idle');
 
   const handleAsk = useCallback(
@@ -69,14 +74,14 @@ export function ComparePage() {
       />
 
       {!hasAnswered &&
-        (storedRun ? (
+        (unratedRun ? (
           /* A comparison from earlier this session is still waiting to be
              rated. Saying "no question asked yet" next to a link to it was a
              contradiction. */
           <EmptyState
             illustration="contribute"
             title="Ask another question"
-            description={`You last asked “${storedRun.question}”. Ask something new above, or go back and rate those answers.`}
+            description={`You last asked “${unratedRun.question}”. Ask something new above, or go back and rate those answers.`}
             action={
               <LinkButton
                 to={studentCoursePath(courseId, 'evaluate')}
@@ -86,6 +91,12 @@ export function ComparePage() {
                 Rate your last comparison
               </LinkButton>
             }
+          />
+        ) : storedRun ? (
+          <EmptyState
+            illustration="contribute"
+            title="Ask another question"
+            description="You rated your last comparison. Type a new question above, or pick one of the suggestions, to compare again."
           />
         ) : (
           <EmptyState
@@ -117,7 +128,11 @@ export function ComparePage() {
           {/* Evaluation is offered only once every approach has finished, so a
               student never rates a half-loaded set. */}
           <div className="compare__actions">
-            {settled ? (
+            {settled && ratedThisQuestion ? (
+              <p className="compare__actions-hint" role="status">
+                You rated these answers. Ask another question to compare again.
+              </p>
+            ) : settled ? (
               <LinkButton
                 to={studentCoursePath(courseId, 'evaluate')}
                 variant="primary"

@@ -26,7 +26,9 @@ export function StudentHomePage() {
   const activity = useCourseActivity(courseId);
   const { getRun } = useComparisonRunStore();
 
-  const pendingRun = getRun(courseId);
+  // A comparison is "waiting" until it has been rated; a rated one is done.
+  const storedRun = getRun(courseId);
+  const pendingRun = storedRun && !storedRun.ratedAt ? storedRun : null;
 
   const contributed =
     activity.status === 'ready' ? String(activity.activity.contributedQuestions) : '—';

@@ -135,12 +135,21 @@ CREATE TABLE IF NOT EXISTS evaluations (
     run_id TEXT,
     question_text TEXT,
 
+    -- The four answers the student rated, as the browser held them (text,
+    -- error, sources, model, version, engine). NULL on rows written before
+    -- 003_evaluation_provenance_and_dataset_pinning.sql.
+    responses JSONB,
+
     PRIMARY KEY (course_id, evaluation_id)
 );
 
 
 CREATE INDEX IF NOT EXISTS idx_evaluations_course_created
     ON evaluations(course_id, created_at DESC);
+
+-- One participant rates one comparison run once; the write checks this index.
+CREATE INDEX IF NOT EXISTS idx_evaluations_participant_run
+    ON evaluations(course_id, participant_id, run_id);
 
 
 CREATE TABLE IF NOT EXISTS course_models (
@@ -235,6 +244,10 @@ CREATE TABLE IF NOT EXISTS training_runs (
     updated_at TIMESTAMPTZ NOT NULL,
 
     dataset_ref TEXT NOT NULL,
+    -- Digest of the prepared dataset when the run was queued; the worker is
+    -- refused the dataset if the files no longer match it. NULL on runs
+    -- queued before 003.
+    dataset_sha256 TEXT,
 
     approved_example_count INTEGER NOT NULL DEFAULT 0,
     train_examples INTEGER NOT NULL DEFAULT 0,

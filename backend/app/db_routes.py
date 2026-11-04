@@ -43,6 +43,7 @@ from app.student_visibility import contribution_payload, seeds_for_participant
 from app.course_id import assert_valid_course_id
 from app.course_model_resolution import assert_valid_model_version
 from app.db import db_connection, translate_db_errors
+from app.error_classification import EVALUATION_ALREADY_RECORDED, ClassifiedHTTPException
 from app.finetuned_client import check_finetuned_service_health
 from app.model_publication import (
     require_ready_version as _require_ready_version,
@@ -546,6 +547,16 @@ def create_course_evaluation(
 
     try:
         created = _run("creating an evaluation", work)
+    except db_evaluations.DuplicateEvaluationError as exc:
+        # This participant already rated this comparison run. Nothing was
+        # written; the browser treats the code as "already rated" and shows
+        # the thanks page rather than a retry.
+        raise ClassifiedHTTPException(
+            status_code=409,
+            code=EVALUATION_ALREADY_RECORDED,
+            message="You have already rated this comparison.",
+            extra={"evaluationId": exc.evaluation_id},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return EvaluationRecordModel(**_without_participant(created))

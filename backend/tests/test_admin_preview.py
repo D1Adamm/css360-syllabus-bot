@@ -201,9 +201,13 @@ class AdministratorCanPreviewTests(PreviewTestCase):
         self.assertEqual(evaluation["courseId"], COURSE)
         for field in (
             "comparisonId", "mostAccurate", "preferredModel", "hallucinationFlags",
-            "comment", "runId", "questionText", "createdAt",
+            "comment", "runId", "questionText",
         ):
             self.assertEqual(evaluation[field], RATING[field], field)
+        # The time is the server's, not the browser's (audit B9): present, and
+        # not the value the body carried.
+        self.assertTrue(evaluation["createdAt"])
+        self.assertNotEqual(evaluation["createdAt"], RATING["createdAt"])
         # Not asked, so not invented — serialized as null, exactly as the real
         # route serializes a stored record without them; and nobody to
         # attribute it to.
@@ -294,7 +298,9 @@ class NobodyElseTests(PreviewTestCase):
 class ParticipantRouteUnchangedTests(PreviewTestCase):
     def test_a_participant_still_records_a_rating_attributed_from_the_session(self) -> None:
         self.act_as(participant(COURSE))
-        self.connection = FakeConnection([COURSE_FOUND, 1, [stored_row(f"participant-{COURSE}")]])
+        # Course lookup, the duplicate-rating check (no earlier rating), the
+        # insert, the read-back.
+        self.connection = FakeConnection([COURSE_FOUND, [], [], 1, [stored_row(f"participant-{COURSE}")]])
 
         response = self.rate()
 
@@ -331,7 +337,7 @@ class ParticipantRouteUnchangedTests(PreviewTestCase):
         self.patch("app.db_participants.touch_participant", return_value=None)
         self.client.cookies.set(PARTICIPANT_COOKIE_NAME, token)
 
-        self.connection = FakeConnection([COURSE_FOUND, 1, [stored_row("part-1")]])
+        self.connection = FakeConnection([COURSE_FOUND, [], [], 1, [stored_row("part-1")]])
         recorded = self.rate()
         self.assertEqual(recorded.status_code, 201, recorded.text)
         self.assertEqual(
@@ -426,7 +432,8 @@ class PreviewRepositoryTests(unittest.TestCase):
         self.assertTrue(record["id"].startswith("preview-"))
         self.assertEqual(record["courseId"], COURSE)
         self.assertEqual(record["hallucinationFlags"], ["base"])
-        self.assertEqual(record["createdAt"], RATING["createdAt"])
+        self.assertTrue(record["createdAt"])
+        self.assertNotEqual(record["createdAt"], RATING["createdAt"])  # server-stamped
         self.assertNotIn("participantId", record)
         for field in ("mostHelpful", "mostConcise", "bestGrounded"):
             self.assertNotIn(field, record)
@@ -441,7 +448,7 @@ class PreviewRepositoryTests(unittest.TestCase):
                     db_evaluations.create_evaluation(FakeConnection([1]), COURSE, body)
 
     def test_the_insert_and_the_preview_build_the_same_columns(self) -> None:
-        connection = FakeConnection([1, [stored_row("part-1")]])
+        connection = FakeConnection([[], [], 1, [stored_row("part-1")]])
         db_evaluations.create_evaluation(connection, COURSE, RATING, participant_id="part-1")
         inserted = connection.params_for("INSERT INTO evaluations")
         previewed = db_evaluations.evaluation_row(
@@ -450,7 +457,9 @@ class PreviewRepositoryTests(unittest.TestCase):
 
         self.assertEqual(set(inserted), set(previewed))
         for column, value in previewed.items():
-            if column in ("evaluation_id", "participant_id"):
+            # The id and attribution differ by design; the timestamp is the
+            # server's clock at each call.
+            if column in ("evaluation_id", "participant_id", "created_at"):
                 continue
             with self.subTest(column=column):
                 stored = inserted[column]

@@ -213,6 +213,24 @@ class SeedResponse(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
+class EvaluationResponseSnapshot(BaseModel):
+    """One of the four answers a rating was made against, as the browser held it.
+
+    `text` and `error` are what the student saw (one of them empty); `model`,
+    `modelVersion` and `engine` are what the backend reported producing it.
+    Lengths are enforced in `db_evaluations.validate_responses`.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    text: str = ""
+    error: str | None = None
+    sources: list[str] = Field(default_factory=list)
+    model: str | None = None
+    model_version: str | None = Field(default=None, alias="modelVersion")
+    engine: str | None = None
+
+
 class EvaluationRecordModel(DbRecord):
     id: str
     course_id: str = Field(alias="courseId")
@@ -232,6 +250,9 @@ class EvaluationRecordModel(DbRecord):
     comment: str | None = None
     run_id: str | None = Field(default=None, alias="runId")
     question_text: str | None = Field(default=None, alias="questionText")
+    # The four answers rated, keyed by approach. Present on ratings recorded
+    # since 2026-11; absent (not null) on older rows.
+    responses: dict[str, EvaluationResponseSnapshot] | None = None
     # `participantId` — the pseudonymous participant — travels through
     # `extra="allow"` rather than a declared field, so it is present on staff
     # responses exactly when a row carries one and absent (not null) on a
@@ -262,9 +283,14 @@ class EvaluationCreateRequest(BaseModel):
         default_factory=list, alias="hallucinationFlags"
     )
     comment: str | None = None
+    # Accepted for compatibility and ignored: the server stamps the time.
     created_at: str | None = Field(default=None, alias="createdAt")
     run_id: str | None = Field(default=None, alias="runId")
     question_text: str | None = Field(default=None, alias="questionText")
+    # The answers being rated. Optional on the wire so an older client still
+    # posts; the browser always sends them, and the repository checks that a
+    # rating does not name an approach that never answered.
+    responses: dict[str, EvaluationResponseSnapshot] | None = None
 
 
 class EvaluationPreviewResponse(BaseModel):

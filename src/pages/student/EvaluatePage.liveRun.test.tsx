@@ -22,6 +22,7 @@ vi.mock('../../hooks/useEvaluations', () => ({
 
 import { ComparisonRunProvider, type ComparisonRun } from '../../context/ComparisonRunContext';
 import { CourseProvider } from '../../context/CourseContext';
+import { ApiError } from '../../lib/api';
 import { EvaluatePage } from './EvaluatePage';
 
 const COURSE_ID = 'css-360-winter-2026-a7rp';
@@ -321,5 +322,174 @@ describe('EvaluatePage live run', () => {
       expect(addEvaluationMock).toHaveBeenCalledTimes(1);
     });
     expect(addEvaluationMock.mock.calls[0][0].hallucinationFlags).toEqual(['base']);
+  });
+
+  /* --------------------------------------------------------------------- *
+   * What a rating records, and rating once
+   *
+   * Audit findings B8 and B9 (fixed 2026-11-03). A rating used to store a
+   * winner and a run id, but not the answers it was choosing between or the
+   * model version that produced them; and nothing stopped the same run being
+   * rated twice. The record now carries a snapshot of the four answers, the
+   * stored run is marked rated, and the backend's refusal of a second rating
+   * is treated as "already rated" rather than as a failure.
+   * --------------------------------------------------------------------- */
+
+  it('stores a snapshot of the four answers, with the model and version that produced each', async () => {
+    storeRun({
+      responses: {
+        base: { text: 'Base answer text', error: null, sources: [], model: 'llama3.2:3b' },
+        rag: { text: 'RAG answer text', error: null, sources: ['Grading'], model: 'llama3.2:3b' },
+        fineTuned: {
+          text: 'Fine-tuned answer text',
+          error: null,
+          sources: [],
+          model: 'css-360-ft',
+          modelVersion: 'v2',
+          engine: 'vm',
+        },
+        fineTunedRag: { text: '', error: 'This response is temporarily unavailable.', sources: [] },
+      },
+    });
+    renderPage();
+
+    chooseAllCriteria();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit evaluation' }));
+
+    await waitFor(() => {
+      expect(addEvaluationMock).toHaveBeenCalledTimes(1);
+    });
+    const saved = addEvaluationMock.mock.calls[0][0];
+    expect(saved.responses).toEqual({
+      base: {
+        text: 'Base answer text',
+        error: null,
+        sources: [],
+        model: 'llama3.2:3b',
+        modelVersion: null,
+        engine: null,
+      },
+      rag: {
+        text: 'RAG answer text',
+        error: null,
+        sources: ['Grading'],
+        model: 'llama3.2:3b',
+        modelVersion: null,
+        engine: null,
+      },
+      fineTuned: {
+        text: 'Fine-tuned answer text',
+        error: null,
+        sources: [],
+        model: 'css-360-ft',
+        modelVersion: 'v2',
+        engine: 'vm',
+      },
+      fineTunedRag: {
+        text: '',
+        error: 'This response is temporarily unavailable.',
+        sources: [],
+        model: null,
+        modelVersion: null,
+        engine: null,
+      },
+    });
+  });
+
+  it('marks the run rated once saved, so coming back shows the thanks and not the form', async () => {
+    storeRun();
+    addEvaluationMock.mockResolvedValue({ id: 'evaluation-stored-1' });
+    renderPage();
+
+    chooseAllCriteria();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit evaluation' }));
+    expect(await screen.findByText('Thanks — your ratings were recorded')).toBeInTheDocument();
+
+    const stored = JSON.parse(window.sessionStorage.getItem(`sml.run.${COURSE_ID}`) ?? 'null');
+    expect(stored.ratedAt).toEqual(expect.any(String));
+    expect(stored.evaluationId).toBe('evaluation-stored-1');
+
+    // The page is opened again (a reload, or the home page's link).
+    cleanup();
+    renderPage();
+    expect(screen.getByText('You already rated this comparison')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit evaluation' })).not.toBeInTheDocument();
+    expect(addEvaluationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats the backend's refusal of a second rating as already rated, not as an error", async () => {
+    storeRun();
+    addEvaluationMock.mockRejectedValue(
+      new ApiError('You have already rated this comparison.', 409, 'evaluation_already_recorded'),
+    );
+    renderPage();
+
+    chooseAllCriteria();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit evaluation' }));
+
+    expect(await screen.findByText('You already rated this comparison')).toBeInTheDocument();
+    expect(screen.queryByText('Not saved')).not.toBeInTheDocument();
+    const stored = JSON.parse(window.sessionStorage.getItem(`sml.run.${COURSE_ID}`) ?? 'null');
+    expect(stored.ratedAt).toEqual(expect.any(String));
+    expect(stored.evaluationId).toBeNull();
+  });
+
+  it('does not mark a newer run rated when a new comparison settled while the rating was saving', async () => {
+    // Comparisons keep running after the student leaves Compare. If Q2 settles
+    // during the POST for Q1's rating, the provider has already replaced the
+    // stored run; marking it would lock the student out of rating Q2.
+    storeRun();
+    let resolveSave: (value: unknown) => void = () => undefined;
+    addEvaluationMock.mockImplementation(
+      () => new Promise((resolve) => { resolveSave = resolve; }),
+    );
+    renderPage();
+
+    chooseAllCriteria();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit evaluation' }));
+    await waitFor(() => {
+      expect(addEvaluationMock).toHaveBeenCalledTimes(1);
+    });
+
+    // Q2 settles and is saved by the provider while the request is in flight.
+    const newer = storeRun({ runId: 'run-2', question: 'Is there a final exam?' });
+    resolveSave({ id: 'evaluation-stored-1' });
+
+    expect(await screen.findByText('Thanks — your ratings were recorded')).toBeInTheDocument();
+    const stored = JSON.parse(window.sessionStorage.getItem(`sml.run.${COURSE_ID}`) ?? 'null');
+    expect(stored.runId).toBe(newer.runId);
+    expect(stored.ratedAt).toBeUndefined();
+  });
+
+  it('keeps the rated run when the student goes back to compare another question', async () => {
+    storeRun();
+    addEvaluationMock.mockResolvedValue({ id: 'evaluation-stored-1' });
+    renderPage();
+
+    chooseAllCriteria();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit evaluation' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Compare another question' }));
+
+    // Not cleared: Compare and Home treat a rated run as finished, and the
+    // next question replaces it. Clearing it left Compare's settled answers
+    // on screen with a link to a page that then had nothing to show.
+    const stored = JSON.parse(window.sessionStorage.getItem(`sml.run.${COURSE_ID}`) ?? 'null');
+    expect(stored?.ratedAt).toEqual(expect.any(String));
+  });
+
+  it('leaves any other save failure as a failure the student can retry', async () => {
+    storeRun();
+    addEvaluationMock.mockRejectedValue(new ApiError('The backend could not save the evaluation.', 503));
+    renderPage();
+
+    chooseAllCriteria();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit evaluation' }));
+
+    await waitFor(() => {
+      expect(addEvaluationMock).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.getByRole('button', { name: 'Submit evaluation' })).toBeInTheDocument();
+    const stored = JSON.parse(window.sessionStorage.getItem(`sml.run.${COURSE_ID}`) ?? 'null');
+    expect(stored.ratedAt).toBeUndefined();
   });
 });

@@ -21,6 +21,18 @@ export interface ComparisonRunResponse {
   /** Student-facing message when this approach could not answer. */
   error: string | null;
   sources: string[];
+  /**
+   * Which model answered, as the backend reported it. Recorded on every run
+   * (not only staff testing) so a rating can say what it rated: without this,
+   * the evaluations table held a winner but not the answers or the model
+   * version that produced them, and a later re-activation made the research
+   * data unreadable. Absent on runs stored before the field existed.
+   */
+  model?: string | null;
+  /** The course model version that answered (fine-tuned conditions). */
+  modelVersion?: string | null;
+  /** Where the fine-tuned answer was generated: `vm` or `gpu`. */
+  engine?: string | null;
 }
 
 export interface ComparisonRun {
@@ -31,6 +43,27 @@ export interface ComparisonRun {
   matchedComparisonId: string | null;
   createdAt: string;
   responses: Record<ModelKey, ComparisonRunResponse>;
+  /**
+   * Set once this run has been rated, so Evaluate shows the thanks rather than
+   * the form again and Compare stops offering "rate your last comparison".
+   * The backend refuses a second rating of the same run in any case; this is
+   * what keeps the page from asking for one.
+   */
+  ratedAt?: string;
+  /** The stored rating's id, when the backend returned one. */
+  evaluationId?: string | null;
+}
+
+/** The snapshot an evaluation stores of one approach's answer. */
+export function snapshotOf(response: ComparisonRunResponse): ComparisonRunResponse {
+  return {
+    text: response.text,
+    error: response.error ?? null,
+    sources: response.sources ?? [],
+    model: response.model ?? null,
+    modelVersion: response.modelVersion ?? null,
+    engine: response.engine ?? null,
+  };
 }
 
 const MODEL_KEYS: ModelKey[] = ['base', 'rag', 'fineTuned', 'fineTunedRag'];

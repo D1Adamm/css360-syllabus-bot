@@ -25,6 +25,14 @@ interface ComparisonRunContextValue {
   getRun: (courseId: string) => ComparisonRun | null;
   saveRun: (run: ComparisonRun) => void;
   clearRun: (courseId: string) => void;
+  /**
+   * Record that the course's stored run `runId` has been rated. The run stays
+   * (so Evaluate can show what was rated), marked so it is not offered for
+   * rating again. A no-op when the stored run is a different one — a newer
+   * comparison may have settled while the rating was being saved, and marking
+   * that one would lock the student out of rating answers they never rated.
+   */
+  markRated: (courseId: string, runId: string, evaluationId?: string | null) => void;
   /** The live comparison for a course, if one was asked this visit. */
   getActive: (courseId: string) => ActiveComparison | null;
   /**
@@ -68,6 +76,11 @@ export function ComparisonRunProvider({ children }: { children: React.ReactNode 
     setRuns((current) => ({ ...current, [run.courseId]: run }));
   }, []);
 
+  /**
+   * Forget the course's run and its on-screen comparison together. Clearing
+   * only the stored run left Compare showing the same settled answers with an
+   * "Evaluate these responses" link that led to "Nothing to evaluate yet".
+   */
   const clearRun = useCallback((courseId: string) => {
     removeStoredRun(courseId);
     setRuns((current) => {
@@ -75,7 +88,33 @@ export function ComparisonRunProvider({ children }: { children: React.ReactNode 
       delete next[courseId];
       return next;
     });
+    setActive((current) => {
+      if (!current[courseId] || current[courseId].isRunning) {
+        // A comparison still generating is left alone; it saves its own run.
+        return current;
+      }
+      const next = { ...current };
+      delete next[courseId];
+      return next;
+    });
   }, []);
+
+  const markRated = useCallback(
+    (courseId: string, runId: string, evaluationId: string | null = null) => {
+      // Read the run as it is *now*, not as it was when this callback was
+      // created: the rating's request may have outlasted a newer comparison.
+      setRuns((current) => {
+        const stored = current[courseId] ?? readStoredRun(courseId);
+        if (!stored || stored.runId !== runId) {
+          return current;
+        }
+        const rated = { ...stored, ratedAt: new Date().toISOString(), evaluationId };
+        writeStoredRun(rated);
+        return { ...current, [courseId]: rated };
+      });
+    },
+    [],
+  );
 
   const getActive = useCallback((courseId: string) => active[courseId] ?? null, [active]);
 
@@ -124,8 +163,8 @@ export function ComparisonRunProvider({ children }: { children: React.ReactNode 
   );
 
   const value = useMemo(
-    () => ({ getRun, saveRun, clearRun, getActive, startComparison }),
-    [getRun, saveRun, clearRun, getActive, startComparison],
+    () => ({ getRun, saveRun, clearRun, markRated, getActive, startComparison }),
+    [getRun, saveRun, clearRun, markRated, getActive, startComparison],
   );
 
   return (

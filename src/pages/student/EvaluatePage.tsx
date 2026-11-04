@@ -7,10 +7,12 @@ import { Callout } from '../../components/ui/Callout';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { useAdminPreview } from '../../context/AdminPreviewContext';
+import { snapshotOf } from '../../context/comparisonRun';
 import { useCourseId } from '../../context/CourseContext';
 import { useComparisonRunStore } from '../../context/ComparisonRunContext';
 import { useEvaluations } from '../../hooks/useEvaluations';
-import { toUserMessage } from '../../lib/errorMessages';
+import { ApiError } from '../../lib/api';
+import { EVALUATION_ALREADY_RECORDED_CODE, toUserMessage } from '../../lib/errorMessages';
 import { studentCoursePath } from '../../lib/roleRoutes';
 import type { EvaluationRecord, ModelKey } from '../../types';
 import { generateEvaluationId } from '../../utils/evaluationUtils';
@@ -71,10 +73,14 @@ export function EvaluatePage() {
   // says so at the point of action; the shell's banner says so throughout.
   const preview = useAdminPreview();
   const formId = useId();
-  const { getRun, clearRun } = useComparisonRunStore();
+  const { getRun, clearRun, markRated } = useComparisonRunStore();
   const { saving, saveError, addEvaluation, clearSaveError } = useEvaluations();
 
   const run = getRun(courseId);
+  // Rated earlier this session (or the backend said so): the form is not
+  // shown again. One rating per comparison is a research constraint, not a
+  // UI preference — see `db_evaluations.create_evaluation`.
+  const alreadyRated = Boolean(run?.ratedAt);
 
   const [values, setValues] = useState<FormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -147,15 +153,34 @@ export function EvaluatePage() {
       runId: run.runId,
       questionText: run.question,
       courseId: run.courseId,
+      // The answers being rated, with the model and version that produced
+      // each, so the rating stays readable after the run leaves this tab and
+      // after the course's active version changes.
+      responses: {
+        base: snapshotOf(run.responses.base),
+        rag: snapshotOf(run.responses.rag),
+        fineTuned: snapshotOf(run.responses.fineTuned),
+        fineTunedRag: snapshotOf(run.responses.fineTunedRag),
+      },
     };
 
     clearSaveError();
 
     try {
-      await addEvaluation(evaluation);
+      const saved = await addEvaluation(evaluation);
+      if (!preview) {
+        // A preview stores nothing, so there is nothing to have rated twice.
+        markRated(courseId, run.runId, saved?.id ?? evaluation.id);
+      }
       setSubmitted(true);
-    } catch {
+    } catch (error) {
       setSubmitted(false);
+      if (error instanceof ApiError && error.code === EVALUATION_ALREADY_RECORDED_CODE) {
+        // The backend already has this participant's rating of this run —
+        // a second tab, or a retry after a slow save. Not an error to show.
+        clearSaveError();
+        markRated(courseId, run.runId, null);
+      }
     }
   }
 
@@ -185,7 +210,8 @@ export function EvaluatePage() {
     );
   }
 
-  if (submitted) {
+  if (submitted || alreadyRated) {
+    const ratedEarlier = alreadyRated && !submitted;
     return (
       <div className="ui-stack ui-stack--loose">
         <PageHeader
@@ -196,22 +222,26 @@ export function EvaluatePage() {
           size="full"
           illustration="model-ready"
           title={
-            preview
-              ? 'Preview complete — nothing was saved'
-              : 'Thanks — your ratings were recorded'
+            ratedEarlier
+              ? 'You already rated this comparison'
+              : preview
+                ? 'Preview complete — nothing was saved'
+                : 'Thanks — your ratings were recorded'
           }
           description={
-            preview
-              ? "A student would see their thanks here. The backend checked this rating exactly as it would a student's, then discarded it."
-              : 'Your feedback helps show which approach answers course questions best.'
+            ratedEarlier
+              ? 'Each comparison can be rated once. Ask another question on Compare to rate a new set of answers.'
+              : preview
+                ? "A student would see their thanks here. The backend checked this rating exactly as it would a student's, then discarded it."
+                : 'Your feedback helps show which approach answers course questions best.'
           }
           action={
             <>
-              <LinkButton
-                to={studentCoursePath(courseId, 'compare')}
-                variant="primary"
-                onClick={() => clearRun(courseId)}
-              >
+              {/* The rated run is left in place, not cleared: Compare and the
+                  home page treat a rated run as finished, and the next question
+                  replaces it. Clearing it here left Compare's settled answers
+                  on screen with a link to a page that then had nothing to show. */}
+              <LinkButton to={studentCoursePath(courseId, 'compare')} variant="primary">
                 Compare another question
               </LinkButton>
               <LinkButton
@@ -227,10 +257,12 @@ export function EvaluatePage() {
     );
   }
 
-  // An approach that could not answer cannot win a criterion.
-  const unavailable = APPROACHES.filter((approach) =>
-    Boolean(run.responses[approach.key]?.error),
-  ).map((approach) => approach.key);
+  // An approach that could not answer cannot win a criterion. The same rule
+  // the backend applies to a rating: an error, or no answer text at all.
+  const unavailable = APPROACHES.filter((approach) => {
+    const response = run.responses[approach.key];
+    return Boolean(response?.error) || !response?.text?.trim();
+  }).map((approach) => approach.key);
 
   const answeredCount = APPROACHES.length - unavailable.length;
   const firstErrorKey = CRITERIA.find((criterion) => errors[criterion.key])?.key;

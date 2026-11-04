@@ -126,6 +126,24 @@ export interface EvaluationRecord {
    * a participant's own view. Never a name.
    */
   participantId?: string;
+  /**
+   * The four answers this rating was made against, with the model, version
+   * and engine that produced each. Stored since 2026-11-03 (audit B8): before
+   * that a rating named a winner but not what it had won against, and the
+   * answers were gone once the student's tab closed. Absent on older rows.
+   */
+  responses?: Partial<Record<ModelKey, EvaluationResponseSnapshot>>;
+}
+
+/** What an evaluation stores of one approach's answer. */
+export interface EvaluationResponseSnapshot {
+  text: string;
+  /** The student-facing message when the approach did not answer. */
+  error: string | null;
+  sources: string[];
+  model?: string | null;
+  modelVersion?: string | null;
+  engine?: string | null;
 }
 
 /** Syllabus processing status for a course. */

@@ -160,8 +160,18 @@ A student's rating of one comparison. Primary key `(course_id, evaluation_id)`.
 | `run_id` | TEXT NULL | The live comparison run, when there was one |
 | `question_text` | TEXT NULL | Denormalised so results survive without the run |
 | `participant_id` | UUID NULL FK `participants` | The pseudonymous participant who rated. `ON DELETE SET NULL`. NULL on every row recorded before participants existed; nothing backfills one |
+| `responses` | JSONB NULL | Since migration 003 (2026-11-03): the four answers the rating was made against, keyed by approach — `{text, error, sources, model, modelVersion, engine}` each. Written by the browser from the comparison run it rated; validated and trimmed by the backend. NULL on every row recorded before it existed |
 
 Approach keys are `base`, `rag`, `fineTuned`, `fineTunedRag` (`ModelKey`).
+
+What the backend checks on a new rating (audit findings B8/B9, 2026-11-03):
+the criteria and flags must name real approach keys; when `responses` is
+present it must carry exactly the four approaches, and a criterion or flag
+cannot name an approach whose response is an error or empty; `created_at` is
+the server's clock, never the client's; and a participant may rate one
+comparison run once — a second rating of the same `run_id` is refused with
+`409 evaluation_already_recorded` (checked in code; the index above supports
+the check but is not unique, because older rows may legitimately repeat).
 
 The only student identifier ever recorded is `participant_id`, a random UUID
 that maps to nothing outside `participants`. Staff views of a rating carry it as
