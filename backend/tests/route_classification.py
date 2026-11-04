@@ -163,6 +163,7 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     ("GET", f"{_Q}/pending"): WORKER,
     ("POST", f"{_Q}/claim"): WORKER,
     ("POST", f"{_Q}/courses/{{course_id}}/runs/{{run_id}}/release"): WORKER,
+    ("POST", f"{_Q}/courses/{{course_id}}/runs/{{run_id}}/refused"): WORKER,
     ("POST", f"{_Q}/courses/{{course_id}}/runs/{{run_id}}/submitted"): WORKER,
     ("POST", f"{_Q}/courses/{{course_id}}/runs/{{run_id}}/submission-failed"): WORKER,
     ("POST", f"{_Q}/courses/{{course_id}}/runs/{{run_id}}/failed"): WORKER,

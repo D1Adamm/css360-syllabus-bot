@@ -739,6 +739,52 @@ describe('AdminTrainingPage', () => {
     );
   });
 
+  /*
+   * A run the worker refused for good: the data was re-prepared under it, so
+   * the backend would never serve it its dataset. The worker marks it failed
+   * with the reason instead of releasing it to be claimed again every cycle,
+   * and leaves the request `preparing` because no job ever ran. The admin
+   * reads the reason and queues a replacement either way the page offers.
+   */
+  it('shows why the worker refused a run and offers both ways to queue a replacement', async () => {
+    const reason =
+      'Could not fetch the prepared dataset from the backend: The prepared training data ' +
+      'changed after this run was queued (queued against dataset 0000000000ab…, the files ' +
+      'are now 9f2c1a7b3e4d…). Nothing was served. [dataset_changed]';
+    fetchCourseModelRequest.mockResolvedValue({
+      ...PREPARED_REQUEST,
+      currentRunId: QUEUED_RUN.runId,
+      launchError: reason,
+    });
+    fetchCourseTrainingRuns.mockResolvedValue([
+      {
+        ...QUEUED_RUN,
+        state: 'failed',
+        attempt: 1,
+        datasetSha256: '0000000000ab'.padEnd(64, '0'),
+        error: reason,
+      },
+    ]);
+
+    renderPage();
+
+    const requests = await screen.findByRole('list', { name: 'Model requests' });
+    expect(within(requests).getByText(/run failed/)).toBeInTheDocument();
+    expect(within(requests).getAllByText(/\[dataset_changed\]/).length).toBeGreaterThan(0);
+    expect(within(requests).getByText(/Last launch attempt:/)).toBeInTheDocument();
+    // Nothing is active, so nothing says the data is in use or pinned.
+    expect(within(requests).queryByRole('note')).toBeNull();
+    expect(
+      within(requests).getByRole('button', { name: /Retry training/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(requests).getByRole('button', { name: /Queue training/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(requests).getByRole('button', { name: /Re-prepare training data/i }),
+    ).toBeInTheDocument();
+  });
+
   it('offers to re-prepare again once the pinned run has finished', async () => {
     fetchCourseModelRequest.mockResolvedValue(PREPARED_REQUEST);
     fetchCourseTrainingRuns.mockResolvedValue([{ ...QUEUED_RUN, state: 'failed' }]);

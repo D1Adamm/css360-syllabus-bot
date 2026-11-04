@@ -654,6 +654,76 @@ def record_submission_failure(
 
 
 @router.post(
+    "/courses/{course_id}/runs/{run_id}/refused",
+    response_model=TrainingRunRecord,
+    dependencies=[Depends(require_worker_token)],
+)
+def record_refusal(
+    course_id: str, run_id: str, request: FailRequest
+) -> TrainingRunRecord:
+    """The worker will never train this run. Terminal for the run; the request stays put.
+
+    The third way a claimed run ends without a job, beside a release and a
+    submission failure, and the one neither of those fits. Both put the run
+    back to `queued` because what stopped it is transient: the backend was
+    unreachable, a file did not transfer, `sbatch` failed. A refusal is for a
+    reason no later queue cycle can change. The one the worker reports today
+    is `dataset_changed` (audit B10): the prepared files were re-prepared
+    after this run was pinned to them, so the data it was queued for is no
+    longer on disk. Released, such a run was claimed again on every cycle,
+    refused again and released again, its attempt count climbing, until an
+    admin noticed and retried it. Now it ends here.
+
+    `failed`, not a state of its own, for the reason `SUPERSEDED_ERROR` gives
+    in `db_training_runs`: a new state would vanish from every browser that
+    has not loaded the new bundle. The reason is kept verbatim as the run's
+    error, so the admin page says exactly why; and a failed run is what Retry
+    already accepts, so recovery is the path that exists — Retry, or Queue
+    training, pins a replacement to the files as they are now.
+
+    The professor-facing status does not move, for the reason
+    `record_submission_failure` gives: no job ever existed, so telling a
+    professor training failed would be untrue. `launchError` carries the
+    reason for the admin. A run that has a Slurm job cannot be refused — its
+    job decides how it ends — and a finished run is not reopened.
+    """
+    safe_course_id = _safe_course_id(course_id)
+
+    def work(connection: Any) -> dict[str, Any]:
+        run = _require_run(connection, safe_course_id, run_id)
+        # A late refusal from a retired run must not fail it a second time
+        # with a different reason, or touch the replacement's request.
+        _require_current_run(connection, safe_course_id, run_id)
+        _refuse_terminal(run, "a refusal")
+        job_id = str(run.get("jobId") or "").strip()
+        if job_id:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f'Run "{run_id}" was submitted as Slurm job {job_id}; a run '
+                    "with a job cannot be refused. Report how the job ended "
+                    "instead. Nothing was recorded."
+                ),
+            )
+        refused = db_training_runs.fail_training_run(
+            connection, safe_course_id, run_id, error=request.error, now=_utc_now()
+        )
+        db_model_requests.update_model_request_for_run(
+            connection,
+            safe_course_id,
+            run_id,
+            {
+                "launchError": request.error,
+                "updatedAt": _utc_now().isoformat(),
+                "currentRunId": run_id,
+            },
+        )
+        return refused
+
+    return TrainingRunRecord(**_run("recording a refused training run", work))
+
+
+@router.post(
     "/courses/{course_id}/runs/{run_id}/failed",
     response_model=TrainingRunRecord,
     dependencies=[Depends(require_worker_token)],

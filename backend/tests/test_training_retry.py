@@ -949,6 +949,19 @@ class LateCallbackFromSupersededRunTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assert_replacement_still_owns_the_request()
 
+    def test_a_late_refusal_does_not_fail_the_retired_run_a_second_time(self) -> None:
+        """The worker still held the old run when the admin retried it."""
+        with self._worker():
+            response = self.client.post(
+                f"/api/training-queue/courses/{COURSE}/runs/{STALE_RUN_ID}/refused",
+                json={"error": "The prepared training data changed [dataset_changed]"},
+                headers=WORKER_HEADERS,
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assert_replacement_still_owns_the_request()
+        self.assertIsNone(self.connection.requests[COURSE]["launch_error"])
+
     def test_a_late_model_registration_is_refused_before_anything_is_written(
         self,
     ) -> None:

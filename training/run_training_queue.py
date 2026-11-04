@@ -69,6 +69,7 @@ from finetuned_deploy_helpers import parse_sbatch_job_id  # noqa: E402
 from training_queue import (  # noqa: E402  (path set above)
     ClaimConflict,
     DEFAULT_LEASE_SECONDS,
+    PERMANENT_REFUSAL_CODES,
     TrainingQueue,
     TrainingQueueError,
     TrainingRun,
@@ -340,7 +341,23 @@ def _print_run(run: TrainingRun, course_id: str) -> None:
 
 
 class DatasetUnavailable(Exception):
-    """The backend could not give this run a usable dataset."""
+    """The backend could not give this run a usable dataset.
+
+    `code` is the backend's classification when it sent one. `permanent` says
+    whether a later cycle could get a different answer. Data not prepared yet,
+    a file that did not transfer, a backend that was down: all of those may be
+    fixed by the time the run is next claimed, so it is released. Data
+    re-prepared under a run pinned to the old files (`dataset_changed`) cannot
+    come back, so that run is refused for good — see `run_once`.
+    """
+
+    def __init__(self, message: str, *, code: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+    @property
+    def permanent(self) -> bool:
+        return self.code in PERMANENT_REFUSAL_CODES
 
 
 def ensure_dataset(
@@ -355,9 +372,11 @@ def ensure_dataset(
     that already matches the backend's digests is left alone, so a retried run
     costs one request rather than a transfer.
 
-    Failures here are refusals, not crashes. The run goes back on the queue with
-    an operator-readable reason — the dataset can be re-prepared on the VM and
-    the same run picked up again, with no second Slurm job and nothing lost.
+    Failures here are refusals, not crashes, and `run_once` decides what a
+    refusal means for the run from `DatasetUnavailable.permanent`: most go back
+    on the queue with an operator-readable reason — the dataset can be prepared
+    on the VM and the same run picked up again, with no second Slurm job and
+    nothing lost — and a run whose data was re-prepared under it is retired.
     """
     export_dir = course_export_dir(run.course_id, root)
     try:
@@ -366,7 +385,8 @@ def ensure_dataset(
         raise DatasetUnavailable(str(exc)) from exc
     except TrainingQueueError as exc:
         raise DatasetUnavailable(
-            f"Could not fetch the prepared dataset from the backend: {exc}"
+            f"Could not fetch the prepared dataset from the backend: {exc}",
+            code=getattr(exc, "code", None),
         ) from exc
 
 
@@ -584,6 +604,18 @@ def run_once(
         sync = ensure_dataset(queue, run, root=root)
     except DatasetUnavailable as exc:
         print(f"  Refused: {exc}")
+        if exc.permanent:
+            # No cycle will see different data for this run, so it is not put
+            # back for the next one to claim, refuse and release again. It ends
+            # failed with this reason; an admin's Retry (or Queue training)
+            # pins a replacement to the data as it is now.
+            queue.record_refusal(course_id, run, error=str(exc), now=moment)
+            print(
+                "Marked failed; nothing was submitted. This run will not be "
+                "claimed again: retry it from Admin → Training to queue a "
+                "replacement for the current training data."
+            )
+            return 1
         queue.release(course_id, run, error=str(exc), now=moment)
         print("Released back to queued; nothing was submitted.")
         return 1
@@ -731,7 +763,14 @@ def _dry_run(
     try:
         descriptor = queue.describe_dataset(candidate.course_id, candidate.run_id)
     except TrainingQueueError as exc:
-        print(f"  Would refuse: the backend has no usable dataset for this run ({exc})")
+        if getattr(exc, "code", None) in PERMANENT_REFUSAL_CODES:
+            print(f"  Would refuse for good: {exc}")
+            print(
+                "  A real run would mark this run failed with that reason and "
+                "leave it for an admin to retry."
+            )
+        else:
+            print(f"  Would refuse: the backend has no usable dataset for this run ({exc})")
         return 1
 
     print(

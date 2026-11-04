@@ -840,8 +840,9 @@ function OutstandingRequests({ refreshKey }: { refreshKey: number }) {
                     submitted or training run): the backend refuses the rewrite
                     (audit finding B10). A merely queued run does not block it;
                     it is pinned to its digest, so re-preparing makes it stale —
-                    the worker refuses it and Retry queues a replacement for the
-                    new data. */}
+                    the worker refuses it for good (the run ends `failed` with
+                    the reason, and is not claimed again) and Retry or Queue
+                    training queues a replacement for the new data. */}
                 {row.request.status !== 'ready' &&
                   row.request.status !== 'failed' &&
                   !row.request.training &&
@@ -859,8 +860,9 @@ function OutstandingRequests({ refreshKey }: { refreshKey: number }) {
                   findActiveTrainingRun(row.runs) && (
                     <p className="ui-text-xs ui-text-muted" role="note">
                       A queued run is pinned to the current training data. Re-preparing
-                      makes that run stale: the worker will refuse it, and Retry then
-                      queues a replacement for the new data.
+                      makes that run stale: the worker refuses it and marks it failed
+                      with the reason, and Retry or Queue training then queues a
+                      replacement for the new data.
                     </p>
                   )}
                 {row.request.status !== 'ready' &&

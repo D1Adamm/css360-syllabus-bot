@@ -281,7 +281,7 @@ The durable queue the cluster claims work from. Primary key
 | `state` | TEXT | See below |
 | `enqueued_at` / `updated_at` | TIMESTAMPTZ | |
 | `dataset_ref` | TEXT | Relative, e.g. `exports/{courseId}` |
-| `dataset_sha256` | TEXT NULL | Since migration 003 (2026-11-03): the prepared dataset's digest when the run was queued (or retried), computed by the backend over all four prepared files (`train.jsonl`, `validation.jsonl`, `manifest.json` and the timestamped `approved-export-summary.json`, so even a content-identical rebuild changes it). The worker is refused the run's dataset (`409 dataset_changed`) when the files no longer match; it releases the run back to `queued` with that reason, and such a stale queued run may be retried, which queues a replacement pinned to the current files. The export and split routes refuse (`409 training_run_active`) while a run is `claimed`, `submitted` or `training` — a worker is using the files — but not while one is merely `queued`. NULL on runs queued before it existed, which are served as before |
+| `dataset_sha256` | TEXT NULL | Since migration 003 (2026-11-03): the prepared dataset's digest when the run was queued (or retried), computed by the backend over all four prepared files (`train.jsonl`, `validation.jsonl`, `manifest.json` and the timestamped `approved-export-summary.json`, so even a content-identical rebuild changes it). The worker is refused the run's dataset (`409 dataset_changed`) when the files no longer match and reports the run as refused: it ends `failed` with that reason and is not claimed again; Retry (or Queue training) queues a replacement pinned to the current files. A queued run that is stale for another reason (released with an error, or pinned to a digest the disk no longer has) may also be retried. The export and split routes refuse (`409 training_run_active`) while a run is `claimed`, `submitted` or `training` — a worker is using the files — but not while one is merely `queued`. NULL on runs queued before it existed, which are served as before |
 | `approved_example_count` | INTEGER | |
 | `train_examples` / `validation_examples` | INTEGER | |
 | `attempt` | INTEGER | Incremented on every claim, including after an expired lease |
@@ -298,7 +298,12 @@ blocks a second run for the course.
 A run retired by an admin retry stays `failed` with the reason
 `Superseded by admin retry` rather than getting a new state — adding a state
 would make older browser bundles drop it from the history the feature exists to
-preserve.
+preserve. For the same reason a run the worker refuses for good (its pinned
+dataset was re-prepared under it, `dataset_changed`) is `failed` with the
+refusal as its reason, via the worker's `…/runs/{run_id}/refused` route; a
+release (`…/release`) is for a transient refusal and puts the run back to
+`queued`. A refused run leaves `model_requests.status` where it was and writes
+the reason to `launch_error`, because no job existed.
 
 The three claim columns are stored flat because a lease gets queried (who holds
 this, has it expired) but are nested as `claim` in the API. A claim missing any
