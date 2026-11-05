@@ -79,6 +79,34 @@ class ClaimConflict(TrainingQueueError):
     """There was no run to take — none queued, or another runner took it."""
 
 
+class BackendRefusal(TrainingQueueError):
+    """The backend answered with an error status it meant (not an auth failure).
+
+    `status` is the HTTP status; `code` is the backend's classification when it
+    sent one (`dataset_changed`, `dataset_not_prepared`, …) and None for a plain
+    `detail` string. A caller decides what to do by the code, never by matching
+    the message text, which is written for the operator reading the log.
+    """
+
+    def __init__(self, message: str, *, status: int, code: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.code = code
+
+
+#: Refusal codes no later queue cycle can change.
+#:
+#: A run the backend refuses with one of these is handed back as `failed`
+#: (`TrainingQueue.record_refusal`) rather than released: released, it would be
+#: claimed again next cycle and refused again, for as long as nobody noticed.
+#: `dataset_changed` means the prepared files were re-prepared after the run
+#: was pinned to them; the data it was queued for is gone and only an admin
+#: queueing a replacement can move the course on. Anything else — the data not
+#: prepared yet, a file that did not transfer, the backend unreachable — may be
+#: different next time and keeps the release.
+PERMANENT_REFUSAL_CODES = frozenset({"dataset_changed"})
+
+
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
@@ -301,10 +329,7 @@ class TrainingQueueApi:
                 "the backend's."
             )
         if response.status >= 400:
-            raise TrainingQueueError(
-                f"The backend request for {what} failed with HTTP "
-                f"{response.status}: {_detail(response.body)}"
-            )
+            raise _refusal(what, response)
         body = response.body.strip()
         if not body or body == "null":
             return None
@@ -352,22 +377,52 @@ class TrainingQueueApi:
                 "the backend's."
             )
         if response.status >= 400:
-            raise TrainingQueueError(
-                f"The backend request for {path} failed with HTTP "
-                f"{response.status}: {_detail(response.body)}"
-            )
+            raise _refusal(path, response)
         return response.content(), dict(response.headers)
 
 
-def _detail(body: str) -> str:
-    """The API's `detail` string when there is one, else the raw body."""
+def _classified_detail(body: str) -> tuple[str, Optional[str]]:
+    """The API's `detail` as `(message, code)`; the raw body and None otherwise.
+
+    A plain `detail` is the message with no code. A classified one —
+    `{"code", "message"}`, as the backend sends for `dataset_changed` and
+    `dataset_not_prepared` — is both.
+    """
     try:
         payload = json.loads(body)
     except (json.JSONDecodeError, TypeError):
-        return (body or "").strip()[:300]
-    if isinstance(payload, dict) and isinstance(payload.get("detail"), str):
-        return payload["detail"]
-    return (body or "").strip()[:300]
+        return (body or "").strip()[:300], None
+    if isinstance(payload, dict):
+        detail = payload.get("detail")
+        if isinstance(detail, str):
+            return detail, None
+        if isinstance(detail, dict):
+            message = detail.get("message")
+            code = detail.get("code")
+            if isinstance(message, str) and message.strip():
+                return message, (code if isinstance(code, str) and code else None)
+    return (body or "").strip()[:300], None
+
+
+def _detail(body: str) -> str:
+    """The API's `detail` for a log line: the message, then its code in brackets.
+
+    An operator reading the Slurm log sees the sentence; the code is there so
+    the line can be matched to the backend's classification by eye.
+    """
+    message, code = _classified_detail(body)
+    return f"{message} [{code}]" if code else message
+
+
+def _refusal(what: str, response: HttpResponse) -> BackendRefusal:
+    """The error for a 4xx/5xx the backend meant, carrying its code."""
+    _message, code = _classified_detail(response.body)
+    return BackendRefusal(
+        f"The backend request for {what} failed with HTTP "
+        f"{response.status}: {_detail(response.body)}",
+        status=response.status,
+        code=code,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -722,6 +777,34 @@ class TrainingQueue:
             self._run_path(course_id, run.run_id, "submission-failed"),
             {"error": error},
         )
+
+    def record_refusal(
+        self,
+        course_id: str,
+        run: TrainingRun,
+        *,
+        error: str,
+        now: Optional[datetime] = None,
+    ) -> TrainingRun:
+        """This runner will never train the run, and neither will the next one.
+
+        For a refusal in `PERMANENT_REFUSAL_CODES`. The run becomes `failed`
+        with ``error`` as its reason and stops being claimable; the request
+        stays ``preparing`` with ``launchError`` set, the same way a submission
+        failure leaves it, because no job ever existed and the professor is
+        not told one failed. An admin queues the replacement (Retry or Queue
+        training), pinned to the data as it is then.
+
+        Contrast ``release``, for a reason the next cycle may not see again.
+        """
+        del now
+        payload = self.client.post(
+            self._run_path(course_id, run.run_id, "refused"), {"error": error}
+        )
+        refused = parse_run_record(payload)
+        if refused is None:
+            raise TrainingQueueError("The refused run could not be read back.")
+        return refused
 
     def record_training_failure(
         self,

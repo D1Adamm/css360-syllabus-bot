@@ -82,6 +82,57 @@ export function fetchStarterGenerationStatus(): Promise<StarterGenerationStatus>
   return getJson<StarterGenerationStatus>('/starter-generation/status');
 }
 
+/*
+ * Model readiness: every registered course judged against what the fine-tuned
+ * service says it can serve. `GET /api/admin/model-readiness`, admin-only.
+ *
+ * This is the question the per-service probes above cannot answer: the
+ * service being up says nothing about whether the version a course has
+ * activated is loaded on it. The backend runs the same assessment on a timer
+ * and logs a warning when a problem appears (`finetuned_readiness`), so the
+ * journal and this page say the same thing.
+ */
+
+export type ModelReadinessProblem =
+  | 'service_unreachable'
+  | 'activated_version_not_servable'
+  | 'no_activated_version';
+
+export interface ModelReadinessCourse {
+  courseId: string;
+  courseName?: string | null;
+  /** The version students' Fine-Tuned answers come from, or null. */
+  activatedVersion: string | null;
+  newestVersion: string | null;
+  newestStatus?: string | null;
+  /** Versions the running service reports for this course. */
+  servableVersions: string[];
+  problem: ModelReadinessProblem | string | null;
+  message: string | null;
+}
+
+export interface ModelReadiness {
+  mode: string;
+  service: {
+    reachable: boolean;
+    status?: string | null;
+    ok: boolean;
+    error?: string | null;
+    errorCode?: string | null;
+  };
+  courses: ModelReadinessCourse[];
+  problems: { courseId: string; problem: string; message: string }[];
+  ok: boolean;
+}
+
+export function fetchModelReadiness(): Promise<ModelReadiness> {
+  return requestJson<ModelReadiness>('/admin/model-readiness', {
+    method: 'GET',
+    fallbackErrorMessage: 'The request failed.',
+    timeoutMs: DIAGNOSTIC_TIMEOUT_MS,
+  });
+}
+
 /** The configured backend origin, shown only in admin diagnostics. */
 export function getConfiguredApiBaseUrl(): string | null {
   return getApiBaseUrl();

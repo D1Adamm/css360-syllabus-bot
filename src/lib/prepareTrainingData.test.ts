@@ -6,7 +6,9 @@ const exportApprovedCourseSeeds = vi.fn();
 const prepareTrainingSplit = vi.fn();
 const updateCourseModelRequest = vi.fn();
 
-vi.mock('./api', () => ({
+vi.mock('./api', async (importOriginal) => ({
+  // `splitSummaryDetails` is a pure helper and stays real.
+  ...(await importOriginal<typeof import('./api')>()),
   listCourseSeeds: (...args: unknown[]) => listCourseSeeds(...args),
   exportApprovedCourseSeeds: (...args: unknown[]) => exportApprovedCourseSeeds(...args),
   prepareTrainingSplit: (...args: unknown[]) => prepareTrainingSplit(...args),
@@ -234,5 +236,49 @@ describe('scope', () => {
     expect(source).toContain('prepareTrainingSplit');
     // No second split implementation.
     expect(source).not.toMatch(/validationFraction|shuffle|Math\.random/);
+  });
+});
+
+describe('what the preparation records about the dataset (audit B10)', () => {
+  it('pins the dataset digest and counts the oversized examples the backend flagged', async () => {
+    prepareTrainingSplit.mockResolvedValue({
+      courseId: COURSE_490,
+      summary: {
+        trainExamples: 38,
+        validationExamples: 4,
+        totalExamples: 42,
+        splitSeed: 360,
+        datasetSha256: 'f'.repeat(64),
+        lengthCheck: { maxSeqLength: 2048, flaggedCount: 1, flagged: [{ seedId: 'c490-7' }] },
+      },
+    });
+
+    const { preparation } = await prepareTrainingDataForRequest(COURSE_490);
+
+    expect(preparation.datasetSha256).toBe('f'.repeat(64));
+    expect(preparation.oversizedExamples).toBe(1);
+    expect(updateCourseModelRequest).toHaveBeenCalledWith(
+      COURSE_490,
+      expect.objectContaining({
+        preparation: expect.objectContaining({ datasetSha256: 'f'.repeat(64), oversizedExamples: 1 }),
+      }),
+    );
+  });
+
+  it('records neither when the backend reports nothing (older backend, clean dataset)', async () => {
+    const { preparation } = await prepareTrainingDataForRequest(COURSE_490);
+
+    expect(preparation).not.toHaveProperty('datasetSha256');
+    expect(preparation).not.toHaveProperty('oversizedExamples');
+  });
+
+  it('ignores a digest that is not a SHA-256', async () => {
+    prepareTrainingSplit.mockResolvedValue({
+      courseId: COURSE_490,
+      summary: { trainExamples: 38, validationExamples: 4, datasetSha256: 'not-a-digest' },
+    });
+
+    const { preparation } = await prepareTrainingDataForRequest(COURSE_490);
+    expect(preparation).not.toHaveProperty('datasetSha256');
   });
 });

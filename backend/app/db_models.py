@@ -241,6 +241,39 @@ def set_current_version(conn: Any, course_id: str, version: str) -> dict[str, An
 # --------------------------------------------------------------------------- #
 
 
+def list_registered_courses(conn: Any) -> list[dict[str, Any]]:
+    """Every course with a registered model, with each of its versions.
+
+    For the readiness check (`finetuned_readiness`): one read across courses
+    rather than one registry read per course. Newest version first within a
+    course; the course name travels along for the operator's eyes.
+    """
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT {VERSION_COLUMNS}, c.name AS course_name
+            FROM course_model_versions
+            LEFT JOIN courses AS c ON c.course_id = course_model_versions.course_id
+            ORDER BY course_model_versions.course_id ASC,
+                     course_model_versions.created_at DESC,
+                     course_model_versions.version DESC
+            """
+        )
+        rows = cursor.fetchall()
+    by_course: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        entry = by_course.setdefault(
+            row["course_id"],
+            {
+                "courseId": row["course_id"],
+                "courseName": optional_string(row.get("course_name")),
+                "versions": [],
+            },
+        )
+        entry["versions"].append(map_model_version(row))
+    return list(by_course.values())
+
+
 def find_deployed_version(conn: Any, course_id: str) -> dict[str, Any] | None:
     """The version this course has published, or None when it has none.
 

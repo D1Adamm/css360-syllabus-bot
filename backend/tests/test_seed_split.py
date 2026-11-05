@@ -336,6 +336,27 @@ class PrepareTrainingSplitTests(unittest.TestCase):
         self.assertEqual(set(manifest["checksums"]), {"train.jsonl", "validation.jsonl"})
         for key in ("sourceFile", "createdAt", "trainFile", "validationFile", "splitSeed"):
             self.assertIn(key, manifest)
+        # The length check (audit B14): nothing here is anywhere near the window.
+        self.assertEqual(manifest["lengthCheck"]["maxSeqLength"], 2048)
+        self.assertEqual(manifest["lengthCheck"]["flaggedCount"], 0)
+        self.assertEqual(first["lengthCheck"], manifest["lengthCheck"])
+        # The digest a queued run is pinned to (audit B10), the same one the
+        # worker's descriptor reports.
+        self.assertEqual(len(first["datasetSha256"]), 64)
+        self.assertEqual(first["datasetSha256"], second["datasetSha256"])
+
+    def test_a_record_that_will_not_fit_the_window_is_flagged_by_seed_id(self) -> None:
+        from app.seed_split import length_check
+
+        short = {"instruction": "Q?", "response": "A.", "seedId": "s1", "kind": "answerable", "format": "bare"}
+        long = {"instruction": "x" * 6000, "response": "y" * 300, "seedId": "s2", "kind": "answerable", "format": "grounded"}
+        report = length_check([short, long])
+        self.assertEqual(report["flaggedCount"], 1)
+        self.assertEqual(report["flagged"][0]["seedId"], "s2")
+        self.assertEqual(report["flagged"][0]["format"], "grounded")
+        self.assertGreater(report["flagged"][0]["approxTokens"], 2048)
+        self.assertGreaterEqual(report["maxApproxTokens"], report["flagged"][0]["approxTokens"])
+        self.assertEqual(length_check([short])["flaggedCount"], 0)
 
     def test_an_older_export_without_question_types_still_splits(self) -> None:
         self._export([_record(i) for i in range(12)])
@@ -356,6 +377,21 @@ class PrepareTrainingSplitTests(unittest.TestCase):
     def test_missing_source_file_raises(self) -> None:
         with self.assertRaises(TrainingSplitError):
             self._prepare()
+
+    def test_a_dataset_that_cannot_be_fingerprinted_is_a_split_error_not_a_crash(self) -> None:
+        from unittest.mock import patch
+
+        from app.dataset_artifacts import DatasetArtifactError
+
+        self._export([_record(i) for i in range(12)])
+        with patch(
+            "app.dataset_artifacts.describe_dataset",
+            side_effect=DatasetArtifactError("train.jsonl is larger than the limit."),
+        ):
+            with self.assertRaises(TrainingSplitError) as ctx:
+                self._prepare()
+        self.assertIn("could not be fingerprinted", str(ctx.exception))
+        self.assertIn("larger than the limit", str(ctx.exception))
 
     def test_invalid_source_file_raises(self) -> None:
         (self.out_dir / "approved-finetune.jsonl").write_text('{"instruction": "Q?"}\n', encoding="utf-8")

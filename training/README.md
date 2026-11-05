@@ -377,6 +377,28 @@ Tests for this path (no ML stack needed): `pytest training` runs
 - Loss on the answer only: `SFTConfig.completion_only_loss` where the TRL
   release has it (the VM's 1.12), `DataCollatorForCompletionOnlyLM` keyed on
   the Llama 3 assistant header otherwise (the cluster's 0.13)
+- Prompt format `ollama-llama3.2-chat`, from `training/llama3_prompt.py`: the
+  same system block, headers and end-of-turn token Ollama renders on the VM and
+  the GPU service renders on Tillicum, with exactly one BOS added by the
+  tokenizer. Since 2026-11-03 (audit finding B14); before that the trainer used
+  the tokenizer's `apply_chat_template`, which adds a `Today Date` line the
+  model never sees in production. The trainer refuses a tokenizer that does
+  not map the four Llama 3 special tokens to one id each.
+- No silent truncation: every record is tokenised before training and anything
+  longer than `--max-seq-length` fails the run with the offending line numbers
+  (`--on-oversized fail`, the default) or is dropped and listed
+  (`--on-oversized drop`). Either way `length-report.json` in the output
+  directory records every record's prompt and completion token counts, and the
+  runtime report carries the summary (`lengthAudit`) and the format
+  (`promptFormat`). The admin Training page shows the backend's approximate
+  version of the same check (`lengthCheck` in the split manifest) when the
+  split is prepared, so an oversized example is usually shortened or rejected
+  in review before a run is queued. The two checks can disagree at the margin:
+  the backend estimates from characters, the trainer counts real tokens of the
+  rendered prompt. A smoke run audits only its 4 + 2 subset, so a green smoke
+  run does not prove the full split fits. The queue scripts pass no
+  `--on-oversized`, so a queued run fails rather than drops; fix the data in
+  review and re-prepare.
 
 The LoRA and optimizer settings are those every version so far was trained
 with. Two things changed for v4, both forced by the mixed dataset below: the

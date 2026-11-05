@@ -158,6 +158,7 @@ properties for every migration file.
 | --- | --- |
 | `001_training_provenance_and_serving.sql` | Training provenance columns and `serving_sessions` |
 | `002_auth_identity.sql` | `users`, `course_memberships`, `invitations`, `invitation_course_grants`, `participants`, `auth_sessions`, `admin_actions`; nullable `participant_id` on `evaluations` and `seed_examples`; `created_by` on `courses`. No existing row changes value |
+| `003_evaluation_provenance_and_dataset_pinning.sql` | Nullable `responses` JSONB on `evaluations` (the four answers a rating was made against, with model, version and engine), an index on `evaluations (course_id, participant_id, run_id)` for the one-rating-per-run check, and nullable `dataset_sha256` on `training_runs` (the prepared files a queued run is pinned to). No existing row changes value; older rows simply carry NULL |
 
 ### Frontend
 
@@ -654,6 +655,7 @@ Neither `.env` file is in the repository. Copy the example and fill it in.
 | `AUTH_*` lifetimes | no | Session and invitation lifetimes; defaults documented in `backend/.env.example` |
 | `AUTO_STARTER_SEED_GENERATION` | yes | Set `false` explicitly. The code default is `true` (`backend/app/starter_jobs.py`), and a starter seed job holds the single generation slot for minutes; `backend/.env.example` ships `false` |
 | `GENERATION_MAX_CONCURRENCY`, `GENERATION_MAX_WAITING`, `GENERATION_QUEUE_TIMEOUT_SECONDS` | no | The generation queue. Defaults `1`, `160`, `150` (`backend/app/generation_queue.py`), sized for Nginx's `proxy_read_timeout 300` |
+| `FINETUNED_READINESS_CHECK_SECONDS` | no | How often the backend re-checks that every course's activated model version is one the fine-tuned service serves, logging a journal WARNING when it is not and INFO when it recovers (`backend/app/finetuned_readiness.py`). Default `300`; `0` disables the background check. The same assessment is `GET /api/admin/model-readiness` (Admin → Overview) |
 | `OLLAMA_*` | yes | Base and RAG generation |
 
 **UWB VM** — `.env.local` for the frontend build: `VITE_API_BASE_URL` must be the

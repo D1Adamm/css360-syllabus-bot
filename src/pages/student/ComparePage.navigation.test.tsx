@@ -253,3 +253,49 @@ describe('a comparison survives leaving the Compare page', () => {
     expect(screen.queryByText('A different question?')).not.toBeInTheDocument();
   });
 });
+
+describe('a rated comparison is not offered for rating again', () => {
+  /* Audit finding B9 (2026-11-03): the backend refuses a second rating of the
+     same run, and the pages stop asking for one once the run is marked rated. */
+  const storedRun = {
+    runId: 'run-1',
+    courseId: COURSE,
+    question: QUESTION,
+    matchedComparisonId: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    responses: {
+      base: { text: 'Base answer', error: null, sources: [] },
+      rag: { text: 'RAG answer', error: null, sources: [] },
+      fineTuned: { text: 'FT answer', error: null, sources: [] },
+      fineTunedRag: { text: 'FT+RAG answer', error: null, sources: [] },
+    },
+  };
+
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    base.mockReset();
+    rag.mockReset();
+    fineTuned.mockReset();
+    fineTunedRag.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('offers to rate an unrated run from earlier in the session', () => {
+    window.sessionStorage.setItem(`sml.run.${COURSE}`, JSON.stringify(storedRun));
+    renderApp();
+    expect(screen.getByRole('link', { name: 'Rate your last comparison' })).toBeInTheDocument();
+  });
+
+  it('does not offer to rate a run that was already rated', () => {
+    window.sessionStorage.setItem(
+      `sml.run.${COURSE}`,
+      JSON.stringify({ ...storedRun, ratedAt: '2026-01-01T00:05:00.000Z', evaluationId: 'e1' }),
+    );
+    renderApp();
+    expect(screen.queryByRole('link', { name: 'Rate your last comparison' })).not.toBeInTheDocument();
+    expect(screen.getByText(/You rated your last comparison/)).toBeInTheDocument();
+  });
+});

@@ -58,6 +58,12 @@ class SeedExportTests(unittest.TestCase):
             self.assertTrue(summary["validationPassed"])
             self.assertEqual(summary["skippedCount"], 2)
             self.assertEqual(summary["courseId"], "css-360-winter-2026-a7rp")
+            # Audit B6: the summary says what was left out and why, so an
+            # instructor's edited-but-unapproved examples are not a silent omission.
+            self.assertEqual(summary["excludedCounts"], {"generated": 1, "rejected": 1})
+            self.assertEqual(summary["editedAwaitingApprovalCount"], 0)
+            self.assertIn("Edited examples are not exported until they are approved", summary["note"])
+
             # The store is named by nothing in the summary any more: seeds come
             # from `seed_examples` scoped by courseId, and the old
             # `firebasePath` key described a node that no longer exists.
@@ -222,6 +228,19 @@ class FinetuneRecordMetadataTests(unittest.TestCase):
 
     def test_a_seed_without_them_reads_exactly_as_before(self) -> None:
         self.assertEqual(finetune_record({"instruction": "Q?", "response": "A."}), {"instruction": "Q?", "response": "A."})
+
+    def test_edited_examples_are_counted_as_awaiting_approval(self) -> None:
+        seeds = [
+            {"id": "a", "question": "Approved Q?", "answer": "Approved A with detail.", "reviewStatus": "approved"},
+            {"id": "e", "question": "Edited Q?", "answer": "Edited A with detail.", "reviewStatus": "edited", "wasEdited": True},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = export_approved_seeds(
+                course_id="css-360-winter-2026-a7rp", seeds=seeds, export_root=Path(tmp)
+            )
+        self.assertEqual(summary["exportedCount"], 1)
+        self.assertEqual(summary["editedAwaitingApprovalCount"], 1)
+        self.assertEqual(summary["excludedCounts"], {"edited": 1})
 
 
 if __name__ == "__main__":

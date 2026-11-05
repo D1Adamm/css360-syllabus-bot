@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from './api';
-import { toUserMessage, type ErrorContext } from './errorMessages';
+import { isClassifiedCode, toUserMessage, type ErrorContext } from './errorMessages';
 
 const ALL_CONTEXTS: ErrorContext[] = [
   'syllabus',
@@ -131,5 +131,94 @@ describe('toUserMessage', () => {
       context: 'admin-operation',
     });
     expect(result.technical).toBe('something odd');
+  });
+
+  /* --------------------------------------------------------------------- *
+   * Classified failures (audit findings B5/B7, 2026-11-03)
+   *
+   * The backend now says which kind of problem a refusal is. Each kind gets
+   * its own sentence, so "no model has been published for this course" no
+   * longer reads the same as "the service is down", and the reader is told
+   * what still works.
+   * --------------------------------------------------------------------- */
+
+  const CLASSIFIED_CODES = [
+    'model_not_activated',
+    'model_version_not_servable',
+    'finetuned_not_configured',
+    'finetuned_unavailable',
+    'finetuned_upstream_error',
+    'finetuned_bad_response',
+    'finetuned_rejected',
+    'finetuned_timeout',
+    'ollama_timeout',
+    'ollama_unavailable',
+    'ollama_upstream_error',
+    'ollama_bad_response',
+    'syllabus_not_indexed',
+    'evaluation_already_recorded',
+  ];
+
+  it('has copy for every classified code the backend sends', () => {
+    for (const code of CLASSIFIED_CODES) {
+      expect(isClassifiedCode(code)).toBe(true);
+    }
+    expect(isClassifiedCode('something_else')).toBe(false);
+    expect(isClassifiedCode(undefined)).toBe(false);
+  });
+
+  it('distinguishes a course with no published model from a service outage', () => {
+    const notActivated = toUserMessage(
+      new ApiError('Fine-tuned answers are not available for this course yet.', 503, 'model_not_activated'),
+      { audience: 'student', context: 'model-response' },
+    );
+    const down = toUserMessage(
+      new ApiError('The fine-tuned inference service is unavailable.', 503, 'finetuned_unavailable'),
+      { audience: 'student', context: 'model-response' },
+    );
+    const slow = toUserMessage(
+      new ApiError('The fine-tuned inference service timed out.', 504, 'finetuned_timeout'),
+      { audience: 'student', context: 'model-response' },
+    );
+
+    expect(notActivated.message).toMatch(/does not have a published course model/);
+    expect(down.message).toMatch(/not answering right now/);
+    expect(slow.message).toMatch(/did not finish answering in time/);
+    expect(new Set([notActivated.message, down.message, slow.message]).size).toBe(3);
+    // Each says what still works.
+    expect(notActivated.message).toMatch(/Base and RAG answers still work/);
+    expect(down.message).toMatch(/Base and RAG answers still work/);
+  });
+
+  it('points a professor at what they can do, and a student at what still works', () => {
+    const error = new ApiError('No usable syllabus context.', 404, 'syllabus_not_indexed');
+    expect(
+      toUserMessage(error, { audience: 'professor', context: 'model-response' }).message,
+    ).toMatch(/Syllabus page/);
+    expect(
+      toUserMessage(error, { audience: 'student', context: 'model-response' }).message,
+    ).toMatch(/has not been prepared yet/);
+  });
+
+  it('keeps every classified sentence free of infrastructure wording', () => {
+    for (const code of CLASSIFIED_CODES) {
+      const error = new ApiError('Ollama at 127.0.0.1:11435 refused (see FINETUNED_SERVICE_URL in .env)', 503, code);
+      for (const audience of ['student', 'professor'] as const) {
+        const result = toUserMessage(error, { audience, context: 'model-response' });
+        expect(result.message).not.toMatch(FORBIDDEN);
+        expect(result.title).not.toMatch(FORBIDDEN);
+        expect(result.message).not.toMatch(/adapter|127\.0\.0\.1/i);
+        expect(result.technical).toBeUndefined();
+      }
+    }
+  });
+
+  it('still gives admin the raw classified message', () => {
+    const result = toUserMessage(
+      new ApiError('The fine-tuned inference service is unavailable.', 503, 'finetuned_unavailable'),
+      { audience: 'admin', context: 'model-response' },
+    );
+    expect(result.message).toBe('The fine-tuned inference service is unavailable.');
+    expect(result.technical).toContain('503');
   });
 });

@@ -407,13 +407,17 @@ class TrainQloraHelperTests(unittest.TestCase):
 
 
 class _LlamaLikeTokenizer:
-    """Renders the way the Llama 3 template does: the whole conversation is
-    the generation-prompt rendering followed by the answer and eos."""
+    """Knows the Llama 3 special tokens (one id each) and counts a token per
+    whitespace-separated word otherwise. Its `apply_chat_template` is the Hub
+    template's rendering — with the `Today Date` line and the BOS in the text —
+    which the trainer must NOT be using any more."""
 
     eos_token = "<|eot_id|>"
+    chat_template_calls = 0
 
     def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
-        text = "<|begin_of_text|>"
+        type(self).chat_template_calls += 1
+        text = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nCutting Knowledge Date: December 2023\nToday Date: 03 Nov 2026\n\n<|eot_id|>"
         for message in messages:
             text += f"<|start_header_id|>{message['role']}<|end_header_id|>\n\n{message['content']}<|eot_id|>"
         if add_generation_prompt:
@@ -421,7 +425,9 @@ class _LlamaLikeTokenizer:
         return text
 
     def encode(self, text, add_special_tokens=True):
-        return [len(text)]
+        if text in train_qlora.REQUIRED_SPECIAL_TOKENS:
+            return [1]
+        return [5] * max(1, len(text.split()))
 
 
 class _StrictConfig:
@@ -463,12 +469,150 @@ class MixedFormatTrainingTests(unittest.TestCase):
         self.assertEqual(halves["completion"], "Friday at 11:59 p.m.<|eot_id|>")
         train_qlora.assert_prompt_completion_matches(tokenizer)
 
-    def test_a_template_that_does_not_split_is_refused(self) -> None:
-        class Odd(_LlamaLikeTokenizer):
+    # ------------------------------------------------------------------ #
+    # Audit finding B14 (2026-11-03): training renders the prompt the way
+    # production does, from the one shared module, not with the tokenizer's
+    # chat template.
+    # ------------------------------------------------------------------ #
+
+    def test_training_text_is_the_production_rendering_not_the_chat_template(self) -> None:
+        import llama3_prompt
+
+        tokenizer = _LlamaLikeTokenizer()
+        before = _LlamaLikeTokenizer.chat_template_calls
+        example = {"instruction": "When is it due?", "response": "Friday at 11:59 p.m."}
+        halves = train_qlora.format_prompt_completion(tokenizer, example)
+        whole = train_qlora.format_chat_example(tokenizer, example)["text"]
+
+        self.assertEqual(halves["prompt"], llama3_prompt.render_production_prompt("When is it due?"))
+        self.assertEqual(
+            whole,
+            "<|start_header_id|>system<|end_header_id|>\n\nCutting Knowledge Date: December 2023\n\n<|eot_id|>"
+            "<|start_header_id|>user<|end_header_id|>\n\nWhen is it due?<|eot_id|>"
+            "<|start_header_id|>assistant<|end_header_id|>\n\nFriday at 11:59 p.m.<|eot_id|>",
+        )
+        # What the chat template would have added, and must not:
+        self.assertNotIn("Today Date", whole)
+        self.assertNotIn("<|begin_of_text|>", whole)
+        self.assertEqual(_LlamaLikeTokenizer.chat_template_calls, before)
+        # The collator's response template is where the rendered prompt ends.
+        self.assertTrue(halves["prompt"].endswith(train_qlora.LLAMA3_RESPONSE_TEMPLATE))
+
+    def test_the_serving_helpers_render_the_same_prompt(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "serving_helpers",
+            Path(__file__).resolve().parent / "inference_service" / "helpers.py",
+        )
+        serving_helpers = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(serving_helpers)
+        example = {"instruction": "Is attendance graded?", "response": "No."}
+        halves = train_qlora.format_prompt_completion(_LlamaLikeTokenizer(), example)
+        self.assertEqual(halves["prompt"], serving_helpers.render_production_prompt("Is attendance graded?"))
+        self.assertEqual(serving_helpers.PROMPT_FORMAT, train_qlora.PROMPT_FORMAT)
+
+    def test_a_tokenizer_that_does_not_know_the_llama3_tokens_is_refused(self) -> None:
+        train_qlora.assert_tokenizer_matches_prompt_format(_LlamaLikeTokenizer())
+
+        class SpellsOutSpecials(_LlamaLikeTokenizer):
+            def encode(self, text, add_special_tokens=True):
+                return [5] * max(1, len(text) // 4)
+
+        with self.assertRaises(train_qlora.TrainingDataError) as ctx:
+            train_qlora.assert_tokenizer_matches_prompt_format(SpellsOutSpecials())
+        self.assertIn("<|eot_id|>", str(ctx.exception))
+        self.assertIn("ollama-llama3.2-chat", str(ctx.exception))
+
+        class OtherEos(_LlamaLikeTokenizer):
             eos_token = "<|end|>"
 
-        with self.assertRaises(train_qlora.TrainingDataError):
-            train_qlora.assert_prompt_completion_matches(Odd())
+        with self.assertRaises(train_qlora.TrainingDataError) as ctx:
+            train_qlora.assert_tokenizer_matches_prompt_format(OtherEos())
+        self.assertIn("eos_token is '<|end|>'", str(ctx.exception))
+
+    # ------------------------------------------------------------------ #
+    # The per-record length audit: nothing is truncated without being named.
+    # ------------------------------------------------------------------ #
+
+    def _records(self):
+        return [
+            {"instruction": "Short?", "response": "Yes."},
+            {
+                "instruction": "GROUNDED " + "context " * 40 + "question?",
+                "response": "A long answer " * 10,
+                "format": "grounded",
+                "kind": "answerable",
+            },
+            {"instruction": "Also short?", "response": "Also yes."},
+        ]
+
+    def test_length_audit_counts_every_record_and_flags_the_ones_over_the_window(self) -> None:
+        audit = train_qlora.audit_record_lengths(
+            _LlamaLikeTokenizer(), self._records(), max_seq_length=30, split="train"
+        )
+        self.assertEqual(audit["records"], 3)
+        self.assertEqual(audit["maxSeqLength"], 30)
+        self.assertEqual(audit["promptFormat"], "ollama-llama3.2-chat")
+        self.assertEqual(audit["oversizedLines"], [2])
+        self.assertEqual(audit["oversizedCount"], 1)
+        rows = audit["rows"]
+        self.assertEqual([row["line"] for row in rows], [1, 2, 3])
+        self.assertEqual(rows[1]["format"], "grounded")
+        self.assertFalse(rows[1]["fits"])
+        self.assertTrue(rows[0]["fits"])
+        # Prompt + completion tokens account for the whole, BOS included once.
+        self.assertEqual(rows[0]["tokens"], rows[0]["promptTokens"] + rows[0]["completionTokens"])
+        self.assertEqual(rows[0]["tokens"], len(_LlamaLikeTokenizer().encode(
+            train_qlora.format_chat_example(None, self._records()[0])["text"], add_special_tokens=False
+        )) + 1)
+        self.assertEqual(audit["maxTokens"], rows[1]["tokens"])
+        self.assertTrue(rows[1]["instructionPreview"].startswith("GROUNDED context"))
+
+    def test_the_default_policy_refuses_to_train_and_names_the_lines(self) -> None:
+        records = self._records()
+        audit = train_qlora.audit_record_lengths(
+            _LlamaLikeTokenizer(), records, max_seq_length=30, split="train"
+        )
+        with self.assertRaises(train_qlora.TrainingDataError) as ctx:
+            train_qlora.apply_oversized_policy(audit, records, policy="fail")
+        message = str(ctx.exception)
+        self.assertIn("1 train record(s) exceed --max-seq-length 30", message)
+        self.assertIn("line 2 (grounded/answerable", message)
+        self.assertIn("Nothing was trained", message)
+        self.assertIn("--on-oversized drop", message)
+
+    def test_the_drop_policy_removes_exactly_the_flagged_records(self) -> None:
+        records = self._records()
+        audit = train_qlora.audit_record_lengths(
+            _LlamaLikeTokenizer(), records, max_seq_length=30, split="train"
+        )
+        kept = train_qlora.apply_oversized_policy(audit, records, policy="drop")
+        self.assertEqual([record["instruction"] for record in kept], ["Short?", "Also short?"])
+
+        summary = train_qlora.length_audit_summary(audit, audit, policy="drop")
+        self.assertEqual(summary["onOversized"], "drop")
+        self.assertEqual(summary["train"]["droppedCount"], 1)
+        self.assertEqual(summary["train"]["oversizedLines"], [2])
+        self.assertEqual(summary["maxSeqLength"], 30)
+
+    def test_nothing_is_dropped_when_everything_fits(self) -> None:
+        records = self._records()
+        audit = train_qlora.audit_record_lengths(
+            _LlamaLikeTokenizer(), records, max_seq_length=2048, split="train"
+        )
+        self.assertEqual(audit["oversizedLines"], [])
+        self.assertEqual(train_qlora.apply_oversized_policy(audit, records, policy="fail"), records)
+        self.assertEqual(
+            train_qlora.length_audit_summary(audit, audit, policy="fail")["train"]["droppedCount"], 0
+        )
+
+    def test_on_oversized_defaults_to_fail(self) -> None:
+        self.assertEqual(parse_args([]).on_oversized, "fail")
+        self.assertEqual(parse_args(["--on-oversized", "drop"]).on_oversized, "drop")
+        with self.assertRaises(SystemExit):
+            parse_args(["--on-oversized", "truncate"])
 
     def test_strategy_follows_what_the_release_accepts(self) -> None:
         self.assertEqual(train_qlora.resolve_completion_only_strategy(_StrictConfig), "config")

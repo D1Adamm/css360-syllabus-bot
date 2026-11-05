@@ -31,6 +31,17 @@ from typing import Any, Mapping
 import httpx
 from fastapi import HTTPException
 
+from app.error_classification import (
+    FINETUNED_BAD_RESPONSE,
+    FINETUNED_NOT_CONFIGURED,
+    FINETUNED_REJECTED,
+    FINETUNED_TIMEOUT,
+    FINETUNED_UNAVAILABLE,
+    FINETUNED_UPSTREAM_ERROR,
+    MODEL_VERSION_NOT_SERVABLE,
+    ClassifiedHTTPException,
+)
+
 from app.generation_mode import current_mode
 from app.generation_queue import clean_timings, generation_slot, log_generation
 from app.gpu_generation import check_decoding, expected_decoding
@@ -89,9 +100,10 @@ def require_finetuned_service_url() -> str:
     """Return the configured URL or raise a clear 503 if missing."""
     url = get_finetuned_service_url()
     if url is None:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
+            code=FINETUNED_NOT_CONFIGURED,
+            message=(
                 "Fine-tuned inference service is not configured. "
                 "Set FINETUNED_SERVICE_URL to the running service base URL "
                 "(for example http://<tillicum-node>:<port>) and try again."
@@ -116,40 +128,45 @@ def _validate_generate_payload(
     build and is still accepted; only a *different* version is refused.
     """
     if not isinstance(data, dict):
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail="Fine-tuned service returned a malformed response (expected a JSON object).",
+            code=FINETUNED_BAD_RESPONSE,
+            message="Fine-tuned service returned a malformed response (expected a JSON object).",
         )
 
     answer = data.get("answer")
     if not isinstance(answer, str) or not answer.strip():
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail="Fine-tuned service returned an empty or missing answer.",
+            code=FINETUNED_BAD_RESPONSE,
+            message="Fine-tuned service returned an empty or missing answer.",
         )
 
     model = data.get("model")
     if not isinstance(model, str) or not model.strip():
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail="Fine-tuned service returned a malformed response (missing model).",
+            code=FINETUNED_BAD_RESPONSE,
+            message="Fine-tuned service returned a malformed response (missing model).",
         )
 
     adapter_loaded = data.get("adapterLoaded")
     if not isinstance(adapter_loaded, bool):
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail=(
+            code=FINETUNED_BAD_RESPONSE,
+            message=(
                 "Fine-tuned service returned a malformed response "
                 "(adapterLoaded must be a boolean)."
             ),
         )
     if not adapter_loaded:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
-                "Fine-tuned service is reachable but the LoRA adapter is not loaded. "
-                "Check ADAPTER_PATH on the inference service and restart it."
+            code=FINETUNED_UNAVAILABLE,
+            message=(
+                "Fine-tuned service is reachable but reports no adapter loaded. "
+                "Check its course mapping and Ollama models, then restart it."
             ),
         )
 
@@ -160,18 +177,20 @@ def _validate_generate_payload(
     returned_course_id = data.get("courseId")
     if expected_course_id is not None:
         if not isinstance(returned_course_id, str) or not returned_course_id.strip():
-            raise HTTPException(
+            raise ClassifiedHTTPException(
                 status_code=502,
-                detail=(
+                code=FINETUNED_BAD_RESPONSE,
+                message=(
                     "Fine-tuned service returned no courseId. This backend "
                     "requires a per-course service; the remote may be running "
                     "an older single-adapter build."
                 ),
             )
         if returned_course_id.strip() != expected_course_id:
-            raise HTTPException(
+            raise ClassifiedHTTPException(
                 status_code=502,
-                detail=(
+                code=FINETUNED_BAD_RESPONSE,
+                message=(
                     "Fine-tuned service answered for course "
                     f'"{returned_course_id.strip()}" when asked for '
                     f'"{expected_course_id}". The answer was discarded.'
@@ -189,9 +208,10 @@ def _validate_generate_payload(
         and returned_version is not None
         and returned_version != expected_model_version
     ):
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail=(
+            code=FINETUNED_BAD_RESPONSE,
+            message=(
                 "Fine-tuned service answered from model version "
                 f'"{returned_version}" when asked for "{expected_model_version}". '
                 "The answer was discarded."
@@ -200,9 +220,10 @@ def _validate_generate_payload(
 
     generation_seconds = data.get("generationSeconds")
     if generation_seconds is not None and not isinstance(generation_seconds, (int, float)):
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail=(
+            code=FINETUNED_BAD_RESPONSE,
+            message=(
                 "Fine-tuned service returned a malformed response "
                 "(generationSeconds must be a number when present)."
             ),
@@ -237,17 +258,19 @@ async def check_finetuned_service_health() -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(f"{base_url}/health")
     except httpx.TimeoutException as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
+            code=FINETUNED_TIMEOUT,
+            message=(
                 "Fine-tuned inference service timed out while checking health. "
                 "Ensure the Slurm job is running and FINETUNED_SERVICE_URL is correct."
             ),
         ) from exc
     except httpx.RequestError as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
+            code=FINETUNED_UNAVAILABLE,
+            message=(
                 "Fine-tuned inference service is unavailable. "
                 "Check that the service is running and FINETUNED_SERVICE_URL points to it."
             ),
@@ -260,9 +283,10 @@ async def check_finetuned_service_health() -> dict[str, Any]:
             status_code=response.status_code,
             body=response.text,
         )
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
+            code=FINETUNED_UPSTREAM_ERROR,
+            message=(
                 "Fine-tuned inference service health check failed "
                 f"(HTTP {response.status_code}). See the backend log for the "
                 "service's own response."
@@ -272,15 +296,17 @@ async def check_finetuned_service_health() -> dict[str, Any]:
     try:
         data = response.json()
     except ValueError as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail="Fine-tuned service health endpoint returned invalid JSON.",
+            code=FINETUNED_BAD_RESPONSE,
+            message="Fine-tuned service health endpoint returned invalid JSON.",
         ) from exc
 
     if not isinstance(data, dict):
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail="Fine-tuned service health endpoint returned a malformed response.",
+            code=FINETUNED_BAD_RESPONSE,
+            message="Fine-tuned service health endpoint returned a malformed response.",
         )
 
     courses = data.get("courses")
@@ -418,7 +444,7 @@ async def generate_finetuned_response(
             )
             if mode.is_gpu:
                 if validated["raw"].get("target", "course") != "course":
-                    raise HTTPException(status_code=502, detail="The GPU service did not answer with the course adapter.")
+                    raise ClassifiedHTTPException(status_code=502, code=FINETUNED_BAD_RESPONSE, message="The GPU service did not answer with the course adapter.")
                 check_decoding(validated["raw"].get("decoding"), expected_decoding(max_new_tokens=max_new_tokens))
         except HTTPException as exc:
             log_generation(
@@ -451,6 +477,9 @@ async def generate_finetuned_response(
         "model_version": validated["model_version"],
         "generation_seconds": validated["generation_seconds"],
         "response_type": "fineTuned",
+        # Which engine produced it: the VM-local service, or the Tillicum GPU in
+        # classroom GPU mode. Stored with a rating so research data says which.
+        "engine": "gpu" if mode.is_gpu else "vm",
     }
 
 
@@ -476,17 +505,19 @@ async def _post_generate(
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(f"{base_url}/generate", json=body)
     except httpx.TimeoutException as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
+            code=FINETUNED_TIMEOUT,
+            message=(
                 "Fine-tuned inference service timed out. "
                 "The model may still be loading or the node may be unreachable."
             ),
         ) from exc
     except httpx.RequestError as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
+            code=FINETUNED_UNAVAILABLE,
+            message=(
                 "Fine-tuned inference service is unavailable. "
                 "Check that the service is running and FINETUNED_SERVICE_URL points to it."
             ),
@@ -499,9 +530,10 @@ async def _post_generate(
             status_code=response.status_code,
             body=response.text,
         )
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
+            code=FINETUNED_UPSTREAM_ERROR,
+            message=(
                 "Fine-tuned inference service returned a server error "
                 f"(HTTP {response.status_code}). See the backend log for the "
                 "service's own response."
@@ -523,9 +555,10 @@ async def _post_generate(
             if model_version
             else f'course "{safe_course_id}"'
         )
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=409,
-            detail=(
+            code=MODEL_VERSION_NOT_SERVABLE,
+            message=(
                 "No fine-tuned adapter is published on the inference service "
                 f"for {asked_for}. Publish one for this course, then try again."
             ),
@@ -538,9 +571,10 @@ async def _post_generate(
             status_code=response.status_code,
             body=response.text,
         )
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail=(
+            code=FINETUNED_REJECTED,
+            message=(
                 "Fine-tuned inference service rejected the request "
                 f"(HTTP {response.status_code}). See the backend log for the "
                 "service's own response."
@@ -550,9 +584,10 @@ async def _post_generate(
     try:
         data = response.json()
     except ValueError as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail="Fine-tuned service returned invalid JSON.",
+            code=FINETUNED_BAD_RESPONSE,
+            message="Fine-tuned service returned invalid JSON.",
         ) from exc
 
     validated = _validate_generate_payload(

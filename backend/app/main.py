@@ -1,6 +1,8 @@
+import asyncio
 import logging
 import os
-from typing import Any
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 # Load backend/.env before other app modules read configuration.
 from app import config as _config  # noqa: F401
@@ -11,6 +13,7 @@ load_backend_env()
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.auth.dependencies import (
     authorize_course_access,
@@ -43,7 +46,14 @@ from app.finetuned_client import (
     public_service_health,
     generate_finetuned_response,
 )
+from app.error_classification import (
+    TRAINING_RUN_ACTIVE,
+    ClassifiedHTTPException,
+    install as install_classified_errors,
+)
 from app.finetuned_rag import generate_course_finetuned_rag_answer
+from app.dataset_pinning import pin_dataset_for_enqueue
+from app.finetuned_readiness import collect_readiness, start_readiness_monitor
 from app.generation_mode import current_mode, describe as describe_generation_mode, on_mode_change
 from app.generation_queue import bind_request, get_generation_queue
 from app.grounded_rag import (
@@ -118,6 +128,7 @@ from app.db_seeds import list_seeds, review_seed
 from app.db_training_runs import (
     ActiveTrainingRunError,
     enqueue_training_run,
+    find_active_training_run,
 )
 from app.training_retry import RetryNotEligibleError, retry_training_run
 from app.starter_status import reconcile_starter_seed_generation
@@ -175,12 +186,40 @@ logger = logging.getLogger(__name__)
 # `production`) the three documentation paths do not exist.
 DOCS_ENABLED = is_test_mode() or app_env() in {"development", "dev", "local"}
 
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Background work that lives as long as the process does.
+
+    Only the fine-tuned readiness monitor (`finetuned_readiness`), which
+    writes a journal WARNING when a course's activated version stops being
+    servable. It does not start under tests, without a database, or when
+    `FINETUNED_READINESS_CHECK_SECONDS=0`.
+    """
+    monitor = start_readiness_monitor()
+    try:
+        yield
+    finally:
+        if monitor is not None:
+            monitor.cancel()
+            try:
+                await monitor
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - shutdown must not fail
+                pass
+
+
 app = FastAPI(
     title="Syllabus Model Lab Backend",
     docs_url="/docs" if DOCS_ENABLED else None,
     redoc_url="/redoc" if DOCS_ENABLED else None,
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
+    lifespan=lifespan,
 )
+
+# Failures a browser must tell apart answer with `{"detail": {"code", "message"}}`;
+# see app/error_classification.py.
+install_classified_errors(app)
 
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
@@ -316,6 +355,16 @@ def generation_queue_status(principal: Principal = Depends(require_admin)) -> di
 on_mode_change(lambda _old, _new: get_generation_queue().reset_estimate())
 
 
+@app.get("/api/admin/model-readiness")
+async def model_readiness(principal: Principal = Depends(require_admin)) -> dict[str, Any]:
+    """Every course's activated version against what the fine-tuned service serves.
+
+    Admin → Overview reads this; the same assessment runs in the background
+    and writes to the journal when it changes (`finetuned_readiness`).
+    """
+    return await collect_readiness()
+
+
 @app.get("/api/admin/generation-mode")
 def generation_mode_status(principal: Principal = Depends(require_admin)) -> dict[str, Any]:
     """Which mode this backend is generating in, and where each condition goes.
@@ -374,6 +423,7 @@ async def generate_fine_tuned(
         modelVersion=result.get("model_version") or resolved["version"],
         adapterLoaded=result["adapter_loaded"],
         generationSeconds=result["generation_seconds"],
+        engine=result.get("engine"),
     )
 
 
@@ -451,6 +501,7 @@ async def generate_fine_tuned_rag(
         modelVersion=result.get("modelVersion"),
         adapterLoaded=result["adapterLoaded"],
         generationSeconds=result["generationSeconds"],
+        engine=result.get("engine"),
     )
 
 
@@ -605,6 +656,43 @@ async def generate_model_testing_pair(
         ],
         rag=ModelTestingPairAnswer(**base_answer),
         fineTunedRag=ModelTestingPairAnswer(**fine_tuned_answer),
+    )
+
+
+#: Run states in which a worker holds, is copying, or has copied the prepared
+#: files. Re-preparing under one of these would change the data mid-flight.
+RUN_STATES_HOLDING_DATASET = frozenset({"claimed", "submitted", "training"})
+
+
+def _refuse_while_training_run_active(course_id: str) -> None:
+    """Export and split rewrite the files a run in progress is using.
+
+    Audit finding B10. A run that is claimed, submitted or training has a
+    worker reading (or has read) the prepared files; re-preparing underneath it
+    would change the data mid-flight, so preparation waits until it finishes
+    or is retired with Retry.
+
+    A run that is merely `queued` does not block preparation. It is pinned to
+    the digest it was queued with, so re-preparing makes it stale rather than
+    silently retargeted: the worker refuses it (`dataset_changed`), and a
+    stale queued run may be retried, which queues a replacement for the new
+    data. Blocking here instead would freeze a course's data for as long as
+    the queue goes unserved, with no way out but waiting.
+    """
+    with translate_db_errors("checking the training queue"):
+        with db_connection() as connection:
+            active = find_active_training_run(connection, course_id)
+    if active is None or active.get("state") not in RUN_STATES_HOLDING_DATASET:
+        return
+    raise ClassifiedHTTPException(
+        status_code=409,
+        code=TRAINING_RUN_ACTIVE,
+        message=(
+            f'Training run "{active.get("runId")}" for this course is {active.get("state")}: '
+            "a worker is using the prepared training data, so it cannot be "
+            "re-exported or re-split until the run finishes or is retired."
+        ),
+        extra={"runId": active.get("runId"), "state": active.get("state")},
     )
 
 
@@ -1031,6 +1119,15 @@ def enqueue_course_training_run(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # The run is pinned to the prepared files as they are now (audit B10): the
+    # same check and the same refusals as the `/api/db` twin.
+    dataset_sha256 = pin_dataset_for_enqueue(
+        safe_course_id,
+        dataset_ref=request.dataset_ref,
+        train_examples=request.train_examples,
+        validation_examples=request.validation_examples,
+    )
+
     def work(connection):
         if not course_exists(connection, safe_course_id):
             raise HTTPException(
@@ -1044,6 +1141,7 @@ def enqueue_course_training_run(
             approved_example_count=request.approved_example_count,
             train_examples=request.train_examples,
             validation_examples=request.validation_examples,
+            dataset_sha256=dataset_sha256,
         )
 
     try:
@@ -1480,6 +1578,7 @@ async def export_approved_course_seeds(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    await run_in_threadpool(_refuse_while_training_run_active, safe_course_id)
     seeds = _course_seed_records(safe_course_id)
     try:
         summary = export_approved_seeds(course_id=safe_course_id, seeds=seeds)
@@ -1587,6 +1686,7 @@ async def prepare_course_training_split(
     if body is not None and body.split_seed is not None:
         split_seed = int(body.split_seed)
 
+    await run_in_threadpool(_refuse_while_training_run_active, safe_course_id)
     try:
         summary = await prepare_training_split(
             safe_course_id,

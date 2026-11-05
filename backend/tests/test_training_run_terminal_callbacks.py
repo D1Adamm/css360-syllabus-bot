@@ -174,6 +174,34 @@ class OtherLateCallbacksTests(TerminalRunTestCase):
 
         self._assert_refused_without_writing(response, "succeeded")
 
+    def test_a_refusal_cannot_fail_a_finished_run_again(self) -> None:
+        """A refusal is terminal itself; it must not rewrite how a run already ended."""
+        for state in ("succeeded", "failed"):
+            self.run_writes.clear()
+            self.request_writes.clear()
+            with self._with_run(_run(state=state, jobId=None)):
+                response = self.client.post(
+                    f"{QUEUE}/refused",
+                    json={"error": "The prepared training data changed [dataset_changed]"},
+                    headers=HEADERS,
+                )
+            self._assert_refused_without_writing(response, state)
+
+    def test_a_refusal_of_a_live_claim_fails_the_run_and_leaves_the_request_status_alone(self) -> None:
+        with self._with_run(_run(state="claimed", jobId=None)):
+            response = self.client.post(
+                f"{QUEUE}/refused",
+                json={"error": "The prepared training data changed [dataset_changed]"},
+                headers=HEADERS,
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.run_writes, ["failed"])
+        self.assertEqual(len(self.request_writes), 1)
+        self.assertNotIn("status", self.request_writes[0])
+        self.assertNotIn("failureMessage", self.request_writes[0])
+        self.assertIn("dataset_changed", self.request_writes[0]["launchError"])
+
     def test_a_release_cannot_requeue_a_retired_run(self) -> None:
         """A worker releasing a run an admin has since retired must not resurrect it."""
         with self._with_run(_run(state="failed", error="Superseded by admin retry")):

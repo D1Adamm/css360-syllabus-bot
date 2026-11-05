@@ -104,25 +104,25 @@ def _install_ml_stubs(captured: dict, *, cuda_available: bool, bf16_supported: b
 
     class _Tokenizer:
         pad_token = None
-        # Shaped like the Llama 3 template: the whole conversation is the
-        # generation-prompt rendering followed by the answer and the
-        # end-of-turn token, which is what completion-only training relies on.
-        eos_token = "</assistant>"
+        # A Llama 3 tokenizer as the trainer checks it: the four special tokens
+        # are one id each, the end-of-turn token is the eos, and everything
+        # else counts roughly a token per four characters. The chat template
+        # is recorded so a test can assert it is never used.
+        eos_token = "<|eot_id|>"
 
         def apply_chat_template(self, messages, **kwargs):
             captured.setdefault("chat_template_calls", []).append(
                 {"messages": messages, "kwargs": kwargs}
             )
-            text = "<chat>" + "".join(
-                f"<{m['role']}>{m['content']}</{m['role']}>" for m in messages
-            )
-            if kwargs.get("add_generation_prompt"):
-                text += "<assistant>"
-            return text
+            return "<chat-template-rendering>"
 
         def encode(self, text, add_special_tokens=True):
-            captured["encoded_response_template"] = text
-            return [7, 8, 9]
+            if text == train_qlora.LLAMA3_RESPONSE_TEMPLATE:
+                captured["encoded_response_template"] = text
+                return [7, 8, 9]
+            if text in train_qlora.REQUIRED_SPECIAL_TOKENS:
+                return [3]
+            return [5] * max(1, len(text) // 4)
 
         def save_pretrained(self, path):
             Path(path).mkdir(parents=True, exist_ok=True)
@@ -373,7 +373,9 @@ class PureSettingsTests(unittest.TestCase):
         self.assertEqual(train_qlora.dtype_name("torch.float32"), "float32")
         self.assertEqual(train_qlora.dtype_name("bfloat16"), "bfloat16")
 
-    def test_chat_formatting_is_the_model_chat_template_of_a_user_assistant_pair(self) -> None:
+    def test_chat_formatting_is_the_production_rendering_not_the_chat_template(self) -> None:
+        # Audit finding B14 (2026-11-03): the trainer renders what Ollama and
+        # the GPU service render, and never asks the tokenizer's template.
         calls = []
 
         class _Tokenizer:
@@ -384,16 +386,15 @@ class PureSettingsTests(unittest.TestCase):
         result = train_qlora.format_chat_example(
             _Tokenizer(), {"instruction": "When is the final?", "response": "Week 11."}
         )
-        self.assertEqual(result, {"text": "formatted"})
-        messages, kwargs = calls[0]
         self.assertEqual(
-            messages,
-            [
-                {"role": "user", "content": "When is the final?"},
-                {"role": "assistant", "content": "Week 11."},
-            ],
+            result,
+            {
+                "text": "<|start_header_id|>system<|end_header_id|>\n\nCutting Knowledge Date: December 2023\n\n<|eot_id|>"
+                "<|start_header_id|>user<|end_header_id|>\n\nWhen is the final?<|eot_id|>"
+                "<|start_header_id|>assistant<|end_header_id|>\n\nWeek 11.<|eot_id|>"
+            },
         )
-        self.assertEqual(kwargs, {"tokenize": False, "add_generation_prompt": False})
+        self.assertEqual(calls, [])
 
     def test_peak_rss_is_a_positive_byte_count(self) -> None:
         peak = train_qlora.peak_rss_bytes()
@@ -538,7 +539,7 @@ class CpuRunTests(unittest.TestCase):
 
     def _run(self, argv_extra: list[str], *, cuda_available: bool = False,
              bf16_supported: bool = False, train_count: int = 48, smoke: bool = True,
-             sft_config_class=None):
+             sft_config_class=None, train_records: list[dict] | None = None):
         saved = _install_ml_stubs(
             self.captured, cuda_available=cuda_available, bf16_supported=bf16_supported,
             sft_config_class=sft_config_class,
@@ -546,6 +547,12 @@ class CpuRunTests(unittest.TestCase):
         self.addCleanup(_restore_ml_stubs, saved)
         tmp = Path(tempfile.mkdtemp())
         train_file, val_file = _write_split(tmp, train_count=train_count)
+        if train_records is not None:
+            train_file.write_text(
+                "".join(json.dumps(record) + "\n" for record in train_records),
+                encoding="utf-8",
+            )
+        self.last_output_dir = tmp / "out"
         argv = [
             "--train-file", str(train_file),
             "--validation-file", str(val_file),
@@ -702,27 +709,89 @@ class CpuRunTests(unittest.TestCase):
         self.assertIn("CUDA is unavailable", str(ctx.exception))
 
     def test_both_modes_train_on_identical_chat_text(self) -> None:
-        _, _, _ = self._run(["--cpu"])
+        import llama3_prompt
+
+        report, _, _ = self._run(["--cpu"])
         cpu_train = list(self.captured["train_texts"])
         cpu_eval = list(self.captured["eval_texts"])
-        cpu_calls = list(self.captured["chat_template_calls"])
+        # The tokenizer's chat template is never consulted (audit B14).
+        self.assertNotIn("chat_template_calls", self.captured)
         self.captured.clear()
 
         _, _, _ = self._run([], cuda_available=True, bf16_supported=True)
         self.assertEqual(self.captured["train_texts"], cpu_train)
         self.assertEqual(self.captured["eval_texts"], cpu_eval)
-        self.assertEqual(self.captured["chat_template_calls"], cpu_calls)
+        self.assertNotIn("chat_template_calls", self.captured)
 
-        # Smoke subset of the same split: 4 train / 2 validation. Under the
-        # prompt/completion rendering the template is asked for the user turn
-        # with the generation header; the answer is appended with eos, and the
-        # whole is the user-then-assistant chat text.
+        # Smoke subset of the same split: 4 train / 2 validation, each the
+        # production prompt for the question followed by the answer and the
+        # end-of-turn token — what the serving side prompts with.
         self.assertEqual(len(cpu_train), 4)
         self.assertEqual(len(cpu_eval), 2)
-        first = next(call for call in cpu_calls if call["messages"][0]["content"] == "Q0?")
-        self.assertEqual([m["role"] for m in first["messages"]], ["user"])
-        self.assertEqual(first["kwargs"], {"tokenize": False, "add_generation_prompt": True})
-        self.assertEqual(cpu_train[0], "<chat><user>Q0?</user><assistant>A0.</assistant>")
+        self.assertEqual(cpu_train[0], llama3_prompt.render_training_text("Q0?", "A0."))
+        self.assertNotIn("Today Date", cpu_train[0])
+        self.assertNotIn("<|begin_of_text|>", cpu_train[0])
+        self.assertEqual(report["promptFormat"], "ollama-llama3.2-chat")
+
+    # ------------------------------------------------------------------ #
+    # The per-record length audit runs before anything is trained.
+    # ------------------------------------------------------------------ #
+
+    def _records_with_one_long(self) -> list[dict]:
+        records = [{"instruction": f"Q{i}?", "response": f"A{i}."} for i in range(8)]
+        records[1] = {
+            "instruction": "GROUNDED question?",
+            "response": "x" * 2000,
+            "format": "grounded",
+            "kind": "answerable",
+        }
+        return records
+
+    def test_an_oversized_record_fails_the_run_before_training_by_default(self) -> None:
+        with self.assertRaises(train_qlora.TrainingDataError) as ctx:
+            self._run(
+                ["--cpu", "--max-seq-length", "200"],
+                train_records=self._records_with_one_long(),
+            )
+        message = str(ctx.exception)
+        self.assertIn("line 2 (grounded/answerable", message)
+        self.assertIn("Nothing was trained", message)
+        # The trainer was never constructed: no rows, no collator, no model load.
+        self.assertNotIn("train_rows", self.captured)
+        self.assertNotIn("from_pretrained", self.captured)
+        # The audit is on disk for whoever reads the failure.
+        audit = json.loads((self.last_output_dir / "length-report.json").read_text(encoding="utf-8"))
+        self.assertEqual(audit["onOversized"], "fail")
+        self.assertEqual(audit["train"]["oversizedLines"], [2])
+        self.assertEqual(audit["train"]["maxSeqLength"], 200)
+        self.assertEqual(audit["validation"]["oversizedLines"], [])
+
+    def test_on_oversized_drop_trains_without_the_record_and_reports_it(self) -> None:
+        report, out_dir, stdout = self._run(
+            ["--cpu", "--max-seq-length", "200", "--on-oversized", "drop"],
+            train_records=self._records_with_one_long(),
+        )
+        texts = self.captured["train_texts"]
+        self.assertEqual(len(texts), 3)
+        self.assertFalse(any("x" * 2000 in text for text in texts))
+        self.assertIn("WARNING: dropping 1 train record(s)", stdout)
+        self.assertEqual(report["lengthAudit"]["onOversized"], "drop")
+        self.assertEqual(report["lengthAudit"]["maxSeqLength"], 200)
+        self.assertEqual(report["lengthAudit"]["train"]["oversizedLines"], [2])
+        self.assertEqual(report["lengthAudit"]["train"]["droppedCount"], 1)
+        self.assertEqual(report["lengthAudit"]["validation"]["droppedCount"], 0)
+        # The step budget and the report count what was actually trained on.
+        self.assertEqual(report["trainExampleCount"], 3)
+        self.assertTrue((out_dir / "length-report.json").is_file())
+
+    def test_a_dataset_that_fits_reports_a_clean_audit(self) -> None:
+        report, out_dir, stdout = self._run(["--cpu"])
+        self.assertEqual(report["lengthAudit"]["train"]["oversizedCount"], 0)
+        self.assertEqual(report["lengthAudit"]["train"]["droppedCount"], 0)
+        self.assertEqual(report["lengthAudit"]["train"]["records"], 4)
+        self.assertGreater(report["lengthAudit"]["train"]["maxTokens"], 1)
+        self.assertIn("Length audit (2048-token window)", stdout)
+        self.assertIn("Prompt format: ollama-llama3.2-chat", stdout)
 
     def test_cpu_output_metadata_and_artifacts(self) -> None:
         report, out_dir, _ = self._run(["--cpu", "--cpu-threads", "4"])
@@ -848,8 +917,8 @@ class CompletionOnlyStrategyTests(unittest.TestCase):
         self.assertIsNone(self.captured["data_collator"])
         rows = self.captured["train_rows"]
         self.assertEqual(set(rows[0]) & {"prompt", "completion", "text"}, {"prompt", "completion"})
-        self.assertTrue(rows[0]["prompt"].endswith("<assistant>"))
-        self.assertTrue(rows[0]["completion"].endswith("</assistant>"))
+        self.assertTrue(rows[0]["prompt"].endswith(train_qlora.LLAMA3_RESPONSE_TEMPLATE))
+        self.assertTrue(rows[0]["completion"].endswith("<|eot_id|>"))
         self.assertIn("Completion-only loss: config", stdout)
         self.assertEqual(report["completionOnlyLoss"], "config")
         self.assertEqual(report["maxSeqLength"], 2048)

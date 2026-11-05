@@ -84,11 +84,19 @@ def evaluation(**overrides: Any) -> dict[str, Any]:
 
 
 class ProjectionTests(unittest.TestCase):
-    def test_reviewed_examples_are_visible_to_every_participant(self) -> None:
-        for status in ("approved", "edited"):
-            visible = seeds_for_participant([seed(reviewStatus=status)], ME)
-            self.assertEqual(len(visible), 1)
-            self.assertFalse(visible[0]["mine"])
+    def test_approved_examples_are_visible_to_every_participant(self) -> None:
+        visible = seeds_for_participant([seed(reviewStatus="approved")], ME)
+        self.assertEqual(len(visible), 1)
+        self.assertFalse(visible[0]["mine"])
+
+    def test_an_edited_example_waits_for_approval_before_students_see_it(self) -> None:
+        """Audit B6: `edited` used to be shown as if approved while the training
+        export left it out. Approved now means the same thing everywhere."""
+        self.assertEqual(seeds_for_participant([seed(reviewStatus="edited")], ME), [])
+        mine = seed(reviewStatus="edited", participantId=ME, origin="user")
+        visible = seeds_for_participant([mine], ME)
+        self.assertEqual(len(visible), 1)
+        self.assertTrue(visible[0]["mine"])
 
     def test_unreviewed_and_rejected_examples_are_hidden_unless_mine(self) -> None:
         for status in ("generated", "rejected", None):

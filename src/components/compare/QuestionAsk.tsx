@@ -1,6 +1,14 @@
 import { useId, useState } from 'react';
 import { Button } from '../ui/Button';
 
+/**
+ * The longest question the backend's generation routes accept
+ * (`schemas.QUESTION_MAX_LENGTH`), which is also the longest question a
+ * rating may record. Enforced here so a student is never handed four answers
+ * to a question they then cannot rate.
+ */
+export const QUESTION_MAX_LENGTH = 2000;
+
 export interface QuestionAskProps {
   /** Suggested questions for this course. May be empty. */
   examples: string[];
@@ -68,6 +76,7 @@ export function QuestionAsk({
             onChange={(event) => setValue(event.target.value)}
             placeholder="How much of my grade comes from the final project?"
             autoComplete="off"
+            maxLength={QUESTION_MAX_LENGTH}
           />
           <Button
             type="submit"

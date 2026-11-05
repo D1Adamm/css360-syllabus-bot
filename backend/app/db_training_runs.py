@@ -39,7 +39,8 @@ from app.db_mapping import (
 RUN_COLUMNS = """
     run_id, course_id, mode, state, enqueued_at, updated_at, dataset_ref,
     approved_example_count, train_examples, validation_examples, attempt,
-    job_id, claim_owner, claim_claimed_at, claim_expires_at, error, completion
+    job_id, claim_owner, claim_claimed_at, claim_expires_at, error, completion,
+    dataset_sha256
 """
 
 RUN_STATES = ("queued", "claimed", "submitted", "training", "succeeded", "failed")
@@ -178,6 +179,9 @@ def map_training_run(row: Mapping[str, Any]) -> dict[str, Any]:
 
     put_optional(record, "jobId", optional_string(row.get("job_id")))
     put_optional(record, "error", optional_string(row.get("error")))
+    # The prepared dataset's digest when the run was queued (audit B10). Absent
+    # on runs queued before it was recorded.
+    put_optional(record, "datasetSha256", optional_string(row.get("dataset_sha256")))
 
     completion = row.get("completion")
     if isinstance(completion, dict):
@@ -294,10 +298,20 @@ def _claim_has_expired(run: Mapping[str, Any], now: datetime) -> bool:
     return expires_at <= now
 
 
+def _queued_run_is_stale(run: Mapping[str, Any], current_dataset_sha256: str | None) -> bool:
+    """A queued run a worker refused, or one pinned to data no longer on disk."""
+    if str(run.get("error") or "").strip():
+        return True
+    pinned = str(run.get("datasetSha256") or "").strip()
+    current = str(current_dataset_sha256 or "").strip()
+    return bool(pinned and current and pinned != current)
+
+
 def training_run_retry_block(
     run: Mapping[str, Any],
     *,
     now: datetime | None = None,
+    current_dataset_sha256: str | None = None,
 ) -> str | None:
     """Why this run may not be superseded, or None when it may be.
 
@@ -313,11 +327,21 @@ def training_run_retry_block(
     right now; the only case the backend can *prove* is stale is a lease that
     has run out, which is the same evidence `claim_next_training_run` acts on
     when it retakes work.
+
+    A queued run is no longer "exactly what a retry would produce" in two
+    cases (audit B10, 2026-11-03): a worker already took it and put it back
+    with a reason (`error`), or it is pinned to a dataset digest that is not
+    the one on disk any more (`current_dataset_sha256`, when the caller knows
+    it). Either way the replacement would be queued for the current data, so
+    such a run may be retired.
     """
     moment = now or datetime.now(timezone.utc)
     state = run.get("state")
 
     if state in RETRYABLE_RUN_STATES:
+        return None
+
+    if state == "queued" and _queued_run_is_stale(run, current_dataset_sha256):
         return None
 
     if state in LIVE_JOB_RUN_STATES:
@@ -369,8 +393,13 @@ def enqueue_training_run(
     train_examples: int = 0,
     validation_examples: int = 0,
     run_id: str | None = None,
+    dataset_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Queue one run, refusing while this course has an active one.
+
+    `dataset_sha256` pins the run to the prepared files as they were when it
+    was queued; `dataset_artifacts.resolve_run_dataset` refuses to serve the
+    worker anything else.
 
     The guarded property is that no two runs for one course are outstanding at
     once. It is a conditional INSERT evaluated at write time, so a
@@ -396,6 +425,7 @@ def enqueue_training_run(
         "approved_example_count": max(0, as_int(approved_example_count)),
         "train_examples": max(0, as_int(train_examples)),
         "validation_examples": max(0, as_int(validation_examples)),
+        "dataset_sha256": optional_string(dataset_sha256),
         # No runner has taken it yet. The runner increments as it claims.
         "attempt": 0,
         "terminal_states": list(TERMINAL_RUN_STATES),
@@ -407,11 +437,12 @@ def enqueue_training_run(
             INSERT INTO training_runs (
                 run_id, course_id, mode, state, enqueued_at, updated_at,
                 dataset_ref, approved_example_count, train_examples,
-                validation_examples, attempt
+                validation_examples, attempt, dataset_sha256
             )
             SELECT %(run_id)s, %(course_id)s, %(mode)s, %(state)s, %(enqueued_at)s,
                    %(updated_at)s, %(dataset_ref)s, %(approved_example_count)s,
-                   %(train_examples)s, %(validation_examples)s, %(attempt)s
+                   %(train_examples)s, %(validation_examples)s, %(attempt)s,
+                   %(dataset_sha256)s
             WHERE NOT EXISTS (
                 SELECT 1 FROM training_runs
                 WHERE course_id = %(course_id)s

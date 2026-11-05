@@ -28,6 +28,8 @@ export interface FineTunedGenerateResponse {
   courseId?: string;
   /** The course version that answered, as the backend resolved it. */
   modelVersion?: string | null;
+  /** Where it was generated: `vm` (local Ollama) or `gpu` (classroom mode). */
+  engine?: string | null;
   adapterLoaded: boolean;
   generationSeconds?: number | null;
 }
@@ -40,6 +42,7 @@ export interface FineTunedRagGenerateResponse {
   retrievedChunks: RagRetrieveResult[];
   responseType: 'fineTunedRag';
   modelVersion?: string | null;
+  engine?: string | null;
   adapterLoaded: boolean;
   generationSeconds?: number | null;
 }
@@ -315,7 +318,32 @@ export interface PrepareTrainingSplitResponse {
     splitSeed?: number;
     manifest?: Record<string, unknown>;
     files?: Record<string, string>;
+    /** SHA-256 over the train and validation files just written. */
+    datasetSha256?: string;
+    /** Per-record length audit against the training window. */
+    lengthCheck?: {
+      maxSeqLength?: number;
+      flaggedCount?: number;
+      flagged?: Array<{ seedId?: string; kind?: string; approxTokens?: number }>;
+      [key: string]: unknown;
+    };
     [key: string]: unknown;
+  };
+}
+
+/** The dataset digest and oversized count a split summary reports, if any. */
+export function splitSummaryDetails(summary: PrepareTrainingSplitResponse['summary'] | undefined): {
+  datasetSha256?: string;
+  oversizedExamples: number;
+  maxSeqLength: number | null;
+} {
+  const digest = summary?.datasetSha256;
+  const flagged = Number(summary?.lengthCheck?.flaggedCount);
+  const window = Number(summary?.lengthCheck?.maxSeqLength);
+  return {
+    ...(typeof digest === 'string' && /^[0-9a-f]{64}$/i.test(digest) ? { datasetSha256: digest } : {}),
+    oversizedExamples: Number.isInteger(flagged) && flagged > 0 ? flagged : 0,
+    maxSeqLength: Number.isInteger(window) && window > 0 ? window : null,
   };
 }
 

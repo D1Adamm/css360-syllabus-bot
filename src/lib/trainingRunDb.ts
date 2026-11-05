@@ -142,6 +142,9 @@ export function parseTrainingRun(runId: string, value: unknown): TrainingRun | n
     updatedAt:
       typeof record.updatedAt === 'string' ? record.updatedAt : record.enqueuedAt,
     datasetRef: typeof record.datasetRef === 'string' ? record.datasetRef : '',
+    ...(typeof record.datasetSha256 === 'string' && record.datasetSha256.trim() !== ''
+      ? { datasetSha256: record.datasetSha256 }
+      : {}),
     approvedExampleCount: asCount(record.approvedExampleCount),
     trainExamples: asCount(record.trainExamples),
     validationExamples: asCount(record.validationExamples),
@@ -171,6 +174,22 @@ export function parseTrainingRuns(value: unknown): TrainingRun[] {
 
 export function findActiveTrainingRun(runs: TrainingRun[]): TrainingRun | null {
   return runs.find(isActiveTrainingRun) ?? null;
+}
+
+/**
+ * States in which a worker holds, is copying, or has copied the prepared
+ * training files. The backend refuses to re-export or re-split while a run is
+ * in one of these (`training_run_active`); a merely `queued` run does not
+ * block preparation — it is pinned to its digest and becomes stale instead.
+ */
+export const RUN_STATES_HOLDING_DATASET: readonly TrainingRun['state'][] = [
+  'claimed',
+  'submitted',
+  'training',
+];
+
+export function findRunHoldingDataset(runs: TrainingRun[]): TrainingRun | null {
+  return runs.find((run) => RUN_STATES_HOLDING_DATASET.includes(run.state)) ?? null;
 }
 
 /**

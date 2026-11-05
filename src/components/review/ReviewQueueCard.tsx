@@ -21,6 +21,8 @@ export interface ReviewQueueCardProps {
   onApprove: (seedId: string) => void;
   onReject: (seedId: string) => void;
   onSaveEdit: (seedId: string, draft: ReviewDraft) => void;
+  /** Save the new wording and approve it in the same request. */
+  onSaveAndApprove: (seedId: string, draft: ReviewDraft) => void;
 }
 
 /**
@@ -37,6 +39,7 @@ export function ReviewQueueCard({
   onApprove,
   onReject,
   onSaveEdit,
+  onSaveAndApprove,
 }: ReviewQueueCardProps) {
   const fieldId = useId();
   const seedId = String(example.id || '').trim();
@@ -60,15 +63,20 @@ export function ReviewQueueCard({
   const section = String(example.sourceSection || '').trim();
   const category = String(example.category || '').trim();
 
-  function save() {
+  function save(approve = false) {
     if (!seedId) {
       return;
     }
-    onSaveEdit(seedId, {
+    const draft = {
       question: question.trim(),
       answer: answer.trim(),
       reviewNotes: notes.trim() || undefined,
-    });
+    };
+    if (approve) {
+      onSaveAndApprove(seedId, draft);
+    } else {
+      onSaveEdit(seedId, draft);
+    }
   }
 
   return (
@@ -130,13 +138,24 @@ export function ReviewQueueCard({
               Cancel
             </Button>
             <Button
-              variant="primary"
-              onClick={save}
+              variant="secondary"
+              onClick={() => save(false)}
               loading={busy}
               loadingLabel="Saving…"
               disabled={!question.trim() || !answer.trim()}
+              title="Saves the wording. The example waits for your approval before students see it or it is used for training."
             >
               Save changes
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => save(true)}
+              loading={busy}
+              loadingLabel="Saving…"
+              disabled={!question.trim() || !answer.trim()}
+              title="Saves the wording and approves the example in one step."
+            >
+              Save and approve
             </Button>
           </div>
         </div>

@@ -353,6 +353,37 @@ describe('canRetryTraining', () => {
     expect(
       canRetryTraining(STALE_REQUEST, [{ ...STALE_RUN, state: 'queued' }], NOW),
     ).toBe(false);
+    // Pinned to exactly the data the latest preparation produced: still healthy.
+    expect(
+      canRetryTraining(
+        { ...STALE_REQUEST, preparation: { ...PREPARED.preparation!, datasetSha256: 'a'.repeat(64) } },
+        [{ ...STALE_RUN, state: 'queued', datasetSha256: 'a'.repeat(64) }],
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it('offers a retry for a queued run a worker put back with a reason', () => {
+    // Audit B10: the worker refused it (dataset changed, files missing, sbatch
+    // failed) and released it to queued with the error; a retry queues a
+    // replacement for the current data.
+    expect(
+      canRetryTraining(
+        STALE_REQUEST,
+        [{ ...STALE_RUN, state: 'queued', error: 'The prepared training data changed after this run was queued' }],
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it('offers a retry for a queued run pinned to data the latest preparation replaced', () => {
+    expect(
+      canRetryTraining(
+        { ...STALE_REQUEST, preparation: { ...PREPARED.preparation!, datasetSha256: 'b'.repeat(64) } },
+        [{ ...STALE_RUN, state: 'queued', datasetSha256: 'a'.repeat(64) }],
+        NOW,
+      ),
+    ).toBe(true);
   });
 
   it('refuses a run a worker still holds', () => {

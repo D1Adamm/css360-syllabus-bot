@@ -160,8 +160,18 @@ A student's rating of one comparison. Primary key `(course_id, evaluation_id)`.
 | `run_id` | TEXT NULL | The live comparison run, when there was one |
 | `question_text` | TEXT NULL | Denormalised so results survive without the run |
 | `participant_id` | UUID NULL FK `participants` | The pseudonymous participant who rated. `ON DELETE SET NULL`. NULL on every row recorded before participants existed; nothing backfills one |
+| `responses` | JSONB NULL | Since migration 003 (2026-11-03): the four answers the rating was made against, keyed by approach — `{text, error, sources, model, modelVersion, engine}` each. Written by the browser from the comparison run it rated; validated and trimmed by the backend. NULL on every row recorded before it existed |
 
 Approach keys are `base`, `rag`, `fineTuned`, `fineTunedRag` (`ModelKey`).
+
+What the backend checks on a new rating (audit findings B8/B9, 2026-11-03):
+the criteria and flags must name real approach keys; when `responses` is
+present it must carry exactly the four approaches, and a criterion or flag
+cannot name an approach whose response is an error or empty; `created_at` is
+the server's clock, never the client's; and a participant may rate one
+comparison run once — a second rating of the same `run_id` is refused with
+`409 evaluation_already_recorded` (checked in code; the index above supports
+the check but is not unique, because older rows may legitimately repeat).
 
 The only student identifier ever recorded is `participant_id`, a random UUID
 that maps to nothing outside `participants`. Staff views of a rating carry it as
@@ -271,6 +281,7 @@ The durable queue the cluster claims work from. Primary key
 | `state` | TEXT | See below |
 | `enqueued_at` / `updated_at` | TIMESTAMPTZ | |
 | `dataset_ref` | TEXT | Relative, e.g. `exports/{courseId}` |
+| `dataset_sha256` | TEXT NULL | Since migration 003 (2026-11-03): the prepared dataset's digest when the run was queued (or retried), computed by the backend over all four prepared files (`train.jsonl`, `validation.jsonl`, `manifest.json` and the timestamped `approved-export-summary.json`, so even a content-identical rebuild changes it). The worker is refused the run's dataset (`409 dataset_changed`) when the files no longer match and reports the run as refused: it ends `failed` with that reason and is not claimed again; Retry (or Queue training) queues a replacement pinned to the current files. A queued run that is stale for another reason (released with an error, or pinned to a digest the disk no longer has) may also be retried. The export and split routes refuse (`409 training_run_active`) while a run is `claimed`, `submitted` or `training` — a worker is using the files — but not while one is merely `queued`. NULL on runs queued before it existed, which are served as before |
 | `approved_example_count` | INTEGER | |
 | `train_examples` / `validation_examples` | INTEGER | |
 | `attempt` | INTEGER | Incremented on every claim, including after an expired lease |
@@ -287,7 +298,12 @@ blocks a second run for the course.
 A run retired by an admin retry stays `failed` with the reason
 `Superseded by admin retry` rather than getting a new state — adding a state
 would make older browser bundles drop it from the history the feature exists to
-preserve.
+preserve. For the same reason a run the worker refuses for good (its pinned
+dataset was re-prepared under it, `dataset_changed`) is `failed` with the
+refusal as its reason, via the worker's `…/runs/{run_id}/refused` route; a
+release (`…/release`) is for a transient refusal and puts the run back to
+`queued`. A refused run leaves `model_requests.status` where it was and writes
+the reason to `launch_error`, because no job existed.
 
 The three claim columns are stored flat because a lease gets queried (who holds
 this, has it expired) but are nested as `claim` in the API. A claim missing any

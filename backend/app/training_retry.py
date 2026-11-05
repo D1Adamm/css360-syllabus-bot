@@ -42,6 +42,7 @@ from typing import Any, Mapping
 
 from app import db_model_requests, db_training_runs
 from app.course_id import assert_valid_course_id
+from app.dataset_artifacts import DatasetArtifactError, describe_dataset
 from app.db_mapping import as_int
 
 # The request status a course returns to while a run sits in the queue.
@@ -65,16 +66,21 @@ class RetryNotEligibleError(Exception):
         self.status_code = status_code
 
 
-def _carried_count(run: Mapping[str, Any], preparation: Mapping[str, Any], *keys: str) -> int:
+def _carried_count(
+    disk: Mapping[str, Any],
+    run: Mapping[str, Any],
+    preparation: Mapping[str, Any],
+    *keys: str,
+) -> int:
     """The count the replacement run inherits.
 
-    The retired run is the first source: it is what was actually queued, and
-    matching it is what makes "same dataset, corrected code" true. Preparation
-    is the fallback for a run written before a count was recorded — never a
-    recount, because recounting would silently change the dataset the retry
-    promised to preserve.
+    The prepared files on disk come first when they exist: the replacement is
+    pinned to them and they are what it will train on. The retired run is next
+    — what was actually queued — and the preparation record is the fallback
+    for a run written before a count was recorded. Never a recount of approved
+    examples, which would silently change what the retry promised to train on.
     """
-    for source, key in ((run, keys[0]), (preparation, keys[-1])):
+    for source, key in ((disk, keys[0]), (run, keys[0]), (preparation, keys[-1])):
         value = as_int(source.get(key))
         if value > 0:
             return value
@@ -121,7 +127,27 @@ def retry_training_run(
             status_code=404,
         )
 
-    block = db_training_runs.training_run_retry_block(previous, now=moment)
+    # The replacement is pinned to the prepared files as they are on disk now
+    # (audit B10), with the counts those files actually hold: they are the only
+    # data the replacement can train on. When the files are absent the run is
+    # queued unpinned with the carried counts, as before, and the worker's own
+    # check refuses it until the data is prepared.
+    pinned: str | None = None
+    disk_counts: Mapping[str, Any] = {}
+    try:
+        described = describe_dataset(safe_course_id)
+    except DatasetArtifactError:
+        described = None
+    if described is not None:
+        pinned = str(described["datasetSha256"])
+        disk_counts = {
+            "trainExamples": described["trainExamples"],
+            "validationExamples": described["validationExamples"],
+        }
+
+    block = db_training_runs.training_run_retry_block(
+        previous, now=moment, current_dataset_sha256=pinned
+    )
     if block is not None:
         raise RetryNotEligibleError(block)
 
@@ -153,10 +179,13 @@ def retry_training_run(
         mode=previous.get("mode") or "full",
         dataset_ref=str(dataset_ref),
         approved_example_count=_carried_count(
-            previous, preparation, "approvedExampleCount", "sourceApprovedExampleCount"
+            {}, previous, preparation, "approvedExampleCount", "sourceApprovedExampleCount"
         ),
-        train_examples=_carried_count(previous, preparation, "trainExamples"),
-        validation_examples=_carried_count(previous, preparation, "validationExamples"),
+        train_examples=_carried_count(disk_counts, previous, preparation, "trainExamples"),
+        validation_examples=_carried_count(
+            disk_counts, previous, preparation, "validationExamples"
+        ),
+        dataset_sha256=pinned,
     )
 
     updated_request = db_model_requests.update_model_request(

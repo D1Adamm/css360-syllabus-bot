@@ -8,6 +8,14 @@ from typing import Any, Mapping
 import httpx
 from fastapi import HTTPException
 
+from app.error_classification import (
+    OLLAMA_BAD_RESPONSE,
+    OLLAMA_TIMEOUT,
+    OLLAMA_UNAVAILABLE,
+    OLLAMA_UPSTREAM_ERROR,
+    ClassifiedHTTPException,
+)
+
 from app.generation_mode import current_mode
 from app.generation_queue import clean_timings, log_generation, ollama_timings
 from app.gpu_generation import generate_base_on_gpu
@@ -172,22 +180,25 @@ async def generate_ollama_completion(
                     json=payload,
                 )
         except httpx.TimeoutException as exc:
-            raise HTTPException(
+            raise ClassifiedHTTPException(
                 status_code=503,
-                detail=(
+                code=OLLAMA_TIMEOUT,
+                message=(
                     "Ollama request timed out. Ensure Ollama is running and responsive."
                 ),
             ) from exc
         except httpx.RequestError as exc:
-            raise HTTPException(
+            raise ClassifiedHTTPException(
                 status_code=503,
-                detail="Ollama is unavailable. Start Ollama locally and try again.",
+                code=OLLAMA_UNAVAILABLE,
+                message="Ollama is unavailable. Start Ollama locally and try again.",
             ) from exc
 
         if response.status_code >= 500:
-            raise HTTPException(
+            raise ClassifiedHTTPException(
                 status_code=503,
-                detail=(
+                code=OLLAMA_UPSTREAM_ERROR,
+                message=(
                     "Ollama returned a server error. Ensure the model is available "
                     "locally."
                 ),
@@ -204,9 +215,10 @@ async def generate_ollama_completion(
                 status_code=response.status_code,
                 body=response.text,
             )
-            raise HTTPException(
+            raise ClassifiedHTTPException(
                 status_code=502,
-                detail=(
+                code=OLLAMA_UPSTREAM_ERROR,
+                message=(
                     "Ollama rejected the base model request "
                     f"(HTTP {response.status_code}). See the backend log for "
                     "the service's own response."
@@ -216,9 +228,10 @@ async def generate_ollama_completion(
         data = response.json()
         answer = data.get("response", "").strip()
         if not answer:
-            raise HTTPException(
+            raise ClassifiedHTTPException(
                 status_code=502,
-                detail="Ollama returned an empty response.",
+                code=OLLAMA_BAD_RESPONSE,
+                message="Ollama returned an empty response.",
             )
 
         return {
@@ -518,22 +531,25 @@ async def _post_ollama_chat(
                 json=payload,
             )
     except httpx.TimeoutException as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
+            code=OLLAMA_TIMEOUT,
+            message=(
                 "Ollama request timed out. Ensure Ollama is running and responsive."
             ),
         ) from exc
     except httpx.RequestError as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail="Ollama is unavailable. Start Ollama locally and try again.",
+            code=OLLAMA_UNAVAILABLE,
+            message="Ollama is unavailable. Start Ollama locally and try again.",
         ) from exc
 
     if response.status_code >= 500:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail=(
+            code=OLLAMA_UPSTREAM_ERROR,
+            message=(
                 "Ollama returned a server error. Ensure the model is available "
                 "locally."
             ),
@@ -547,9 +563,10 @@ async def _post_ollama_chat(
             status_code=response.status_code,
             body=response.text,
         )
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail=(
+            code=OLLAMA_UPSTREAM_ERROR,
+            message=(
                 f"Ollama rejected the {action} request "
                 f"(HTTP {response.status_code}). See the backend log for "
                 "the service's own response."
@@ -561,9 +578,10 @@ async def _post_ollama_chat(
     content = message.get("content") if isinstance(message, dict) else None
     answer = content.strip() if isinstance(content, str) else ""
     if not answer:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail="Ollama returned an empty response.",
+            code=OLLAMA_BAD_RESPONSE,
+            message="Ollama returned an empty response.",
         )
 
     return answer, data
@@ -595,20 +613,23 @@ async def embed_ollama_texts(
                 json=payload,
             )
     except httpx.TimeoutException as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail="Ollama embedding request timed out. Ensure Ollama is running and responsive.",
+            code=OLLAMA_TIMEOUT,
+            message="Ollama embedding request timed out. Ensure Ollama is running and responsive.",
         ) from exc
     except httpx.RequestError as exc:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail="Ollama embeddings are unavailable. Start Ollama locally and try again.",
+            code=OLLAMA_UNAVAILABLE,
+            message="Ollama embeddings are unavailable. Start Ollama locally and try again.",
         ) from exc
 
     if response.status_code >= 500:
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=503,
-            detail="Ollama returned a server error for embeddings.",
+            code=OLLAMA_UPSTREAM_ERROR,
+            message="Ollama returned a server error for embeddings.",
         )
 
     if response.status_code >= 400:
@@ -619,9 +640,10 @@ async def embed_ollama_texts(
             status_code=response.status_code,
             body=response.text,
         )
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail=(
+            code=OLLAMA_UPSTREAM_ERROR,
+            message=(
                 "Ollama rejected the embedding request "
                 f"(HTTP {response.status_code}). See the backend log for the "
                 "service's own response."
@@ -631,9 +653,10 @@ async def embed_ollama_texts(
     data = response.json()
     embeddings = data.get("embeddings")
     if not isinstance(embeddings, list):
-        raise HTTPException(
+        raise ClassifiedHTTPException(
             status_code=502,
-            detail="Ollama returned malformed embeddings.",
+            code=OLLAMA_BAD_RESPONSE,
+            message="Ollama returned malformed embeddings.",
         )
     return {
         "embeddings": embeddings,

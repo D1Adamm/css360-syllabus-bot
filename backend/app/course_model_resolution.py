@@ -62,6 +62,12 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from app.error_classification import (
+    MODEL_NOT_ACTIVATED,
+    MODEL_VERSION_NOT_SERVABLE,
+    ClassifiedHTTPException,
+)
+
 from app import db_models
 from app.course_id import assert_valid_course_id
 from app.db import db_connection, translate_db_errors
@@ -76,7 +82,7 @@ logger = logging.getLogger(__name__)
 PUBLIC_UNAVAILABLE_DETAIL = "A fine-tuned model is not available for this course yet."
 
 
-class NoReadyCourseModel(HTTPException):
+class NoReadyCourseModel(ClassifiedHTTPException):
     """This course has no fine-tuned model to answer with.
 
     409 rather than 404: the course exists and the route is right. What is
@@ -90,12 +96,17 @@ class NoReadyCourseModel(HTTPException):
     """
 
     def __init__(self, course_id: str, diagnostic: str) -> None:
-        super().__init__(status_code=409, detail=PUBLIC_UNAVAILABLE_DETAIL)
+        # The body carries `code: model_not_activated` beside the public
+        # sentence, so the browser can tell a professor what to ask for while
+        # a student still reads only the sentence (see error_classification).
+        super().__init__(
+            status_code=409, code=MODEL_NOT_ACTIVATED, message=PUBLIC_UNAVAILABLE_DETAIL
+        )
         self.course_id = course_id
         self.diagnostic = diagnostic
 
 
-class UnservableCourseModelVersion(HTTPException):
+class UnservableCourseModelVersion(ClassifiedHTTPException):
     """An explicitly named version that cannot answer for this course.
 
     Raised only by `resolve_course_model_version`, whose one caller is the
@@ -107,7 +118,9 @@ class UnservableCourseModelVersion(HTTPException):
     """
 
     def __init__(self, course_id: str, version: str, diagnostic: str) -> None:
-        super().__init__(status_code=409, detail=diagnostic)
+        super().__init__(
+            status_code=409, code=MODEL_VERSION_NOT_SERVABLE, message=diagnostic
+        )
         self.course_id = course_id
         self.version = version
 

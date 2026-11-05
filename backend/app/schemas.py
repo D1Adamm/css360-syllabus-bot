@@ -2,6 +2,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Literal
 
 
+#: The longest question a generation route accepts. The same limit the
+#: evaluation route enforces on `questionText` (`db_evaluations`): a question
+#: that could be asked but never rated would leave a comparison nobody can
+#: record (audit review, 2026-11-03). The Compare input stops at it too.
+QUESTION_MAX_LENGTH = 2000
+
+
 class BaseModelGenerateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -11,7 +18,7 @@ class BaseModelGenerateRequest(BaseModel):
         min_length=1,
         description="Course id from the active course route",
     )
-    question: str = Field(..., min_length=1, description="Student question to send to the base model")
+    question: str = Field(..., min_length=1, max_length=QUESTION_MAX_LENGTH, description="Student question to send to the base model")
 
 
 class BaseModelGenerateResponse(BaseModel):
@@ -35,6 +42,7 @@ class FineTunedGenerateRequest(BaseModel):
     question: str = Field(
         ...,
         min_length=1,
+        max_length=QUESTION_MAX_LENGTH,
         description="Student question to send to the fine-tuned model",
     )
 
@@ -50,6 +58,9 @@ class FineTunedGenerateResponse(BaseModel):
     model_version: str | None = Field(default=None, alias="modelVersion")
     adapter_loaded: bool = Field(alias="adapterLoaded")
     generation_seconds: float | None = Field(default=None, alias="generationSeconds")
+    # `vm` (the VM-local service) or `gpu` (classroom GPU mode). Recorded with
+    # a rating so research data says which engine produced the answer.
+    engine: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -81,7 +92,7 @@ class FineTunedHealthResponse(BaseModel):
 
 
 class RagRetrieveRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Student question for syllabus retrieval")
+    question: str = Field(..., min_length=1, max_length=QUESTION_MAX_LENGTH, description="Student question for syllabus retrieval")
     top_k: int = Field(
         default=4,
         alias="topK",
@@ -135,7 +146,7 @@ class RagGenerateRequest(BaseModel):
         min_length=1,
         description="Course id whose syllabus index should be used for retrieval",
     )
-    question: str = Field(..., min_length=1, description="Student question for RAG answer generation")
+    question: str = Field(..., min_length=1, max_length=QUESTION_MAX_LENGTH, description="Student question for RAG answer generation")
     top_k: int = Field(
         default=4,
         alias="topK",
@@ -177,6 +188,7 @@ class FineTunedRagGenerateRequest(BaseModel):
     question: str = Field(
         ...,
         min_length=1,
+        max_length=QUESTION_MAX_LENGTH,
         description="Student question for Fine-Tuned + RAG answer generation",
     )
     top_k: int = Field(
@@ -200,6 +212,7 @@ class FineTunedRagGenerateResponse(BaseModel):
     model_version: str | None = Field(default=None, alias="modelVersion")
     adapter_loaded: bool = Field(alias="adapterLoaded")
     generation_seconds: float | None = Field(default=None, alias="generationSeconds")
+    engine: str | None = None
 
 
 #: The approaches the model-testing route can run. The names are the
@@ -239,7 +252,7 @@ class ModelTestingGenerateRequest(BaseModel):
             "fine-tuned modes; must be omitted for rag."
         ),
     )
-    question: str = Field(..., min_length=1, description="The question to answer")
+    question: str = Field(..., min_length=1, max_length=QUESTION_MAX_LENGTH, description="The question to answer")
     top_k: int = Field(
         default=4,
         alias="topK",
@@ -290,7 +303,7 @@ class ModelTestingPairRequest(BaseModel):
         ..., alias="modelVersion", pattern=r"^v[0-9]+$",
         description="The registered version to compare against the base model",
     )
-    question: str = Field(..., min_length=1)
+    question: str = Field(..., min_length=1, max_length=QUESTION_MAX_LENGTH)
     top_k: int = Field(default=4, alias="topK", ge=1, le=20)
 
 

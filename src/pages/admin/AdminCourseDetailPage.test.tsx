@@ -166,6 +166,22 @@ describe('AdminCourseDetailPage model state', () => {
     expect(section).toHaveTextContent('v2');
   });
 
+  it('describes the activated version when a newer registered version is not published', () => {
+    // Audit B4: `currentVersion` names the newest version; students get the
+    // activated one, and the professor overview describes that one too.
+    modelStateByCourse.set(courseId, {
+      status: 'ready',
+      registry: registry('v2', [
+        { ...V1, deployment: 'online' },
+        { ...V2, deployment: 'offline' },
+      ]),
+    });
+
+    renderPage();
+
+    expect(modelSection()).toHaveTextContent('Ready · published');
+  });
+
   it('reports the same state the registry records for a registered but unpublished model', () => {
     modelStateByCourse.set(courseId, {
       status: 'ready',

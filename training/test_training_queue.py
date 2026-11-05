@@ -267,7 +267,9 @@ class FakeQueueApi:
                 status=200, headers={}, body=json.dumps(value)
             )
 
-        def error(status: int, detail: str):
+        def error(status: int, detail):
+            # `detail` is a string, or a `{"code", "message"}` dict for the
+            # classified refusals the backend sends for dataset problems.
             return queue_module.HttpResponse(
                 status=status, headers={}, body=json.dumps({"detail": detail})
             )
@@ -321,7 +323,26 @@ class FakeQueueApi:
                 return error(404, f'Training run "{run_id}" was not found.')
             if course_id not in self.datasets:
                 return error(409, "No prepared training data for this course.")
-            return ok(self._dataset_descriptor(course_id, run_id))
+            descriptor = self._dataset_descriptor(course_id, run_id)
+            # As `resolve_run_dataset` does since audit B10: a run pinned to a
+            # digest the files no longer have is refused with a classified
+            # body, not served the new data.
+            pinned = str((self.run(course_id, run_id) or {}).get("datasetSha256") or "")
+            if pinned and pinned != descriptor["datasetSha256"]:
+                return error(
+                    409,
+                    {
+                        "code": "dataset_changed",
+                        "message": (
+                            "The prepared training data changed after this run was "
+                            "queued (queued against dataset {0}…, the files are now "
+                            "{1}…). Nothing was served. Queue a new run for the "
+                            "re-prepared data, or restore the data this run was "
+                            "queued for.".format(pinned[:12], descriptor["datasetSha256"][:12])
+                        ),
+                    },
+                )
+            return ok(descriptor)
 
         if (
             method == "GET"
@@ -371,7 +392,7 @@ class FakeQueueApi:
             # As the real router does since audit finding B2: a run that has
             # already finished is never moved back by a worker callback.
             current_state = (self.run(course_id, run_id) or {}).get("state")
-            if action in ("release", "submitted", "submission-failed", "failed") and (
+            if action in ("release", "submitted", "submission-failed", "failed", "refused") and (
                 current_state in ("succeeded", "failed")
             ):
                 return error(
@@ -430,6 +451,32 @@ class FakeQueueApi:
                         "requestStatus": "training",
                     }
                 )
+
+            if action == "refused":
+                # The worker will never train this run: terminal for the run,
+                # reason kept, request left `preparing` with the reason on
+                # `launchError` — as the real route does.
+                if (self.run(course_id, run_id) or {}).get("jobId"):
+                    return error(409, f'Run "{run_id}" has a job; a run with a job cannot be refused.')
+                self._merge_run(
+                    course_id,
+                    run_id,
+                    {
+                        "state": "failed",
+                        "updatedAt": queue_module.iso(self.now),
+                        "claim": None,
+                        "error": payload["error"],
+                    },
+                )
+                self._merge_request(
+                    course_id,
+                    {
+                        "launchError": payload["error"],
+                        "updatedAt": queue_module.iso(self.now),
+                        "currentRunId": run_id,
+                    },
+                )
+                return ok(self._api_record(course_id, run_id))
 
             if action == "submission-failed":
                 self._merge_run(
@@ -1190,6 +1237,106 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(self.fake.writes, [])
 
+    def test_a_transient_refusal_is_looked_at_again_next_cycle(self) -> None:
+        """Missing data may be prepared by the next cycle, so the run is kept."""
+        empty = Path(self.tmp.name) / "empty"
+        empty.mkdir()
+        self.fake.datasets.pop(COURSE_A)
+        self._run_once(root=empty, launcher=boom_launcher)
+        self._run_once(root=empty, launcher=boom_launcher)
+
+        stored = self._run_record()
+        self.assertEqual(stored["state"], "queued")
+        self.assertEqual(stored["attempt"], 2)
+
+    # ------------------------------------------------------------------ #
+    # A run whose data was re-prepared under it (audit B10)
+    #
+    # The run is pinned to a dataset digest. The backend refuses to serve it
+    # anything else, and no later cycle can change that: the files it was
+    # queued for are gone. Released, it was claimed and refused on every cycle
+    # until an admin noticed. Now it ends failed, with the reason, and the
+    # replacement an admin queues is pinned to the data as it is then.
+    # ------------------------------------------------------------------ #
+
+    def _pin_run_to_replaced_data(self, run_id: str = "run-1") -> None:
+        self.fake.runs[COURSE_A][run_id]["datasetSha256"] = "0" * 64
+
+    def test_a_run_whose_data_changed_is_marked_failed_with_the_reason(self) -> None:
+        self._pin_run_to_replaced_data()
+        code, output = self._run_once(launcher=boom_launcher)
+
+        self.assertEqual(code, 1)
+        stored = self._run_record()
+        self.assertEqual(stored["state"], "failed")
+        self.assertIn("changed after this run was queued", stored["error"])
+        self.assertIn("[dataset_changed]", stored["error"])
+        self.assertNotIn("claim", stored)
+        self.assertEqual(stored["attempt"], 1)
+        self.assertIn("Marked failed", output)
+        self.assertNotIn("Released back to queued", output)
+        self.assertEqual(self.fake.downloads, [])
+
+    def test_a_refused_run_leaves_the_professors_status_alone(self) -> None:
+        """No job existed, so the request is not failed; the admin gets the reason."""
+        self._pin_run_to_replaced_data()
+        self._run_once(launcher=boom_launcher)
+
+        request = self._request()
+        self.assertEqual(request["status"], "preparing")
+        self.assertNotIn("failureMessage", request)
+        self.assertIn("[dataset_changed]", request["launchError"])
+        self.assertEqual(request["currentRunId"], "run-1")
+
+    def test_a_refused_run_is_not_claimed_again_on_later_cycles(self) -> None:
+        """The loop this closes: claim, refuse, release, claim, refuse, release…"""
+        self._pin_run_to_replaced_data()
+        self._run_once(launcher=boom_launcher)
+        writes_after_refusal = list(self.fake.writes)
+
+        for _ in range(3):
+            code, output = self._run_once(launcher=boom_launcher)
+            self.assertEqual(code, 0)
+            self.assertIn("No queued training runs", output)
+
+        self.assertEqual(self.fake.writes, writes_after_refusal)
+        self.assertEqual(self._run_record()["state"], "failed")
+        self.assertEqual(self._run_record()["attempt"], 1)
+
+    def test_the_replacement_an_admin_queues_is_trained_and_the_refused_run_kept(self) -> None:
+        """What Retry does on the backend, as the worker then sees it."""
+        self._pin_run_to_replaced_data()
+        self._run_once(launcher=boom_launcher)
+
+        current = self.fake._dataset_descriptor(COURSE_A, "run-2")["datasetSha256"]
+        self.fake.set_run(
+            COURSE_A,
+            "run-2",
+            {**make_run_record(enqueued_at="2026-08-12T17:30:00Z"), "datasetSha256": current},
+        )
+        self.fake.set_request(COURSE_A, {**self._request(), "currentRunId": "run-2"})
+
+        code, output = self._run_once()
+
+        self.assertEqual(code, 0)
+        self.assertEqual(self.fake.run(COURSE_A, "run-2")["state"], "submitted")
+        self.assertEqual(self.fake.run(COURSE_A, "run-2")["jobId"], "9182736")
+        self.assertEqual(self._request()["status"], "training")
+        # The refused run is history, reason intact.
+        refused = self._run_record()
+        self.assertEqual(refused["state"], "failed")
+        self.assertIn("[dataset_changed]", refused["error"])
+
+    def test_dry_run_names_a_permanent_refusal_without_writing(self) -> None:
+        self._pin_run_to_replaced_data()
+        code, output = self._run_once(dry_run=True)
+
+        self.assertEqual(code, 1)
+        self.assertIn("Would refuse for good", output)
+        self.assertIn("dataset_changed", output)
+        self.assertEqual(self.fake.writes, [])
+        self.assertEqual(self._run_record()["state"], "queued")
+
     # ------------------------------------------------------------------ #
     # Outage recovery
     #
@@ -1888,3 +2035,46 @@ class EnvFilePermissionTests(unittest.TestCase):
         self.assertEqual(
             os.environ["TRAINING_API_BASE_URL"], "https://aiswe.uwb.edu"
         )
+
+
+def _api(response: "queue_module.HttpResponse") -> "queue_module.TrainingQueueApi":
+    return queue_module.TrainingQueueApi(
+        base_url=API_BASE_URL, worker_token="tok", transport=lambda *args: response
+    )
+
+
+class ErrorDetailTests(unittest.TestCase):
+    """What the worker prints, and raises, when the backend refuses a request."""
+
+    def test_a_plain_detail_is_the_message(self) -> None:
+        self.assertEqual(queue_module._detail(json.dumps({"detail": "No such run."})), "No such run.")
+
+    def test_a_classified_detail_is_the_message_with_its_code(self) -> None:
+        body = json.dumps({"detail": {"code": "dataset_changed", "message": "The data changed."}})
+        self.assertEqual(queue_module._detail(body), "The data changed. [dataset_changed]")
+
+    def test_anything_else_is_the_trimmed_body(self) -> None:
+        self.assertEqual(queue_module._detail("  <html>502</html> "), "<html>502</html>")
+        self.assertEqual(queue_module._detail(json.dumps({"detail": {"code": "x"}})), '{"detail": {"code": "x"}}')
+
+    def test_a_classified_refusal_is_raised_with_its_code(self) -> None:
+        response = queue_module.HttpResponse(
+            status=409,
+            headers={},
+            body=json.dumps({"detail": {"code": "dataset_changed", "message": "The data changed."}}),
+        )
+        with self.assertRaises(queue_module.BackendRefusal) as caught:
+            _api(response)._decode(response, "/x")
+        self.assertEqual(caught.exception.status, 409)
+        self.assertEqual(caught.exception.code, "dataset_changed")
+        self.assertIn("The data changed. [dataset_changed]", str(caught.exception))
+        self.assertIsInstance(caught.exception, queue_module.TrainingQueueError)
+
+    def test_a_plain_refusal_has_no_code(self) -> None:
+        response = queue_module.HttpResponse(
+            status=409, headers={}, body=json.dumps({"detail": "No prepared training data."})
+        )
+        with self.assertRaises(queue_module.BackendRefusal) as caught:
+            _api(response)._decode(response, "/x")
+        self.assertIsNone(caught.exception.code)
+        self.assertEqual(queue_module.PERMANENT_REFUSAL_CODES, frozenset({"dataset_changed"}))

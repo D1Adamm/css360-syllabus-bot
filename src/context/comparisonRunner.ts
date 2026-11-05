@@ -98,23 +98,45 @@ export async function runFourConditions(
     fineTunedRag: { text: '', error: null, sources: [] },
   };
 
-  const settle = async (
-    key: ModelKey,
-    request: () => Promise<{ answer: string; sources?: string[]; model?: string }>,
-  ) => {
+  interface Settled {
+    answer: string;
+    sources?: string[];
+    /** The model's name as the backend reported it. */
+    model?: string | null;
+    modelVersion?: string | null;
+    engine?: string | null;
+  }
+
+  const settle = async (key: ModelKey, request: () => Promise<Settled>) => {
     try {
-      const { answer, sources = [], model } = await request();
-      responses[key] = { text: answer, error: null, sources };
+      const { answer, sources = [], model, modelVersion, engine } = await request();
+      // The provenance is always recorded on the response — it is what a
+      // rating stores — and only shown in the card when the caller asked.
+      responses[key] = {
+        text: answer,
+        error: null,
+        sources,
+        model: model ?? null,
+        modelVersion: modelVersion ?? null,
+        engine: engine ?? null,
+      };
       reporter.onSettled(
         key,
         includeModel && model
-          ? { status: 'success', text: answer, sources, model }
+          ? { status: 'success', text: answer, sources, model: answeredBy(model, modelVersion) }
           : { status: 'success', text: answer, sources },
         responses[key],
       );
     } catch (error) {
       const message = toUserMessage(error, { audience, context: 'model-response' }).message;
-      responses[key] = { text: '', error: message, sources: [] };
+      responses[key] = {
+        text: '',
+        error: message,
+        sources: [],
+        model: null,
+        modelVersion: null,
+        engine: null,
+      };
       reporter.onSettled(key, { status: 'error', message }, responses[key]);
     }
   };
@@ -137,7 +159,12 @@ export async function runFourConditions(
   const fineTuned = () =>
     settle('fineTuned', async () => {
       const result = await generateFineTuned(courseId, question, comparisonId);
-      return { answer: result.answer, model: answeredBy(result.model, result.modelVersion) };
+      return {
+        answer: result.answer,
+        model: result.model,
+        modelVersion: result.modelVersion,
+        engine: result.engine,
+      };
     });
   const fineTunedRag = () =>
     settle('fineTunedRag', async () => {
@@ -145,7 +172,9 @@ export async function runFourConditions(
       return {
         answer: result.answer,
         sources: formatRagSourceLabels(result.sources),
-        model: answeredBy(result.model, result.modelVersion),
+        model: result.model,
+        modelVersion: result.modelVersion,
+        engine: result.engine,
       };
     });
 

@@ -348,8 +348,9 @@ class RefusalTests(ModelTestingTestCase):
 
         self.assertEqual(response.status_code, 409, response.text)
         detail = response.json()["detail"]
-        self.assertIn('"v9"', detail)
-        self.assertIn("v2, v3", detail)
+        self.assertEqual(detail["code"], "model_version_not_servable")
+        self.assertIn('"v9"', detail["message"])
+        self.assertIn("v2, v3", detail["message"])
         self.assert_nothing_generated()
 
     def test_a_version_that_is_not_ready_is_409(self) -> None:
@@ -358,7 +359,7 @@ class RefusalTests(ModelTestingTestCase):
         response = self.post(self.body_for("fineTuned", "v3"))
 
         self.assertEqual(response.status_code, 409, response.text)
-        self.assertIn("training", response.json()["detail"])
+        self.assertIn("training", response.json()["detail"]["message"])
         self.assert_nothing_generated()
 
     def test_a_course_with_no_registered_model_is_409(self) -> None:
@@ -367,7 +368,7 @@ class RefusalTests(ModelTestingTestCase):
         response = self.post(self.body_for("fineTuned", "v2"))
 
         self.assertEqual(response.status_code, 409, response.text)
-        self.assertIn("no fine-tuned model registered", response.json()["detail"])
+        self.assertIn("no fine-tuned model registered", response.json()["detail"]["message"])
         self.assert_nothing_generated()
 
     def test_fine_tuned_rag_propagates_the_registrys_refusal(self) -> None:
@@ -380,7 +381,7 @@ class RefusalTests(ModelTestingTestCase):
         response = self.post(self.body_for("fineTunedRag", "v9"))
 
         self.assertEqual(response.status_code, 409)
-        self.assertIn('"v9"', response.json()["detail"])
+        self.assertIn('"v9"', response.json()["detail"]["message"])
         self.fine_tuned.assert_not_awaited()
 
     def test_a_malformed_version_is_422_before_anything_runs(self) -> None:
@@ -664,7 +665,7 @@ class PairRouteTests(ModelTestingTestCase):
         ]
         response = self.pair({"courseId": COURSE, "modelVersion": "v9", "question": QUESTION})
         self.assertEqual(response.status_code, 409)
-        self.assertIn("v9", response.json()["detail"])
+        self.assertIn("v9", response.json()["detail"]["message"])
 
     def test_nobody_but_an_administrator(self) -> None:
         body = {"courseId": COURSE, "modelVersion": "v2", "question": QUESTION}

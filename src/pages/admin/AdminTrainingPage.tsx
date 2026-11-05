@@ -10,7 +10,7 @@ import { StatusPill } from '../../components/ui/StatusPill';
 import { TrainingJobs } from '../../components/admin/TrainingJobs';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourses } from '../../hooks/useCourses';
-import { fetchCourseModel, getCurrentVersion } from '../../lib/courseModelDb';
+import { fetchCourseModel, getDisplayVersion } from '../../lib/courseModelDb';
 import {
   createCourseModelRequest,
   DuplicateModelRequestError,
@@ -29,7 +29,11 @@ import {
   queueTrainingForRequest,
   retryTrainingForRequest,
 } from '../../lib/queueTraining';
-import { fetchCourseTrainingRuns } from '../../lib/trainingRunDb';
+import {
+  fetchCourseTrainingRuns,
+  findActiveTrainingRun,
+  findRunHoldingDataset,
+} from '../../lib/trainingRunDb';
 import {
   datasetRefForCourse,
   InsufficientApprovedExamplesError,
@@ -46,7 +50,27 @@ import {
   getApprovedExportStatus,
   listCourseSeeds,
   prepareTrainingSplit,
+  splitSummaryDetails,
 } from '../../lib/api';
+
+/** The first twelve hex digits: enough to match against a run or a manifest. */
+function shortDigest(digest: string): string {
+  return digest.slice(0, 12);
+}
+
+/**
+ * What the backend's per-record length check found, in the operator's words.
+ * Training refuses oversized examples rather than truncating them silently, so
+ * this is a to-do, not a footnote.
+ */
+function oversizedNote(count: number, maxSeqLength: number | null): string {
+  const window = maxSeqLength ? `${maxSeqLength}-token` : 'training';
+  return (
+    `${count} example${count === 1 ? '' : 's'} may not fit the ${window} window. ` +
+    'Training refuses the dataset until they are shortened, rejected, or dropped ' +
+    'explicitly (--on-oversized drop); see lengthCheck in the split manifest.'
+  );
+}
 
 /**
  * Dataset export and train/validation split.
@@ -146,11 +170,13 @@ function CourseTrainingRow({
     let validation: number;
     let splitSeed: unknown;
     let sourceExamples: number | null;
+    let details: ReturnType<typeof splitSummaryDetails>;
     try {
       const response = await prepareTrainingSplit(courseId);
       train = Number(response.summary?.trainExamples) || 0;
       validation = Number(response.summary?.validationExamples) || 0;
       splitSeed = response.summary?.splitSeed;
+      details = splitSummaryDetails(response.summary);
       // The approved examples the split actually read (the export), which can
       // differ from the live review count if examples were approved since.
       const source = response.summary?.sourceExamples;
@@ -167,7 +193,12 @@ function CourseTrainingRow({
       return;
     }
 
-    const prepared = `Prepared split: ${train} train, ${validation} validation`;
+    const prepared =
+      `Prepared split: ${train} train, ${validation} validation` +
+      (details.datasetSha256 ? ` · dataset ${shortDigest(details.datasetSha256)}` : '') +
+      (details.oversizedExamples > 0
+        ? ` · ${oversizedNote(details.oversizedExamples, details.maxSeqLength)}`
+        : '');
     const stale =
       `${prepared}, but this course's model request still records the previous ` +
       'split, so Train new version would use the old counts.';
@@ -200,6 +231,8 @@ function CourseTrainingRow({
       trainExamples: train,
       validationExamples: validation,
       ...(Number.isFinite(Number(splitSeed)) ? { splitSeed: Number(splitSeed) } : {}),
+      ...(details.datasetSha256 ? { datasetSha256: details.datasetSha256 } : {}),
+      ...(details.oversizedExamples > 0 ? { oversizedExamples: details.oversizedExamples } : {}),
     };
 
     try {
@@ -332,7 +365,9 @@ async function readRequestCandidate(
     ]);
     const approved = countExamples(seeds.seeds || []).approved;
     const offer = canRequestCourseModel({
-      version: registry ? getCurrentVersion(registry) : null,
+      // The activated version, else the newest — the same input the professor
+      // Model page gives this helper, so the two cannot offer differently.
+      version: registry ? getDisplayVersion(registry) : null,
       request: null,
       approved,
     });
@@ -533,7 +568,13 @@ function OutstandingRequests({ refreshKey }: { refreshKey: number }) {
         [courseId]:
           `Prepared ${preparation.trainExamples} train / ` +
           `${preparation.validationExamples} validation from ` +
-          `${preparation.sourceApprovedExampleCount} approved.`,
+          `${preparation.sourceApprovedExampleCount} approved.` +
+          (preparation.datasetSha256
+            ? ` Dataset ${shortDigest(preparation.datasetSha256)}.`
+            : '') +
+          (preparation.oversizedExamples
+            ? ` ${oversizedNote(preparation.oversizedExamples, null)}`
+            : ''),
       }));
     } catch (error) {
       setMessages((current) => ({
@@ -704,13 +745,24 @@ function OutstandingRequests({ refreshKey }: { refreshKey: number }) {
                       {row.request.preparation.validationExamples} validation ·{' '}
                       from {row.request.preparation.sourceApprovedExampleCount}{' '}
                       approved ·{' '}
-                      <code>{row.request.preparation.datasetRef}</code> ·{' '}
-                      {new Date(row.request.preparation.preparedAt).toLocaleString()}
+                      <code>{row.request.preparation.datasetRef}</code>
+                      {row.request.preparation.datasetSha256 ? (
+                        <>
+                          {' '}· dataset{' '}
+                          <code>{shortDigest(row.request.preparation.datasetSha256)}</code>
+                        </>
+                      ) : null}{' '}
+                      · {new Date(row.request.preparation.preparedAt).toLocaleString()}
                     </>
                   ) : (
                     'not prepared'
                   )}
                 </p>
+                {row.request.preparation?.oversizedExamples ? (
+                  <p className="admin-row__error">
+                    {oversizedNote(row.request.preparation.oversizedExamples, null)}
+                  </p>
+                ) : null}
                 {row.request.training && (
                   <p className="ui-text-xs ui-text-muted">
                     Training job: <code>{row.request.training.jobId}</code> ·{' '}
@@ -732,6 +784,7 @@ function OutstandingRequests({ refreshKey }: { refreshKey: number }) {
                       {run.mode} · {run.trainExamples} train /{' '}
                       {run.validationExamples} validation · queued{' '}
                       {new Date(run.enqueuedAt).toLocaleString()}
+                      {run.datasetSha256 ? ` · dataset ${shortDigest(run.datasetSha256)}` : ''}
                       {run.jobId ? ` · job ${run.jobId}` : ''}
                       {run.attempt > 0
                         ? ` · attempt ${run.attempt}`
@@ -782,10 +835,40 @@ function OutstandingRequests({ refreshKey }: { refreshKey: number }) {
                 )}
                 {/* Only an outstanding, non-terminal request can be prepared.
                     Re-preparing after a change to the approved set is allowed —
-                    the export and split are both idempotent overwrites. */}
+                    the export and split are both idempotent overwrites — but
+                    not while a worker holds the prepared files (a claimed,
+                    submitted or training run): the backend refuses the rewrite
+                    (audit finding B10). A merely queued run does not block it;
+                    it is pinned to its digest, so re-preparing makes it stale —
+                    the worker refuses it for good (the run ends `failed` with
+                    the reason, and is not claimed again) and Retry or Queue
+                    training queues a replacement for the new data. */}
                 {row.request.status !== 'ready' &&
                   row.request.status !== 'failed' &&
-                  !row.request.training && (
+                  !row.request.training &&
+                  findRunHoldingDataset(row.runs) && (
+                    <p className="ui-text-xs ui-text-muted" role="note">
+                      Training data is in use by the{' '}
+                      {findRunHoldingDataset(row.runs)!.state} run above. Re-prepare once
+                      it finishes; Retry appears if its lease or its reports lapse.
+                    </p>
+                  )}
+                {row.request.status !== 'ready' &&
+                  row.request.status !== 'failed' &&
+                  !row.request.training &&
+                  !findRunHoldingDataset(row.runs) &&
+                  findActiveTrainingRun(row.runs) && (
+                    <p className="ui-text-xs ui-text-muted" role="note">
+                      A queued run is pinned to the current training data. Re-preparing
+                      makes that run stale: the worker refuses it and marks it failed
+                      with the reason, and Retry or Queue training then queues a
+                      replacement for the new data.
+                    </p>
+                  )}
+                {row.request.status !== 'ready' &&
+                  row.request.status !== 'failed' &&
+                  !row.request.training &&
+                  !findRunHoldingDataset(row.runs) && (
                     <Button
                       size="sm"
                       variant="secondary"
