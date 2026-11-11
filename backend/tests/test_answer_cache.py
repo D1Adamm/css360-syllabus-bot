@@ -118,6 +118,20 @@ class CacheTestCase(unittest.IsolatedAsyncioTestCase):
         self.pipes = FakePipelines().install(self)
         self.cache.select(COURSE, QUESTION)
 
+    async def until(self, condition, timeout: float = 2.0) -> None:
+        """Wait for a state instead of sleeping a guessed interval: the cache's
+        lookups run in a thread pool, so when a request reaches the queue varies."""
+        deadline = asyncio.get_running_loop().time() + timeout
+        while not condition():
+            if asyncio.get_running_loop().time() > deadline:
+                self.fail("condition was not reached in time")
+            await asyncio.sleep(0.002)
+
+    @staticmethod
+    def waiting_requests() -> int:
+        """How many interactive requests are attached to a shared generation."""
+        return sum(len(flight.checks) for flight in answer_flights._flights.values())
+
 
 class DisabledTests(unittest.IsolatedAsyncioTestCase):
     async def test_with_the_flag_off_the_pipeline_runs_and_nothing_else_happens(self) -> None:
@@ -340,7 +354,7 @@ class SharingTests(CacheTestCase):
     async def _concurrently(self, count: int, question: str = "An unselected question?", **kwargs: Any):
         self.pipes.gate = asyncio.Event()
         tasks = [asyncio.create_task(serve("base", kwargs.get("course", COURSE), question)) for _ in range(count)]
-        await asyncio.sleep(0.01)
+        await self.until(lambda: self.waiting_requests() == count and get_generation_queue().active == 1)
         return tasks
 
     async def test_twenty_identical_requests_cost_one_generation(self) -> None:
@@ -363,7 +377,7 @@ class SharingTests(CacheTestCase):
             asyncio.create_task(serve("base", COURSE, "  when is the EXAM ")),
             asyncio.create_task(serve("base", COURSE, "When is the exam review?")),
         ]
-        await asyncio.sleep(0.01)
+        await self.until(lambda: self.waiting_requests() == 3)
         self.pipes.gate.set()
         await asyncio.gather(*tasks)
         self.assertEqual(len(self.pipes.calls), 2)
@@ -378,7 +392,7 @@ class SharingTests(CacheTestCase):
             asyncio.create_task(serve("fineTuned", COURSE, question)),
             asyncio.create_task(serve("base", COURSE, question, top_k=6)),
         ]
-        await asyncio.sleep(0.01)
+        await self.until(lambda: self.waiting_requests() == 4)
         self.assertEqual(answer_flights.active_flight_count(), 4)
         self.pipes.gate.set()
         await asyncio.gather(*tasks)
@@ -423,7 +437,7 @@ class SharingTests(CacheTestCase):
                 await blocker_gate.wait()
 
         holding = asyncio.create_task(blocker())
-        await asyncio.sleep(0.01)
+        await self.until(lambda: get_generation_queue().active == 1)
 
         requests = [_Request(), _Request()]
 
@@ -433,8 +447,8 @@ class SharingTests(CacheTestCase):
 
         with patch("app.generation_queue.DISCONNECT_POLL_SECONDS", 0.01):
             tasks = [asyncio.create_task(ask(r)) for r in requests]
-            await asyncio.sleep(0.03)
             queue = get_generation_queue()
+            await self.until(lambda: self.waiting_requests() == 2 and queue.snapshot()["waiting"] == 1)
             self.assertEqual(queue.snapshot()["waiting"], 1)
 
             requests[0].gone = True
@@ -444,7 +458,7 @@ class SharingTests(CacheTestCase):
             self.assertEqual(queue.counters["clientGone"], 0)
 
             requests[1].gone = True
-            await asyncio.sleep(0.05)
+            await self.until(lambda: queue.counters["clientGone"] == 1)
             self.assertEqual(queue.snapshot()["waiting"], 0)
             self.assertEqual(queue.counters["clientGone"], 1)
 
@@ -469,13 +483,17 @@ class SharingTests(CacheTestCase):
         results = await asyncio.gather(
             *(serve("base", COURSE, "An unselected question?") for _ in range(3)), return_exceptions=True
         )
-        # Refused once, as one request would be; all three are told "busy".
-        self.assertEqual(queue.counters["rejectedFull"], 1)
+        # Sharing is not a way round the limit: all three are told "busy" and
+        # no model is reached. (A refusal is instant, so a request arriving
+        # after it is refused in its own right rather than sharing it.)
+        self.assertGreaterEqual(queue.counters["rejectedFull"], 1)
         for result in results:
             self.assertEqual(result.detail["code"], "generation_busy")
-        self.assertEqual(self.pipes.calls, [("base", COURSE, "An unselected question?", 4)])
+        # Only the two blockers ever take a turn: one running, one waiting.
+        self.assertEqual(queue.counters["started"], 1)
         blocker_gate.set()
         await asyncio.gather(*holding)
+        self.assertEqual(queue.counters["started"], 2)
 
     async def test_a_student_does_not_wait_on_background_work_that_has_not_started(self) -> None:
         question = "An unselected question?"
@@ -490,12 +508,12 @@ class SharingTests(CacheTestCase):
                 return await serve("base", COURSE, question)
 
         holding = asyncio.create_task(blocker())
-        await asyncio.sleep(0.01)
-        background = asyncio.create_task(prepare())
-        await asyncio.sleep(0.01)
-        student = asyncio.create_task(serve("base", COURSE, question))
-        await asyncio.sleep(0.01)
         queue = get_generation_queue()
+        await self.until(lambda: queue.active == 1)
+        background = asyncio.create_task(prepare())
+        await self.until(lambda: queue.snapshot()["backgroundWaiting"] == 1)
+        student = asyncio.create_task(serve("base", COURSE, question))
+        await self.until(lambda: queue.snapshot()["waiting"] == 1)
         # Both wait in the queue: the student's own request, ahead of preparation.
         self.assertEqual((queue.snapshot()["waiting"], queue.snapshot()["backgroundWaiting"]), (1, 1))
         blocker_gate.set()
@@ -511,9 +529,9 @@ class SharingTests(CacheTestCase):
                 return await serve("base", COURSE, question)
 
         background = asyncio.create_task(prepare())
-        await asyncio.sleep(0.01)
+        await self.until(lambda: get_generation_queue().active == 1)
         student = asyncio.create_task(serve("base", COURSE, question))
-        await asyncio.sleep(0.01)
+        await self.until(lambda: self.waiting_requests() == 1)
         self.pipes.gate.set()
         answers = await asyncio.gather(background, student)
         self.assertEqual(len(self.pipes.calls), 1)
@@ -522,7 +540,7 @@ class SharingTests(CacheTestCase):
     async def test_preparation_waits_for_a_students_generation_instead_of_repeating_it(self) -> None:
         self.pipes.gate = asyncio.Event()
         student = asyncio.create_task(serve("base", COURSE, QUESTION))
-        await asyncio.sleep(0.01)
+        await self.until(lambda: get_generation_queue().active == 1)
 
         async def prepare():
             with background_generation():

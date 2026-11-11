@@ -32,8 +32,9 @@ from app.course_model_resolution import (
     resolve_current_course_model,
 )
 from app.course_rag import generate_course_rag_answer
-from app import answer_cache
+from app import answer_cache, classroom_preparation
 from app.admin_routes import router as admin_router
+from app.classroom_preparation_routes import router as classroom_preparation_router
 from app.auth_routes import router as auth_router
 from app.db_routes import router as db_router
 from app.student_invite_routes import router as student_invite_router
@@ -193,15 +194,20 @@ DOCS_ENABLED = is_test_mode() or app_env() in {"development", "dev", "local"}
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Background work that lives as long as the process does.
 
-    Only the fine-tuned readiness monitor (`finetuned_readiness`), which
-    writes a journal WARNING when a course's activated version stops being
-    servable. It does not start under tests, without a database, or when
+    The fine-tuned readiness monitor (`finetuned_readiness`), which writes a
+    journal WARNING when a course's activated version stops being servable. It
+    does not start under tests, without a database, or when
     `FINETUNED_READINESS_CHECK_SECONDS=0`.
+
+    Nothing is started for classroom preparation: a run begins only when staff
+    start one. On shutdown a run in progress is ended, so its status row says
+    it was interrupted rather than claiming to be running.
     """
     monitor = start_readiness_monitor()
     try:
         yield
     finally:
+        await classroom_preparation.shutdown()
         if monitor is not None:
             monitor.cancel()
             try:
@@ -266,6 +272,11 @@ app.include_router(auth_router)
 # respectively; see app/admin_routes.py and app/student_invite_routes.py.
 app.include_router(admin_router)
 app.include_router(student_invite_router)
+
+# Classroom preparation: course staff select existing course questions and
+# prepare the four approaches' real answers before class. See
+# app/classroom_preparation.py and app/classroom_preparation_routes.py.
+app.include_router(classroom_preparation_router)
 
 # The CSS 360 controlled benchmark: a bearer-token research route that answers
 # one question with the base model and the fixed experiment adapters through

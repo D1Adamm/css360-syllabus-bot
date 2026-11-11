@@ -20,7 +20,7 @@ database:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 
 from app.course_id import assert_valid_course_id
@@ -186,13 +186,15 @@ def replace_selection(
             (safe_course_id, wanted),
         )
         moment = now or datetime.now(timezone.utc)
-        for seed_id in wanted:
+        for position, seed_id in enumerate(wanted):
             cursor.execute(
                 """
                 INSERT INTO classroom_questions (course_id, seed_id, selected_at, selected_by)
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (course_id, seed_id) DO NOTHING
                 """,
-                (safe_course_id, seed_id, moment, selected_by),
+                # A microsecond apart, so questions added together are prepared
+                # in the order they were given rather than by id.
+                (safe_course_id, seed_id, moment + timedelta(microseconds=position), selected_by),
             )
     return wanted

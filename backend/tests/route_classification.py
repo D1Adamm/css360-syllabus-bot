@@ -88,6 +88,12 @@ CLASSIFICATION: dict[tuple[str, str], str] = {
     ("POST", "/api/model-testing/generate"): REQUIRE_ADMIN,
     ("POST", "/api/model-testing/pair"): REQUIRE_ADMIN,
     # ---- syllabus, seeds, training (main.py) ----
+    # Classroom preparation: staff select existing course questions and
+    # prepare the four approaches' answers before class. No student route.
+    ("GET", f"{_C}/classroom-preparation"): REQUIRE_COURSE_STAFF,
+    ("PUT", f"{_C}/classroom-preparation/questions"): REQUIRE_COURSE_STAFF,
+    ("POST", f"{_C}/classroom-preparation/start"): REQUIRE_COURSE_STAFF,
+    ("POST", f"{_C}/classroom-preparation/stop"): REQUIRE_COURSE_STAFF,
     ("POST", f"{_C}/syllabus"): REQUIRE_COURSE_STAFF,
     ("GET", f"{_C}/syllabus/text"): REQUIRE_COURSE_ACCESS,
     ("GET", f"{_C}/syllabus/file"): REQUIRE_COURSE_STAFF,

@@ -33,6 +33,7 @@ from typing import Any, Awaitable, Callable, Hashable, TypeVar
 
 from app.generation_queue import (
     DisconnectCheck,
+    busy_exception,
     current_disconnect_check,
     is_background_generation,
     shared_request,
@@ -92,6 +93,34 @@ def active_flight_count() -> int:
     return sum(1 for key in list(_flights) if active_flight(key) is not None)
 
 
+def cancel_background(*, include_started: bool = False) -> int:
+    """Cancel background generations, by default only ones still waiting for a turn.
+
+    Stopping classroom preparation uses this: work that has not reached a model
+    is dropped at once, work that is already generating is left to finish (its
+    answer is kept). `include_started` is the last resort for a generation
+    that never returns; the model may go on computing after it, which is why
+    it is not the ordinary way to stop.
+    """
+    cancelled = 0
+    for flight in list(_flights.values()):
+        if not flight.background or flight.task is None or flight.task.done():
+            continue
+        if flight.started and not include_started:
+            continue
+        flight.task.cancel()
+        cancelled += 1
+    return cancelled
+
+
+def background_generation_started() -> bool:
+    """Whether a background generation currently holds a turn at a model."""
+    return any(
+        flight.background and flight.started and flight.task is not None and not flight.task.done()
+        for flight in _flights.values()
+    )
+
+
 def reset_flights_for_tests() -> None:
     _flights.clear()
 
@@ -130,4 +159,12 @@ async def share(key: Hashable, work: Callable[[], Awaitable[T]]) -> T:
     if not background:
         flight.checks.append(current_disconnect_check())
     assert flight.task is not None
-    return await asyncio.shield(flight.task)
+    try:
+        return await asyncio.shield(flight.task)
+    except asyncio.CancelledError:
+        # The shared generation itself was cancelled (preparation was forced to
+        # stop) rather than this caller: a student who had joined it is told
+        # to try again instead of having the request die.
+        if flight.task.cancelled() and not background:
+            raise busy_exception("generation_cancelled", 5) from None
+        raise
