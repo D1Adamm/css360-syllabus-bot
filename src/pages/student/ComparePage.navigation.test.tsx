@@ -170,7 +170,7 @@ describe('a comparison survives leaving the Compare page', () => {
       screen.getByText('Class meets Tuesdays and Thursdays, 3:30 to 5:30 pm.'),
     ).toBeInTheDocument();
     expect(screen.getByText(/temporarily unavailable/)).toBeInTheDocument();
-    expect(screen.getAllByText('Generating a response…')).toHaveLength(1);
+    expect(screen.getAllByText('Loading response…')).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Asking…' })).toBeDisabled();
 
     // Coming back re-sent nothing.

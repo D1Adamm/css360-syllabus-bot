@@ -26,6 +26,17 @@ import type { ComparisonRunResponse } from './comparisonRun';
  *     Base fails, and every answer is reported the moment it arrives.
  *   - All four carry one comparison id, so the backend's generation queue
  *     finishes this comparison before ones that began after it.
+ *
+ * Stored answers
+ * --------------
+ * When staff have prepared a question, an approach's answer may come back from
+ * the classroom answer cache in a few milliseconds. Three of the four requests
+ * leave together, so three stored answers would land in the same instant and
+ * the cards would all fill at once. A stored answer is therefore shown no
+ * earlier than its card's `CACHED_REVEAL_MS` after the question was asked,
+ * which fills the cards in order. An answer generated for this request is
+ * never held back: it is shown the moment it arrives. Nothing else changes,
+ * no request is added, and nothing on the card says where the answer came from.
  */
 
 export type ApproachState =
@@ -55,6 +66,24 @@ export const LOADING_STATES: ApproachStates = {
   fineTuned: { status: 'loading' },
   fineTunedRag: { status: 'loading' },
 };
+
+/**
+ * The earliest a stored answer is shown, in milliseconds after the question
+ * was asked, per card and in card order. Short on purpose: a prepared
+ * comparison is complete in under two seconds.
+ */
+export const CACHED_REVEAL_MS: Record<ModelKey, number> = {
+  base: 400,
+  rag: 800,
+  fineTuned: 1200,
+  fineTunedRag: 1600,
+};
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 export interface ConditionReporter {
   /** One condition settled, successfully or not. Called once per condition. */
@@ -105,11 +134,24 @@ export async function runFourConditions(
     model?: string | null;
     modelVersion?: string | null;
     engine?: string | null;
+    /** Served from the classroom answer cache rather than generated now. */
+    cached?: boolean;
+    cacheEntryId?: string | null;
   }
+
+  const askedAt = Date.now();
 
   const settle = async (key: ModelKey, request: () => Promise<Settled>) => {
     try {
-      const { answer, sources = [], model, modelVersion, engine } = await request();
+      const { answer, sources = [], model, modelVersion, engine, cached, cacheEntryId } =
+        await request();
+      if (cached === true) {
+        // A stored answer: keep the cards filling in order (see the header).
+        const remaining = CACHED_REVEAL_MS[key] - (Date.now() - askedAt);
+        if (remaining > 0) {
+          await delay(remaining);
+        }
+      }
       // The provenance is always recorded on the response — it is what a
       // rating stores — and only shown in the card when the caller asked.
       responses[key] = {
@@ -119,6 +161,7 @@ export async function runFourConditions(
         model: model ?? null,
         modelVersion: modelVersion ?? null,
         engine: engine ?? null,
+        ...(cacheEntryId ? { cacheEntryId, cached: cached === true } : {}),
       };
       reporter.onSettled(
         key,
@@ -145,7 +188,12 @@ export async function runFourConditions(
   const base = () =>
     settle('base', async () => {
       const result = await generateBaseModel(courseId, question, comparisonId);
-      return { answer: result.answer, model: result.model };
+      return {
+        answer: result.answer,
+        model: result.model,
+        cached: result.cached,
+        cacheEntryId: result.cacheEntryId,
+      };
     });
   const rag = () =>
     settle('rag', async () => {
@@ -154,6 +202,8 @@ export async function runFourConditions(
         answer: result.answer,
         sources: formatRagSourceLabels(result.sources),
         model: result.model,
+        cached: result.cached,
+        cacheEntryId: result.cacheEntryId,
       };
     });
   const fineTuned = () =>
@@ -164,6 +214,8 @@ export async function runFourConditions(
         model: result.model,
         modelVersion: result.modelVersion,
         engine: result.engine,
+        cached: result.cached,
+        cacheEntryId: result.cacheEntryId,
       };
     });
   const fineTunedRag = () =>
@@ -175,6 +227,8 @@ export async function runFourConditions(
         model: result.model,
         modelVersion: result.modelVersion,
         engine: result.engine,
+        cached: result.cached,
+        cacheEntryId: result.cacheEntryId,
       };
     });
 

@@ -22,6 +22,7 @@ export const PROFESSOR_COURSE_SEGMENTS = [
   'results',
   'invite',
   'ask',
+  'prepare',
 ] as const;
 
 export type StudentCourseSegment = (typeof STUDENT_COURSE_SEGMENTS)[number];
@@ -98,6 +99,11 @@ export function adminCourseReviewPath(courseId: string): string {
   return `/admin/courses/${courseId}/review`;
 }
 
+/** Classroom preparation, mounted in the admin tree for any course. */
+export function adminCoursePreparePath(courseId: string): string {
+  return `/admin/courses/${courseId}/prepare`;
+}
+
 /**
  * Which role area a pathname belongs to, or `null` for role-neutral routes.
  *
@@ -125,7 +131,8 @@ export type StaffView = 'admin' | 'professor';
  * Where switching to `view` from `pathname` lands, keeping the course in view.
  *
  * Course pages map to the same course's page in the other interface (the
- * review workflow to its counterpart, anything else to the course's home), the
+ * review workflow and classroom preparation to their counterparts, anything
+ * else to the course's home), the
  * two course lists map to each other, and everything else goes to the view's
  * landing page. Only the URL changes: what the account may do is the session's
  * role, which the route guards and the backend check as before.
@@ -135,9 +142,15 @@ export function staffViewPath(view: StaffView, pathname: string): string {
   const fromReview =
     /^\/professor\/course\/[^/]+\/examples(\/|$)/.test(pathname) ||
     /^\/admin\/courses\/[^/]+\/review(\/|$)/.test(pathname);
+  const fromPrepare =
+    /^\/professor\/course\/[^/]+\/prepare(\/|$)/.test(pathname) ||
+    /^\/admin\/courses\/[^/]+\/prepare(\/|$)/.test(pathname);
 
   if (view === 'professor') {
     if (courseId) {
+      if (fromPrepare) {
+        return professorCoursePath(courseId, 'prepare');
+      }
       return fromReview
         ? professorCoursePath(courseId, 'examples')
         : professorCourseHomePath(courseId);
@@ -146,6 +159,9 @@ export function staffViewPath(view: StaffView, pathname: string): string {
   }
 
   if (courseId) {
+    if (fromPrepare) {
+      return adminCoursePreparePath(courseId);
+    }
     return fromReview ? adminCourseReviewPath(courseId) : adminCoursePath(courseId);
   }
   if (pathname === '/professor/courses' || pathname.startsWith('/professor/courses/')) {

@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom';
 import { LinkButton } from '../../components/ui/Button';
 import { ErrorState } from '../../components/ui/ErrorState';
+import { preparationPresentation, preparationSummary } from '../../lib/classroomPreparation';
 import { formatCourseCode } from '../../lib/courseLabels';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useCourseId } from '../../context/CourseContext';
+import { useClassroomPreparation } from '../../hooks/useClassroomPreparation';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import {
   useCourseMetadata,
@@ -67,7 +69,7 @@ function syllabusStatusPresentation(status: SyllabusStatus | undefined): Present
 /**
  * At-a-glance state for one course.
  *
- * Four rows, not a dashboard: a professor arriving here wants to know whether
+ * A handful of rows, not a dashboard: a professor arriving here wants to know whether
  * anything needs them. When something does, it is called out above the fold;
  * when nothing does, that section disappears rather than showing a row of
  * zeroes.
@@ -79,6 +81,10 @@ export function CourseOverviewPage() {
   const { state: modelState } = useCourseModel(courseId);
   const { state: requestState } = useCourseModelRequest(courseId);
   const { evaluations } = useEvaluations();
+  // Which course questions have their four answers prepared for class. Read
+  // from the server like the rest of this page; a run in progress updates it.
+  const { state: preparationState } = useClassroomPreparation(courseId);
+  const preparation = preparationState.status === 'ready' ? preparationState.preparation : null;
 
   const counts = countsState.status === 'ready' ? countsState.counts : null;
 
@@ -276,6 +282,27 @@ export function CourseOverviewPage() {
             </dd>
             <Link to={professorCoursePath(courseId, 'model')} className="overview__link">
               Details
+            </Link>
+          </div>
+
+          <div className="overview__row">
+            <dt className="overview__label">Classroom answers</dt>
+            <dd className="overview__value">
+              {preparation ? (
+                <>
+                  <StatusPill tone={preparationPresentation(preparation.state).tone}>
+                    {preparationPresentation(preparation.state).label}
+                  </StatusPill>
+                  <span className="overview__muted"> · {preparationSummary(preparation)}</span>
+                </>
+              ) : preparationState.status === 'loading' ? (
+                <span className="overview__muted">Loading…</span>
+              ) : (
+                <span className="overview__muted">Not available right now</span>
+              )}
+            </dd>
+            <Link to={professorCoursePath(courseId, 'prepare')} className="overview__link">
+              {preparation && preparation.counts.selectedQuestions > 0 ? 'Manage' : 'Prepare'}
             </Link>
           </div>
 

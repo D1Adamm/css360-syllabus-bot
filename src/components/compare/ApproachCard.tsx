@@ -42,7 +42,9 @@ export function ApproachCard({ label, description, state, marker }: ApproachCard
 
       {state.status === 'loading' && (
         <div className="approach__skeleton" role="status">
-          <span className="ui-visually-hidden">Generating a response…</span>
+          {/* "Loading", not "Generating": a prepared answer is not being
+              generated, and a screen reader should not be told it is. */}
+          <span className="ui-visually-hidden">Loading response…</span>
           <span className="approach__skeleton-line" />
           <span className="approach__skeleton-line" />
           <span className="approach__skeleton-line approach__skeleton-line--short" />

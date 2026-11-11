@@ -58,6 +58,8 @@ RESPONSE_TEXT_MAX_LENGTH = 20000
 RESPONSE_ERROR_MAX_LENGTH = 2000
 RESPONSE_SOURCES_MAX = 50
 RESPONSE_LABEL_MAX_LENGTH = 300
+#: `answer_cache.entry_id` is 32 hex characters; this is a bound, not a format.
+RESPONSE_CACHE_ENTRY_ID_MAX_LENGTH = 64
 
 #: The per-approach fields of a stored response snapshot, and their limits.
 RESPONSE_STRING_FIELDS = (
@@ -294,6 +296,20 @@ def validate_responses(raw: Any) -> dict[str, dict[str, Any]] | None:
         ):
             raise ValueError(f"Evaluation field 'responses.{key}.sources' is too long.")
         record["sources"] = sources
+        # Which stored classroom answer this was, when it was one. Recorded
+        # only then, so a rating of ordinary live answers keeps the shape it
+        # has always had.
+        entry_id = entry.get("cacheEntryId")
+        if entry_id is not None:
+            if not isinstance(entry_id, str) or not entry_id.strip():
+                raise ValueError(f"Evaluation field 'responses.{key}.cacheEntryId' must be a string.")
+            if len(entry_id) > RESPONSE_CACHE_ENTRY_ID_MAX_LENGTH:
+                raise ValueError(
+                    f"Evaluation field 'responses.{key}.cacheEntryId' is longer than "
+                    f"{RESPONSE_CACHE_ENTRY_ID_MAX_LENGTH} characters."
+                )
+            record["cacheEntryId"] = entry_id.strip()
+            record["cached"] = entry.get("cached") is True
         cleaned[key] = record
     return cleaned
 

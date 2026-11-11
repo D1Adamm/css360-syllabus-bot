@@ -43,6 +43,21 @@ vi.mock('./lib/api', async () => {
   };
 });
 
+// Classroom preparation is read from the backend; here it answers with a
+// fixed, partly prepared course so the routes can be exercised without one.
+vi.mock('./lib/classroomPreparation', async () => {
+  const actual = await vi.importActual<typeof import('./lib/classroomPreparation')>(
+    './lib/classroomPreparation',
+  );
+  const { eightyOfOneTwenty } = await vi.importActual<typeof import('./test/preparationFixtures')>(
+    './test/preparationFixtures',
+  );
+  return {
+    ...actual,
+    fetchPreparationStatus: vi.fn(async (courseId: string) => eightyOfOneTwenty({ courseId })),
+  };
+});
+
 vi.mock('./hooks/useSeedExamples', () => ({
   useSeedExamples: () => ({
     seeds: [],
@@ -423,6 +438,67 @@ describe('route guards', () => {
     await expectLocation(professor, '/forbidden');
   });
 
+  it('mounts the same Classroom answers page for a professor and an administrator', async () => {
+    const professor = renderAt(`/professor/course/${COURSE}/prepare`, 'professor');
+    await expectLocation(professor, `/professor/course/${COURSE}/prepare`);
+    expect(await professor.findByRole('heading', { name: 'Classroom answers' })).toBeInTheDocument();
+    expect(await professor.findByText('Partially ready')).toBeInTheDocument();
+    expect(professor.getByRole('link', { name: 'Back to course' })).toHaveAttribute(
+      'href',
+      `/professor/course/${COURSE}`,
+    );
+    cleanup();
+
+    // An administrator reaches it for any course, from the admin tree.
+    const admin = renderAt(`/admin/courses/${OTHER}/prepare`, 'admin');
+    await expectLocation(admin, `/admin/courses/${OTHER}/prepare`);
+    expect(await admin.findByRole('heading', { name: 'Classroom answers' })).toBeInTheDocument();
+    expect(await admin.findByRole('button', { name: 'Prepare remaining answers' })).toBeInTheDocument();
+    expect(admin.getByRole('link', { name: 'Back to course' })).toHaveAttribute(
+      'href',
+      `/admin/courses/${OTHER}`,
+    );
+    cleanup();
+
+    // A professor has no admin route, and no way into another instructor's course.
+    const wrongTree = renderAt(`/admin/courses/${COURSE}/prepare`, 'professor');
+    await expectLocation(wrongTree, '/forbidden');
+    cleanup();
+    const wrongCourse = renderAt(`/professor/course/${OTHER}/prepare`, 'professor');
+    await expectLocation(wrongCourse, '/forbidden');
+  });
+
+  it('reaches Classroom answers from the course overview and from the admin course page', async () => {
+    const professor = renderAt(`/professor/course/${COURSE}`, 'professor');
+    const row = (await professor.findByText('Classroom answers')).closest('.overview__row') as HTMLElement;
+    expect(await within(row).findByText('Partially ready')).toBeInTheDocument();
+    expect(within(row).getByText(/20 of 30 questions ready/)).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole('link', { name: 'Manage' }));
+    await expectLocation(professor, `/professor/course/${COURSE}/prepare`);
+    cleanup();
+
+    const admin = renderAt(`/admin/courses/${OTHER}`, 'admin');
+    const adminRow = (await admin.findByText('Classroom answers')).closest('.admin-row') as HTMLElement;
+    expect(await within(adminRow).findByText('Partially ready')).toBeInTheDocument();
+    fireEvent.click(within(adminRow).getByRole('link', { name: 'Manage preparation' }));
+    await expectLocation(admin, `/admin/courses/${OTHER}/prepare`);
+  });
+
+  it('does not add Classroom answers to the course navigation or to any student page', async () => {
+    const professor = renderAt(`/professor/course/${COURSE}`, 'professor');
+    await professor.findByText('Classroom answers');
+    const navigation = professor.getAllByRole('navigation');
+    for (const nav of navigation) {
+      expect(within(nav).queryByRole('link', { name: /Classroom answers|Prepare/ })).toBeNull();
+    }
+    cleanup();
+
+    // A student has no preparation page: the path falls back to their course home.
+    const student = renderAt(`/student/course/${COURSE}/prepare`, 'student');
+    await expectLocation(student, `/student/course/${COURSE}`);
+    expect(student.queryByRole('heading', { name: 'Classroom answers' })).toBeNull();
+  });
+
   it('lets a professor walk the student flow of their own course', async () => {
     const view = renderAt(`/student/course/${COURSE}/compare`, 'professor');
     await expectLocation(view, `/student/course/${COURSE}/compare`);
@@ -655,7 +731,7 @@ describe('instructor course isolation and the Ask questions tab', () => {
     );
   }
 
-  const PROFESSOR_SECTIONS = ['', '/syllabus', '/examples', '/model', '/results', '/invite', '/ask'];
+  const PROFESSOR_SECTIONS = ['', '/syllabus', '/examples', '/model', '/results', '/invite', '/ask', '/prepare'];
 
   it("refuses another instructor's course on every professor page, by direct URL", async () => {
     for (const section of PROFESSOR_SECTIONS) {

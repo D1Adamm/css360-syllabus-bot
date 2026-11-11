@@ -1063,3 +1063,206 @@
 .ui-checkbox-row > span {
   flex-basis: 100%;
 }
+
+/* ========================= Classroom preparation ========================= */
+/* One page for professors and administrators (ClassroomPreparationPage). The
+   question filters and the count bar reuse the review page's classes above. */
+
+.prep-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background-color: var(--surface);
+  border: 1px solid var(--line-200);
+  border-radius: var(--radius-md);
+}
+
+.prep-summary__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.prep-summary__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-900);
+}
+
+.prep-summary__message {
+  margin: 0;
+  max-width: var(--measure);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--ink-900);
+}
+
+.prep-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-10);
+  margin: 0;
+}
+
+.prep-stat dt {
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+}
+
+.prep-stat dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-base);
+  color: var(--ink-700);
+}
+
+.prep-stat dd strong {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-900);
+}
+
+.prep-stat__note {
+  font-size: var(--text-sm);
+  color: var(--warning-700);
+}
+
+.prep-progress {
+  height: 0.5rem;
+  overflow: hidden;
+  background-color: var(--line-100);
+  border-radius: var(--radius-pill);
+}
+
+.prep-progress__bar {
+  display: block;
+  height: 100%;
+  background-color: var(--purple-700);
+  border-radius: var(--radius-pill);
+  transition: width var(--dur-base) var(--ease-standard);
+}
+
+.prep-summary__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.prep-summary__hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+
+.prep-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+}
+
+.prep-legend__item {
+  white-space: nowrap;
+}
+
+.prep-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-200);
+}
+
+.prep-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--line-200);
+}
+
+.prep-row--selected {
+  background-color: var(--purple-50);
+}
+
+.prep-row__check {
+  margin-top: 0.2rem;
+}
+
+.prep-row__body {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.prep-row__question {
+  display: block;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--ink-900);
+  cursor: pointer;
+}
+
+.prep-row__meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--ink-500);
+}
+
+.prep-row__warning {
+  color: var(--warning-700);
+}
+
+.prep-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prep-answer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  color: var(--ink-500);
+  background-color: var(--surface);
+  border: 1px solid var(--line-300);
+  border-radius: var(--radius-pill);
+}
+
+.prep-answer--ready {
+  color: var(--success-700);
+  background-color: var(--success-100);
+  border-color: transparent;
+}
+
+.prep-answer--outdated,
+.prep-answer--unavailable {
+  color: var(--warning-700);
+  background-color: var(--warning-100);
+  border-color: transparent;
+}
+
+.prep-answer--not_expected {
+  color: var(--ink-400);
+  border-style: dashed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prep-progress__bar {
+    transition: none;
+  }
+}
+

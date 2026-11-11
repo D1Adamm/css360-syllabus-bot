@@ -14,14 +14,28 @@
  * forwards `location /api/`, so the root paths never reach it from a browser.
  */
 
-export interface BaseModelGenerateResponse {
+/**
+ * What the classroom answer cache adds to a generate response.
+ *
+ * `cached` is true only when the answer was served from a stored row rather
+ * than generated for this request. `cacheEntryId` names the stored row when
+ * there is one. Nothing here is shown to a student: `cached` only paces how
+ * the four cards fill in, and the id is recorded with a rating.
+ */
+export interface CachedAnswerFields {
+  cached?: boolean;
+  generatedAt?: string | null;
+  cacheEntryId?: string | null;
+}
+
+export interface BaseModelGenerateResponse extends CachedAnswerFields {
   answer: string;
   model: string;
   responseType: 'base';
   courseId?: string;
 }
 
-export interface FineTunedGenerateResponse {
+export interface FineTunedGenerateResponse extends CachedAnswerFields {
   answer: string;
   model: string;
   responseType: 'fineTuned';
@@ -34,7 +48,7 @@ export interface FineTunedGenerateResponse {
   generationSeconds?: number | null;
 }
 
-export interface FineTunedRagGenerateResponse {
+export interface FineTunedRagGenerateResponse extends CachedAnswerFields {
   courseId: string;
   answer: string;
   model: string;
@@ -61,7 +75,7 @@ export interface RagRetrieveResult {
   score: number;
 }
 
-export interface RagGenerateResponse {
+export interface RagGenerateResponse extends CachedAnswerFields {
   courseId: string;
   answer: string;
   model: string;

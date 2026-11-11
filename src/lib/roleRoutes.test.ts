@@ -8,12 +8,14 @@ describe('staffViewPath', () => {
     expect(staffViewPath('professor', `/admin/courses/${C}`)).toBe(`/professor/course/${C}`);
     expect(staffViewPath('professor', `/admin/courses/${C}/examples`)).toBe(`/professor/course/${C}`);
     expect(staffViewPath('professor', `/admin/courses/${C}/review`)).toBe(`/professor/course/${C}/examples`);
+    expect(staffViewPath('professor', `/admin/courses/${C}/prepare`)).toBe(`/professor/course/${C}/prepare`);
   });
 
   it('keeps the course when switching from a professor course page to the admin view', () => {
     expect(staffViewPath('admin', `/professor/course/${C}`)).toBe(`/admin/courses/${C}`);
     expect(staffViewPath('admin', `/professor/course/${C}/model`)).toBe(`/admin/courses/${C}`);
     expect(staffViewPath('admin', `/professor/course/${C}/examples`)).toBe(`/admin/courses/${C}/review`);
+    expect(staffViewPath('admin', `/professor/course/${C}/prepare`)).toBe(`/admin/courses/${C}/prepare`);
     expect(staffViewPath('admin', `/professor/course/${C}/ask`)).toBe(`/admin/courses/${C}`);
   });
 

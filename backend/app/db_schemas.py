@@ -218,6 +218,10 @@ class EvaluationResponseSnapshot(BaseModel):
 
     `text` and `error` are what the student saw (one of them empty); `model`,
     `modelVersion` and `engine` are what the backend reported producing it.
+    `cacheEntryId` names the stored classroom answer when the answer has one
+    (`answer_cache.entry_id`), and `cached` says whether the student was shown
+    that stored row or the generation that created it. Both are absent on a
+    rating of answers that were never stored.
     Lengths are enforced in `db_evaluations.validate_responses`.
     """
 
@@ -229,6 +233,8 @@ class EvaluationResponseSnapshot(BaseModel):
     model: str | None = None
     model_version: str | None = Field(default=None, alias="modelVersion")
     engine: str | None = None
+    cached: bool | None = None
+    cache_entry_id: str | None = Field(default=None, alias="cacheEntryId")
 
 
 class EvaluationRecordModel(DbRecord):

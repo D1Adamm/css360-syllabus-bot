@@ -31,6 +31,7 @@ import { EvaluatePage } from './pages/student/EvaluatePage';
 import { StudentCoursesPage } from './pages/student/StudentCoursesPage';
 import { StudentHomePage } from './pages/student/StudentHomePage';
 
+import { ClassroomPreparationPage } from './pages/professor/ClassroomPreparationPage';
 import { CourseOverviewPage } from './pages/professor/CourseOverviewPage';
 import { CreateCoursePage } from './pages/professor/CreateCoursePage';
 import { InviteStudentsPage } from './pages/professor/InviteStudentsPage';
@@ -147,6 +148,10 @@ export function AppRoutes() {
           <Route path="results" element={<ProfessorResultsPage />} />
           {/* Staff testing: the course's instructors and administrators, no class code. */}
           <Route path="ask" element={<ProfessorAskPage />} />
+          {/* Classroom answers: choose course questions and prepare their
+              four answers before class. The same page serves administrators
+              (below); it is reached from the course overview, not the menu. */}
+          <Route path="prepare" element={<ClassroomPreparationPage />} />
           <Route path="invite" element={<InviteStudentsPage />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
@@ -222,6 +227,7 @@ export function AppRoutes() {
               backend admits an administrator to every course's review route
               without a membership, so the same page does the same job here. */}
           <Route path="review" element={<ReviewExamplesPage audience="admin" />} />
+          <Route path="prepare" element={<ClassroomPreparationPage audience="admin" />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
 

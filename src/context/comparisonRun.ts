@@ -33,6 +33,14 @@ export interface ComparisonRunResponse {
   modelVersion?: string | null;
   /** Where the fine-tuned answer was generated: `vm` or `gpu`. */
   engine?: string | null;
+  /**
+   * True when this answer was served from the classroom answer cache instead
+   * of being generated for this request. Recorded with a rating; never shown.
+   * Absent when the cache is off.
+   */
+  cached?: boolean;
+  /** The stored answer's id, so a rating can be traced to exactly that row. */
+  cacheEntryId?: string | null;
 }
 
 export interface ComparisonRun {
@@ -63,6 +71,11 @@ export function snapshotOf(response: ComparisonRunResponse): ComparisonRunRespon
     model: response.model ?? null,
     modelVersion: response.modelVersion ?? null,
     engine: response.engine ?? null,
+    // Only when the answer has a stored row; otherwise the snapshot keeps the
+    // shape it has always had.
+    ...(response.cacheEntryId
+      ? { cacheEntryId: response.cacheEntryId, cached: response.cached === true }
+      : {}),
   };
 }
 

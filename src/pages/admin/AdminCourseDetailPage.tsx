@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, LinkButton } from '../../components/ui/Button';
 import { Callout } from '../../components/ui/Callout';
+import { preparationPresentation, preparationSummary } from '../../lib/classroomPreparation';
 import { formatCourseCode } from '../../lib/courseLabels';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { SectionHeader } from '../../components/ui/SectionHeader';
 import { StatusPill } from '../../components/ui/StatusPill';
 import { useCourseId } from '../../context/CourseContext';
+import { useClassroomPreparation } from '../../hooks/useClassroomPreparation';
 import { useCourseExampleCounts } from '../../hooks/useCourseExampleCounts';
 import { useCourseMetadata } from '../../hooks/useCourseMetadata';
 import { useCourseModel } from '../../hooks/useCourseModel';
@@ -23,6 +25,7 @@ import {
 import { useFactInventoryProbe } from '../../hooks/useFactInventoryProbe';
 import {
   adminCourseExamplesPath,
+  adminCoursePreparePath,
   adminCourseReviewPath,
   studentCoursePath,
 } from '../../lib/roleRoutes';
@@ -207,6 +210,8 @@ export function AdminCourseDetailPage() {
   const courseId = useCourseId();
   const { metadata } = useCourseMetadata(courseId);
   const countsState = useCourseExampleCounts(courseId);
+  const { state: preparationState } = useClassroomPreparation(courseId);
+  const preparation = preparationState.status === 'ready' ? preparationState.preparation : null;
   const { state: modelState } = useCourseModel(courseId);
   const { state: requestState } = useCourseModelRequest(courseId);
 
@@ -372,6 +377,28 @@ export function AdminCourseDetailPage() {
             </Link>
             <Link to={adminCourseReviewPath(courseId)} className="admin-row__label--link">
               Review examples
+            </Link>
+          </li>
+          <li className="admin-row">
+            <span className="admin-row__label">Classroom answers</span>
+            <span className="admin-row__value">
+              {preparation ? (
+                <>
+                  <StatusPill tone={preparationPresentation(preparation.state).tone}>
+                    {preparationPresentation(preparation.state).label}
+                  </StatusPill>{' '}
+                  {preparationSummary(preparation)}
+                </>
+              ) : preparationState.status === 'loading' ? (
+                'loading…'
+              ) : (
+                'unavailable'
+              )}
+            </span>
+            <Link to={adminCoursePreparePath(courseId)} className="admin-row__label--link">
+              {preparation && preparation.counts.selectedQuestions > 0
+                ? 'Manage preparation'
+                : 'Prepare answers'}
             </Link>
           </li>
         </ul>
