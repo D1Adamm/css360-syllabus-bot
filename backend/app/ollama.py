@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 import os
 import time
@@ -17,7 +18,12 @@ from app.error_classification import (
 )
 
 from app.generation_mode import current_mode
-from app.generation_queue import clean_timings, log_generation, ollama_timings
+from app.generation_queue import (
+    clean_timings,
+    log_generation,
+    note_generation_detail,
+    ollama_timings,
+)
 from app.gpu_generation import generate_base_on_gpu
 from app.ollama_coordination import ollama_generation_slot
 from app.upstream_errors import log_upstream_failure
@@ -466,6 +472,11 @@ async def generate_ollama_chat(
     mode = current_mode()
     on_gpu = mode.is_gpu and model is None
     engine = "gpu" if on_gpu else "vm"
+    # For a stored answer's provenance (`app.answer_cache`); a no-op otherwise.
+    note_generation_detail(
+        promptSha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        promptChars=len(prompt),
+    )
 
     async with ollama_generation_slot(condition, priority="interactive") as slot:
         started = time.perf_counter()

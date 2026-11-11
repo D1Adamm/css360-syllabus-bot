@@ -21,7 +21,22 @@ class BaseModelGenerateRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=QUESTION_MAX_LENGTH, description="Student question to send to the base model")
 
 
-class BaseModelGenerateResponse(BaseModel):
+class CachedAnswerFields(BaseModel):
+    """What the classroom answer cache adds to a generate response.
+
+    `cached` is true only when the answer was served from a stored row rather
+    than generated for this request. `generatedAt` and `cacheEntryId` name the
+    stored row when there is one (also on the response that created it), so a
+    rating can record exactly which stored answer a student saw. All three
+    keep their defaults while `ANSWER_CACHE_ENABLED` is off.
+    """
+
+    cached: bool = False
+    generated_at: str | None = Field(default=None, alias="generatedAt")
+    cache_entry_id: str | None = Field(default=None, alias="cacheEntryId")
+
+
+class BaseModelGenerateResponse(CachedAnswerFields):
     answer: str
     model: str
     response_type: str = Field(alias="responseType")
@@ -47,7 +62,7 @@ class FineTunedGenerateRequest(BaseModel):
     )
 
 
-class FineTunedGenerateResponse(BaseModel):
+class FineTunedGenerateResponse(CachedAnswerFields):
     answer: str
     model: str
     response_type: str = Field(alias="responseType")
@@ -165,7 +180,7 @@ class RagGenerateSource(BaseModel):
     score: float
 
 
-class RagGenerateResponse(BaseModel):
+class RagGenerateResponse(CachedAnswerFields):
     model_config = ConfigDict(populate_by_name=True)
 
     course_id: str = Field(alias="courseId")
@@ -200,7 +215,7 @@ class FineTunedRagGenerateRequest(BaseModel):
     )
 
 
-class FineTunedRagGenerateResponse(BaseModel):
+class FineTunedRagGenerateResponse(CachedAnswerFields):
     model_config = ConfigDict(populate_by_name=True)
 
     course_id: str = Field(alias="courseId")

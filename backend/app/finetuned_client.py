@@ -23,6 +23,7 @@ course looks exactly as plausible as an answer from the wrong course.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -43,7 +44,12 @@ from app.error_classification import (
 )
 
 from app.generation_mode import current_mode
-from app.generation_queue import clean_timings, generation_slot, log_generation
+from app.generation_queue import (
+    clean_timings,
+    generation_slot,
+    log_generation,
+    note_generation_detail,
+)
 from app.gpu_generation import check_decoding, expected_decoding
 from app.upstream_errors import log_upstream_failure
 
@@ -431,6 +437,12 @@ async def generate_finetuned_response(
         # The classroom output cap. The VM-local service honours it; a service
         # that predates the field ignores it and keeps its own default.
         body["maxNewTokens"] = int(max_new_tokens)
+
+    # For a stored answer's provenance (`app.answer_cache`); a no-op otherwise.
+    note_generation_detail(
+        promptSha256=hashlib.sha256(trimmed.encode("utf-8")).hexdigest(),
+        promptChars=len(trimmed),
+    )
 
     async with generation_slot(condition, priority="interactive") as slot:
         started = time.perf_counter()

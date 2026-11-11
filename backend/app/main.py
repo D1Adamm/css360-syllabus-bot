@@ -32,6 +32,7 @@ from app.course_model_resolution import (
     resolve_current_course_model,
 )
 from app.course_rag import generate_course_rag_answer
+from app import answer_cache
 from app.admin_routes import router as admin_router
 from app.auth_routes import router as auth_router
 from app.db_routes import router as db_router
@@ -315,14 +316,100 @@ async def generate_base_model(
     # the same rule is enforced explicitly before any model is asked anything.
     authorize_course_access(principal, safe_course_id)
 
+    return await answer_cache.serve("base", safe_course_id, question)
+
+
+# The four classroom pipelines, one per approach, as `(course_id, question,
+# top_k) -> response`. Each is exactly what its route did inline: the routes
+# reach them through `answer_cache.serve`, which with `ANSWER_CACHE_ENABLED`
+# off calls the pipeline and nothing else, and classroom preparation
+# (`app.classroom_preparation`) generates through the same four, so a prepared
+# answer is the answer a student's own request would have produced.
+
+
+async def _base_answer(course_id: str, question: str, top_k: int) -> BaseModelGenerateResponse:
     # courseId is validated for route isolation but unused by the base model itself.
     result = await generate_base_model_response(question)
     return BaseModelGenerateResponse(
         answer=result["answer"],
         model=result["model"],
         responseType=result["response_type"],
-        courseId=safe_course_id,
+        courseId=course_id,
     )
+
+
+async def _fine_tuned_answer(course_id: str, question: str, top_k: int) -> FineTunedGenerateResponse:
+    # The course's own model, resolved from PostgreSQL before the cluster is
+    # asked anything. This is what makes a fine-tuned answer attributable: the
+    # version travels with the request and comes back on the response, and the
+    # client refuses a response that names a different course.
+    resolved = resolve_current_course_model(course_id)
+    # Classroom profile: the bare question, as the adapter was trained, with
+    # the classroom output cap and no added instruction.
+    result = await generate_finetuned_response(
+        question,
+        course_id=course_id,
+        model_version=resolved["version"],
+        max_new_tokens=CLASSROOM_NUM_PREDICT,
+    )
+    return FineTunedGenerateResponse(
+        answer=result["answer"],
+        model=result["model"],
+        responseType=result["response_type"],
+        courseId=course_id,
+        modelVersion=result.get("model_version") or resolved["version"],
+        adapterLoaded=result["adapter_loaded"],
+        generationSeconds=result["generation_seconds"],
+        engine=result.get("engine"),
+    )
+
+
+async def _rag_answer(course_id: str, question: str, top_k: int) -> RagGenerateResponse:
+    result = await generate_course_rag_answer(
+        course_id=course_id,
+        question=question,
+        top_k=top_k,
+        concise=True,
+    )
+    return RagGenerateResponse(
+        courseId=result["courseId"],
+        answer=result["answer"],
+        model=result["model"],
+        sources=[RagGenerateSource(**source) for source in result["sources"]],
+        retrievedChunks=[
+            RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
+        ],
+        responseType=result["responseType"],
+    )
+
+
+async def _fine_tuned_rag_answer(course_id: str, question: str, top_k: int) -> FineTunedRagGenerateResponse:
+    result = await generate_course_finetuned_rag_answer(
+        course_id=course_id,
+        question=question,
+        top_k=top_k,
+        concise=True,
+    )
+    return FineTunedRagGenerateResponse(
+        courseId=result["courseId"],
+        answer=result["answer"],
+        model=result["model"],
+        sources=[RagGenerateSource(**source) for source in result["sources"]],
+        retrievedChunks=[
+            RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
+        ],
+        responseType=result["responseType"],
+        modelVersion=result.get("modelVersion"),
+        adapterLoaded=result["adapterLoaded"],
+        generationSeconds=result["generationSeconds"],
+        engine=result.get("engine"),
+    )
+
+
+answer_cache.register_pipeline("base", _base_answer, BaseModelGenerateResponse)
+answer_cache.register_pipeline("rag", _rag_answer, RagGenerateResponse)
+answer_cache.register_pipeline("fineTuned", _fine_tuned_answer, FineTunedGenerateResponse)
+answer_cache.register_pipeline("fineTunedRag", _fine_tuned_rag_answer, FineTunedRagGenerateResponse)
 
 
 @app.get("/api/fine-tuned/health", response_model=FineTunedHealthResponse)
@@ -402,29 +489,7 @@ async def generate_fine_tuned(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     authorize_course_access(principal, safe_course_id)
 
-    # The course's own model, resolved from PostgreSQL before the cluster is
-    # asked anything. This is what makes a fine-tuned answer attributable: the
-    # version travels with the request and comes back on the response, and the
-    # client refuses a response that names a different course.
-    resolved = resolve_current_course_model(safe_course_id)
-    # Classroom profile: the bare question, as the adapter was trained, with
-    # the classroom output cap and no added instruction.
-    result = await generate_finetuned_response(
-        question,
-        course_id=safe_course_id,
-        model_version=resolved["version"],
-        max_new_tokens=CLASSROOM_NUM_PREDICT,
-    )
-    return FineTunedGenerateResponse(
-        answer=result["answer"],
-        model=result["model"],
-        responseType=result["response_type"],
-        courseId=safe_course_id,
-        modelVersion=result.get("model_version") or resolved["version"],
-        adapterLoaded=result["adapter_loaded"],
-        generationSeconds=result["generation_seconds"],
-        engine=result.get("engine"),
-    )
+    return await answer_cache.serve("fineTuned", safe_course_id, question)
 
 
 @app.post("/api/rag/generate", response_model=RagGenerateResponse)
@@ -445,23 +510,7 @@ async def generate_rag_response(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     authorize_course_access(principal, safe_course_id)
 
-    result = await generate_course_rag_answer(
-        course_id=safe_course_id,
-        question=question,
-        top_k=request.top_k,
-        concise=True,
-    )
-
-    return RagGenerateResponse(
-        courseId=result["courseId"],
-        answer=result["answer"],
-        model=result["model"],
-        sources=[RagGenerateSource(**source) for source in result["sources"]],
-        retrievedChunks=[
-            RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
-        ],
-        responseType=result["responseType"],
-    )
+    return await answer_cache.serve("rag", safe_course_id, question, top_k=request.top_k)
 
 
 @app.post("/api/fine-tuned-rag/generate", response_model=FineTunedRagGenerateResponse)
@@ -482,26 +531,8 @@ async def generate_fine_tuned_rag(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     authorize_course_access(principal, safe_course_id)
 
-    result = await generate_course_finetuned_rag_answer(
-        course_id=safe_course_id,
-        question=question,
-        top_k=request.top_k,
-        concise=True,
-    )
-
-    return FineTunedRagGenerateResponse(
-        courseId=result["courseId"],
-        answer=result["answer"],
-        model=result["model"],
-        sources=[RagGenerateSource(**source) for source in result["sources"]],
-        retrievedChunks=[
-            RagRetrieveResult(**chunk) for chunk in result["retrievedChunks"]
-        ],
-        responseType=result["responseType"],
-        modelVersion=result.get("modelVersion"),
-        adapterLoaded=result["adapterLoaded"],
-        generationSeconds=result["generationSeconds"],
-        engine=result.get("engine"),
+    return await answer_cache.serve(
+        "fineTunedRag", safe_course_id, question, top_k=request.top_k
     )
 
 

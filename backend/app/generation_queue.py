@@ -36,6 +36,22 @@ What it does
 
 Nothing about a prompt, an option or a model is decided here; this module
 only decides when a generation may start.
+
+Hooks for the classroom answer cache
+------------------------------------
+Four small context-local hooks, all inert unless something sets them
+(`app.answer_cache`, `app.classroom_preparation`):
+
+- `background_generation()` makes every turn taken inside it a background one,
+  so classroom preparation runs the same generation code as a student request
+  and still waits behind every student;
+- `shared_request(...)` replaces the "is the client still there" check with one
+  that covers every student sharing a generation, and reports when the turn
+  starts;
+- `collect_generation_details()` captures what the per-generation log line
+  says (model, timings, engine), for a stored answer's provenance;
+- `seconds_since_interactive_activity()` tells preparation whether students
+  are using the site.
 """
 
 from __future__ import annotations
@@ -48,9 +64,9 @@ import logging
 import math
 import os
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Awaitable, Callable, Literal
+from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Literal
 
 from fastapi import HTTPException
 
@@ -171,6 +187,83 @@ def bind_request(request: Any) -> None:
     _disconnect_check.set(request.is_disconnected)
 
 
+# --------------------------------------------------------------------------- #
+# Context-local hooks (see the module docstring)
+# --------------------------------------------------------------------------- #
+
+_priority_override: contextvars.ContextVar["Priority | None"] = contextvars.ContextVar(
+    "generation_priority_override", default=None
+)
+_slot_listener: contextvars.ContextVar[Callable[[], None] | None] = contextvars.ContextVar(
+    "generation_slot_listener", default=None
+)
+_generation_details: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "generation_details", default=None
+)
+
+
+@contextmanager
+def background_generation() -> Iterator[None]:
+    """Every queue turn taken inside this block is a background turn.
+
+    Background turns go after every interactive one, wait without a time
+    limit, are never refused for capacity, and are left out of the wait
+    estimate students are refused on.
+    """
+    token = _priority_override.set("background")
+    try:
+        yield
+    finally:
+        _priority_override.reset(token)
+
+
+def is_background_generation() -> bool:
+    return _priority_override.get() == "background"
+
+
+@contextmanager
+def shared_request(
+    disconnected: DisconnectCheck | None, *, on_started: Callable[[], None] | None = None
+) -> Iterator[None]:
+    """Run a generation on behalf of several requests at once.
+
+    `disconnected` answers "has everyone who wanted this gone?" in place of
+    the one request's own check, so one student closing a tab does not take a
+    shared generation out of the queue. `on_started` is called when the turn
+    is granted, which is the moment a later request can safely join it.
+    """
+    check_token = _disconnect_check.set(disconnected)
+    listener_token = _slot_listener.set(on_started)
+    try:
+        yield
+    finally:
+        _slot_listener.reset(listener_token)
+        _disconnect_check.reset(check_token)
+
+
+def current_disconnect_check() -> DisconnectCheck | None:
+    """The calling request's own "is my client gone" check, if it has one."""
+    return _disconnect_check.get()
+
+
+@contextmanager
+def collect_generation_details() -> Iterator[dict[str, Any]]:
+    """Capture what `log_generation` and the callers record about a generation."""
+    details: dict[str, Any] = {}
+    token = _generation_details.set(details)
+    try:
+        yield details
+    finally:
+        _generation_details.reset(token)
+
+
+def note_generation_detail(**fields: Any) -> None:
+    """Add to the details being collected, if anything is collecting them."""
+    details = _generation_details.get()
+    if details is not None:
+        details.update({key: value for key, value in fields.items() if value is not None})
+
+
 class ClientDisconnected(HTTPException):
     """The client left while the request waited. Nobody reads this response."""
 
@@ -241,6 +334,8 @@ class GenerationQueue:
         self._sequence = itertools.count()
         self._comparisons: dict[str, float] = {}
         self._service_ewma: float | None = None
+        self._interactive_active = 0
+        self._last_interactive: float | None = None
         self.counters = {
             "started": 0,
             "completed": 0,
@@ -272,6 +367,20 @@ class GenerationQueue:
             ),
             **self.counters,
         }
+
+    def note_interactive_activity(self) -> None:
+        """A student was just served, whether or not a model had to run."""
+        self._last_interactive = self._clock()
+
+    def seconds_since_interactive_activity(self) -> float | None:
+        """How long the site has been quiet: 0 while any student request is
+        running or waiting, None when none has been seen since the process
+        started, else the seconds since the last one finished or was answered."""
+        if self._interactive_active > 0 or self._interactive_waiting() > 0:
+            return 0.0
+        if self._last_interactive is None:
+            return None
+        return max(0.0, self._clock() - self._last_interactive)
 
     def estimated_wait(self, ahead: int) -> float | None:
         """Seconds until a request with `ahead` interactive waiters in front starts."""
@@ -341,7 +450,10 @@ class GenerationQueue:
         *,
         priority: Priority = "interactive",
     ) -> AsyncIterator[SlotInfo]:
+        priority = _priority_override.get() or priority
         info = SlotInfo(label=label)
+        if priority == "interactive":
+            self.note_interactive_activity()
         comparison_id = _comparison_id.get() if priority == "interactive" else None
         disconnected = _disconnect_check.get() if priority == "interactive" else None
         now = self._clock()
@@ -410,10 +522,17 @@ class GenerationQueue:
 
         self.counters["started"] += 1
         started = self._clock()
+        if priority == "interactive":
+            self._interactive_active += 1
         try:
+            listener = _slot_listener.get()
+            if listener is not None:
+                listener()
             yield info
         finally:
             if priority == "interactive":
+                self._interactive_active -= 1
+                self.note_interactive_activity()
                 self._record_service(self._clock() - started)
             self.counters["completed"] += 1
             self._release()
@@ -525,6 +644,14 @@ def log_generation(
     No question text, prompt or answer: the line is for capacity, and a
     student's question does not belong in a service log.
     """
+    note_generation_detail(
+        model=model,
+        outcome=outcome,
+        engine=engine,
+        elapsedMs=int(elapsed_seconds * 1000),
+        queueWaitMs=int(info.queue_wait_seconds * 1000) if info is not None else None,
+        timings=dict(timings) if timings else None,
+    )
     parts = [
         f"condition={info.label if info else '-'}",
         f"model={model.replace(' ', '_')}",
