@@ -46,10 +46,10 @@ cd ~/css360-syllabus-bot && (set -a && source backend/.env && set +a && psql "$D
 for p in 11434 11435; do echo "== :$p $(curl -s http://127.0.0.1:$p/api/version)"; curl -s http://127.0.0.1:$p/api/tags | python3 -c 'import json,sys; [print(m["name"], m["digest"][:16]) for m in sorted(json.load(sys.stdin)["models"], key=lambda m: m["name"])]'; done
 ```
 
-6. Whether both servers report the same models with the same digests. The
-   plan lets the backend read a course model's digest from its own Ollama
-   (`:11434`) only if this prints `SAME`; otherwise the cache stays off for
-   the two fine-tuned approaches until the fine-tuned service reports digests:
+6. Whether both servers report the same models with the same digests. For
+   information only: the backend reads a course model's digest from the
+   Ollama server the fine-tuned service names in its `/health` (`ollamaUrl`),
+   so nothing depends on the two servers sharing a store:
 
 ```bash
 A="$(curl -s http://127.0.0.1:11434/api/tags | python3 -c 'import json,sys; print(sorted((m["name"], m["digest"]) for m in json.load(sys.stdin)["models"]))')"; B="$(curl -s http://127.0.0.1:11435/api/tags | python3 -c 'import json,sys; print(sorted((m["name"], m["digest"]) for m in json.load(sys.stdin)["models"]))')"; [ -n "$A" ] && [ "$A" = "$B" ] && echo "SAME models and digests on both servers" || echo "DIFFERENT or unreadable"
@@ -60,6 +60,15 @@ A="$(curl -s http://127.0.0.1:11434/api/tags | python3 -c 'import json,sys; prin
 
 ```bash
 systemctl show ollama ollama-finetuned -p Id -p Environment
+```
+
+7a. What the fine-tuned service reports about itself. The cache needs
+    `status` `ok`, an `ollamaUrl`, and one `models` entry per course version
+    with its `ollamaModel`; without them it stays off for the two fine-tuned
+    approaches (Base and RAG are unaffected):
+
+```bash
+curl -s http://127.0.0.1:9001/health | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("status"), d.get("ollamaUrl")); [print(m) for m in d.get("models", [])]'
 ```
 
 8. The CPU (part of a cached answer's recorded identity):
@@ -158,6 +167,6 @@ rm -rf ~/answer-cache-phase0
 
 ## What Phase 0 needs back
 
-- The output of A1–A10.
+- The output of A1–A10 (including 7a).
 - The two tables the repeatability run prints (or its JSON file).
 - The table each load-test level prints.

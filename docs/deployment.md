@@ -159,6 +159,7 @@ properties for every migration file.
 | `001_training_provenance_and_serving.sql` | Training provenance columns and `serving_sessions` |
 | `002_auth_identity.sql` | `users`, `course_memberships`, `invitations`, `invitation_course_grants`, `participants`, `auth_sessions`, `admin_actions`; nullable `participant_id` on `evaluations` and `seed_examples`; `created_by` on `courses`. No existing row changes value |
 | `003_evaluation_provenance_and_dataset_pinning.sql` | Nullable `responses` JSONB on `evaluations` (the four answers a rating was made against, with model, version and engine), an index on `evaluations (course_id, participant_id, run_id)` for the one-rating-per-run check, and nullable `dataset_sha256` on `training_runs` (the prepared files a queued run is pinned to). No existing row changes value; older rows simply carry NULL |
+| `004_classroom_answer_cache.sql` | Three new tables for classroom preparation ([classroom-preparation.md](classroom-preparation.md)): `classroom_questions` (which course questions staff selected), `answer_cache` (one stored answer per course, approach, question and configuration) and `classroom_preparation` (how a course's last preparation run ended). No existing table or row changes. On branch `feat/compare-answer-cache`; not applied anywhere yet |
 
 ### Frontend
 

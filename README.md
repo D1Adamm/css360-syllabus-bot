@@ -434,6 +434,7 @@ What is genuinely unfinished, and what is deliberately out of scope:
 | [docs/deployment.md](docs/deployment.md) | Deploying to the UWB VM, including installing and serving fine-tuned models |
 | [docs/classroom-gpu-mode.md](docs/classroom-gpu-mode.md) | Classroom GPU mode: serving a class from a Tillicum GPU, and the automatic failback to the VM |
 | [docs/classroom-gpu-runbook.md](docs/classroom-gpu-runbook.md) | The class-day checklist: before, during, after, emergencies |
+| [docs/classroom-preparation.md](docs/classroom-preparation.md) | Preparing the four answers to chosen course questions before class, and the answer cache behind it (off by default; not deployed) |
 | [docs/remaining-work.md](docs/remaining-work.md) | What is actually unfinished |
 | [docs/verification-history.md](docs/verification-history.md) | What has been proven against production |
 | [backend/README.md](backend/README.md) | Backend setup and API groups |
