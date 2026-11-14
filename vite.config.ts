@@ -1,6 +1,14 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+/*
+ * Where `/api` is proxied. The backend's usual local port by default; set
+ * `DEV_API_PROXY_TARGET` to point this dev or preview server at another
+ * backend, e.g. an isolated test instance on its own port
+ * (docs/answer-cache-vm-test.md). `vite preview` uses the same proxy.
+ */
+const apiProxyTarget = process.env.DEV_API_PROXY_TARGET || 'http://127.0.0.1:8001'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -16,7 +24,7 @@ export default defineConfig({
      */
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8001',
+        target: apiProxyTarget,
         changeOrigin: false,
       },
     },

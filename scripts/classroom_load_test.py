@@ -406,8 +406,12 @@ def summarize_level(samples: list[Sample], *, students: int) -> dict[str, Any]:
     }
 
 
-def question_for(student: int, *, level: int, unique: bool) -> str:
+def question_for(student: int, *, level: int, unique: bool, same: bool = False) -> str:
     """The question one simulated student asks.
+
+    `same` gives every student the identical question, which is what the
+    answer cache's request sharing is for: N students should then cost one
+    generation per approach, not N (docs/classroom-preparation.md).
 
     By default students cycle through `QUESTIONS`, so several ask the same
     thing, as a class does. Ollama's runners keep a prompt cache, so a
@@ -415,6 +419,8 @@ def question_for(student: int, *, level: int, unique: bool) -> str:
     swapped out in between. `unique` gives every student in every level its
     own question, which measures the worst case: no prompt is ever seen twice.
     """
+    if same:
+        return QUESTIONS[0]
     base = QUESTIONS[student % len(QUESTIONS)]
     if not unique:
         return base
@@ -429,6 +435,7 @@ def run_level(
     monitor_factory: Callable[[], Monitor | None],
     log: Callable[[str], None],
     unique: bool = False,
+    same: bool = False,
 ) -> dict[str, Any]:
     origin = time.perf_counter()
 
@@ -438,7 +445,7 @@ def run_level(
     def student(index: int) -> list[Sample]:
         if ramp > 0 and students > 1:
             time.sleep(ramp * index / (students - 1))
-        return run_student(send, student=index, question=question_for(index, level=students, unique=unique), clock=clock)
+        return run_student(send, student=index, question=question_for(index, level=students, unique=unique, same=same), clock=clock)
 
     monitor = monitor_factory()
     samples: list[Sample] = []
@@ -514,6 +521,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cooldown", type=float, default=15.0, help="Seconds between levels, so one level's backlog does not leak into the next (default %(default)s).")
     parser.add_argument("--timeout", type=float, default=DEFAULT_REQUEST_TIMEOUT, help="Per-request client timeout (default %(default)s, Nginx's).")
     parser.add_argument("--unique-questions", action="store_true", help="Give every student its own question, so no prompt repeats (worst case for Ollama's prompt cache).")
+    parser.add_argument("--same-question", action="store_true", help="Give every student the identical question (what the answer cache's request sharing is for).")
     parser.add_argument("--ollama-url", action="append", default=[], help="Sample this Ollama's /api/ps once a second (repeatable).")
     parser.add_argument("--no-system", action="store_true", help="Do not sample CPU and RAM (they describe this machine, so only mean something on the VM).")
     parser.add_argument("--admin-email", help=f"Sign in as this administrator (password from ${checks.PASSWORD_ENV} or a prompt).")
@@ -527,6 +535,8 @@ def main(argv: list[str] | None = None, *, transport: Any = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         levels = parse_levels(args.levels)
+        if args.unique_questions and args.same_question:
+            raise ValueError("--unique-questions and --same-question are opposites; give one.")
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -578,6 +588,7 @@ def main(argv: list[str] | None = None, *, transport: Any = None) -> int:
         "courseId": args.course_id,
         "ramp": args.ramp,
         "uniqueQuestions": args.unique_questions,
+        "sameQuestion": args.same_question,
         "comparisonIdHeader": True,
         "timeout": args.timeout,
         "host": os.uname().nodename if hasattr(os, "uname") else None,
@@ -595,6 +606,7 @@ def main(argv: list[str] | None = None, *, transport: Any = None) -> int:
                     monitor_factory=monitor_factory,
                     log=print,
                     unique=args.unique_questions,
+                    same=args.same_question,
                 )
             )
     finally:

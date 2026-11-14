@@ -66,7 +66,10 @@ from app.generation_queue import (
 )
 from app.retrieval_diversity import DEFAULT_TOP_K
 
-logger = logging.getLogger(__name__)
+# A child of the generation queue's logger so that INFO lines (an answer not
+# stored because its configuration moved) reach the journal beside the
+# `generation …` lines; see `generation_queue._ensure_visible_logs`.
+logger = logging.getLogger("app.generation_queue.answer_cache")
 
 ENABLED_ENV = "ANSWER_CACHE_ENABLED"
 #: How long a course's selected-question set is trusted before it is re-read.

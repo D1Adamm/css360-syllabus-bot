@@ -97,7 +97,12 @@ from app.generation_queue import background_generation, get_generation_queue, is
 from app.ollama_coordination import is_starter_job_active
 from app.retrieval_diversity import DEFAULT_TOP_K
 
-logger = logging.getLogger(__name__)
+# A child of the generation queue's logger, on purpose: nothing in the backend
+# configures logging, so an INFO line on an `app.*` logger never reaches the
+# journal, while `app.generation_queue` has its own handler (see
+# `_ensure_visible_logs`). A run starting, stopping and ending is exactly what
+# an operator looks for next to the `generation …` lines.
+logger = logging.getLogger("app.generation_queue.preparation")
 
 #: Names this backend process. See "Restarts" above.
 BOOT_ID = uuid.uuid4().hex

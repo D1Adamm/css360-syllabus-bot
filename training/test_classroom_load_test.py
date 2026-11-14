@@ -96,6 +96,46 @@ class StudentScheduleTests(unittest.TestCase):
 
 
 class QuestionTests(unittest.TestCase):
+    def test_same_question_gives_every_student_the_identical_question(self) -> None:
+        asked = {load_test.question_for(i, level=20, unique=False, same=True) for i in range(20)}
+        self.assertEqual(asked, {load_test.QUESTIONS[0]})
+
+    def test_same_and_unique_together_are_refused_before_anything_runs(self) -> None:
+        backend = FakeBackend()
+        with redirect_stdout(io.StringIO()):
+            code = load_test.main(
+                ["--no-auth", "--course-id", "c-1", "--levels", "1", "--same-question", "--unique-questions", "--yes"],
+                transport=backend,
+            )
+        self.assertEqual(code, 2)
+        self.assertEqual(backend.started, [])
+
+    def test_a_same_question_run_asks_one_question_and_says_so_in_the_report(self) -> None:
+        import json, tempfile
+
+        backend = FakeBackend()
+        asked: list[str] = []
+        real = backend.request
+
+        def recording(method, url, *, body=None, headers=None, timeout=30.0):
+            if isinstance(body, dict) and "question" in body:
+                asked.append(body["question"])
+            return real(method, url, body=body, headers=headers, timeout=timeout)
+
+        backend.request = recording
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            out = Path(tmp) / "report.json"
+            code = load_test.main(
+                ["--no-auth", "--course-id", "c-1", "--levels", "3", "--same-question", "--no-system",
+                 "--cooldown", "0", "--out", str(out), "--yes"],
+                transport=backend,
+            )
+            report = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(code, 0)
+        self.assertEqual(set(asked), {load_test.QUESTIONS[0]})
+        self.assertEqual(len(asked), 12)
+        self.assertTrue(report["sameQuestion"])
+
     def test_default_questions_repeat_and_unique_ones_never_do(self) -> None:
         shared = [load_test.question_for(i, level=30, unique=False) for i in range(30)]
         self.assertLess(len(set(shared)), 30)

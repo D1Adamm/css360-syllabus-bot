@@ -160,31 +160,141 @@ The backend must run as one worker, as it already must
 ([deployment.md](deployment.md)): the queue, the shared generations and the
 run all live in that process.
 
-## Deploying it (not done yet)
+## Deploying it to production (not done; each step waits for approval)
 
-Nothing here has been run on the VM. Each step changes production and waits
-for a decision.
+Nothing below has been run. It follows the standing procedure in
+[deployment.md](deployment.md#uwb-vm) and adds only what this
+feature needs: one migration and, later, one setting. The branch changes no
+Python or Node dependency and nothing under `training/inference_service/`, so
+there is no `pip install` and the fine-tuned service is not restarted.
 
-1. Check the VM facts in [answer-cache-phase0.md](answer-cache-phase0.md),
-   Part A.
-2. Deploy the branch's code the usual way ([deployment.md](deployment.md)).
-   With `ANSWER_CACHE_ENABLED` unset nothing behaves differently, except that
-   the four generate responses carry three extra fields (`cached: false`,
-   `generatedAt: null`, `cacheEntryId: null`).
-3. Apply `backend/db/migrations/004_classroom_answer_cache.sql`. It creates
-   three new tables (`classroom_questions`, `answer_cache`,
-   `classroom_preparation`) and changes no existing table or row. If migration
-   003 has not been applied yet, apply it first.
-4. Restart the backend; build and publish the frontend.
-5. With the flag still off, open Classroom answers for a course: the page
-   loads, says classroom answers are switched off, and questions can be
-   selected.
-6. Outside class time, set `ANSWER_CACHE_ENABLED=true`, restart the backend,
-   prepare a few questions for one course, and ask one of them on Compare.
-7. Measure with `scripts/classroom_load_test.py` at low levels first.
+Do it outside class time, and only after the isolated test
+([answer-cache-vm-test.md](answer-cache-vm-test.md)) has passed.
 
-To turn it off again: unset `ANSWER_CACHE_ENABLED` and restart the backend.
-Stored rows stay and are simply not used.
+Everything up to the backend restart leaves production serving the old code,
+so any step before it is a safe place to stop. The feature stays **off** until
+step 8.
+
+### 1. Merge (on the development machine, on approval)
+
+`feat/compare-answer-cache` is merged into `main` with `--no-ff` and pushed.
+Nothing on the VM changes.
+
+### 2. Before pulling (VM, read-only apart from the backup directory)
+
+The VM is idle and in VM mode (expect the current commit, only the known
+untracked files, three `active`, `MODE: VM (normal)`, and `0`):
+
+```bash
+cd ~/css360-syllabus-bot && git rev-parse --short HEAD && git status --short && systemctl --user is-active aiswe-backend aiswe-finetuned aiswe-gpu-failback.timer; ./scripts/classroom_gpu_mode.sh status | head -4; journalctl --user-unit aiswe-backend --since '-15 min' --no-pager -o cat | grep -c 'generation condition='
+```
+
+Back up what a rollback would need, including the database (the fuller
+backup in [deployment.md](deployment.md#before-pulling) also covers service
+units and the Nginx configuration, which this deployment does not touch).
+Keep the same shell so `$B` stays set:
+
+```bash
+B=~/backups/deploy-$(date -u +%Y%m%dT%H%M%SZ) && mkdir -p "$B" && chmod 700 "$B" && echo "$B"
+```
+```bash
+cd ~/css360-syllabus-bot && cp -a $(git ls-files --others --exclude-standard) "$B/" 2>/dev/null; cp -p backend/.env "$B/backend.env" && chmod 600 "$B/backend.env" && git rev-parse HEAD > "$B/previous-commit.txt" && (set -a && source backend/.env && set +a && pg_dump "$DATABASE_URL" -Fc -f "$B/db-before.dump") && ls -la "$B"
+```
+
+What will arrive (expect `backend/db/migrations/004_classroom_answer_cache.sql`
+and no `requirements.txt`, `package.json` or `training/inference_service/`):
+
+```bash
+cd ~/css360-syllabus-bot && git fetch origin && git log --oneline HEAD..origin/main && git diff --name-only HEAD origin/main | grep -E 'requirements\.txt|package(-lock)?\.json|training/inference_service/|backend/db/'
+```
+
+### 3. Pull (tracked files only; untracked and ignored files are not touched)
+
+```bash
+cd ~/css360-syllabus-bot && git pull --ff-only origin main && git rev-parse --short HEAD && git status --short
+```
+
+### 4. Tests under the VM's own Python (safe: no database, no `.env`)
+
+```bash
+cd ~/css360-syllabus-bot && backend/.venv/bin/python -m pytest backend/tests -q 2>&1 | tail -2 && backend/.venv/bin/python -m pytest training scripts -q 2>&1 | tail -2
+```
+
+### 5. Migration 004 (changes the production database: three new tables only)
+
+It creates `classroom_questions`, `answer_cache` and `classroom_preparation`.
+No existing table, column or row changes, and the old code ignores the new
+tables, so it is safe to apply before the restart. Running it twice is a
+no-op.
+
+```bash
+cd ~/css360-syllabus-bot && (set -a && source backend/.env && set +a && psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/migrations/004_classroom_answer_cache.sql && psql "$DATABASE_URL" -Atc "select count(*) from information_schema.tables where table_name in ('classroom_questions', 'answer_cache', 'classroom_preparation')")
+```
+
+Expect `3`.
+
+### 6. Frontend (publishes the new build; Nginx is reloaded, not restarted)
+
+```bash
+cd ~/css360-syllabus-bot && npm ci && npm run build
+```
+```bash
+cd ~/css360-syllabus-bot && sudo cp -a dist/. /usr/share/nginx/html/ && sudo restorecon -R /usr/share/nginx/html && sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 7. Backend restart (the one moment of interruption; an in-flight generation fails once)
+
+```bash
+systemctl --user restart aiswe-backend && sleep 3 && curl -s http://127.0.0.1:8001/api/health && echo && systemctl --user show aiswe-backend -p ActiveState -p NRestarts && journalctl --user-unit aiswe-backend --since '-2 min' --no-pager -o cat | grep -iE 'traceback|error|Application startup complete' | tail -5
+```
+
+Then the standing checks in
+[deployment.md](deployment.md#after-a-deployment), and with the feature still
+off:
+
+- Admin → a course → Record → **Classroom answers** opens, says classroom
+  answers are switched off, and lists the course's questions;
+- a Compare in the student preview answers all four approaches as before.
+
+At this point the deployment is complete and behaves as before, apart from the
+new page and three extra fields on the generate responses.
+
+### 8. Turn the feature on (a separate decision; needs a second backend restart)
+
+Appends one line to `backend/.env` and prints nothing from the file:
+
+```bash
+cd ~/css360-syllabus-bot && grep -q '^ANSWER_CACHE_ENABLED=' backend/.env || printf '\nANSWER_CACHE_ENABLED=true\n' >> backend/.env; grep -c '^ANSWER_CACHE_ENABLED=true' backend/.env
+```
+
+Expect `1`, then restart the backend with the command in step 7. Prepare a
+few questions for one course, ask one of them on Compare, and watch for a
+`classroom preparation: … started` line followed by `generation` lines:
+
+```bash
+journalctl --user-unit aiswe-backend --since '-10 min' --no-pager -o cat | grep -E 'classroom preparation|generation condition=' | tail -12
+```
+
+Measure with `scripts/classroom_load_test.py` at low levels before relying on
+it in a class.
+
+### Turning it off, and rolling back
+
+Off, without undoing anything (stored answers stay and are simply not used):
+
+```bash
+cd ~/css360-syllabus-bot && sed -i 's/^ANSWER_CACHE_ENABLED=.*/ANSWER_CACHE_ENABLED=false/' backend/.env && grep -c '^ANSWER_CACHE_ENABLED=false' backend/.env
+```
+
+then restart the backend (step 7).
+
+Code, as in [deployment.md](deployment.md#rolling-back): `git reset --hard
+"$(cat "$B/previous-commit.txt")"`, rebuild and republish the frontend,
+restart the backend. The three new tables can stay: the old code never reads
+them. The database backup from step 2 is there if they must go.
+
+On Tillicum nothing changes for this feature; `git pull origin main` in the
+cluster checkout keeps it in step whenever convenient.
 
 ## What has and has not been verified
 
